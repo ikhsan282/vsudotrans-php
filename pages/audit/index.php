@@ -7,7 +7,7 @@ require_permission('audit.view');
 
 $from   = trim((string) ($_GET['from'] ?? ''));
 $to     = trim((string) ($_GET['to'] ?? ''));
-$user   = trim((string) ($_GET['user'] ?? ''));
+$f_user = trim((string) ($_GET['user'] ?? '')); // bukan $user: header.php menimpa $user
 $action = trim((string) ($_GET['action'] ?? ''));
 
 $valid_date = static fn(string $d): bool => (bool) (($dt = DateTime::createFromFormat('Y-m-d', $d)) && $dt->format('Y-m-d') === $d);
@@ -34,10 +34,10 @@ if ($to !== '') {
     $types .= 's';
     $params[] = date('Y-m-d', strtotime($to . ' +1 day')) . ' 00:00:00';
 }
-if ($user !== '') {
+if ($f_user !== '') {
     $where[] = 'a.username LIKE ?';
     $types .= 's';
-    $params[] = $like($user);
+    $params[] = $like($f_user);
 }
 if ($action !== '') {
     $where[] = 'a.action LIKE ?';
@@ -66,7 +66,7 @@ $st->execute();
 $rows = $st->get_result()->fetch_all(MYSQLI_ASSOC);
 $st->close();
 
-$query_base = http_build_query(array_filter(['from' => $from, 'to' => $to, 'user' => $user, 'action' => $action]));
+$query_base = http_build_query(array_filter(['from' => $from, 'to' => $to, 'user' => $f_user, 'action' => $action]));
 
 $active = 'audit';
 $title  = 'Audit Trail';
@@ -89,7 +89,7 @@ require __DIR__ . '/../../includes/sidebar.php';
                 <div class="col-auto">
                     <label class="form-label small mb-0" for="user">User</label>
                     <input type="search" id="user" name="user" class="form-control" placeholder="Username"
-                           value="<?= e($user) ?>">
+                           value="<?= e($f_user) ?>">
                 </div>
                 <div class="col-auto">
                     <label class="form-label small mb-0" for="action">Aksi</label>
