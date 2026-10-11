@@ -18,8 +18,8 @@ if (!$row) {
 }
 assert_company_access((int) $row['company_id']);
 
-$stmt = db()->prepare('DELETE FROM employees WHERE id = ?');
-$stmt->bind_param('i', $id);
+$stmt = db()->prepare('DELETE FROM employees WHERE id = ? AND company_id = ?');
+$stmt->bind_param('ii', $id, $row['company_id']);
 $stmt->execute();
 $stmt->close();
 

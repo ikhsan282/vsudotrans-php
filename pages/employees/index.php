@@ -2,7 +2,6 @@
 /** Daftar karyawan — list + pagination + search + filter status, scoped company_scope(). */
 require_once __DIR__ . '/../../config/config.php';
 require_once __DIR__ . '/_helpers.php';
-require_once __DIR__ . '/_layout.php';
 require_permission('employees.view');
 employee_scope_cid();
 
@@ -17,8 +16,13 @@ $page = max(1, (int) ($_GET['page'] ?? 1));
 $can_manage = can('employees.manage');
 $query_base = http_build_query(array_filter(['q' => $q, 'status' => $status]));
 
-employee_html_start('Karyawan');
+$active = 'employees';
+$title = 'Karyawan';
+require __DIR__ . '/../../includes/header.php';
+require __DIR__ . '/../../includes/sidebar.php';
 ?>
+<main class="col-12 col-md-9 col-lg-10 p-4">
+<h4 class="fw-bold mb-4"><?= e($title) ?></h4>
 <div class="card shadow-sm">
     <div class="card-body">
         <form method="get" class="row g-2 align-items-center mb-3">
@@ -101,4 +105,5 @@ employee_html_start('Karyawan');
         </div>
     </div>
 </div>
-<?php employee_html_end(); ?>
+</main>
+<?php require __DIR__ . '/../../includes/footer.php'; ?>

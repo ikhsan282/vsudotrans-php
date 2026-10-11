@@ -2,7 +2,6 @@
 /** Detail karyawan. Baca satu baris wajib assert_company_access. */
 require_once __DIR__ . '/../../config/config.php';
 require_once __DIR__ . '/_helpers.php';
-require_once __DIR__ . '/_layout.php';
 require_permission('employees.view');
 
 $id = (int) ($_GET['id'] ?? 0);
@@ -15,8 +14,8 @@ assert_company_access((int) $row['company_id']);
 
 $branch_name = '';
 if ($row['branch_id']) {
-    $stmt = db()->prepare('SELECT name FROM branches WHERE id = ?');
-    $stmt->bind_param('i', $row['branch_id']);
+    $stmt = db()->prepare('SELECT name FROM branches WHERE id = ? AND company_id = ?');
+    $stmt->bind_param('ii', $row['branch_id'], $row['company_id']);
     $stmt->execute();
     $branch_name = (string) $stmt->get_result()->fetch_column();
     $stmt->close();
@@ -35,8 +34,13 @@ $fields = [
     'Alamat' => $row['address'], 'Status' => $row['status'],
 ];
 
-employee_html_start('Detail Karyawan');
+$active = 'employees';
+$title = 'Detail Karyawan';
+require __DIR__ . '/../../includes/header.php';
+require __DIR__ . '/../../includes/sidebar.php';
 ?>
+<main class="col-12 col-md-9 col-lg-10 p-4">
+<h4 class="fw-bold mb-4"><?= e($title) ?></h4>
 <div class="card shadow-sm">
     <div class="card-body">
         <dl class="row mb-0">
@@ -53,4 +57,5 @@ employee_html_start('Detail Karyawan');
         <?php endif; ?>
     </div>
 </div>
-<?php employee_html_end(); ?>
+</main>
+<?php require __DIR__ . '/../../includes/footer.php'; ?>

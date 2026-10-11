@@ -2,7 +2,6 @@
 /** Form karyawan (create/edit). Edit wajib assert_company_access; company_id create dari active_company_id(). */
 require_once __DIR__ . '/../../config/config.php';
 require_once __DIR__ . '/_helpers.php';
-require_once __DIR__ . '/_layout.php';
 require_permission('employees.manage');
 
 $id = (int) ($_GET['id'] ?? $_POST['id'] ?? 0);
@@ -44,10 +43,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 }
 
 $v = fn(string $k): string => (string) ($input[$k] ?? '');
-$branches = employee_branch_options();
+// Cabang milik perusahaan baris (edit, termasuk Super Admin lintas perusahaan) atau perusahaan aktif (create).
+$branches = employee_branch_options($row ? (int) $row['company_id'] : active_company_id());
 $title = $id > 0 ? 'Ubah Karyawan' : 'Tambah Karyawan';
-employee_html_start($title);
+$active = 'employees';
+require __DIR__ . '/../../includes/header.php';
+require __DIR__ . '/../../includes/sidebar.php';
 ?>
+<main class="col-12 col-md-9 col-lg-10 p-4">
+<h4 class="fw-bold mb-4"><?= e($title) ?></h4>
 <?php if ($errors): ?>
     <div class="alert alert-danger">
         <ul class="mb-0">
@@ -181,4 +185,5 @@ employee_html_start($title);
         <button type="submit" class="btn btn-primary">Simpan</button>
     </div>
 </form>
-<?php employee_html_end(); ?>
+</main>
+<?php require __DIR__ . '/../../includes/footer.php'; ?>

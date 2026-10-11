@@ -32,24 +32,23 @@ function employee_parse_date(array $post, string $key)
     return ($d && $d->format('Y-m-d') === $raw) ? $raw : false;
 }
 
-/** Cari satu karyawan (tanpa scoping — pemanggil wajib assert_company_access). */
+/** Cari satu karyawan, discope tenant (non-Super Admin hanya baris perusahaan aktif). */
 function employee_find(int $id): ?array
 {
-    $stmt = db()->prepare('SELECT * FROM employees WHERE id = ? LIMIT 1');
-    $stmt->bind_param('i', $id);
+    [$wsql, $wtypes, $wparams] = company_scope('company_id');
+    $stmt = db()->prepare("SELECT * FROM employees WHERE id = ? AND {$wsql} LIMIT 1");
+    $stmt->bind_param('i' . $wtypes, $id, ...$wparams);
     $stmt->execute();
     $row = $stmt->get_result()->fetch_assoc();
     $stmt->close();
     return $row ?: null;
 }
 
-/** Cabang milik perusahaan aktif (Super Admin: seluruh cabang aktif). */
-function employee_branch_options(): array
+/** Cabang aktif milik perusahaan $cid. null (belum ada perusahaan aktif) -> kosong, tidak lintas tenant. */
+function employee_branch_options(?int $cid): array
 {
-    $cid = active_company_id();
     if ($cid === null) {
-        return db()->query('SELECT id, code, name FROM branches WHERE is_active = 1 ORDER BY name')
-            ->fetch_all(MYSQLI_ASSOC);
+        return [];
     }
     $stmt = db()->prepare(
         'SELECT id, code, name FROM branches WHERE company_id = ? AND is_active = 1 ORDER BY name'
@@ -136,8 +135,8 @@ function employee_list(int $page, string $q, string $status): array
     $where_sql = implode(' AND ', $where);
 
     $count_stmt = db()->prepare('SELECT COUNT(*) FROM employees e WHERE ' . $where_sql);
-    foreach ($params as $i => $v) {
-        $count_stmt->bind_param($types[$i], $params[$i]);
+    if ($params) {
+        $count_stmt->bind_param($types, ...$params);
     }
     $count_stmt->execute();
     $total = (int) $count_stmt->get_result()->fetch_row()[0];
@@ -281,8 +280,9 @@ function employee_save(int $id, array $mapped): int
     } else {
         $set_cols = array_merge(['modified_user', 'modified_date'], $cols);
         $vals = array_merge([$user, $now], array_map(fn($c) => $data[$c], $cols), [$id]);
-        $types = 'ss' . implode('', array_map(fn($c) => $colTypes[$c], $cols)) . 'i';
-        $sql = 'UPDATE employees SET ' . implode(', ', array_map(fn($c) => "$c = ?", $set_cols)) . ' WHERE id = ?';
+        $types = 'ss' . implode('', array_map(fn($c) => $colTypes[$c], $cols)) . 'ii';
+        $vals[] = (int) $mapped['company_id'];
+        $sql = 'UPDATE employees SET ' . implode(', ', array_map(fn($c) => "$c = ?", $set_cols)) . ' WHERE id = ? AND company_id = ?';
     }
 
     $stmt = db()->prepare($sql);
