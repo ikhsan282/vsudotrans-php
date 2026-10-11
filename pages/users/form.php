@@ -6,7 +6,14 @@ $db  = db();
 $id  = (int) ($_GET['id'] ?? $_POST['id'] ?? 0);
 $uid = (int) ($_SESSION['user_id'] ?? 0);
 
-$roles     = $db->query('SELECT id, name FROM roles ORDER BY level')->fetch_all(MYSQLI_ASSOC);
+// Level aktor (angka lebih kecil = role lebih tinggi). Default PHP_INT_MAX = tolak bila tidak ditemukan.
+$st = $db->prepare('SELECT r.level FROM users u JOIN roles r ON r.id = u.role_id WHERE u.id = ?');
+$st->bind_param('i', $uid);
+$st->execute();
+$actorLevel = (int) ($st->get_result()->fetch_row()[0] ?? PHP_INT_MAX);
+$st->close();
+
+$roles     = $db->query('SELECT id, name, level FROM roles ORDER BY level')->fetch_all(MYSQLI_ASSOC);
 $superId   = (int) ($db->query("SELECT id FROM roles WHERE name = 'Super Admin' LIMIT 1")->fetch_row()[0] ?? 0);
 $companies = $db->query('SELECT id, code, name FROM companies ORDER BY name')->fetch_all(MYSQLI_ASSOC);
 if (!is_super_admin()) {
@@ -19,7 +26,7 @@ $row = ['username' => '', 'email' => '', 'full_name' => '', 'phone_number' => ''
 
 if ($id > 0) {
     // Kelola user Super Admin hanya boleh oleh Super Admin.
-    $st = $db->prepare('SELECT u.*, r.name AS role_name FROM users u JOIN roles r ON r.id = u.role_id WHERE u.id = ?');
+    $st = $db->prepare('SELECT u.*, r.name AS role_name, r.level AS role_level FROM users u JOIN roles r ON r.id = u.role_id WHERE u.id = ?');
     $st->bind_param('i', $id);
     $st->execute();
     $found = $st->get_result()->fetch_assoc();
@@ -30,6 +37,12 @@ if ($id > 0) {
     }
     assert_company_access($found['company_id'] !== null ? (int) $found['company_id'] : null);
     if ($found['role_name'] === 'Super Admin' && !is_super_admin()) {
+        http_response_code(403);
+        include __DIR__ . '/../../includes/403.php';
+        exit;
+    }
+    // Non-Super hanya boleh mengubah user berlevel lebih rendah, atau dirinya sendiri.
+    if (!is_super_admin() && (int) $found['id'] !== $uid && (int) $found['role_level'] <= $actorLevel) {
         http_response_code(403);
         include __DIR__ . '/../../includes/403.php';
         exit;
@@ -65,6 +78,20 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     }
     if (!in_array($row['role_id'], array_column($roles, 'id'), false)) {
         $errors[] = 'Role tidak valid.';
+    } elseif (!is_super_admin()) {
+        // Server-side: role target harus berlevel sama atau lebih rendah dari aktor (angka >=).
+        foreach ($roles as $r) {
+            if ((int) $r['id'] === $row['role_id'] && (int) $r['level'] < $actorLevel) {
+                $errors[] = 'Anda tidak dapat menetapkan role yang lebih tinggi dari role Anda.';
+            }
+        }
+    }
+    // Ubah password diri sendiri (non-Super) wajib password lama yang benar.
+    if (!is_super_admin() && $id > 0 && $id === $uid && $password !== '') {
+        $cur = (string) ($_POST['current_password'] ?? '');
+        if ($cur === '' || !password_verify($cur, $found['password'])) {
+            $errors[] = 'Password lama tidak sesuai.';
+        }
     }
     if ($company_id > 0 && !in_array($company_id, array_column($companies, 'id'), false)) {
         $errors[] = 'Perusahaan tidak valid.';
@@ -197,7 +224,7 @@ require __DIR__ . '/../../includes/sidebar.php';
                         <select name="role_id" class="form-select" required>
                             <option value="">— pilih role —</option>
                             <?php foreach ($roles as $r): ?>
-                                <?php if ($r['name'] === 'Super Admin' && !is_super_admin()) continue; ?>
+                                <?php if (!is_super_admin() && ((int) $r['level'] < $actorLevel)) continue; ?>
                                 <option value="<?= (int) $r['id'] ?>"<?= (int) $row['role_id'] === (int) $r['id'] ? ' selected' : '' ?>>
                                     <?= e($r['name']) ?>
                                 </option>
@@ -225,6 +252,12 @@ require __DIR__ . '/../../includes/sidebar.php';
                         <label class="form-label">Konfirmasi Password</label>
                         <input type="password" name="password_confirm" class="form-control" autocomplete="new-password">
                     </div>
+                    <?php if ($id > 0 && $id === $uid && !is_super_admin()): ?>
+                    <div class="col-md-6">
+                        <label class="form-label">Password Lama (wajib jika mengubah password sendiri)</label>
+                        <input type="password" name="current_password" class="form-control" autocomplete="current-password">
+                    </div>
+                    <?php endif; ?>
                     <div class="col-12">
                         <div class="form-check">
                             <input class="form-check-input" type="checkbox" name="is_active" id="is_active" value="1"<?= $row['is_active'] ? ' checked' : '' ?>>

@@ -14,7 +14,7 @@ if ($id === (int) ($_SESSION['user_id'] ?? 0)) {
     redirect('pages/users/index.php');
 }
 
-$st = db()->prepare('SELECT u.id, u.username, u.company_id, r.name AS role_name
+$st = db()->prepare('SELECT u.id, u.username, u.company_id, r.name AS role_name, r.level AS role_level
                      FROM users u JOIN roles r ON r.id = u.role_id WHERE u.id = ?');
 $st->bind_param('i', $id);
 $st->execute();
@@ -30,6 +30,20 @@ if ($u['role_name'] === 'Super Admin' && !is_super_admin()) {
     http_response_code(403);
     include __DIR__ . '/../../includes/403.php';
     exit;
+}
+// Non-Super tidak boleh menghapus user berlevel sama atau lebih tinggi.
+if (!is_super_admin()) {
+    $st = db()->prepare('SELECT r.level FROM users u JOIN roles r ON r.id = u.role_id WHERE u.id = ?');
+    $uid = (int) ($_SESSION['user_id'] ?? 0);
+    $st->bind_param('i', $uid);
+    $st->execute();
+    $actorLevel = (int) ($st->get_result()->fetch_row()[0] ?? PHP_INT_MAX);
+    $st->close();
+    if ((int) $u['role_level'] <= $actorLevel) {
+        http_response_code(403);
+        include __DIR__ . '/../../includes/403.php';
+        exit;
+    }
 }
 
 // user_companies, user_permissions ikut terhapus (ON DELETE CASCADE).
