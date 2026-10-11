@@ -4,12 +4,12 @@ require_permission('branches.manage');
 
 $db = db();
 $company_id = active_company_id();
-if ($company_id === null) {
+
+$id = (int) ($_GET['id'] ?? $_POST['id'] ?? 0);
+if ($id === 0 && $company_id === null) {
     flash('error', 'Pilih perusahaan aktif terlebih dahulu.');
     redirect('pages/branches/index.php');
 }
-
-$id = (int) ($_GET['id'] ?? $_POST['id'] ?? 0);
 $row = ['code' => '', 'name' => '', 'note' => '', 'country_code' => '+62', 'phone_number' => '', 'is_active' => 1];
 
 if ($id > 0) {
