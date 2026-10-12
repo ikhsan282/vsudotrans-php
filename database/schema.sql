@@ -1016,4 +1016,49 @@ CREATE TABLE `employee_recognitions` (
   CONSTRAINT `fk_employee_recognitions_employee` FOREIGN KEY (`employee_id`) REFERENCES `employees` (`id`) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
+
+-- ---------------------------------------------------------------------
+-- PERMISSION MODUL BARU
+-- ---------------------------------------------------------------------
+INSERT INTO `permissions` (`name`, `description`, `module`) VALUES
+('masters.view',   'Lihat Referensi umum',   'masters'),
+('masters.manage', 'Kelola Referensi umum', 'masters'),
+('hr.view',   'Lihat Master HR',   'hr'),
+('hr.manage', 'Kelola Master HR', 'hr'),
+('vehicles.view',   'Lihat Kendaraan',   'vehicles'),
+('vehicles.manage', 'Kelola Kendaraan', 'vehicles'),
+('travel.view',   'Lihat Travel & booking',   'travel'),
+('travel.manage', 'Kelola Travel & booking', 'travel'),
+('rental.view',   'Lihat Rental',   'rental'),
+('rental.manage', 'Kelola Rental', 'rental'),
+('invoices.view',   'Lihat Invoice & tiket',   'invoices'),
+('invoices.manage', 'Kelola Invoice & tiket', 'invoices'),
+('dispatch.view',   'Lihat Penjadwalan driver',   'dispatch'),
+('dispatch.manage', 'Kelola Penjadwalan driver', 'dispatch'),
+('finance.view',   'Lihat Keuangan',   'finance'),
+('finance.manage', 'Kelola Keuangan', 'finance'),
+('attendance.view',   'Lihat Absensi',   'attendance'),
+('attendance.manage', 'Kelola Absensi', 'attendance'),
+('payroll.view',   'Lihat Payroll',   'payroll'),
+('payroll.manage', 'Kelola Payroll', 'payroll');
+
+-- Super Admin: semua permission baru
+INSERT INTO `role_permissions` (`role_id`, `permission_id`)
+SELECT 1, p.id FROM `permissions` p
+WHERE p.module IN ('masters','hr','vehicles','travel','rental','invoices','dispatch','finance','attendance','payroll')
+  AND p.id NOT IN (SELECT permission_id FROM `role_permissions` WHERE role_id = 1);
+-- Admin Perusahaan (2): semua permission baru
+INSERT INTO `role_permissions` (`role_id`, `permission_id`)
+SELECT 2, p.id FROM `permissions` p
+WHERE p.module IN ('masters','hr','vehicles','travel','rental','invoices','dispatch','finance','attendance','payroll')
+  AND p.id NOT IN (SELECT permission_id FROM `role_permissions` WHERE role_id = 2);
+-- HRD (3): HR + absensi + payroll + operasi (view & manage)
+INSERT INTO `role_permissions` (`role_id`, `permission_id`)
+SELECT 3, p.id FROM `permissions` p
+WHERE p.name IN ('masters.view','hr.view','hr.manage','attendance.view','attendance.manage','payroll.view','payroll.manage','travel.view','rental.view','vehicles.view');
+-- Staff (4) dan Viewer (5): view modul baru saja
+INSERT INTO `role_permissions` (`role_id`, `permission_id`)
+SELECT r.id, p.id FROM `permissions` p JOIN (SELECT 4 AS id UNION ALL SELECT 5) r
+WHERE p.name LIKE '%.view' AND p.module IN ('masters','hr','vehicles','travel','rental','invoices','dispatch','attendance');
+
 COMMIT;
