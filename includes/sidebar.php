@@ -12,6 +12,8 @@ $menu = [
     ['key' => 'employees', 'label' => 'Karyawan',        'icon' => 'people',          'href' => 'pages/employees/index.php', 'perm' => 'employees.view'],
     ['key' => 'users',     'label' => 'Pengguna',        'icon' => 'person-badge',    'href' => 'pages/users/index.php',     'perm' => 'users.view'],
     ['key' => 'roles',     'label' => 'Role & Hak Akses','icon' => 'shield-lock',     'href' => 'pages/roles/index.php',     'perm' => 'roles.manage'],
+    ['key' => 'masters', 'label' => 'Referensi Umum', 'icon' => 'list-ul', 'href' => 'pages/masters/banks/index.php', 'perm' => 'masters.view'],
+    ['key' => 'hr',      'label' => 'Master HR',      'icon' => 'briefcase', 'href' => 'pages/hr/job_grades/index.php', 'perm' => 'hr.view'],
     ['key' => 'audit',     'label' => 'Audit Trail',     'icon' => 'clock-history',   'href' => 'pages/audit/index.php',     'perm' => 'audit.view'],
 ];
 ?>
