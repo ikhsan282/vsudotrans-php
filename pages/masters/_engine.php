@@ -376,16 +376,16 @@ function master_relation_ok(string $source, int $id, ?int $cid): bool
     $sql = 'SELECT 1 FROM `' . $source . '` WHERE id = ?';
     $types = 'i';
     $params = [$id];
-    if (!is_super_admin()) {
-        if ($source === 'job_titles') {
-            $sql .= ' AND (company_id = ? OR company_id IS NULL)';
-            $types = 'ii';
-            $params[] = (int) $cid;
-        } elseif ($source === 'job_positions' || $source === 'employees') {
-            $sql .= ' AND company_id = ?';
-            $types = 'ii';
-            $params[] = (int) $cid;
-        }
+    // Sumber ber-scope company selalu dibatasi perusahaan aktif, termasuk untuk Super Admin,
+    // agar tidak ada tautan lintas perusahaan dalam konteks perusahaan yang sedang aktif.
+    if ($source === 'job_titles') {
+        $sql .= ' AND (company_id = ? OR company_id IS NULL)';
+        $types = 'ii';
+        $params[] = (int) $cid;
+    } elseif ($source === 'job_positions' || $source === 'employees') {
+        $sql .= ' AND company_id = ?';
+        $types = 'ii';
+        $params[] = (int) $cid;
     }
     $stmt = db()->prepare($sql);
     $stmt->bind_param($types, ...$params);
@@ -822,9 +822,11 @@ function master_save(array $spec, int $id, array $in, ?int $cid): int
     }
 
     if ($id === 0) {
-        $cols_sql = array_merge(['company_id', 'created_user', 'created_date'], $cols);
-        $vals = array_merge([$cid, $user, $now], array_map(fn ($c) => $in[$c], $cols));
-        $types = 'iss' . implode('', array_map(fn ($c) => $types_map[$c], $cols));
+        // Hanya tabel ber-company_id yang punya kolom company_id (referensi global tidak).
+        $has_company = !empty($spec['company']);
+        $cols_sql = array_merge($has_company ? ['company_id'] : [], ['created_user', 'created_date'], $cols);
+        $vals = array_merge($has_company ? [$cid] : [], [$user, $now], array_map(fn ($c) => $in[$c], $cols));
+        $types = ($has_company ? 'i' : '') . 'ss' . implode('', array_map(fn ($c) => $types_map[$c], $cols));
         $sql = "INSERT INTO `{$table}` (`" . implode('`,`', $cols_sql) . '`) VALUES ('
             . implode(',', array_fill(0, count($cols_sql), '?')) . ')';
     } else {
