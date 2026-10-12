@@ -11,8 +11,7 @@ CREATE DATABASE IF NOT EXISTS `vsudotrans` CHARACTER SET utf8mb4 COLLATE utf8mb4
 USE `vsudotrans`;
 
 SET FOREIGN_KEY_CHECKS = 0;
-DROP TABLE IF EXISTS `audit_trails`, `login_attempts`, `user_permissions`, `user_companies`,
-  `employees`, `users`, `roles`, `permissions`, `branches`, `companies`, `groups`;
+DROP TABLE IF EXISTS `audit_trails`, `login_attempts`, `user_permissions`, `user_companies`, `employees`, `users`, `roles`, `permissions`, `branches`, `companies`, `groups`, `role_permissions`, `banks`, `countries`, `provinces`, `cities`, `districts`, `villages`, `unit_measures`, `brand_vehicles`, `category_vehicles`, `model_units`, `type_engines`, `vehicles`, `rutes`, `schedules`, `passengers`, `trip_schedules`, `travel_ticket_bookings`, `rental_car_bookings`, `rental_car_regulation_employees`, `booking_status_history`, `trip_assignments`, `premi_configs`, `booking_cost_lines`, `document_sequences`, `payment_methods`, `invoices`, `invoice_revisions`, `job_grades`, `job_titles`, `job_positions`, `organization_structures`, `employee_recognitions`;
 SET FOREIGN_KEY_CHECKS = 1;
 SET NAMES utf8mb4;
 
@@ -293,5 +292,728 @@ INSERT INTO `user_companies` (`user_id`, `company_id`) VALUES (2, 1), (3, 1), (4
 
 INSERT INTO `employees` (`company_id`, `branch_id`, `code`, `name`, `email`, `phone_number`, `join_date`, `job_title`, `job_position`, `status`) VALUES
 (1, 1, 'EMP-0001', 'Budi Santoso', 'budi@vsudotrans.test', '081200000011', '2024-01-15', 'Staff Operasional', 'Driver', 'aktif');
+
+
+-- =====================================================================
+-- MODUL BARU: Referensi, Vehicles, Travel, Rental, Booking, Invoice, Master HR
+-- =====================================================================
+-- =====================================================================
+-- VSudoTrans: modul baru (Travel, Rental, Vehicles, Referensi, Booking)
+-- Belum digabung ke database/schema.sql. Belum diuji di MySQL.
+-- =====================================================================
+
+-- =====================================================================
+-- WAVE 1: tabel fix (17). Referensi umum, Travel, Rental, Vehicles.
+-- Konvensi sama dengan database/schema.sql. Belum digabung ke master.
+-- =====================================================================
+
+-- ---------- REFERENSI UMUM (tanpa company_id) ----------
+CREATE TABLE `banks` (
+  `id` INT(11) NOT NULL AUTO_INCREMENT,
+  `code` VARCHAR(15) NOT NULL,
+  `name` VARCHAR(255) NOT NULL,
+  `note` VARCHAR(2000) DEFAULT NULL,
+  `created_user` VARCHAR(255) DEFAULT NULL,
+  `created_date` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  `modified_user` VARCHAR(255) DEFAULT NULL,
+  `modified_date` DATETIME DEFAULT NULL,
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uq_banks_code` (`code`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE `countries` (
+  `id` INT(11) NOT NULL AUTO_INCREMENT,
+  `code` VARCHAR(15) NOT NULL,
+  `name` VARCHAR(255) NOT NULL,
+  `note` VARCHAR(2000) DEFAULT NULL,
+  `created_user` VARCHAR(255) DEFAULT NULL,
+  `created_date` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  `modified_user` VARCHAR(255) DEFAULT NULL,
+  `modified_date` DATETIME DEFAULT NULL,
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uq_countries_code` (`code`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE `provinces` (
+  `id` INT(11) NOT NULL AUTO_INCREMENT,
+  `country_id` INT(11) NOT NULL,
+  `code` VARCHAR(15) NOT NULL,
+  `name` VARCHAR(255) NOT NULL,
+  `note` VARCHAR(2000) DEFAULT NULL,
+  `created_user` VARCHAR(255) DEFAULT NULL,
+  `created_date` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  `modified_user` VARCHAR(255) DEFAULT NULL,
+  `modified_date` DATETIME DEFAULT NULL,
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uq_provinces_code` (`code`),
+  KEY `ix_provinces_country` (`country_id`),
+  CONSTRAINT `fk_provinces_country` FOREIGN KEY (`country_id`) REFERENCES `countries` (`id`) ON DELETE RESTRICT
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE `cities` (
+  `id` INT(11) NOT NULL AUTO_INCREMENT,
+  `country_id` INT(11) NOT NULL,
+  `province_id` INT(11) NOT NULL,
+  `code` VARCHAR(15) NOT NULL,
+  `name` VARCHAR(255) NOT NULL,
+  `note` VARCHAR(2000) DEFAULT NULL,
+  `created_user` VARCHAR(255) DEFAULT NULL,
+  `created_date` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  `modified_user` VARCHAR(255) DEFAULT NULL,
+  `modified_date` DATETIME DEFAULT NULL,
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uq_cities_code` (`code`),
+  KEY `ix_cities_province` (`province_id`),
+  CONSTRAINT `fk_cities_country` FOREIGN KEY (`country_id`) REFERENCES `countries` (`id`) ON DELETE RESTRICT,
+  CONSTRAINT `fk_cities_province` FOREIGN KEY (`province_id`) REFERENCES `provinces` (`id`) ON DELETE RESTRICT
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE `districts` (
+  `id` INT(11) NOT NULL AUTO_INCREMENT,
+  `country_id` INT(11) NOT NULL,
+  `province_id` INT(11) NOT NULL,
+  `city_id` INT(11) NOT NULL,
+  `code` VARCHAR(15) NOT NULL,
+  `name` VARCHAR(255) NOT NULL,
+  `note` VARCHAR(2000) DEFAULT NULL,
+  `created_user` VARCHAR(255) DEFAULT NULL,
+  `created_date` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  `modified_user` VARCHAR(255) DEFAULT NULL,
+  `modified_date` DATETIME DEFAULT NULL,
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uq_districts_code` (`code`),
+  KEY `ix_districts_city` (`city_id`),
+  CONSTRAINT `fk_districts_country` FOREIGN KEY (`country_id`) REFERENCES `countries` (`id`) ON DELETE RESTRICT,
+  CONSTRAINT `fk_districts_province` FOREIGN KEY (`province_id`) REFERENCES `provinces` (`id`) ON DELETE RESTRICT,
+  CONSTRAINT `fk_districts_city` FOREIGN KEY (`city_id`) REFERENCES `cities` (`id`) ON DELETE RESTRICT
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE `villages` (
+  `id` INT(11) NOT NULL AUTO_INCREMENT,
+  `country_id` INT(11) NOT NULL,
+  `province_id` INT(11) NOT NULL,
+  `city_id` INT(11) NOT NULL,
+  `district_id` INT(11) NOT NULL,
+  `code` VARCHAR(15) NOT NULL,
+  `name` VARCHAR(255) NOT NULL,
+  `postal_code` VARCHAR(10) DEFAULT NULL,
+  `note` VARCHAR(2000) DEFAULT NULL,
+  `created_user` VARCHAR(255) DEFAULT NULL,
+  `created_date` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  `modified_user` VARCHAR(255) DEFAULT NULL,
+  `modified_date` DATETIME DEFAULT NULL,
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uq_villages_code` (`code`),
+  KEY `ix_villages_district` (`district_id`),
+  CONSTRAINT `fk_villages_country` FOREIGN KEY (`country_id`) REFERENCES `countries` (`id`) ON DELETE RESTRICT,
+  CONSTRAINT `fk_villages_province` FOREIGN KEY (`province_id`) REFERENCES `provinces` (`id`) ON DELETE RESTRICT,
+  CONSTRAINT `fk_villages_city` FOREIGN KEY (`city_id`) REFERENCES `cities` (`id`) ON DELETE RESTRICT,
+  CONSTRAINT `fk_villages_district` FOREIGN KEY (`district_id`) REFERENCES `districts` (`id`) ON DELETE RESTRICT
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE `unit_measures` (
+  `id` INT(11) NOT NULL AUTO_INCREMENT,
+  `code` VARCHAR(15) NOT NULL,
+  `name` VARCHAR(255) NOT NULL,
+  `format` VARCHAR(100) DEFAULT NULL,
+  `note` VARCHAR(2000) DEFAULT NULL,
+  `created_user` VARCHAR(255) DEFAULT NULL,
+  `created_date` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  `modified_user` VARCHAR(255) DEFAULT NULL,
+  `modified_date` DATETIME DEFAULT NULL,
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uq_unit_measures_code` (`code`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- ---------- VEHICLES (dengan company_id) ----------
+CREATE TABLE `brand_vehicles` (
+  `id` INT(11) NOT NULL AUTO_INCREMENT,
+  `company_id` INT(11) NOT NULL,
+  `code` VARCHAR(15) NOT NULL,
+  `name` VARCHAR(255) NOT NULL,
+  `note` VARCHAR(2000) DEFAULT NULL,
+  `is_active` TINYINT(1) NOT NULL DEFAULT 1,
+  `created_user` VARCHAR(255) DEFAULT NULL,
+  `created_date` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  `modified_user` VARCHAR(255) DEFAULT NULL,
+  `modified_date` DATETIME DEFAULT NULL,
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uq_brand_vehicles_code` (`company_id`, `code`),
+  KEY `ix_brand_vehicles_company` (`company_id`),
+  CONSTRAINT `fk_brand_vehicles_company` FOREIGN KEY (`company_id`) REFERENCES `companies` (`id`) ON DELETE RESTRICT
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE `category_vehicles` (
+  `id` INT(11) NOT NULL AUTO_INCREMENT,
+  `company_id` INT(11) NOT NULL,
+  `code` VARCHAR(15) NOT NULL,
+  `name` VARCHAR(255) NOT NULL,
+  `note` VARCHAR(2000) DEFAULT NULL,
+  `is_active` TINYINT(1) NOT NULL DEFAULT 1,
+  `created_user` VARCHAR(255) DEFAULT NULL,
+  `created_date` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  `modified_user` VARCHAR(255) DEFAULT NULL,
+  `modified_date` DATETIME DEFAULT NULL,
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uq_category_vehicles_code` (`company_id`, `code`),
+  KEY `ix_category_vehicles_company` (`company_id`),
+  CONSTRAINT `fk_category_vehicles_company` FOREIGN KEY (`company_id`) REFERENCES `companies` (`id`) ON DELETE RESTRICT
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE `model_units` (
+  `id` INT(11) NOT NULL AUTO_INCREMENT,
+  `company_id` INT(11) NOT NULL,
+  `brand_id` INT(11) NOT NULL,
+  `code` VARCHAR(15) NOT NULL,
+  `name` VARCHAR(255) NOT NULL,
+  `note` VARCHAR(2000) DEFAULT NULL,
+  `is_active` TINYINT(1) NOT NULL DEFAULT 1,
+  `created_user` VARCHAR(255) DEFAULT NULL,
+  `created_date` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  `modified_user` VARCHAR(255) DEFAULT NULL,
+  `modified_date` DATETIME DEFAULT NULL,
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uq_model_units_code` (`company_id`, `code`),
+  KEY `ix_model_units_company` (`company_id`),
+  KEY `ix_model_units_brand` (`brand_id`),
+  CONSTRAINT `fk_model_units_company` FOREIGN KEY (`company_id`) REFERENCES `companies` (`id`) ON DELETE RESTRICT,
+  CONSTRAINT `fk_model_units_brand` FOREIGN KEY (`brand_id`) REFERENCES `brand_vehicles` (`id`) ON DELETE RESTRICT
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE `type_engines` (
+  `id` INT(11) NOT NULL AUTO_INCREMENT,
+  `company_id` INT(11) NOT NULL,
+  `code` VARCHAR(15) NOT NULL,
+  `name` VARCHAR(255) NOT NULL,
+  `note` VARCHAR(2000) DEFAULT NULL,
+  `is_active` TINYINT(1) NOT NULL DEFAULT 1,
+  `created_user` VARCHAR(255) DEFAULT NULL,
+  `created_date` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  `modified_user` VARCHAR(255) DEFAULT NULL,
+  `modified_date` DATETIME DEFAULT NULL,
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uq_type_engines_code` (`company_id`, `code`),
+  KEY `ix_type_engines_company` (`company_id`),
+  CONSTRAINT `fk_type_engines_company` FOREIGN KEY (`company_id`) REFERENCES `companies` (`id`) ON DELETE RESTRICT
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE `vehicles` (
+  `id` INT(11) NOT NULL AUTO_INCREMENT,
+  `company_id` INT(11) NOT NULL,
+  `brand_id` INT(11) NOT NULL,
+  `model_unit_id` INT(11) NOT NULL,
+  `type_engine_id` INT(11) NOT NULL,
+  `category_vehicle_id` INT(11) NOT NULL,
+  `frame_number` VARCHAR(50) NOT NULL,
+  `machine_number` VARCHAR(50) NOT NULL,
+  `seat` INT(11) NOT NULL DEFAULT 0,
+  `production_year` INT(11) NOT NULL,
+  `vehicle_color` VARCHAR(50) NOT NULL,
+  `vehicle_number` VARCHAR(15) NOT NULL,
+  `bpkb_number` VARCHAR(50) DEFAULT NULL,
+  `tax_due` DATE DEFAULT NULL,
+  `stnk_due` DATE DEFAULT NULL,
+  `kir_due` DATE DEFAULT NULL,
+  `ownership` VARCHAR(30) NOT NULL,
+  `note` VARCHAR(2000) DEFAULT NULL,
+  `is_active` TINYINT(1) NOT NULL DEFAULT 1,
+  `created_user` VARCHAR(255) DEFAULT NULL,
+  `created_date` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  `modified_user` VARCHAR(255) DEFAULT NULL,
+  `modified_date` DATETIME DEFAULT NULL,
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uq_vehicles_number` (`company_id`, `vehicle_number`),
+  UNIQUE KEY `uq_vehicles_frame` (`company_id`, `frame_number`),
+  UNIQUE KEY `uq_vehicles_machine` (`company_id`, `machine_number`),
+  KEY `ix_vehicles_company` (`company_id`),
+  KEY `ix_vehicles_category` (`category_vehicle_id`),
+  CONSTRAINT `fk_vehicles_company` FOREIGN KEY (`company_id`) REFERENCES `companies` (`id`) ON DELETE RESTRICT,
+  CONSTRAINT `fk_vehicles_brand` FOREIGN KEY (`brand_id`) REFERENCES `brand_vehicles` (`id`) ON DELETE RESTRICT,
+  CONSTRAINT `fk_vehicles_model` FOREIGN KEY (`model_unit_id`) REFERENCES `model_units` (`id`) ON DELETE RESTRICT,
+  CONSTRAINT `fk_vehicles_engine` FOREIGN KEY (`type_engine_id`) REFERENCES `type_engines` (`id`) ON DELETE RESTRICT,
+  CONSTRAINT `fk_vehicles_category` FOREIGN KEY (`category_vehicle_id`) REFERENCES `category_vehicles` (`id`) ON DELETE RESTRICT
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- ---------- TRAVEL (dengan company_id) ----------
+CREATE TABLE `rutes` (
+  `id` INT(11) NOT NULL AUTO_INCREMENT,
+  `company_id` INT(11) NOT NULL,
+  `code` VARCHAR(15) NOT NULL,
+  `name` VARCHAR(255) NOT NULL,
+  `pickup_point_city_id` INT(11) NOT NULL,
+  `delivery_point_city_id` INT(11) NOT NULL,
+  `category_vehicle_id` INT(11) NOT NULL,
+  `min_price` DECIMAL(18,2) NOT NULL DEFAULT 0,
+  `price` DECIMAL(18,2) NOT NULL DEFAULT 0,
+  `max_price` DECIMAL(18,2) NOT NULL DEFAULT 0,
+  `start_capacity_seat` INT(11) NOT NULL DEFAULT 0,
+  `end_capacity_seat` INT(11) NOT NULL DEFAULT 0,
+  `note` VARCHAR(2000) DEFAULT NULL,
+  `is_active` TINYINT(1) NOT NULL DEFAULT 1,
+  `created_user` VARCHAR(255) DEFAULT NULL,
+  `created_date` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  `modified_user` VARCHAR(255) DEFAULT NULL,
+  `modified_date` DATETIME DEFAULT NULL,
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uq_rutes_code` (`company_id`, `code`),
+  KEY `ix_rutes_company` (`company_id`),
+  KEY `ix_rutes_pickup` (`pickup_point_city_id`),
+  KEY `ix_rutes_delivery` (`delivery_point_city_id`),
+  KEY `ix_rutes_category_vehicle` (`category_vehicle_id`),
+  CONSTRAINT `fk_rutes_company` FOREIGN KEY (`company_id`) REFERENCES `companies` (`id`) ON DELETE RESTRICT,
+  CONSTRAINT `fk_rutes_pickup_city` FOREIGN KEY (`pickup_point_city_id`) REFERENCES `cities` (`id`) ON DELETE RESTRICT,
+  CONSTRAINT `fk_rutes_delivery_city` FOREIGN KEY (`delivery_point_city_id`) REFERENCES `cities` (`id`) ON DELETE RESTRICT,
+  CONSTRAINT `fk_rutes_category_vehicle` FOREIGN KEY (`category_vehicle_id`) REFERENCES `category_vehicles` (`id`) ON DELETE RESTRICT
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE `schedules` (
+  `id` INT(11) NOT NULL AUTO_INCREMENT,
+  `company_id` INT(11) NOT NULL,
+  `start` TIME NOT NULL,
+  `end` TIME NOT NULL,
+  `start_break` TIME DEFAULT NULL,
+  `end_break` TIME DEFAULT NULL,
+  `duration` DECIMAL(10,2) DEFAULT NULL,
+  `total_duration` DECIMAL(10,2) DEFAULT NULL,
+  `created_user` VARCHAR(255) DEFAULT NULL,
+  `created_date` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  `modified_user` VARCHAR(255) DEFAULT NULL,
+  `modified_date` DATETIME DEFAULT NULL,
+  PRIMARY KEY (`id`),
+  KEY `ix_schedules_company` (`company_id`),
+  CONSTRAINT `fk_schedules_company` FOREIGN KEY (`company_id`) REFERENCES `companies` (`id`) ON DELETE RESTRICT
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE `passengers` (
+  `id` INT(11) NOT NULL AUTO_INCREMENT,
+  `company_id` INT(11) NOT NULL,
+  `code` VARCHAR(15) NOT NULL,
+  `name` VARCHAR(255) NOT NULL,
+  `country_code` VARCHAR(10) NOT NULL DEFAULT '+62',
+  `phone_number` VARCHAR(20) DEFAULT NULL,
+  `email` VARCHAR(100) DEFAULT NULL,
+  `note` VARCHAR(2000) DEFAULT NULL,
+  `created_user` VARCHAR(255) DEFAULT NULL,
+  `created_date` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  `modified_user` VARCHAR(255) DEFAULT NULL,
+  `modified_date` DATETIME DEFAULT NULL,
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uq_passengers_code` (`company_id`, `code`),
+  KEY `ix_passengers_company` (`company_id`),
+  CONSTRAINT `fk_passengers_company` FOREIGN KEY (`company_id`) REFERENCES `companies` (`id`) ON DELETE RESTRICT
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- ---------- TRAVEL (lanjutan) ----------
+CREATE TABLE `trip_schedules` (
+  `id` INT(11) NOT NULL AUTO_INCREMENT,
+  `company_id` INT(11) NOT NULL,
+  `document_number` VARCHAR(40) NOT NULL,
+  `employee_id` INT(11) NOT NULL,
+  `vehicle_id` INT(11) NOT NULL,
+  `date` DATE NOT NULL,
+  `start_time` TIME NOT NULL,
+  `end_time` TIME NOT NULL,
+  `total_duration` DECIMAL(10,2) DEFAULT NULL,
+  `pickup_point_province_id` INT(11) DEFAULT NULL,
+  `pickup_point_city_id` INT(11) DEFAULT NULL,
+  `pickup_point_district_id` INT(11) NOT NULL,
+  `delivery_point_province_id` INT(11) DEFAULT NULL,
+  `delivery_point_city_id` INT(11) DEFAULT NULL,
+  `delivery_point_district_id` INT(11) NOT NULL,
+  `line_number_pickup` INT(11) NOT NULL DEFAULT 0,
+  `line_number_delivery` INT(11) NOT NULL DEFAULT 0,
+  `note` VARCHAR(2000) DEFAULT NULL,
+  `created_user` VARCHAR(255) DEFAULT NULL,
+  `created_date` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  `modified_user` VARCHAR(255) DEFAULT NULL,
+  `modified_date` DATETIME DEFAULT NULL,
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uq_trip_schedules_doc` (`company_id`, `document_number`),
+  KEY `ix_trip_schedules_company` (`company_id`),
+  KEY `ix_trip_schedules_date` (`date`),
+  KEY `ix_trip_schedules_employee` (`employee_id`),
+  KEY `ix_trip_schedules_vehicle` (`vehicle_id`),
+  CONSTRAINT `fk_trip_schedules_company` FOREIGN KEY (`company_id`) REFERENCES `companies` (`id`) ON DELETE RESTRICT,
+  CONSTRAINT `fk_trip_schedules_employee` FOREIGN KEY (`employee_id`) REFERENCES `employees` (`id`) ON DELETE RESTRICT,
+  CONSTRAINT `fk_trip_schedules_vehicle` FOREIGN KEY (`vehicle_id`) REFERENCES `vehicles` (`id`) ON DELETE RESTRICT
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE `travel_ticket_bookings` (
+  `id` INT(11) NOT NULL AUTO_INCREMENT,
+  `company_id` INT(11) NOT NULL,
+  `branch_id` INT(11) NOT NULL,
+  `document_number` VARCHAR(40) NOT NULL,
+  `date` DATE NOT NULL,
+  `time` TIME NOT NULL,
+  `pickup_address` VARCHAR(2000) DEFAULT NULL,
+  `pickup_point_province_id` INT(11) DEFAULT NULL,
+  `pickup_point_city_id` INT(11) DEFAULT NULL,
+  `pickup_point_district_id` INT(11) NOT NULL,
+  `delivery_address` VARCHAR(2000) DEFAULT NULL,
+  `delivery_point_province_id` INT(11) DEFAULT NULL,
+  `delivery_point_city_id` INT(11) DEFAULT NULL,
+  `delivery_point_district_id` INT(11) NOT NULL,
+  `total_price` DECIMAL(18,2) NOT NULL DEFAULT 0,
+  `total_operational_cost` DECIMAL(18,2) NOT NULL DEFAULT 0,
+  `total_payment` DECIMAL(18,2) NOT NULL DEFAULT 0,
+  `category_vehicle_id` INT(11) DEFAULT NULL,
+  `vehicle_id` INT(11) DEFAULT NULL,
+  `passenger_id` INT(11) NOT NULL,
+  `note` VARCHAR(2000) DEFAULT NULL,
+  `created_user` VARCHAR(255) DEFAULT NULL,
+  `created_date` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  `modified_user` VARCHAR(255) DEFAULT NULL,
+  `modified_date` DATETIME DEFAULT NULL,
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uq_travel_bookings_doc` (`company_id`, `document_number`),
+  KEY `ix_travel_bookings_company` (`company_id`),
+  KEY `ix_travel_bookings_date` (`date`),
+  KEY `ix_travel_bookings_branch` (`branch_id`),
+  KEY `ix_travel_bookings_passenger` (`passenger_id`),
+  CONSTRAINT `fk_travel_bookings_company` FOREIGN KEY (`company_id`) REFERENCES `companies` (`id`) ON DELETE RESTRICT,
+  CONSTRAINT `fk_travel_bookings_branch` FOREIGN KEY (`branch_id`) REFERENCES `branches` (`id`) ON DELETE RESTRICT,
+  CONSTRAINT `fk_travel_bookings_passenger` FOREIGN KEY (`passenger_id`) REFERENCES `passengers` (`id`) ON DELETE RESTRICT,
+  CONSTRAINT `fk_travel_bookings_category_vehicle` FOREIGN KEY (`category_vehicle_id`) REFERENCES `category_vehicles` (`id`) ON DELETE SET NULL,
+  CONSTRAINT `fk_travel_bookings_vehicle` FOREIGN KEY (`vehicle_id`) REFERENCES `vehicles` (`id`) ON DELETE SET NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- ---------- RENTAL (dengan company_id) ----------
+CREATE TABLE `rental_car_bookings` (
+  `id` INT(11) NOT NULL AUTO_INCREMENT,
+  `company_id` INT(11) NOT NULL,
+  `branch_id` INT(11) NOT NULL,
+  `document_number` VARCHAR(40) NOT NULL,
+  `date` DATE NOT NULL,
+  `start_date` DATE NOT NULL,
+  `end_date` DATE NOT NULL,
+  `trip` DOUBLE NOT NULL DEFAULT 0,
+  `time` TIME NOT NULL,
+  `pickup_address` VARCHAR(2000) DEFAULT NULL,
+  `pickup_point_province_id` INT(11) DEFAULT NULL,
+  `pickup_point_city_id` INT(11) DEFAULT NULL,
+  `pickup_point_district_id` INT(11) NOT NULL,
+  `delivery_address` VARCHAR(2000) DEFAULT NULL,
+  `delivery_point_province_id` INT(11) DEFAULT NULL,
+  `delivery_point_city_id` INT(11) DEFAULT NULL,
+  `delivery_point_district_id` INT(11) NOT NULL,
+  `total_price` DECIMAL(18,2) NOT NULL DEFAULT 0,
+  `bbm` DECIMAL(18,2) NOT NULL DEFAULT 0,
+  `total_operational_cost` DECIMAL(18,2) NOT NULL DEFAULT 0,
+  `total_payment` DECIMAL(18,2) NOT NULL DEFAULT 0,
+  `category_vehicle_id` INT(11) DEFAULT NULL,
+  `vehicle_id` INT(11) DEFAULT NULL,
+  `passenger_id` INT(11) NOT NULL,
+  `note` VARCHAR(2000) DEFAULT NULL,
+  `created_user` VARCHAR(255) DEFAULT NULL,
+  `created_date` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  `modified_user` VARCHAR(255) DEFAULT NULL,
+  `modified_date` DATETIME DEFAULT NULL,
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uq_rental_bookings_doc` (`company_id`, `document_number`),
+  KEY `ix_rental_bookings_company` (`company_id`),
+  KEY `ix_rental_bookings_date` (`date`),
+  KEY `ix_rental_bookings_branch` (`branch_id`),
+  KEY `ix_rental_bookings_passenger` (`passenger_id`),
+  CONSTRAINT `fk_rental_bookings_company` FOREIGN KEY (`company_id`) REFERENCES `companies` (`id`) ON DELETE RESTRICT,
+  CONSTRAINT `fk_rental_bookings_branch` FOREIGN KEY (`branch_id`) REFERENCES `branches` (`id`) ON DELETE RESTRICT,
+  CONSTRAINT `fk_rental_bookings_passenger` FOREIGN KEY (`passenger_id`) REFERENCES `passengers` (`id`) ON DELETE RESTRICT,
+  CONSTRAINT `fk_rental_bookings_category_vehicle` FOREIGN KEY (`category_vehicle_id`) REFERENCES `category_vehicles` (`id`) ON DELETE SET NULL,
+  CONSTRAINT `fk_rental_bookings_vehicle` FOREIGN KEY (`vehicle_id`) REFERENCES `vehicles` (`id`) ON DELETE SET NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE `rental_car_regulation_employees` (
+  `id` INT(11) NOT NULL AUTO_INCREMENT,
+  `company_id` INT(11) NOT NULL,
+  `category_vehicle_id` INT(11) NOT NULL,
+  `trip` INT(11) NOT NULL DEFAULT 0,
+  `start_date` DATE NOT NULL,
+  `end_date` DATE NOT NULL,
+  `type` VARCHAR(40) NOT NULL,
+  `amount` DECIMAL(18,2) NOT NULL DEFAULT 0,
+  `note` VARCHAR(2000) DEFAULT NULL,
+  `created_user` VARCHAR(255) DEFAULT NULL,
+  `created_date` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  `modified_user` VARCHAR(255) DEFAULT NULL,
+  `modified_date` DATETIME DEFAULT NULL,
+  PRIMARY KEY (`id`),
+  KEY `ix_rental_regulation_company` (`company_id`),
+  KEY `ix_rental_regulation_category_vehicle` (`category_vehicle_id`),
+  CONSTRAINT `fk_rental_regulation_company` FOREIGN KEY (`company_id`) REFERENCES `companies` (`id`) ON DELETE RESTRICT,
+  CONSTRAINT `fk_rental_regulation_category_vehicle` FOREIGN KEY (`category_vehicle_id`) REFERENCES `category_vehicles` (`id`) ON DELETE RESTRICT
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- =====================================================================
+-- WAVE 2: lapisan booking (status, penugasan, premi, biaya)
+-- Menyertai travel_ticket_bookings & rental_car_bookings (lihat file revisi).
+-- booking_type = 'travel' | 'rental'
+-- =====================================================================
+
+CREATE TABLE `booking_status_history` (
+  `id` INT(11) NOT NULL AUTO_INCREMENT,
+  `company_id` INT(11) NOT NULL,
+  `booking_type` VARCHAR(10) NOT NULL,
+  `booking_id` INT(11) NOT NULL,
+  `from_status` VARCHAR(30) DEFAULT NULL,
+  `to_status` VARCHAR(30) NOT NULL,
+  `reason` VARCHAR(2000) DEFAULT NULL,
+  `changed_by` VARCHAR(255) DEFAULT NULL,
+  `changed_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (`id`),
+  KEY `ix_bsh_booking` (`booking_type`, `booking_id`),
+  KEY `ix_bsh_company` (`company_id`),
+  CONSTRAINT `fk_bsh_company` FOREIGN KEY (`company_id`) REFERENCES `companies` (`id`) ON DELETE RESTRICT
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE `trip_assignments` (
+  `id` INT(11) NOT NULL AUTO_INCREMENT,
+  `company_id` INT(11) NOT NULL,
+  `booking_type` VARCHAR(10) NOT NULL,
+  `booking_id` INT(11) NOT NULL,
+  `employee_id` INT(11) NOT NULL,
+  `vehicle_id` INT(11) DEFAULT NULL,
+  `started_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  `ended_at` DATETIME DEFAULT NULL,
+  `reason` VARCHAR(2000) DEFAULT NULL,
+  `created_user` VARCHAR(255) DEFAULT NULL,
+  `created_date` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  `modified_user` VARCHAR(255) DEFAULT NULL,
+  `modified_date` DATETIME DEFAULT NULL,
+  PRIMARY KEY (`id`),
+  KEY `ix_ta_booking` (`booking_type`, `booking_id`),
+  KEY `ix_ta_employee` (`employee_id`),
+  KEY `ix_ta_company` (`company_id`),
+  CONSTRAINT `fk_ta_company` FOREIGN KEY (`company_id`) REFERENCES `companies` (`id`) ON DELETE RESTRICT,
+  CONSTRAINT `fk_ta_employee` FOREIGN KEY (`employee_id`) REFERENCES `employees` (`id`) ON DELETE RESTRICT,
+  CONSTRAINT `fk_ta_vehicle` FOREIGN KEY (`vehicle_id`) REFERENCES `vehicles` (`id`) ON DELETE SET NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE `premi_configs` (
+  `id` INT(11) NOT NULL AUTO_INCREMENT,
+  `company_id` INT(11) NOT NULL,
+  `category_vehicle_id` INT(11) NOT NULL,
+  `cost_type` VARCHAR(20) NOT NULL,
+  `premi_type` VARCHAR(10) NOT NULL DEFAULT 'nominal' COMMENT 'nominal|persen',
+  `premi_value` DECIMAL(18,2) NOT NULL DEFAULT 0,
+  `note` VARCHAR(2000) DEFAULT NULL,
+  `is_active` TINYINT(1) NOT NULL DEFAULT 1,
+  `created_user` VARCHAR(255) DEFAULT NULL,
+  `created_date` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  `modified_user` VARCHAR(255) DEFAULT NULL,
+  `modified_date` DATETIME DEFAULT NULL,
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uq_premi_configs_key` (`company_id`, `category_vehicle_id`, `cost_type`),
+  KEY `ix_premi_configs_company` (`company_id`),
+  KEY `ix_premi_configs_category` (`category_vehicle_id`),
+  CONSTRAINT `fk_premi_configs_company` FOREIGN KEY (`company_id`) REFERENCES `companies` (`id`) ON DELETE RESTRICT,
+  CONSTRAINT `fk_premi_configs_category` FOREIGN KEY (`category_vehicle_id`) REFERENCES `category_vehicles` (`id`) ON DELETE RESTRICT
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE `booking_cost_lines` (
+  `id` INT(11) NOT NULL AUTO_INCREMENT,
+  `company_id` INT(11) NOT NULL,
+  `booking_type` VARCHAR(10) NOT NULL,
+  `booking_id` INT(11) NOT NULL,
+  `cost_type` VARCHAR(20) NOT NULL COMMENT 'a|b|c|bbm|...',
+  `description` VARCHAR(255) DEFAULT NULL,
+  `amount` DECIMAL(18,2) NOT NULL DEFAULT 0,
+  `employee_id` INT(11) DEFAULT NULL COMMENT 'biaya dipetakan ke karyawan (driver/pengawas); NULL = tanpa premi',
+  `premi_type` VARCHAR(10) NOT NULL DEFAULT 'nominal' COMMENT 'nominal|persen',
+  `premi_value` DECIMAL(18,2) NOT NULL DEFAULT 0,
+  `premi_amount` DECIMAL(18,2) NOT NULL DEFAULT 0,
+  `note` VARCHAR(2000) DEFAULT NULL,
+  `created_user` VARCHAR(255) DEFAULT NULL,
+  `created_date` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  `modified_user` VARCHAR(255) DEFAULT NULL,
+  `modified_date` DATETIME DEFAULT NULL,
+  PRIMARY KEY (`id`),
+  KEY `ix_bcl_booking` (`booking_type`, `booking_id`),
+  KEY `ix_bcl_employee` (`employee_id`),
+  KEY `ix_bcl_company` (`company_id`),
+  CONSTRAINT `fk_bcl_company` FOREIGN KEY (`company_id`) REFERENCES `companies` (`id`) ON DELETE RESTRICT,
+  CONSTRAINT `fk_bcl_employee` FOREIGN KEY (`employee_id`) REFERENCES `employees` (`id`) ON DELETE SET NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+-- ---------- INVOICE & DOKUMEN ----------
+CREATE TABLE `document_sequences` (
+  `id` INT(11) NOT NULL AUTO_INCREMENT,
+  `company_id` INT(11) NOT NULL,
+  `doc_type` VARCHAR(30) NOT NULL,
+  `last_no` INT(11) NOT NULL DEFAULT 0,
+  `created_user` VARCHAR(255) DEFAULT NULL,
+  `created_date` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  `modified_user` VARCHAR(255) DEFAULT NULL,
+  `modified_date` DATETIME DEFAULT NULL,
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uq_document_sequences_key` (`company_id`, `doc_type`),
+  CONSTRAINT `fk_document_sequences_company` FOREIGN KEY (`company_id`) REFERENCES `companies` (`id`) ON DELETE RESTRICT
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE `payment_methods` (
+  `id` INT(11) NOT NULL AUTO_INCREMENT,
+  `company_id` INT(11) DEFAULT NULL COMMENT 'NULL = berlaku semua perusahaan',
+  `code` VARCHAR(15) NOT NULL,
+  `name` VARCHAR(255) NOT NULL,
+  `account_name` VARCHAR(255) DEFAULT NULL,
+  `account_number` VARCHAR(50) DEFAULT NULL,
+  `qr_image` VARCHAR(255) DEFAULT NULL,
+  `instructions` VARCHAR(2000) DEFAULT NULL,
+  `sort_order` INT(11) NOT NULL DEFAULT 0,
+  `auto_verify` TINYINT(1) NOT NULL DEFAULT 0,
+  `is_active` TINYINT(1) NOT NULL DEFAULT 1,
+  `note` VARCHAR(2000) DEFAULT NULL,
+  `created_user` VARCHAR(255) DEFAULT NULL,
+  `created_date` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  `modified_user` VARCHAR(255) DEFAULT NULL,
+  `modified_date` DATETIME DEFAULT NULL,
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uq_payment_methods_code` (`company_id`, `code`),
+  KEY `ix_payment_methods_company` (`company_id`),
+  CONSTRAINT `fk_payment_methods_company` FOREIGN KEY (`company_id`) REFERENCES `companies` (`id`) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE `invoices` (
+  `id` INT(11) NOT NULL AUTO_INCREMENT,
+  `company_id` INT(11) NOT NULL,
+  `branch_id` INT(11) DEFAULT NULL,
+  `booking_type` VARCHAR(10) NOT NULL COMMENT 'travel|rental',
+  `booking_id` INT(11) NOT NULL,
+  `invoice_no` VARCHAR(40) NOT NULL COMMENT 'nomor urut dari document_sequences',
+  `document_number` VARCHAR(40) NOT NULL COMMENT 'nomor resi acak, dipakai link pelanggan',
+  `status` VARCHAR(20) NOT NULL DEFAULT 'issued' COMMENT 'issued|cancelled',
+  `subtotal` DECIMAL(18,2) NOT NULL DEFAULT 0,
+  `tax_percent` DECIMAL(5,2) NOT NULL DEFAULT 0,
+  `tax_amount` DECIMAL(18,2) NOT NULL DEFAULT 0,
+  `total` DECIMAL(18,2) NOT NULL DEFAULT 0,
+  `payment_method_id` INT(11) DEFAULT NULL,
+  `issued_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  `note` VARCHAR(2000) DEFAULT NULL,
+  `created_user` VARCHAR(255) DEFAULT NULL,
+  `created_date` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  `modified_user` VARCHAR(255) DEFAULT NULL,
+  `modified_date` DATETIME DEFAULT NULL,
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uq_invoices_no` (`company_id`, `invoice_no`),
+  UNIQUE KEY `uq_invoices_document_number` (`document_number`),
+  KEY `ix_invoices_booking` (`booking_type`, `booking_id`),
+  KEY `ix_invoices_company` (`company_id`),
+  KEY `ix_invoices_status` (`status`),
+  CONSTRAINT `fk_invoices_company` FOREIGN KEY (`company_id`) REFERENCES `companies` (`id`) ON DELETE RESTRICT,
+  CONSTRAINT `fk_invoices_payment_method` FOREIGN KEY (`payment_method_id`) REFERENCES `payment_methods` (`id`) ON DELETE SET NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE `invoice_revisions` (
+  `id` INT(11) NOT NULL AUTO_INCREMENT,
+  `invoice_id` INT(11) NOT NULL,
+  `revision_no` INT(11) NOT NULL DEFAULT 1,
+  `snapshot_json` LONGTEXT NOT NULL COMMENT 'isi invoice sebelum perubahan',
+  `reason` VARCHAR(2000) DEFAULT NULL,
+  `changed_by` VARCHAR(255) DEFAULT NULL,
+  `changed_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (`id`),
+  KEY `ix_invoice_revisions_invoice` (`invoice_id`),
+  CONSTRAINT `fk_invoice_revisions_invoice` FOREIGN KEY (`invoice_id`) REFERENCES `invoices` (`id`) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+-- ---------- MASTER HR ----------
+CREATE TABLE `job_grades` (
+  `id` INT(11) NOT NULL AUTO_INCREMENT,
+  `company_id` INT(11) NOT NULL,
+  `code` VARCHAR(15) NOT NULL,
+  `name` VARCHAR(255) NOT NULL,
+  `from_amount` DECIMAL(18,2) NOT NULL DEFAULT 0,
+  `mid_amount` DECIMAL(18,2) NOT NULL DEFAULT 0,
+  `to_amount` DECIMAL(18,2) NOT NULL DEFAULT 0,
+  `note` VARCHAR(2000) DEFAULT NULL,
+  `is_active` TINYINT(1) NOT NULL DEFAULT 1,
+  `created_user` VARCHAR(255) DEFAULT NULL,
+  `created_date` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  `modified_user` VARCHAR(255) DEFAULT NULL,
+  `modified_date` DATETIME DEFAULT NULL,
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uq_job_grades_code` (`company_id`, `code`),
+  KEY `ix_job_grades_company` (`company_id`),
+  CONSTRAINT `fk_job_grades_company` FOREIGN KEY (`company_id`) REFERENCES `companies` (`id`) ON DELETE RESTRICT
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE `job_titles` (
+  `id` INT(11) NOT NULL AUTO_INCREMENT,
+  `company_id` INT(11) DEFAULT NULL COMMENT 'NULL = berlaku semua perusahaan',
+  `code` VARCHAR(15) NOT NULL,
+  `name` VARCHAR(255) NOT NULL,
+  `level` INT(11) NOT NULL DEFAULT 0,
+  `note` VARCHAR(2000) DEFAULT NULL,
+  `is_active` TINYINT(1) NOT NULL DEFAULT 1,
+  `created_user` VARCHAR(255) DEFAULT NULL,
+  `created_date` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  `modified_user` VARCHAR(255) DEFAULT NULL,
+  `modified_date` DATETIME DEFAULT NULL,
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uq_job_titles_code` (`company_id`, `code`),
+  KEY `ix_job_titles_company` (`company_id`),
+  CONSTRAINT `fk_job_titles_company` FOREIGN KEY (`company_id`) REFERENCES `companies` (`id`) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE `job_positions` (
+  `id` INT(11) NOT NULL AUTO_INCREMENT,
+  `company_id` INT(11) NOT NULL,
+  `job_title_id` INT(11) NOT NULL,
+  `parent_id` INT(11) DEFAULT NULL,
+  `code` VARCHAR(15) NOT NULL,
+  `name` VARCHAR(255) NOT NULL,
+  `level` INT(11) NOT NULL DEFAULT 0,
+  `note` VARCHAR(2000) DEFAULT NULL,
+  `is_active` TINYINT(1) NOT NULL DEFAULT 1,
+  `created_user` VARCHAR(255) DEFAULT NULL,
+  `created_date` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  `modified_user` VARCHAR(255) DEFAULT NULL,
+  `modified_date` DATETIME DEFAULT NULL,
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uq_job_positions_code` (`company_id`, `code`),
+  KEY `ix_job_positions_company` (`company_id`),
+  KEY `ix_job_positions_title` (`job_title_id`),
+  KEY `ix_job_positions_parent` (`parent_id`),
+  CONSTRAINT `fk_job_positions_company` FOREIGN KEY (`company_id`) REFERENCES `companies` (`id`) ON DELETE RESTRICT,
+  CONSTRAINT `fk_job_positions_title` FOREIGN KEY (`job_title_id`) REFERENCES `job_titles` (`id`) ON DELETE RESTRICT,
+  CONSTRAINT `fk_job_positions_parent` FOREIGN KEY (`parent_id`) REFERENCES `job_positions` (`id`) ON DELETE SET NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE `organization_structures` (
+  `id` INT(11) NOT NULL AUTO_INCREMENT,
+  `company_id` INT(11) NOT NULL,
+  `parent_id` INT(11) DEFAULT NULL,
+  `code` VARCHAR(15) NOT NULL,
+  `name` VARCHAR(255) NOT NULL,
+  `level` INT(11) NOT NULL DEFAULT 0,
+  `note` VARCHAR(2000) DEFAULT NULL,
+  `is_active` TINYINT(1) NOT NULL DEFAULT 1,
+  `created_user` VARCHAR(255) DEFAULT NULL,
+  `created_date` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  `modified_user` VARCHAR(255) DEFAULT NULL,
+  `modified_date` DATETIME DEFAULT NULL,
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uq_organization_structures_code` (`company_id`, `code`),
+  KEY `ix_organization_structures_company` (`company_id`),
+  KEY `ix_organization_structures_parent` (`parent_id`),
+  CONSTRAINT `fk_organization_structures_company` FOREIGN KEY (`company_id`) REFERENCES `companies` (`id`) ON DELETE RESTRICT,
+  CONSTRAINT `fk_organization_structures_parent` FOREIGN KEY (`parent_id`) REFERENCES `organization_structures` (`id`) ON DELETE SET NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE `employee_recognitions` (
+  `id` INT(11) NOT NULL AUTO_INCREMENT,
+  `company_id` INT(11) NOT NULL,
+  `employee_id` INT(11) NOT NULL,
+  `type` VARCHAR(30) NOT NULL,
+  `index_no` INT(11) NOT NULL DEFAULT 0,
+  `template` VARCHAR(255) DEFAULT NULL,
+  `size` INT(11) DEFAULT NULL,
+  `note` VARCHAR(2000) DEFAULT NULL,
+  `created_user` VARCHAR(255) DEFAULT NULL,
+  `created_date` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  `modified_user` VARCHAR(255) DEFAULT NULL,
+  `modified_date` DATETIME DEFAULT NULL,
+  PRIMARY KEY (`id`),
+  KEY `ix_employee_recognitions_employee` (`employee_id`),
+  KEY `ix_employee_recognitions_company` (`company_id`),
+  CONSTRAINT `fk_employee_recognitions_company` FOREIGN KEY (`company_id`) REFERENCES `companies` (`id`) ON DELETE RESTRICT,
+  CONSTRAINT `fk_employee_recognitions_employee` FOREIGN KEY (`employee_id`) REFERENCES `employees` (`id`) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 COMMIT;
