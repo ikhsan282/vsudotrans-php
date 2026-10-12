@@ -10,6 +10,7 @@ $menu = [
     ['key' => 'companies', 'label' => 'Perusahaan',      'icon' => 'building',        'href' => 'pages/companies/index.php', 'perm' => 'companies.view'],
     ['key' => 'branches',  'label' => 'Cabang',          'icon' => 'diagram-3',       'href' => 'pages/branches/index.php',  'perm' => 'branches.view'],
     ['key' => 'employees', 'label' => 'Karyawan',        'icon' => 'people',          'href' => 'pages/employees/index.php', 'perm' => 'employees.view'],
+    ['key' => 'vehicles',  'label' => 'Kendaraan',       'icon' => 'truck',           'href' => 'pages/vehicles/index.php',  'perm' => 'vehicles.view'],
     ['key' => 'users',     'label' => 'Pengguna',        'icon' => 'person-badge',    'href' => 'pages/users/index.php',     'perm' => 'users.view'],
     ['key' => 'roles',     'label' => 'Role & Hak Akses','icon' => 'shield-lock',     'href' => 'pages/roles/index.php',     'perm' => 'roles.manage'],
     ['key' => 'audit',     'label' => 'Audit Trail',     'icon' => 'clock-history',   'href' => 'pages/audit/index.php',     'perm' => 'audit.view'],
