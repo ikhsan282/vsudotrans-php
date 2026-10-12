@@ -167,15 +167,16 @@ function booking_create(string $type, array $data): array
                 (company_id, branch_id, document_number, date, time, start_date, end_date, trip,
                  pickup_address, pickup_point_city_id, pickup_point_district_id,
                  delivery_address, delivery_point_city_id, delivery_point_district_id,
-                 total_price, category_vehicle_id, vehicle_id, passenger_id, note, created_user)
-                VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)");
+                 bbm, total_price, category_vehicle_id, vehicle_id, passenger_id, note, created_user)
+                VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)");
             $trip = (float) ($data['trip'] ?? 0);
-            $st->bind_param('iisssssdsiisiidiiiss',
+            $bbm = (float) ($data['bbm'] ?? 0);
+            $st->bind_param('iisssssdsiisiiddiiiss',
                 $company_id, $data['branch_id'], $doc, $data['date'], $data['time'],
                 $data['start_date'], $data['end_date'], $trip,
                 $data['pickup_address'], $data['pickup_point_city_id'], $data['pickup_point_district_id'],
                 $data['delivery_address'], $data['delivery_point_city_id'], $data['delivery_point_district_id'],
-                $data['total_price'], $data['category_vehicle_id'], $data['vehicle_id'],
+                $bbm, $data['total_price'], $data['category_vehicle_id'], $data['vehicle_id'],
                 $data['passenger_id'], $data['note'], $data['created_user']);
         } else {
             $st = $db->prepare("INSERT INTO travel_ticket_bookings
