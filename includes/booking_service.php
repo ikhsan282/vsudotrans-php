@@ -222,8 +222,8 @@ function booking_change_status(string $type, int $booking_id, int $company_id, s
         booking_insert_history($type, $booking_id, $company_id, $from, $to, $reason, $user);
         if ($to === 'cancelled') {
             $st = $db->prepare("UPDATE invoices SET status = 'cancelled', modified_user = ?, modified_date = NOW()
-                WHERE booking_type = ? AND booking_id = ?");
-            $st->bind_param('ssi', $user, $type, $booking_id);
+                WHERE booking_type = ? AND booking_id = ? AND company_id = ?");
+            $st->bind_param('ssii', $user, $type, $booking_id, $company_id);
             $st->execute();
             $st->close();
         }

@@ -113,7 +113,8 @@ function employee_code_unique(string $code, ?int $company_id, int $exclude_id = 
  */
 function employee_list(int $page, string $q, string $status): array
 {
-    [$wsql, $wtypes, $wparams] = company_scope('company_id');
+    // Alias 'e.' wajib: query ini JOIN branches yang juga punya company_id -> ambigu.
+    [$wsql, $wtypes, $wparams] = company_scope('e.company_id');
     $where = [$wsql];
     $types = $wtypes;
     $params = [];
