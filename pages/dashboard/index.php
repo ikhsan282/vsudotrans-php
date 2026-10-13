@@ -22,7 +22,7 @@ function count_scoped(string $table): int
 
 $employees = count_scoped('employees');
 $branches  = count_scoped('branches');
-$companies = count(accessible_companies());
+$n_companies = count(accessible_companies());
 
 $active = 'dashboard';
 $title  = 'Dashboard';
@@ -60,7 +60,7 @@ require __DIR__ . '/../../includes/sidebar.php';
                     <div class="fs-1 text-warning me-3"><i class="bi bi-building"></i></div>
                     <div>
                         <div class="text-muted small">Perusahaan</div>
-                        <div class="fs-3 fw-bold"><?= e((string) $companies) ?></div>
+                        <div class="fs-3 fw-bold"><?= e((string) $n_companies) ?></div>
                     </div>
                 </div>
             </div>
