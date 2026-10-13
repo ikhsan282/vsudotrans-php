@@ -91,6 +91,30 @@ Password semua user: `P@ssw0rd`. **Wajib diganti sebelum production.**
 
 ✅ selesai · ⏳ belum
 
+## Menu & Fitur (isi UI)
+
+Menu sidebar, dan apa yang bisa dilakukan di dalamnya:
+
+| Menu | Fitur |
+|------|-------|
+| **Dashboard** | Kartu statistik: jumlah karyawan, cabang, perusahaan (sesuai hak akses) |
+| **Perusahaan** | CRUD perusahaan + detail; switch perusahaan aktif (multi-tenant) |
+| **Cabang** | CRUD cabang per perusahaan |
+| **Karyawan** | CRUD karyawan + detail; filter per cabang/jabatan |
+| **Travel** ▾ | **Booking**: buat booking travel, resi acak, invoice otomatis, detail + riwayat status, transisi status (draft→confirmed→scheduled→on_trip→done), reschedule, assign driver, cancel · **Jadwal**: jadwal per rute + armada · **Rute**: rute + harga (min/max/kapasitas) · **Penumpang**: data penumpang |
+| **Rental** | Booking rental: periode (start/end date), lama trip, BBM, premi & biaya per karyawan, invoice otomatis, status/reschedule/driver/cancel |
+| **Kendaraan** | CRUD merek, kategori, model, tipe mesin, unit kendaraan |
+| **Pengguna** | CRUD user, mapping user↔perusahaan, reset password |
+| **Role & Hak Akses** | CRUD role, editor permission per role, batas level (aktor hanya boleh mengelola role di bawah levelnya) |
+| **Referensi Umum** ▾ | Bank, Satuan, dan Wilayah berjenjang: Negara → Provinsi → Kota/Kab. → Kecamatan → Desa |
+| **Master HR** ▾ | Grade jabatan, Jabatan, Posisi (bertingkat), Struktur Organisasi, Penghargaan karyawan |
+| **Audit Trail** | Read-only: waktu, user, aksi, IP, keterangan (login, logout, switch perusahaan, create/update/delete semua modul, aksi booking) |
+| **Tiket publik** (tanpa login) | `tiket.php?no=<resi>` — cek tiket travel/rental: nomor, tanggal, jam, alamat, total |
+
+**Tanpa halaman (logika saja):** rate limit login, tenant scoping, CSRF, level rule role.
+
+**Belum ada:** Payroll (gaji pokok, uang harian), Finance, Attendance. Kolom pajak invoice sudah ada tapi belum dihitung.
+
 ## Pengujian
 
 Self-check tanpa framework (butuh DB lokal sesuai `config/config.php`):
