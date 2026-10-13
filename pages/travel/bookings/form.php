@@ -81,6 +81,10 @@ require __DIR__ . '/../../../includes/sidebar.php';
 ?>
 <main class="col-12 col-md-9 col-lg-10 p-4">
     <h4 class="fw-bold mb-3"><?= e($title) ?></h4>
+    <?php
+    $ai_endpoint = APP_URL . '/pages/travel/bookings/ai_parse.php';
+    require __DIR__ . '/../../../includes/ai_panel.php';
+    ?>
     <div class="card shadow-sm border-0"><div class="card-body">
     <form method="post" action="">
         <?= csrf_field() ?>

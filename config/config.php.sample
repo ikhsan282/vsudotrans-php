@@ -24,6 +24,12 @@ defined('LOGIN_MAX_ATTEMPTS')    || define('LOGIN_MAX_ATTEMPTS', 5);
 defined('LOGIN_MAX_IP_ATTEMPTS') || define('LOGIN_MAX_IP_ATTEMPTS', 20);
 defined('LOGIN_LOCKOUT_TIME')    || define('LOGIN_LOCKOUT_TIME', 900); // 15 menit
 
+// --- AI Isi Cepat (9router / OpenAI-compatible) ----------------------
+// Kosongkan AI_API_KEY untuk mematikan fitur sepenuhnya (panel tidak muncul).
+defined('AI_BASE_URL') || define('AI_BASE_URL', 'http://43.173.27.40:20128/v1');
+defined('AI_API_KEY')  || define('AI_API_KEY', '');
+defined('AI_MODEL')    || define('AI_MODEL', 'ikhsan-reason');
+
 // --- Identitas perusahaan (untuk cetakan) ---------------------------
 defined('COMPANY_NAME')    || define('COMPANY_NAME', 'VSudo Trans');
 defined('COMPANY_ADDRESS') || define('COMPANY_ADDRESS', 'Jl. Contoh No. 1, Jakarta');

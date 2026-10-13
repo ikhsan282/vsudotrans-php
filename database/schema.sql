@@ -1031,6 +1031,7 @@ INSERT INTO `permissions` (`name`, `description`, `module`) VALUES
 ('travel.manage', 'Kelola Travel & booking', 'travel'),
 ('rental.view',   'Lihat Rental',   'rental'),
 ('rental.manage', 'Kelola Rental', 'rental'),
+('booking.ai_input', 'Bantu isi form booking dengan AI', 'bookings'),
 ('invoices.view',   'Lihat Invoice & tiket',   'invoices'),
 ('invoices.manage', 'Kelola Invoice & tiket', 'invoices'),
 ('dispatch.view',   'Lihat Penjadwalan driver',   'dispatch'),
@@ -1045,12 +1046,12 @@ INSERT INTO `permissions` (`name`, `description`, `module`) VALUES
 -- Super Admin: semua permission baru
 INSERT INTO `role_permissions` (`role_id`, `permission_id`)
 SELECT 1, p.id FROM `permissions` p
-WHERE p.module IN ('masters','hr','vehicles','travel','rental','invoices','dispatch','finance','attendance','payroll')
+WHERE (p.module IN ('masters','hr','vehicles','travel','rental','invoices','dispatch','finance','attendance','payroll','bookings'))
   AND p.id NOT IN (SELECT permission_id FROM `role_permissions` WHERE role_id = 1);
 -- Admin Perusahaan (2): semua permission baru
 INSERT INTO `role_permissions` (`role_id`, `permission_id`)
 SELECT 2, p.id FROM `permissions` p
-WHERE p.module IN ('masters','hr','vehicles','travel','rental','invoices','dispatch','finance','attendance','payroll')
+WHERE (p.module IN ('masters','hr','vehicles','travel','rental','invoices','dispatch','finance','attendance','payroll','bookings'))
   AND p.id NOT IN (SELECT permission_id FROM `role_permissions` WHERE role_id = 2);
 -- HRD (3): HR + absensi + payroll + operasi (view & manage)
 INSERT INTO `role_permissions` (`role_id`, `permission_id`)
