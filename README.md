@@ -16,7 +16,12 @@ PHP Native + MySQLi + Bootstrap 5. Konversi dari VSudoTrans.API (ASP.NET Core).
 mysql -u root -p < database/schema.sql
 ```
 
-> Schema lengkap di 1 file: 44 tabel, 5 role (Super Admin/Admin Perusahaan/HRD/Staff/Viewer), 5 user default dengan password `P@ssw0rd`. Terverifikasi import bersih tanpa error (MariaDB 11.8).
+> Schema lengkap di 1 file: 44 tabel, 5 role (Super Admin/Admin Perusahaan/HRD/Staff/Viewer), 5 user default dengan password `P@ssw0rd`. Terverifikasi fresh install: 44 tabel + 5 user.
+>
+> **Penting:** file ini sudah memuat `CREATE DATABASE IF NOT EXISTS \`vsudotrans\`` dan `USE \`vsudotrans\``. Jadi:
+> - Tidak perlu membuat database dulu; cukup import.
+> - Untuk mengganti nama database, edit baris `CREATE DATABASE`/`USE` di paling atas file **atau** ganti nama di cPanel sebelum import.
+> - Import ulang akan **menghapus dan mengganti** seluruh tabel (fresh install, bukan migrasi).
 
 ### 2. Konfigurasi
 
