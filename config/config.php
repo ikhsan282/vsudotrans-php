@@ -1,13 +1,21 @@
 <?php
 /**
- * VSudoTrans — Konfigurasi utama (CONTOH).
- * Salin file ini menjadi `config/config.php` lalu sesuaikan nilainya.
- * `config/config.php` tidak ikut Git agar kredensial tidak bocor.
+ * VSudoTrans — Konfigurasi utama
+ * Semua konstanta aplikasi ada di sini (satu sumber kebenaran).
  */
 
 // --- Basis URL -------------------------------------------------------
-// Sesuaikan dengan lokasi deployment. Contoh cPanel: https://domain.com/vsudotrans
-defined('APP_URL')   || define('APP_URL', 'http://localhost:8080/vsudotrans');
+// Otomatis mengikuti alamat yang dipakai browser (XAMPP, dev server, cPanel).
+// Override bila perlu: set env VSUDO_APP_URL, atau isi langsung di sini.
+if (!empty($_SERVER['HTTP_HOST'])) {
+    $__root = str_replace('\\', '/', dirname(__DIR__));
+    $__doc  = str_replace('\\', '/', rtrim((string) ($_SERVER['DOCUMENT_ROOT'] ?? ''), '/'));
+    $__base = ($__doc !== '' && str_starts_with($__root, $__doc)) ? trim(substr($__root, strlen($__doc)), '/') : '';
+    $__auto = ((($_SERVER['HTTPS'] ?? '') === 'on') ? 'https' : 'http') . '://' . $_SERVER['HTTP_HOST'] . ($__base !== '' ? '/' . $__base : '');
+} else {
+    $__auto = 'http://localhost:8080/vsudotrans'; // CLI (tes)
+}
+defined('APP_URL')   || define('APP_URL', getenv('VSUDO_APP_URL') ?: $__auto);
 defined('APP_NAME')  || define('APP_NAME', 'VSudoTrans');
 defined('APP_VERSION') || define('APP_VERSION', '0.1.0');
 
@@ -24,11 +32,11 @@ defined('LOGIN_MAX_ATTEMPTS')    || define('LOGIN_MAX_ATTEMPTS', 5);
 defined('LOGIN_MAX_IP_ATTEMPTS') || define('LOGIN_MAX_IP_ATTEMPTS', 20);
 defined('LOGIN_LOCKOUT_TIME')    || define('LOGIN_LOCKOUT_TIME', 900); // 15 menit
 
-// --- AI Isi Cepat (9router / OpenAI-compatible) ----------------------
+// --- AI Isi Cepat (9router, OpenAI-compatible) -----------------------
 // Kosongkan AI_API_KEY untuk mematikan fitur sepenuhnya (panel tidak muncul).
-defined('AI_BASE_URL') || define('AI_BASE_URL', 'http://43.173.27.40:20128/v1');
-defined('AI_API_KEY')  || define('AI_API_KEY', '');
-defined('AI_MODEL')    || define('AI_MODEL', 'ikhsan-reason');
+defined('AI_BASE_URL') || define('AI_BASE_URL', getenv('VSUDO_AI_BASE_URL') ?: 'http://43.173.27.40:20128/v1');
+defined('AI_API_KEY')  || define('AI_API_KEY', getenv('HERMES_CUSTOM_9ROUTER_API_KEY') ?: 'sk-f0165475049974c9-foy90i-fd5b6c17');
+defined('AI_MODEL')    || define('AI_MODEL', getenv('VSUDO_AI_MODEL') ?: 'ikhsan-reason');
 
 // --- Identitas perusahaan (untuk cetakan) ---------------------------
 defined('COMPANY_NAME')    || define('COMPANY_NAME', 'VSudo Trans');
