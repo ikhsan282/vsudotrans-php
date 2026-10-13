@@ -280,13 +280,13 @@ INSERT INTO `companies` (`id`, `group_id`, `code`, `name`, `country_code`, `phon
 INSERT INTO `branches` (`id`, `company_id`, `code`, `name`, `country_code`, `phone_number`) VALUES
 (1, 1, 'PST', 'Kantor Pusat', '+62', '021-0000001');
 
--- Semua password default: P@ssw0rd
+-- Semua password default: P@ssw0rd  (hash bcrypt, password_verify() true)
 INSERT INTO `users` (`id`, `username`, `email`, `password`, `full_name`, `phone_number`, `role_id`, `company_id`) VALUES
-(1, 'superadmin', 'superadmin@vsudotrans.test', '$2y$12$YPSdYJ4iq7ubYl4xcXPfPeT/g2oZfEwH42nfnzmgQUMBsIYy53uVK', 'Super Administrator', '081200000001', 1, NULL),
-(2, 'admin',      'admin@vsudotrans.test',      '$2y$12$YPSdYJ4iq7ubYl4xcXPfPeT/g2oZfEwH42nfnzmgQUMBsIYy53uVK', 'Administrator Perusahaan', '081200000002', 2, 1),
-(3, 'hrd',        'hrd@vsudotrans.test',        '$2y$12$YPSdYJ4iq7ubYl4xcXPfPeT/g2oZfEwH42nfnzmgQUMBsIYy53uVK', 'HRD', '081200000003', 3, 1),
-(4, 'staff',      'staff@vsudotrans.test',      '$2y$12$YPSdYJ4iq7ubYl4xcXPfPeT/g2oZfEwH42nfnzmgQUMBsIYy53uVK', 'Staff', '081200000004', 4, 1),
-(5, 'viewer',     'viewer@vsudotrans.test',     '$2y$12$YPSdYJ4iq7ubYl4xcXPfPeT/g2oZfEwH42nfnzmgQUMBsIYy53uVK', 'Viewer', '081200000005', 5, 1);
+(1, 'superadmin', 'superadmin@vsudotrans.test', '$2y$12$ScOvxQDzeZH0EKULI1EQWOFjSG0M4VFNNtWOy0/KtdG2qWSCUosiK', 'Super Administrator', '081200000001', 1, NULL),
+(2, 'admin',      'admin@vsudotrans.test',      '$2y$12$ScOvxQDzeZH0EKULI1EQWOFjSG0M4VFNNtWOy0/KtdG2qWSCUosiK', 'Administrator Perusahaan', '081200000002', 2, 1),
+(3, 'hrd',        'hrd@vsudotrans.test',        '$2y$12$ScOvxQDzeZH0EKULI1EQWOFjSG0M4VFNNtWOy0/KtdG2qWSCUosiK', 'HRD', '081200000003', 3, 1),
+(4, 'staff',      'staff@vsudotrans.test',      '$2y$12$ScOvxQDzeZH0EKULI1EQWOFjSG0M4VFNNtWOy0/KtdG2qWSCUosiK', 'Staff', '081200000004', 4, 1),
+(5, 'viewer',     'viewer@vsudotrans.test',     '$2y$12$ScOvxQDzeZH0EKULI1EQWOFjSG0M4VFNNtWOy0/KtdG2qWSCUosiK', 'Viewer', '081200000005', 5, 1);
 
 INSERT INTO `user_companies` (`user_id`, `company_id`) VALUES (2, 1), (3, 1), (4, 1), (5, 1);
 
