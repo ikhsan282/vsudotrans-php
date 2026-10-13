@@ -20,7 +20,13 @@ mysql -u root -p < database/schema.sql
 
 ### 2. Konfigurasi
 
-Edit `config/config.php`:
+`config/config.php` tidak ikut Git (berisi kredensial). Salin dari contoh:
+
+```bash
+cp config/config.php.sample config/config.php
+```
+
+Lalu sesuaikan:
 ```php
 define('APP_URL', 'http://localhost:8080/vsudotrans'); // tanpa trailing slash
 define('DB_HOST', 'localhost');
@@ -51,10 +57,12 @@ Password semua user: `P@ssw0rd`. **Wajib diganti sebelum production.**
 
 ### 5. cPanel
 
-- Upload semua file ke `public_html/vsudotrans/`
+- Upload semua file ke `public_html/vsudotrans/` (**sertakan `.htaccess`** — lihat catatan keamanan di bawah)
 - Import `database/schema.sql` via phpMyAdmin
 - Sesuaikan `APP_URL` dan kredensial DB di `config/config.php`
 - Permission: folder `755`, file `644`; folder `uploads/` harus writable
+
+`.htaccess` memblokir akses web ke `config/`, `includes/`, `tests/`, `database/` dan file `.sql`/`.md`, plus menambah security headers. Tanpa file ini, `database/schema.sql` dan source dapat diunduh siapa saja.
 
 ## Status Modul
 

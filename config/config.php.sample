@@ -1,0 +1,49 @@
+<?php
+/**
+ * VSudoTrans — Konfigurasi utama (CONTOH).
+ * Salin file ini menjadi `config/config.php` lalu sesuaikan nilainya.
+ * `config/config.php` tidak ikut Git agar kredensial tidak bocor.
+ */
+
+// --- Basis URL -------------------------------------------------------
+// Sesuaikan dengan lokasi deployment. Contoh cPanel: https://domain.com/vsudotrans
+defined('APP_URL')   || define('APP_URL', 'http://localhost:8080/vsudotrans');
+defined('APP_NAME')  || define('APP_NAME', 'VSudoTrans');
+defined('APP_VERSION') || define('APP_VERSION', '0.1.0');
+
+// --- Database --------------------------------------------------------
+defined('DB_HOST') || define('DB_HOST', 'localhost');
+defined('DB_USER') || define('DB_USER', 'root');
+defined('DB_PASS') || define('DB_PASS', '');
+defined('DB_NAME') || define('DB_NAME', 'vsudotrans');
+
+// --- Session & keamanan ---------------------------------------------
+defined('SESSION_LIFETIME') || define('SESSION_LIFETIME', 28800); // 8 jam
+defined('PER_PAGE')         || define('PER_PAGE', 20);
+defined('LOGIN_MAX_ATTEMPTS')    || define('LOGIN_MAX_ATTEMPTS', 5);
+defined('LOGIN_MAX_IP_ATTEMPTS') || define('LOGIN_MAX_IP_ATTEMPTS', 20);
+defined('LOGIN_LOCKOUT_TIME')    || define('LOGIN_LOCKOUT_TIME', 900); // 15 menit
+
+// --- Identitas perusahaan (untuk cetakan) ---------------------------
+defined('COMPANY_NAME')    || define('COMPANY_NAME', 'VSudo Trans');
+defined('COMPANY_ADDRESS') || define('COMPANY_ADDRESS', 'Jl. Contoh No. 1, Jakarta');
+defined('COMPANY_PHONE')   || define('COMPANY_PHONE', '021-0000000');
+
+// --- Zona waktu ------------------------------------------------------
+date_default_timezone_set('Asia/Jakarta');
+
+// --- Session hardening ----------------------------------------------
+if (session_status() === PHP_SESSION_NONE) {
+    session_set_cookie_params([
+        'lifetime' => SESSION_LIFETIME,
+        'path'     => '/',
+        'httponly' => true,
+        'samesite' => 'Lax',
+        'secure'   => (($_SERVER['HTTPS'] ?? '') === 'on'),
+    ]);
+    session_start();
+}
+
+require_once __DIR__ . '/database.php';
+require_once __DIR__ . '/../includes/auth.php';
+require_once __DIR__ . '/../includes/functions.php';
