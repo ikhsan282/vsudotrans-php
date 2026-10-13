@@ -834,6 +834,11 @@ function master_save(array $spec, int $id, array $in, ?int $cid): int
         $vals = array_merge([$user, $now], array_map(fn ($c) => $in[$c], $cols), [$id]);
         $types = 'ss' . implode('', array_map(fn ($c) => $types_map[$c], $cols)) . 'i';
         $sql = "UPDATE `{$table}` SET " . implode(', ', array_map(fn ($c) => "`{$c}` = ?", $set)) . ' WHERE id = ?';
+        if (!empty($spec['company'])) { // defense-in-depth: scope tenant di SQL juga (NULL = global)
+            $sql .= ' AND (company_id = ? OR company_id IS NULL)';
+            $vals[] = $cid;
+            $types .= 'i';
+        }
     }
 
     $st = db()->prepare($sql);
@@ -880,8 +885,16 @@ function master_delete(string $key): void
     }
 
     try {
-        $st = db()->prepare("DELETE FROM `{$spec['table']}` WHERE id = ?");
-        $st->bind_param('i', $id);
+        $sql = "DELETE FROM `{$spec['table']}` WHERE id = ?";
+        $params = [$id];
+        $types = 'i';
+        if (!empty($spec['company'])) { // defense-in-depth: scope tenant di SQL juga (NULL = global)
+            $sql .= ' AND (company_id = ? OR company_id IS NULL)';
+            $params[] = active_company_id();
+            $types .= 'i';
+        }
+        $st = db()->prepare($sql);
+        $st->bind_param($types, ...$params);
         $st->execute();
         $st->close();
         audit($spec['module'] . '.delete', $spec['title'] . " #{$id} " . ($row['code'] ?? ''));
