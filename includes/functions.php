@@ -19,6 +19,18 @@ function rupiah(float $n): string
     return 'Rp ' . number_format(round($n, 2), 0, ',', '.');
 }
 
+/** Tanggal Indonesia: 2026-10-31 -> "31 Oktober 2026". */
+function tanggal_indo(?string $date): string
+{
+    if (empty($date) || $date === '0000-00-00') {
+        return '—';
+    }
+    $bulan = [1 => 'Januari', 'Februari', 'Maret', 'April', 'Mei', 'Juni',
+        'Juli', 'Agustus', 'September', 'Oktober', 'November', 'Desember'];
+    $d = strtotime($date);
+    return $d ? date('j', $d) . ' ' . $bulan[(int) date('n', $d)] . ' ' . date('Y', $d) : $date;
+}
+
 function csrf_token(): string
 {
     if (empty($_SESSION['csrf_token'])) {

@@ -16,6 +16,8 @@ if (!empty($_SERVER['HTTP_HOST'])) {
     $__auto = 'http://localhost:8080/vsudotrans'; // CLI (tes)
 }
 defined('APP_URL')   || define('APP_URL', getenv('VSUDO_APP_URL') ?: $__auto);
+// Path aplikasi tanpa host, mis. '' atau '/vsudotrans' — untuk link internal & QR absolut.
+defined('APP_URL_PATH') || define('APP_URL_PATH', (($p = parse_url(APP_URL, PHP_URL_PATH)) && $p !== '/') ? rtrim($p, '/') : '');
 defined('APP_NAME')  || define('APP_NAME', 'VSudoTrans');
 defined('APP_VERSION') || define('APP_VERSION', '0.1.0');
 
