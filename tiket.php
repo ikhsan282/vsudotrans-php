@@ -125,7 +125,7 @@ $title = 'Tiket' . ($row ? ' ' . $row['document_number'] : '');
                 </td>
                 <td style="width:58%">
                     <table class="tk-lay w-100">
-                        <tr><td class="tk-doc" style="width:52px">Rute</td><td class="tk-v"><?= e(trim(($row['city_from'] ?? '') . ' - ' . ($row['city_to'] ?? ''), ' -') ?: '—') ?></td></tr>
+                        <tr><td class="tk-doc" style="width:117px">Rute</td><td class="tk-v"><?= e(trim(($row['city_from'] ?? '') . ' - ' . ($row['city_to'] ?? ''), ' -') ?: '—') ?></td></tr>
                         <tr><td class="tk-doc">Nomor Tiket</td><td class="tk-v"><?= e($row['document_number']) ?></td></tr>
                         <tr><td class="tk-doc">Tanggal</td><td class="tk-v"><?= e(tanggal_indo((string) $row['date'])) ?></td></tr>
                         <tr><td class="tk-doc">Jam</td><td class="tk-v"><?= e(substr((string) $row['time'], 0, 5)) ?></td></tr>
