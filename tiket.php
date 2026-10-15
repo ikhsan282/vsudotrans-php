@@ -50,14 +50,37 @@ $title = 'Tiket' . ($row ? ' ' . $row['document_number'] : '');
     <title><?= e($title) ?></title>
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.8/dist/css/bootstrap.min.css" rel="stylesheet">
     <style>
-        /* Tampilan = replika persis contoh Maura: sans default, label abu, nilai bold. */
-        .tk-doc { color: #777; letter-spacing: .4px; text-transform: uppercase; }
-        .tk-v { font-weight: 700; }
-        .tk-table th { background: #f2f2f2; }
-        .tk-stamp { width: 118px; }
+        /* Ukuran & font disamakan dengan contoh resmi (terukur dari PDF contoh):
+           label 7,5pt · nilai & isi tabel 9pt · Detail Penumpang 9,8pt · E-TIKET 25,5pt. */
+        body { font-family: "Liberation Sans", Helvetica, Arial, sans-serif; }
+        .tk-doc { color: #777; font-size: 7.5pt; letter-spacing: .4px; text-transform: uppercase; }
+        .tk-v { font-weight: 700; font-size: 9pt; }
+        .tk-body { font-size: 9pt; }
+        .tk-sub { font-size: 9.8pt; font-weight: 700; }
+        .tk-addr { font-size: 9pt; font-weight: 700; }
+        .tk-foot { font-size: 9pt; }
+        .tk-ver { font-size: 7.5pt; color: #777; }
+        .tk-eti { font-size: 25.5pt; white-space: nowrap; text-align: right; }
+        .tk-sect { font-size: 9.8pt; font-weight: 700; }
+        table.tk-tbl { font-size: 9pt; width: 100%; border-collapse: collapse; }
+        table.tk-tbl th { background: #f2f2f2; font-size: 8.2pt; }
+        /* Utilitas yang dibutuhkan tiket didefinisikan sendiri (tak bergantung Bootstrap,
+           agar PDF cetak/preview identik di semua lingkungan). */
+        .text-end { text-align: right; }
+        .text-muted { color: #6c757d; }
+        .fw-bold, strong { font-weight: 700; }
+        .mt-4 { margin-top: 18pt; }
+        .mt-2 { margin-top: 6pt; }
+        .mb-1 { margin-bottom: 3pt; }
+        .mb-0 { margin-bottom: 0; }
+        .table { width: 100%; border-collapse: collapse; }
+        .table td, .table th { padding: 5px 8px; vertical-align: top; }
+        .table-bordered td, .table-bordered th { border: 1px solid #d9d9d9; }
+        .text-break { word-break: break-all; }
+        .tk-stamp { width: 152px; }
         /* Logo & gambar dibatasi agar tidak melebar menekan kolom kanan keluar halaman. */
-        .tk-logo { height: 58px; width: auto; max-width: 220px; }
-        .tk-eti { font-size: 34px; white-space: nowrap; text-align: right; }
+        .tk-logo { height: 46px; width: auto; max-width: 220px; }
+        .tk-head { margin-bottom: 6px; }
         /* Tata cetak berbasis tabel: didukung semua renderer & printer (tanpa flexbox). */
         table.tk-lay { border-collapse: collapse; table-layout: fixed; width: 100%; }
         table.tk-lay > tbody > tr > td { border: 0; padding: 0; vertical-align: top; }
@@ -81,12 +104,12 @@ $title = 'Tiket' . ($row ? ' ' . $row['document_number'] : '');
 <?php else: ?>
     <div class="card tk-card shadow-sm border-0">
         <div class="card-body">
-            <table class="tk-lay w-100"><tr>
+            <table class="tk-lay tk-head w-100"><tr>
                 <td class="align-top" style="width:340px">
                     <?php if (!empty($row['logo'])): ?>
                         <img src="<?= e(APP_URL . '/' . ltrim((string) $row['logo'], '/')) ?>" alt="<?= e($row['company_name']) ?>" class="tk-logo">
                     <?php else: ?>
-                        <div class="fs-4 fw-bold"><?= e($row['company_name']) ?></div>
+                        <div class="fw-bold" style="font-size:14pt"><?= e($row['company_name']) ?></div>
                     <?php endif; ?>
                 </td>
                 <td class="text-end align-top"><h1 class="tk-eti" style="margin:0">E-TIKET</h1></td>
@@ -94,15 +117,15 @@ $title = 'Tiket' . ($row ? ' ' . $row['document_number'] : '');
             <hr>
 
             <table class="tk-lay w-100"><tr>
-                <td class="align-top" style="width:50%;padding-right:24px">
+                <td style="width:44%;padding-right:30px">
                     <div class="tk-doc">Perusahaan</div>
-                    <div class="fw-bold fs-5"><?= e($row['company_name']) ?></div>
-                    <div class="text-muted"><?= e((string) $row['address']) ?></div>
-                    <div class="text-muted"><?= e((string) $row['phone_number']) ?> &middot; <?= e((string) $row['email']) ?></div>
+                    <div class="tk-sub"><?= e($row['company_name']) ?></div>
+                    <div class="tk-body text-muted"><?= e((string) $row['address']) ?></div>
+                    <div class="tk-body text-muted"><?= e((string) $row['phone_number']) ?> &middot; <?= e((string) $row['email']) ?></div>
                 </td>
-                <td class="align-top" style="width:50%">
+                <td style="width:56%">
                     <table class="tk-lay w-100">
-                        <tr><td class="tk-doc" style="width:140px">Rute</td><td class="tk-v"><?= e(trim(($row['city_from'] ?? '') . ' - ' . ($row['city_to'] ?? ''), ' -') ?: '—') ?></td></tr>
+                        <tr><td class="tk-doc" style="width:78px">Rute</td><td class="tk-v"><?= e(trim(($row['city_from'] ?? '') . ' - ' . ($row['city_to'] ?? ''), ' -') ?: '—') ?></td></tr>
                         <tr><td class="tk-doc">Nomor Tiket</td><td class="tk-v"><?= e($row['document_number']) ?></td></tr>
                         <tr><td class="tk-doc">Tanggal</td><td class="tk-v"><?= e(tanggal_indo((string) $row['date'])) ?></td></tr>
                         <tr><td class="tk-doc">Jam</td><td class="tk-v"><?= e(substr((string) $row['time'], 0, 5)) ?></td></tr>
@@ -112,8 +135,8 @@ $title = 'Tiket' . ($row ? ' ' . $row['document_number'] : '');
                 </td>
             </tr></table>
 
-            <div class="fw-bold mt-4 mb-1">Detail Penumpang</div>
-            <table class="table table-bordered tk-table mb-0">
+            <div class="tk-sect mt-4 mb-1">Detail Penumpang</div>
+            <table class="table table-bordered tk-tbl mb-0">
                 <thead><tr><th style="width:40px">#</th><th style="width:90px">Tipe</th><th>Nama</th><th style="width:160px">Nomor Telepon</th></tr></thead>
                 <tbody>
                 <?php if (!$passengers): ?>
@@ -126,7 +149,7 @@ $title = 'Tiket' . ($row ? ' ' . $row['document_number'] : '');
                 <?php else: foreach ($passengers as $i => $p): ?>
                 <tr>
                     <td class="text-muted"><?= $i + 1 ?></td>
-                    <td>Orang<?= (int) $p['is_primary'] === 1 ? ' (utama)' : '' ?></td>
+                    <td><?= (int) $p['is_primary'] === 1 ? 'Orang (utama)' : 'Orang' ?></td>
                     <td><?= e((string) $p['name']) ?></td>
                     <td><?= e((string) ($p['phone_number'] ?? '—') ?: '—') ?></td>
                 </tr>
@@ -140,23 +163,23 @@ $title = 'Tiket' . ($row ? ' ' . $row['document_number'] : '');
 
             <div class="mt-4">
                 <div class="tk-doc">Alamat Penjemputan</div>
-                <div class="tk-v small"><?= e((string) ($row['pickup_address'] ?: '—')) ?></div>
+                <div class="tk-addr"><?= e((string) ($row['pickup_address'] ?: '—')) ?></div>
                 <div class="tk-doc mt-2">Alamat Pengantaran</div>
-                <div class="tk-v small"><?= e((string) ($row['delivery_address'] ?: '—')) ?></div>
+                <div class="tk-addr"><?= e((string) ($row['delivery_address'] ?: '—')) ?></div>
             </div>
 
             <table class="tk-lay w-100 mt-4"><tr>
-                <td class="align-top">
+                <td class="align-top tk-foot">
                     <div>Dibuat oleh <strong><?= e((string) ($row['created_user'] ?: '—')) ?></strong></div>
                     <div><span class="text-muted">pada tanggal</span> <strong><?= e(tanggal_indo((string) $row['date'])) ?></strong></div>
                 </td>
-                <td class="text-end align-top" style="width:170px">
+                <td class="text-end align-top" style="width:170px;padding-top:22pt">
                     <img class="tk-stamp" src="<?= e(APP_URL . '/assets/brand/stamp-mtm.png') ?>" alt="Stempel Maura Trans Mandiri">
                 </td>
             </tr></table>
 
-            <div class="text-muted mt-4" style="border-top:1px dashed #c8c8c8;padding-top:8px">
-                Cek keaslian tiket: <span class="text-break"><?= e($self_link) ?></span>
+            <div class="tk-ver mt-4" style="border-top:1px dashed #c8c8c8;padding-top:8px">
+                Tiket ini sah. Cek keaslian tiket: <span class="text-break"><?= e($self_link) ?></span>
             </div>
         </div>
     </div>
