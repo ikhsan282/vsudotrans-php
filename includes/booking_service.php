@@ -198,6 +198,12 @@ function booking_create(string $type, array $data): array
 
         booking_insert_history($type, $booking_id, $company_id, null, 'draft', null, $data['created_user']);
         booking_copy_premi($type, $booking_id, $company_id, $data['category_vehicle_id']);
+        // Penumpang: daftar lengkap (opsional) + primary = passenger_id booking.
+        $pids = $data['passenger_ids'] ?? [];
+        if (!$pids) {
+            $pids = [(int) $data['passenger_id']];
+        }
+        booking_passengers_set($type, $booking_id, $company_id, $pids, (int) $data['passenger_id'], $data['created_user']);
         $invoice_id = invoice_issue($company_id, $type, $booking_id, $data['branch_id'], $doc,
             (float) $data['total_price'], $data['created_user']);
 
@@ -344,4 +350,64 @@ function booking_find(string $type, int $id): ?array
     $row = $st->get_result()->fetch_assoc();
     $st->close();
     return $row ?: null;
+}
+
+/**
+ * Daftar penumpang booking (terurut; primary lebih dulu).
+ * Jika booking_passengers kosong, fallback ke passenger_id booking lama.
+ * @return array<int, array{id:int, passenger_id:int, name:string, phone:?string, is_primary:int}>
+ */
+function booking_passengers_list(string $type, int $booking_id, ?int $booking_passenger_id = null): array
+{
+    $st = db()->prepare('SELECT bp.passenger_id, bp.is_primary, p.name, p.phone_number
+        FROM booking_passengers bp JOIN passengers p ON p.id = bp.passenger_id
+        WHERE bp.booking_type = ? AND bp.booking_id = ?
+        ORDER BY bp.is_primary DESC, bp.line_no, bp.id');
+    $st->bind_param('si', $type, $booking_id);
+    $st->execute();
+    $rows = $st->get_result()->fetch_all(MYSQLI_ASSOC);
+    $st->close();
+
+    if (!$rows && $booking_passenger_id) {
+        $st = db()->prepare('SELECT id, name, phone_number FROM passengers WHERE id = ? LIMIT 1');
+        $st->bind_param('i', $booking_passenger_id);
+        $st->execute();
+        $p = $st->get_result()->fetch_assoc();
+        $st->close();
+        if ($p) {
+            $rows = [['passenger_id' => (int) $p['id'], 'is_primary' => 1, 'name' => $p['name'], 'phone_number' => $p['phone_number']]];
+        }
+    }
+    foreach ($rows as &$r) {
+        $r['passenger_id'] = (int) $r['passenger_id'];
+        $r['is_primary'] = (int) $r['is_primary'];
+    }
+    return $rows;
+}
+
+/**
+ * Ganti daftar penumpang booking (hapus lalu isi ulang). Primary = $primary_id.
+ * Dipanggil di dalam transaksi booking_create / update.
+ * @param int[] $passenger_ids
+ */
+function booking_passengers_set(string $type, int $booking_id, int $company_id, array $passenger_ids, int $primary_id, ?string $user): void
+{
+    $ids = array_values(array_unique(array_filter(array_map('intval', $passenger_ids), static fn($v) => $v > 0)));
+    $db = db();
+    $st = $db->prepare('DELETE FROM booking_passengers WHERE booking_type = ? AND booking_id = ?');
+    $st->bind_param('si', $type, $booking_id);
+    $st->execute();
+    $st->close();
+
+    $ins = $db->prepare('INSERT INTO booking_passengers
+        (company_id, booking_type, booking_id, passenger_id, is_primary, line_no, created_user)
+        VALUES (?, ?, ?, ?, ?, ?, ?)');
+    $line = 0;
+    foreach ($ids as $pid) {
+        $line++;
+        $is_primary = ($pid === $primary_id) ? 1 : 0;
+        $ins->bind_param('isiiiis', $company_id, $type, $booking_id, $pid, $is_primary, $line, $user);
+        $ins->execute();
+    }
+    $ins->close();
 }

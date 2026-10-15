@@ -5,16 +5,24 @@ require_once __DIR__ . '/../_helpers.php';
 require_once __DIR__ . '/../../../includes/booking_service.php';
 
 $cid = require_active_company();
-$in  = ['date' => date('Y-m-d'), 'time' => date('H:i'), 'branch_id' => '', 'passenger_id' => '',
+$in = ['date' => date('Y-m-d'), 'time' => date('H:i'), 'branch_id' => '', 'passenger_id' => '',
     'category_vehicle_id' => '', 'vehicle_id' => '', 'total_price' => '0',
     'pickup_address' => '', 'pickup_point_city_id' => '', 'pickup_point_district_id' => '',
     'delivery_address' => '', 'delivery_point_city_id' => '', 'delivery_point_district_id' => '', 'note' => ''];
+
+$in_passengers = []; // penumpang tambahan (selain primary)
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     verify_csrf();
     foreach (array_keys($in) as $k) {
         $in[$k] = trim((string) ($_POST[$k] ?? ''));
     }
+    $in_passengers = array_values(array_unique(array_filter(
+        array_map('intval', (array) ($_POST['passenger_ids'] ?? [])),
+        static fn($v) => $v > 0
+    )));
+    // Primary tidak perlu dobel di daftar tambahan.
+    $in_passengers = array_values(array_diff($in_passengers, [(int) $in['passenger_id']]));
     $err = '';
     if (!preg_match('/^\d{4}-\d{2}-\d{2}$/', $in['date'])) {
         $err = 'Tanggal wajib diisi (YYYY-MM-DD).';
@@ -52,6 +60,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             'category_vehicle_id' => (int) $in['category_vehicle_id'] ?: null,
             'vehicle_id' => $vehicle_id,
             'passenger_id' => (int) $in['passenger_id'],
+            'passenger_ids' => array_values(array_merge([(int) $in['passenger_id']], $in_passengers)),
             'note' => $in['note'],
             'created_user' => $_SESSION['username'] ?? null,
         ];
@@ -95,8 +104,10 @@ require __DIR__ . '/../../../includes/sidebar.php';
                 <input type="time" class="form-control" name="time" required value="<?= e($in['time']) ?>"></div>
             <div class="col-md-6"><label class="form-label">Cabang</label>
                 <select class="form-select" name="branch_id" required><option value="">-- Pilih --</option><?= select_options($branches, $in['branch_id']) ?></select></div>
-            <div class="col-md-6"><label class="form-label">Penumpang</label>
+            <div class="col-md-6"><label class="form-label">Penumpang Utama</label>
                 <select class="form-select" name="passenger_id" required><option value="">-- Pilih --</option><?= select_options($passengers, $in['passenger_id']) ?></select></div>
+            <div class="col-md-6"><label class="form-label">Penumpang Tambahan <span class="text-muted small">(Ctrl/Cmd klik untuk banyak)</span></label>
+                <select class="form-select" name="passenger_ids[]" multiple size="4"><?= select_options($passengers, $in_passengers, true) ?></select></div>
             <div class="col-md-3"><label class="form-label">Kategori Kendaraan</label>
                 <select class="form-select" name="category_vehicle_id"><option value="">-- Pilih --</option><?= select_options($cats, $in['category_vehicle_id']) ?></select></div>
             <div class="col-md-3"><label class="form-label">Kendaraan</label>

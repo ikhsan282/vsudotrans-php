@@ -11,7 +11,7 @@ CREATE DATABASE IF NOT EXISTS `vsudotrans` CHARACTER SET utf8mb4 COLLATE utf8mb4
 USE `vsudotrans`;
 
 SET FOREIGN_KEY_CHECKS = 0;
-DROP TABLE IF EXISTS `audit_trails`, `login_attempts`, `user_permissions`, `user_companies`, `employees`, `users`, `roles`, `permissions`, `branches`, `companies`, `groups`, `role_permissions`, `banks`, `countries`, `provinces`, `cities`, `districts`, `villages`, `unit_measures`, `brand_vehicles`, `category_vehicles`, `model_units`, `type_engines`, `vehicles`, `rutes`, `schedules`, `passengers`, `trip_schedules`, `travel_ticket_bookings`, `rental_car_bookings`, `rental_car_regulation_employees`, `booking_status_history`, `trip_assignments`, `premi_configs`, `booking_cost_lines`, `document_sequences`, `payment_methods`, `invoices`, `invoice_revisions`, `job_grades`, `job_titles`, `job_positions`, `organization_structures`, `employee_recognitions`;
+DROP TABLE IF EXISTS `audit_trails`, `login_attempts`, `user_permissions`, `user_companies`, `employees`, `users`, `roles`, `permissions`, `branches`, `companies`, `groups`, `role_permissions`, `banks`, `countries`, `provinces`, `cities`, `districts`, `villages`, `unit_measures`, `brand_vehicles`, `category_vehicles`, `model_units`, `type_engines`, `vehicles`, `rutes`, `schedules`, `passengers`, `trip_schedules`, `travel_ticket_bookings`, `rental_car_bookings`, `rental_car_regulation_employees`, `booking_passengers`, `booking_status_history`, `trip_assignments`, `premi_configs`, `booking_cost_lines`, `document_sequences`, `payment_methods`, `invoices`, `invoice_revisions`, `job_grades`, `job_titles`, `job_positions`, `organization_structures`, `employee_recognitions`;
 SET FOREIGN_KEY_CHECKS = 1;
 SET NAMES utf8mb4;
 
@@ -747,6 +747,27 @@ CREATE TABLE `rental_car_regulation_employees` (
 -- Menyertai travel_ticket_bookings & rental_car_bookings (lihat file revisi).
 -- booking_type = 'travel' | 'rental'
 -- =====================================================================
+
+-- Daftar penumpang per booking (banyak penumpang; satu ditandai primary).
+-- booking.passenger_id tetap dipertahankan sebagai penumpang utama (primary).
+CREATE TABLE `booking_passengers` (
+  `id` INT(11) NOT NULL AUTO_INCREMENT,
+  `company_id` INT(11) NOT NULL,
+  `booking_type` VARCHAR(10) NOT NULL,
+  `booking_id` INT(11) NOT NULL,
+  `passenger_id` INT(11) NOT NULL,
+  `is_primary` TINYINT(1) NOT NULL DEFAULT 0,
+  `line_no` INT(11) NOT NULL DEFAULT 1,
+  `created_user` VARCHAR(255) DEFAULT NULL,
+  `created_date` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uq_bp_booking_passenger` (`booking_type`, `booking_id`, `passenger_id`),
+  KEY `ix_bp_booking` (`booking_type`, `booking_id`),
+  KEY `ix_bp_passenger` (`passenger_id`),
+  KEY `ix_bp_company` (`company_id`),
+  CONSTRAINT `fk_bp_company` FOREIGN KEY (`company_id`) REFERENCES `companies` (`id`) ON DELETE RESTRICT,
+  CONSTRAINT `fk_bp_passenger` FOREIGN KEY (`passenger_id`) REFERENCES `passengers` (`id`) ON DELETE RESTRICT
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 CREATE TABLE `booking_status_history` (
   `id` INT(11) NOT NULL AUTO_INCREMENT,

@@ -26,11 +26,12 @@ function require_active_company(): int
 }
 
 /** Opsi <select> dari query scoped perusahaan. $sel = nilai terpilih. */
-function select_options(array $rows, $sel, string $label_key = 'name'): string
+function select_options(array $rows, $sel, $label_key = 'name'): string
 {
     $html = '';
+    $sel = is_array($sel) ? array_map('strval', $sel) : [(string) $sel];
     foreach ($rows as $r) {
-        $selected = ((string) $r['id'] === (string) $sel) ? ' selected' : '';
+        $selected = in_array((string) $r['id'], $sel, true) ? ' selected' : '';
         $html .= '<option value="' . (int) $r['id'] . '"' . $selected . '>' . e($r[$label_key]) . '</option>';
     }
     return $html;
