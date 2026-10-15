@@ -41,6 +41,8 @@ if (preg_match('/^(TRV|RNT)-[A-Z2-9]{8}$/', $no)) {
 
 $scheme = (($_SERVER['HTTPS'] ?? '') === 'on') ? 'https' : 'http';
 $self_link = $scheme . '://' . ($_SERVER['HTTP_HOST'] ?? 'localhost') . APP_URL_PATH . '/tiket.php?no=' . urlencode($no);
+// Link verifikasi dibagikan (tanpa data pribadi).
+$ver_link = $scheme . '://' . ($_SERVER['HTTP_HOST'] ?? 'localhost') . APP_URL_PATH . '/verifikasi.php?no=' . urlencode($no);
 $title = 'Tiket' . ($row ? ' ' . $row['document_number'] : '');
 ?><!DOCTYPE html>
 <html lang="id">
@@ -179,7 +181,7 @@ $title = 'Tiket' . ($row ? ' ' . $row['document_number'] : '');
             </tr></table>
 
             <div class="tk-ver mt-4" style="border-top:1px dashed #c8c8c8;padding-top:8px">
-                Tiket ini sah. Cek keaslian tiket: <span class="text-break"><?= e($self_link) ?></span>
+                Tiket ini sah. Cek keaslian: <span class="text-break"><?= e($ver_link) ?></span>
             </div>
         </div>
     </div>

@@ -96,7 +96,10 @@ require __DIR__ . '/../../../includes/sidebar.php';
 <main class="col-12 col-md-9 col-lg-10 p-4">
     <div class="d-flex justify-content-between align-items-center mb-3">
         <h4 class="fw-bold mb-0"><?= e($b['document_number']) ?> <?= status_badge($status) ?></h4>
-        <a class="btn btn-outline-secondary btn-sm" href="<?= e(APP_URL) ?>/pages/travel/bookings/index.php">Kembali</a>
+        <div>
+            <a class="btn btn-dark btn-sm" target="_blank" href="<?= e(APP_URL) ?>/tiket.php?no=<?= urlencode((string) $b['document_number']) ?>&print=1">Cetak E-Tiket</a>
+            <a class="btn btn-outline-secondary btn-sm" href="<?= e(APP_URL) ?>/pages/travel/bookings/index.php">Kembali</a>
+        </div>
     </div>
     <div class="card shadow-sm border-0 mb-3"><div class="card-body">
         <div class="row g-3 small">

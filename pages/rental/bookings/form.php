@@ -11,11 +11,18 @@ $in  = ['date' => date('Y-m-d'), 'time' => date('H:i'), 'start_date' => date('Y-
     'pickup_address' => '', 'pickup_point_district_id' => '',
     'delivery_address' => '', 'delivery_point_district_id' => '', 'note' => ''];
 
+$in_passengers = [];
+
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     verify_csrf();
     foreach (array_keys($in) as $k) {
         $in[$k] = trim((string) ($_POST[$k] ?? ''));
     }
+    $in_passengers = array_values(array_unique(array_filter(
+        array_map('intval', (array) ($_POST['passenger_ids'] ?? [])),
+        static fn($v) => $v > 0
+    )));
+    $in_passengers = array_values(array_diff($in_passengers, [(int) $in['passenger_id']]));
     $err = '';
     if (!preg_match('/^\d{4}-\d{2}-\d{2}$/', $in['date']) || !preg_match('/^([01]\d|2[0-3]):[0-5]\d$/', $in['time'])) {
         $err = 'Tanggal dan jam booking wajib diisi.';
@@ -58,6 +65,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             'category_vehicle_id' => (int) $in['category_vehicle_id'] ?: null,
             'vehicle_id' => (int) $in['vehicle_id'] ?: null,
             'passenger_id' => (int) $in['passenger_id'],
+            'passenger_ids' => array_values(array_merge([(int) $in['passenger_id']], $in_passengers)),
             'note' => $in['note'],
             'created_user' => $_SESSION['username'] ?? null,
         ];
@@ -104,8 +112,10 @@ require __DIR__ . '/../../../includes/sidebar.php';
                 <input type="date" class="form-control" name="end_date" required value="<?= e($in['end_date']) ?>"></div>
             <div class="col-md-6"><label class="form-label">Cabang</label>
                 <select class="form-select" name="branch_id" required><option value="">-- Pilih --</option><?= select_options($branches, $in['branch_id']) ?></select></div>
-            <div class="col-md-6"><label class="form-label">Penumpang</label>
+            <div class="col-md-6"><label class="form-label">Penumpang Utama</label>
                 <select class="form-select" name="passenger_id" required><option value="">-- Pilih --</option><?= select_options($passengers, $in['passenger_id']) ?></select></div>
+            <div class="col-md-6"><label class="form-label">Penumpang Tambahan <span class="text-muted small">(Ctrl/Cmd klik untuk banyak)</span></label>
+                <select class="form-select" name="passenger_ids[]" multiple size="4"><?= select_options($passengers, $in_passengers, true) ?></select></div>
             <div class="col-md-6"><label class="form-label">Kategori Kendaraan</label>
                 <select class="form-select" name="category_vehicle_id"><option value="">-- Pilih --</option><?= select_options($cats, $in['category_vehicle_id']) ?></select></div>
             <div class="col-md-6"><label class="form-label">Kendaraan</label>
