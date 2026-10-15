@@ -54,9 +54,9 @@ $title = 'Tiket' . ($row ? ' ' . $row['document_number'] : '');
            label 7,5pt · nilai & isi tabel 9pt · Detail Penumpang 9,8pt · E-TIKET 25,5pt. */
         body { font-family: "Liberation Sans", Helvetica, Arial, sans-serif; }
         .tk-doc { color: #777; font-size: 7.5pt; letter-spacing: .4px; text-transform: uppercase; white-space: nowrap; }
-        .tk-v { font-weight: 700; font-size: 9pt; }
-        .tk-body { font-size: 9pt; }
-        .tk-sub { font-size: 10.5pt; font-weight: 700; }
+        .tk-v { font-weight: 700; font-size: 9pt; line-height: 14pt; }
+        .tk-body { font-size: 9pt; line-height: 13pt; }
+        .tk-sub { font-size: 10.5pt; font-weight: 700; line-height: 12pt; }
         .tk-addr { font-size: 9pt; font-weight: 700; }
         .tk-foot { font-size: 9pt; }
         .tk-ver { font-size: 7.5pt; color: #777; }
