@@ -57,9 +57,9 @@ $title = 'Tiket' . ($row ? ' ' . $row['document_number'] : '');
         .tk-stamp { width: 118px; }
         /* Logo & gambar dibatasi agar tidak melebar menekan kolom kanan keluar halaman. */
         .tk-logo { height: 58px; width: auto; max-width: 220px; }
-        .tk-eti { font-size: 34px; white-space: nowrap; }
+        .tk-eti { font-size: 34px; white-space: nowrap; text-align: right; }
         /* Tata cetak berbasis tabel: didukung semua renderer & printer (tanpa flexbox). */
-        table.tk-lay { border-collapse: collapse; }
+        table.tk-lay { border-collapse: collapse; table-layout: fixed; width: 100%; }
         table.tk-lay > tbody > tr > td { border: 0; padding: 0; vertical-align: top; }
         @media print {
             @page { size: A4; margin: 14mm 13mm; }
@@ -82,14 +82,14 @@ $title = 'Tiket' . ($row ? ' ' . $row['document_number'] : '');
     <div class="card tk-card shadow-sm border-0">
         <div class="card-body">
             <table class="tk-lay w-100"><tr>
-                <td class="align-top">
+                <td class="align-top" style="width:340px">
                     <?php if (!empty($row['logo'])): ?>
                         <img src="<?= e(APP_URL . '/' . ltrim((string) $row['logo'], '/')) ?>" alt="<?= e($row['company_name']) ?>" class="tk-logo">
                     <?php else: ?>
                         <div class="fs-4 fw-bold"><?= e($row['company_name']) ?></div>
                     <?php endif; ?>
                 </td>
-                <td class="text-end align-top" style="width:240px"><h1 class="tk-eti" style="margin:0">E-TIKET</h1></td>
+                <td class="text-end align-top"><h1 class="tk-eti" style="margin:0">E-TIKET</h1></td>
             </tr></table>
             <hr>
 
@@ -100,7 +100,7 @@ $title = 'Tiket' . ($row ? ' ' . $row['document_number'] : '');
                     <div class="text-muted"><?= e((string) $row['address']) ?></div>
                     <div class="text-muted"><?= e((string) $row['phone_number']) ?> &middot; <?= e((string) $row['email']) ?></div>
                 </td>
-                <td class="align-top">
+                <td class="align-top" style="width:50%">
                     <table class="tk-lay w-100">
                         <tr><td class="tk-doc" style="width:140px">Rute</td><td class="tk-v"><?= e(trim(($row['city_from'] ?? '') . ' - ' . ($row['city_to'] ?? ''), ' -') ?: '—') ?></td></tr>
                         <tr><td class="tk-doc">Nomor Tiket</td><td class="tk-v"><?= e($row['document_number']) ?></td></tr>
@@ -146,11 +146,11 @@ $title = 'Tiket' . ($row ? ' ' . $row['document_number'] : '');
             </div>
 
             <table class="tk-lay w-100 mt-4"><tr>
-                <td class="align-bottom">
+                <td class="align-top">
                     <div>Dibuat oleh <strong><?= e((string) ($row['created_user'] ?: '—')) ?></strong></div>
                     <div><span class="text-muted">pada tanggal</span> <strong><?= e(tanggal_indo((string) $row['date'])) ?></strong></div>
                 </td>
-                <td class="text-center align-bottom" style="width:170px">
+                <td class="text-end align-top" style="width:170px">
                     <img class="tk-stamp" src="<?= e(APP_URL . '/assets/brand/stamp-mtm.png') ?>" alt="Stempel Maura Trans Mandiri">
                 </td>
             </tr></table>
