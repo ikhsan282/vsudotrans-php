@@ -83,7 +83,7 @@ $title = 'Tiket' . ($row ? ' ' . $row['document_number'] : '');
             <table class="tk-lay w-100"><tr>
                 <td class="align-top">
                     <?php if (!empty($row['logo'])): ?>
-                        <img src="<?= e(APP_URL . '/' . ltrim((string) $row['logo'], '/')) ?>" alt="<?= e($row['company_name']) ?>" height="68">
+                        <img src="<?= e(APP_URL . '/' . ltrim((string) $row['logo'], '/')) ?>" alt="<?= e($row['company_name']) ?>" height="50">
                     <?php else: ?>
                         <div class="fs-4 fw-bold tk-brand text-uppercase"><?= e($row['company_name']) ?></div>
                     <?php endif; ?>
