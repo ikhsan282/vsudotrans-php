@@ -53,10 +53,10 @@ $title = 'Tiket' . ($row ? ' ' . $row['document_number'] : '');
         /* Ukuran & font disamakan dengan contoh resmi (terukur dari PDF contoh):
            label 7,5pt · nilai & isi tabel 9pt · Detail Penumpang 9,8pt · E-TIKET 25,5pt. */
         body { font-family: "Liberation Sans", Helvetica, Arial, sans-serif; }
-        .tk-doc { color: #777; font-size: 7.5pt; letter-spacing: .4px; text-transform: uppercase; }
+        .tk-doc { color: #777; font-size: 7.5pt; letter-spacing: .4px; text-transform: uppercase; white-space: nowrap; }
         .tk-v { font-weight: 700; font-size: 9pt; }
         .tk-body { font-size: 9pt; }
-        .tk-sub { font-size: 9.8pt; font-weight: 700; }
+        .tk-sub { font-size: 10.5pt; font-weight: 700; }
         .tk-addr { font-size: 9pt; font-weight: 700; }
         .tk-foot { font-size: 9pt; }
         .tk-ver { font-size: 7.5pt; color: #777; }
@@ -85,7 +85,7 @@ $title = 'Tiket' . ($row ? ' ' . $row['document_number'] : '');
         table.tk-lay { border-collapse: collapse; table-layout: fixed; width: 100%; }
         table.tk-lay > tbody > tr > td { border: 0; padding: 0; vertical-align: top; }
         @media print {
-            @page { size: A4; margin: 14mm 13mm; }
+            @page { size: A4; margin: 13mm 13mm 13mm 13mm; }
             body { background: #fff !important; }
             .no-print { display: none !important; }
             .tk-card { border: 0 !important; box-shadow: none !important; }
@@ -98,7 +98,7 @@ $title = 'Tiket' . ($row ? ' ' . $row['document_number'] : '');
     <button class="btn btn-dark btn-sm" onclick="window.print()">Cetak / Simpan PDF</button>
     <a class="btn btn-outline-secondary btn-sm" href="<?= e(APP_URL) ?>/index.php">Beranda</a>
 </div>
-<main class="container py-2" style="max-width: 860px;">
+<main class="container py-2" style="max-width: 860px;padding-left:0;padding-right:0;">
 <?php if (!$row): ?>
     <div class="alert alert-warning">Tiket tidak ditemukan. Periksa kembali nomor tiket Anda.</div>
 <?php else: ?>
@@ -117,15 +117,15 @@ $title = 'Tiket' . ($row ? ' ' . $row['document_number'] : '');
             <hr>
 
             <table class="tk-lay w-100"><tr>
-                <td style="width:44%;padding-right:30px">
+                <td style="width:42%;padding-right:22px">
                     <div class="tk-doc">Perusahaan</div>
                     <div class="tk-sub"><?= e($row['company_name']) ?></div>
                     <div class="tk-body text-muted"><?= e((string) $row['address']) ?></div>
                     <div class="tk-body text-muted"><?= e((string) $row['phone_number']) ?> &middot; <?= e((string) $row['email']) ?></div>
                 </td>
-                <td style="width:56%">
+                <td style="width:58%">
                     <table class="tk-lay w-100">
-                        <tr><td class="tk-doc" style="width:78px">Rute</td><td class="tk-v"><?= e(trim(($row['city_from'] ?? '') . ' - ' . ($row['city_to'] ?? ''), ' -') ?: '—') ?></td></tr>
+                        <tr><td class="tk-doc" style="width:52px">Rute</td><td class="tk-v"><?= e(trim(($row['city_from'] ?? '') . ' - ' . ($row['city_to'] ?? ''), ' -') ?: '—') ?></td></tr>
                         <tr><td class="tk-doc">Nomor Tiket</td><td class="tk-v"><?= e($row['document_number']) ?></td></tr>
                         <tr><td class="tk-doc">Tanggal</td><td class="tk-v"><?= e(tanggal_indo((string) $row['date'])) ?></td></tr>
                         <tr><td class="tk-doc">Jam</td><td class="tk-v"><?= e(substr((string) $row['time'], 0, 5)) ?></td></tr>
@@ -137,7 +137,7 @@ $title = 'Tiket' . ($row ? ' ' . $row['document_number'] : '');
 
             <div class="tk-sect mt-4 mb-1">Detail Penumpang</div>
             <table class="table table-bordered tk-tbl mb-0">
-                <thead><tr><th style="width:40px">#</th><th style="width:90px">Tipe</th><th>Nama</th><th style="width:160px">Nomor Telepon</th></tr></thead>
+                <thead><tr><th style="width:25px">#</th><th style="width:76px">Tipe</th><th>Nama</th><th style="width:140px">Nomor Telepon</th></tr></thead>
                 <tbody>
                 <?php if (!$passengers): ?>
                 <tr>
