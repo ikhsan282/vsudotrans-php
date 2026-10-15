@@ -48,14 +48,15 @@ $title = 'Tiket' . ($row ? ' ' . $row['document_number'] : '');
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.8/dist/css/bootstrap.min.css" rel="stylesheet">
     <style>
         /* Tipografi disamakan dengan wordmark logo: sans-geometris, uppercase, tebal. */
-        body { font-family: "Liberation Sans", Helvetica, Arial, "Nimbus Sans", sans-serif; }
+        body { font-family: "Liberation Sans", Helvetica, Arial, "Nimbus Sans", sans-serif; font-size: 12px; }
         .tk-brand { color: #a3423f; }
-        .tk-doc { font-size: 11px; font-weight: 700; letter-spacing: 1px; text-transform: uppercase; color: #8a8a8a; }
+        .tk-doc { font-size: 9.5px; font-weight: 700; letter-spacing: .8px; text-transform: uppercase; color: #8a8a8a; }
         .tk-v   { font-weight: 700; letter-spacing: .2px; }
-        .tk-head h1 { font-size: 34px; font-weight: 800; letter-spacing: 1.5px; margin: 0; }
-        .tk-table th { background: #f2f2f2; font-weight: 700; letter-spacing: .4px; text-transform: uppercase; font-size: 11px; }
-        .tk-stamp { width: 132px; opacity: .92; }
-        .tk-qr { width: 128px; }
+        .tk-head h1 { font-size: 22px; font-weight: 800; letter-spacing: 1px; margin: 0; }
+        .tk-table th { background: #f2f2f2; font-weight: 700; letter-spacing: .4px; text-transform: uppercase; font-size: 9.5px; }
+        .tk-table.small, .tk-table.small td { font-size: 11px; }
+        .tk-stamp { width: 96px; opacity: .92; }
+        .tk-qr { width: 96px; }
         /* Tata cetak berbasis tabel: didukung semua renderer & printer (tanpa flexbox). */
         table.tk-lay { border-collapse: collapse; }
         table.tk-lay > tbody > tr > td { border: 0; padding: 0; vertical-align: top; }
@@ -82,7 +83,7 @@ $title = 'Tiket' . ($row ? ' ' . $row['document_number'] : '');
             <table class="tk-lay w-100"><tr>
                 <td class="align-top">
                     <?php if (!empty($row['logo'])): ?>
-                        <img src="<?= e(APP_URL . '/' . ltrim((string) $row['logo'], '/')) ?>" alt="<?= e($row['company_name']) ?>" height="112">
+                        <img src="<?= e(APP_URL . '/' . ltrim((string) $row['logo'], '/')) ?>" alt="<?= e($row['company_name']) ?>" height="68">
                     <?php else: ?>
                         <div class="fs-4 fw-bold tk-brand text-uppercase"><?= e($row['company_name']) ?></div>
                     <?php endif; ?>
