@@ -89,6 +89,7 @@ Password semua user: `P@ssw0rd`. **Wajib diganti sebelum production.**
 | Metode Pembayaran (bank/QR) | ✅ | ✅ | Master `payment_methods`: CRUD + upload QR (LONGBLOB) |
 | **Invoice** | ✅ | ✅ | Otomatis saat booking; list + filter status; detail + catat pembayaran |
 | **Pembayaran** | ✅ | ✅ | Bayar sebagian/lunas, tolak overpay; `booking_cost_lines` cost_type `payment`; sinkron `total_payment` |
+| **Penjadwalan Driver** | ✅ | ✅ | Papan aktif + riwayat, tugaskan/selesaikan tugas, riwayat per booking; `trip_assignments` |
 | Payroll (gaji pokok, uang harian) | ⏳ | ⏳ | Belum dirancang |
 | Finance, Attendance | ⏳ | ⏳ | Belum dirancang |
 
@@ -111,6 +112,7 @@ Menu sidebar, dan apa yang bisa dilakukan di dalamnya:
 | **Role & Hak Akses** | CRUD role, editor permission per role, batas level (aktor hanya boleh mengelola role di bawah levelnya) |
 | **Referensi Umum** ▾ | Bank, Satuan, dan Wilayah berjenjang: Negara → Provinsi → Kota/Kab. → Kecamatan → Desa |
 | **Master HR** ▾ | Grade jabatan, Jabatan, Posisi (bertingkat), Struktur Organisasi, Penghargaan karyawan |
+| **Penjadwalan** ▾ | **Papan & Riwayat**: assignment aktif ("sedang jalan") + tombol Selesaikan Tugas, tab Riwayat dengan filter rentang tanggal · **Tugaskan Driver**: pilih booking travel/rental yang belum punya penugasan aktif (50 terbaru per tipe), driver (`job_position` = "Driver"), kendaraan opsional, catatan |
 | **Audit Trail** | Read-only: waktu, user, aksi, IP, keterangan (login, logout, switch perusahaan, create/update/delete semua modul, aksi booking) |
 | **Tiket publik** (tanpa login) | `tiket.php?no=<resi>` — cek tiket travel/rental: nomor, tanggal, jam, alamat, total |
 | **Keuangan** ▾ | **Invoice**: daftar + filter status, detail, catat pembayaran (sebagian/lunas) · **Metode Pembayaran**: CRUD bank/QRIS/e-wallet per perusahaan (atau global), upload gambar QR, aktif/nonaktif, urutan tampil |
@@ -130,6 +132,7 @@ php tests/vehicles_check.php
 php tests/level_rule_check.php       # batas level role
 php tests/payment_methods_check.php  # metode pembayaran + blob QR
 php tests/invoice_check.php          # invoice + pembayaran (partial/lunas/overpay)
+php tests/dispatch_check.php         # penjadwalan driver: assign/end, validasi tenant, RBAC
 ```
 
 ## Struktur
@@ -145,6 +148,7 @@ vsudotrans/
 │   ├── masters/       # referensi umum, engine: _engine.php + subfolder per tabel
 │   ├── vehicles/ hr/  # master kendaraan + master HR
 │   ├── finance/       # payment_methods (metode pembayaran + QR), invoices (list + detail/bayar)
+│   ├── dispatch/      # penjadwalan driver: papan aktif/riwayat, tugaskan, detail booking+riwayat
 │   ├── travel/        # rutes, schedules, passengers, bookings
 │   └── rental/        # bookings
 ├── tests/             # self-check assert-style
