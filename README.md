@@ -16,7 +16,7 @@ PHP Native + MySQLi + Bootstrap 5. Konversi dari VSudoTrans.API (ASP.NET Core).
 mysql -u root -p < database/schema.sql
 ```
 
-> Schema lengkap di 1 file: 44 tabel, 5 role (Super Admin/Admin Perusahaan/HRD/Staff/Viewer), 5 user default dengan password `P@ssw0rd`. Terverifikasi fresh install: 44 tabel + 5 user.
+> Schema lengkap di 1 file: 48 tabel, 5 role (Super Admin/Admin Perusahaan/HRD/Staff/Viewer), 5 user default dengan password `P@ssw0rd`. Terverifikasi fresh install: 48 tabel + 5 user.
 >
 > **Penting:** file ini sudah memuat `CREATE DATABASE IF NOT EXISTS \`vsudotrans\`` dan `USE \`vsudotrans\``. Jadi:
 > - Tidak perlu membuat database dulu; cukup import.
@@ -89,7 +89,7 @@ Password semua user: `P@ssw0rd`. **Wajib diganti sebelum production.**
 | Metode Pembayaran (bank/QR) | ✅ | ✅ | Master `payment_methods`: CRUD + upload QR (LONGBLOB) |
 | **Invoice** | ✅ | ✅ | Otomatis saat booking; list + filter status; detail + catat pembayaran |
 | **Pembayaran** | ✅ | ✅ | Bayar sebagian/lunas, tolak overpay; `booking_cost_lines` cost_type `payment`; sinkron `total_payment` |
-| Payroll (gaji pokok, uang harian) | ⏳ | ⏳ | Belum dirancang |
+| **Payroll** | ✅ | ✅ | Periode bulanan (draft→final→dibayar), generate per karyawan aktif, gaji dari grade, cetak |
 | Finance, Attendance | ⏳ | ⏳ | Belum dirancang |
 
 ✅ selesai · ⏳ belum
@@ -112,12 +112,13 @@ Menu sidebar, dan apa yang bisa dilakukan di dalamnya:
 | **Referensi Umum** ▾ | Bank, Satuan, dan Wilayah berjenjang: Negara → Provinsi → Kota/Kab. → Kecamatan → Desa |
 | **Master HR** ▾ | Grade jabatan, Jabatan, Posisi (bertingkat), Struktur Organisasi, Penghargaan karyawan |
 | **Audit Trail** | Read-only: waktu, user, aksi, IP, keterangan (login, logout, switch perusahaan, create/update/delete semua modul, aksi booking) |
+| **Payroll** | Daftar periode per tahun + generate periode bulanan (satu item per karyawan aktif, nilai dari grade jabatan); detail: ubah hari hadir/potongan per baris lalu gaji bersih dihitung ulang; alur status draft→final→dibayar (tidak bisa mundur, edit diblokir setelah dibayar); halaman cetak daftar gaji |
 | **Tiket publik** (tanpa login) | `tiket.php?no=<resi>` — cek tiket travel/rental: nomor, tanggal, jam, alamat, total |
 | **Keuangan** ▾ | **Invoice**: daftar + filter status, detail, catat pembayaran (sebagian/lunas) · **Metode Pembayaran**: CRUD bank/QRIS/e-wallet per perusahaan (atau global), upload gambar QR, aktif/nonaktif, urutan tampil |
 
 **Tanpa halaman (logika saja):** rate limit login, tenant scoping, CSRF, level rule role.
 
-**Belum ada:** Payroll (gaji pokok, uang harian), Finance, Attendance. Kolom pajak invoice sudah ada tapi belum dihitung.
+**Belum ada:** Finance, Attendance. Kolom pajak invoice sudah ada tapi belum dihitung.
 
 ## Pengujian
 
@@ -130,6 +131,7 @@ php tests/vehicles_check.php
 php tests/level_rule_check.php       # batas level role
 php tests/payment_methods_check.php  # metode pembayaran + blob QR
 php tests/invoice_check.php          # invoice + pembayaran (partial/lunas/overpay)
+php tests/payroll_check.php          # payroll: generate, hitung gaji bersih, transisi status, RBAC
 ```
 
 ## Struktur
@@ -137,14 +139,15 @@ php tests/invoice_check.php          # invoice + pembayaran (partial/lunas/overp
 ```
 vsudotrans/
 ├── config/            # APP_URL +DB + session
-├── database/schema.sql# 44 tabel + seed, satu file
-├── includes/          # auth.php (RBAC, company scope), booking_service.php, header/sidebar/footer
+├── database/schema.sql# 48 tabel + seed, satu file
+├── includes/          # auth.php (RBAC, company scope), booking_service.php, invoice_service.php, payroll_service.php, header/sidebar/footer
 ├── pages/
 │   ├── auth/ dashboard/ profile/
 │   ├── companies/ groups/ branches/ employees/ users/ roles/ audit/
 │   ├── masters/       # referensi umum, engine: _engine.php + subfolder per tabel
 │   ├── vehicles/ hr/  # master kendaraan + master HR
 │   ├── finance/       # payment_methods (metode pembayaran + QR), invoices (list + detail/bayar)
+│   ├── payroll/       # periods (list + generate, detail item gaji, cetak)
 │   ├── travel/        # rutes, schedules, passengers, bookings
 │   └── rental/        # bookings
 ├── tests/             # self-check assert-style
