@@ -89,6 +89,7 @@ Password semua user: `P@ssw0rd`. **Wajib diganti sebelum production.**
 | Metode Pembayaran (bank/QR) | ✅ | ✅ | Master `payment_methods`: CRUD + upload QR (LONGBLOB) |
 | **Invoice** | ✅ | ✅ | Otomatis saat booking; list + filter status; detail + catat pembayaran |
 | **Pembayaran** | ✅ | ✅ | Bayar sebagian/lunas, tolak overpay; `booking_cost_lines` cost_type `payment`; sinkron `total_payment` |
+| **Laporan Booking** | ✅ | ✅ | Rekap per periode, wilayah asal→tujuan, kendaraan, driver; export CSV & XLSX native |
 | Payroll (gaji pokok, uang harian) | ⏳ | ⏳ | Belum dirancang |
 | Finance, Attendance | ⏳ | ⏳ | Belum dirancang |
 
@@ -114,6 +115,7 @@ Menu sidebar, dan apa yang bisa dilakukan di dalamnya:
 | **Audit Trail** | Read-only: waktu, user, aksi, IP, keterangan (login, logout, switch perusahaan, create/update/delete semua modul, aksi booking) |
 | **Tiket publik** (tanpa login) | `tiket.php?no=<resi>` — cek tiket travel/rental: nomor, tanggal, jam, alamat, total |
 | **Keuangan** ▾ | **Invoice**: daftar + filter status, detail, catat pembayaran (sebagian/lunas) · **Metode Pembayaran**: CRUD bank/QRIS/e-wallet per perusahaan (atau global), upload gambar QR, aktif/nonaktif, urutan tampil |
+| **Laporan** ▾ | **Laporan Booking**: filter rentang tanggal + jenis (travel/rental/semua), kartu ringkasan (total booking, nilai, terbayar, sisa piutang), 4 tabel dimensi (periode, wilayah asal→tujuan, kendaraan, driver) dengan total di footer; unduh CSV (BOM UTF-8) atau Excel |
 
 **Tanpa halaman (logika saja):** rate limit login, tenant scoping, CSRF, level rule role.
 
@@ -130,7 +132,11 @@ php tests/vehicles_check.php
 php tests/level_rule_check.php       # batas level role
 php tests/payment_methods_check.php  # metode pembayaran + blob QR
 php tests/invoice_check.php          # invoice + pembayaran (partial/lunas/overpay)
+php tests/reports_check.php          # laporan booking (ringkasan, 4 dimensi, scoping, XLSX)
 ```
+
+Export XLSX ditulis native tanpa Composer (`includes/xlsx.php`) — ZIP metode STORED + CRC32 manual,
+satu sheet, tanpa dependensi eksternal.
 
 ## Struktur
 
@@ -145,6 +151,7 @@ vsudotrans/
 │   ├── masters/       # referensi umum, engine: _engine.php + subfolder per tabel
 │   ├── vehicles/ hr/  # master kendaraan + master HR
 │   ├── finance/       # payment_methods (metode pembayaran + QR), invoices (list + detail/bayar)
+│   ├── reports/       # laporan booking (_query.php sumber bersama, bookings.php, bookings_export.php)
 │   ├── travel/        # rutes, schedules, passengers, bookings
 │   └── rental/        # bookings
 ├── tests/             # self-check assert-style
