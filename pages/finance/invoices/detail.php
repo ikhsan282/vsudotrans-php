@@ -68,6 +68,7 @@ require __DIR__ . '/../../../includes/sidebar.php';
     <div class="d-flex justify-content-between align-items-center mb-3">
         <h4 class="fw-bold mb-0"><?= e($inv['invoice_no']) ?> <?= invoice_pay_badge($inv['pay_status']) ?></h4>
         <div>
+            <a class="btn btn-dark btn-sm" target="_blank" href="<?= e(APP_URL) ?>/pages/finance/invoices/print.php?id=<?= $id ?>&print=1">Cetak Invoice</a>
             <a class="btn btn-outline-secondary btn-sm" href="<?= e(APP_URL) ?>/<?= e($link) ?>?id=<?= (int) $inv['booking_id'] ?>">Lihat Booking</a>
             <a class="btn btn-outline-secondary btn-sm" href="<?= e(APP_URL) ?>/pages/finance/invoices/index.php">Kembali</a>
         </div>

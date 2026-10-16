@@ -79,6 +79,7 @@ require __DIR__ . '/../../../includes/sidebar.php';
                         <td class="text-end"><?= e(rupiah((float) $r['paid_total'])) ?></td>
                         <td><?= invoice_pay_badge($r['pay_status']) ?></td>
                         <td class="text-end">
+                            <a class="btn btn-sm btn-outline-dark" target="_blank" title="Cetak Invoice" href="<?= e(APP_URL) ?>/pages/finance/invoices/print.php?id=<?= (int) $r['id'] ?>&print=1">Cetak</a>
                             <a class="btn btn-sm btn-outline-secondary" href="<?= e(APP_URL) ?>/pages/finance/invoices/detail.php?id=<?= (int) $r['id'] ?>">Detail</a>
                         </td>
                     </tr>
