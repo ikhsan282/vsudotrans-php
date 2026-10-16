@@ -834,9 +834,10 @@ CREATE TABLE `booking_cost_lines` (
   `company_id` INT(11) NOT NULL,
   `booking_type` VARCHAR(10) NOT NULL,
   `booking_id` INT(11) NOT NULL,
-  `cost_type` VARCHAR(20) NOT NULL COMMENT 'a|b|c|bbm|...',
+  `cost_type` VARCHAR(20) NOT NULL COMMENT 'a|b|c|bbm|payment|...',
   `description` VARCHAR(255) DEFAULT NULL,
   `amount` DECIMAL(18,2) NOT NULL DEFAULT 0,
+  `payment_method_id` INT(11) DEFAULT NULL COMMENT 'metode bayar (untuk cost_type=payment)',
   `employee_id` INT(11) DEFAULT NULL COMMENT 'biaya dipetakan ke karyawan (driver/pengawas); NULL = tanpa premi',
   `premi_type` VARCHAR(10) NOT NULL DEFAULT 'nominal' COMMENT 'nominal|persen',
   `premi_value` DECIMAL(18,2) NOT NULL DEFAULT 0,
@@ -850,6 +851,7 @@ CREATE TABLE `booking_cost_lines` (
   KEY `ix_bcl_booking` (`booking_type`, `booking_id`),
   KEY `ix_bcl_employee` (`employee_id`),
   KEY `ix_bcl_company` (`company_id`),
+  KEY `ix_bcl_payment_method` (`payment_method_id`),
   CONSTRAINT `fk_bcl_company` FOREIGN KEY (`company_id`) REFERENCES `companies` (`id`) ON DELETE RESTRICT,
   CONSTRAINT `fk_bcl_employee` FOREIGN KEY (`employee_id`) REFERENCES `employees` (`id`) ON DELETE SET NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;

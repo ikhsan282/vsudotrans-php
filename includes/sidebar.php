@@ -38,7 +38,8 @@ $menu = [
         ['label' => 'Struktur Org.',  'href' => 'pages/hr/organization_structures/index.php', 'perms' => 'hr.view'],
         ['label' => 'Penghargaan',    'href' => 'pages/hr/employee_recognitions/index.php',   'perms' => 'hr.view'],
     ]],
-    ['key' => 'finance', 'label' => 'Keuangan', 'icon' => 'cash-coin', 'perm' => 'finance.view', 'sub' => [
+    ['key' => 'finance', 'label' => 'Keuangan', 'icon' => 'cash-coin', 'perm' => null, 'sub' => [
+        ['label' => 'Invoice',           'href' => 'pages/finance/invoices/index.php',        'perms' => 'invoices.view'],
         ['label' => 'Metode Pembayaran', 'href' => 'pages/finance/payment_methods/index.php', 'perms' => 'finance.view'],
     ]],
     ['key' => 'audit',     'label' => 'Audit Trail',     'icon' => 'clock-history', 'href' => 'pages/audit/index.php', 'perm' => 'audit.view'],
