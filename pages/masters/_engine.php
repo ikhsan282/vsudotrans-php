@@ -85,6 +85,17 @@ function mf_select(string $col, string $label, string $source, array $extra = []
 {
     return ['col' => $col, 'label' => $label, 'type' => 'select', 'source' => $source, 'required' => true] + $extra;
 }
+/** Upload gambar ke folder $dir; tersimpan sebagai path relatif di kolom. */
+function mf_file(string $col, string $label, string $dir, array $extra = []): array
+{
+    return ['col' => $col, 'label' => $label, 'type' => 'file', 'dir' => $dir] + $extra;
+}
+/** Berkas biner (QR) dimuat ke kolom LONGBLOB; tidak di-list, hanya unggah/ganti.
+ *  $mime_col: kolom penyimpan MIME (opsional). */
+function mf_bytes(string $col, string $label, array $extra = []): array
+{
+    return ['col' => $col, 'label' => $label, 'type' => 'bytes'] + $extra;
+}
 
 function master_tables(): array
 {
@@ -220,6 +231,27 @@ function master_tables(): array
                 mf_note(),
             ],
         ]),
+
+        // ---------------- METODE PEMBAYARAN (company_id, NULL = semua perusahaan) ----------------
+        'payment_methods' => [
+            'table' => 'payment_methods', 'title' => 'Metode Pembayaran', 'module' => 'finance',
+            'perm_view' => 'finance.view', 'perm_manage' => 'finance.manage',
+            'company' => true, 'unique' => 'company_or_null', 'order' => 'sort_order',
+            'fields' => [
+                mf_code(), mf_name(),
+                ['col' => 'account_name', 'label' => 'Nama Pemilik Rekening', 'type' => 'text', 'max' => 255, 'required' => false, 'nullable' => true],
+                ['col' => 'account_number', 'label' => 'Nomor Rekening / Tujuan', 'type' => 'text', 'max' => 50, 'required' => false, 'nullable' => true],
+                mf_bytes('qr_image', 'Gambar QR (opsional)', ['mime_col' => 'qr_mime']),
+                ['col' => 'instructions', 'label' => 'Instruksi Pembayaran', 'type' => 'textarea', 'max' => 2000, 'required' => false, 'nullable' => true],
+                ['col' => 'qr_mime', 'label' => 'Jenis QR', 'type' => 'hidden'],
+                ['col' => 'sort_order', 'label' => 'Urutan', 'type' => 'number', 'int' => true, 'required' => false],
+                mf_active(),
+                mf_note(),
+            ],
+            'blockers' => [
+                ['table' => 'invoices', 'col' => 'payment_method_id', 'label' => 'invoice'],
+            ],
+        ],
     ];
     return $defs;
 }
@@ -434,7 +466,7 @@ function master_list(string $key): void
 
     $active = $spec['module'];
     $title  = $spec['title'];
-    $list_cols = array_values(array_filter($spec['fields'], fn ($f) => ($f['type'] ?? '') !== 'textarea' && ($f['type'] ?? '') !== 'money'));
+    $list_cols = array_values(array_filter($spec['fields'], fn ($f) => !in_array($f['type'] ?? '', ['textarea', 'money', 'bytes', 'file'], true)));
     require __DIR__ . '/../../includes/header.php';
     require __DIR__ . '/../../includes/sidebar.php';
     ?>
@@ -577,14 +609,28 @@ function master_form(string $key): void
         <?php endif; ?>
         <div class="card shadow-sm border-0" style="max-width: 720px;">
             <div class="card-body">
-                <form method="post" action="<?= e(master_base_url($spec)) ?>/form.php<?= $id > 0 ? '?id=' . $id : '' ?>">
+                <form method="post" action="<?= e(master_base_url($spec)) ?>/form.php<?= $id > 0 ? '?id=' . $id : '' ?>" enctype="multipart/form-data">
                     <?= csrf_field() ?>
                     <input type="hidden" name="id" value="<?= $id ?>">
                     <?php foreach ($spec['fields'] as $f): $col = $f['col']; $val = $row[$col] ?? null; ?>
+                        <?php if (($f['type'] ?? '') === 'hidden'): ?>
+                            <input type="hidden" name="<?= e($col) ?>" value="<?= e((string) $val) ?>">
+                            <?php continue; ?>
+                        <?php endif; ?>
                         <?php if (($f['type'] ?? '') === 'checkbox'): ?>
                             <div class="form-check mb-3">
                                 <input class="form-check-input" type="checkbox" id="<?= e($col) ?>" name="<?= e($col) ?>" <?= $val ? 'checked' : '' ?>>
                                 <label class="form-check-label" for="<?= e($col) ?>"><?= e($f['label']) ?></label>
+                            </div>
+                            <?php continue; ?>
+                        <?php endif; ?>
+                        <?php if (($f['type'] ?? '') === 'bytes'): ?>
+                            <div class="mb-3">
+                                <label class="form-label" for="<?= e($col) ?>"><?= e($f['label']) ?></label>
+                                <input class="form-control" type="file" id="<?= e($col) ?>" name="<?= e($col) ?>" accept="image/*">
+                                <?php if ($id > 0 && !empty($row[$col])): ?>
+                                    <div class="form-text">Berkas tersimpan. Unggah ulang untuk mengganti.</div>
+                                <?php endif; ?>
                             </div>
                             <?php continue; ?>
                         <?php endif; ?>
@@ -657,9 +703,56 @@ function master_empty_row(array $spec): array
 {
     $row = [];
     foreach ($spec['fields'] as $f) {
-        $row[$f['col']] = ($f['type'] ?? '') === 'checkbox' ? 1 : '';
+        $t = $f['type'] ?? '';
+        if ($t === 'checkbox') {
+            $row[$f['col']] = 1;
+        } elseif ($t === 'hidden') {
+            $row[$f['col']] = in_array($f['col'], ['qr_mime'], true) ? '' : null;
+        } else {
+            $row[$f['col']] = '';
+        }
     }
     return $row;
+}
+
+/** Upload berkas biner (QR/gambar) dari $_FILES[$col]; null bila tidak ada upload.
+ *  $mime_col: kolom penyimpan MIME (opsional) — diisi lewat $_POST agar ikut tersimpan. */
+function master_upload_binary(string $col, ?string $mime_col = null): ?string
+{
+    if (empty($_FILES[$col]['tmp_name']) || (int) ($_FILES[$col]['error'] ?? 1) !== UPLOAD_ERR_OK) {
+        return null;
+    }
+    if ((int) $_FILES[$col]['size'] > 2 * 1024 * 1024) {
+        throw new InvalidArgumentException('Ukuran berkas ' . $col . ' maksimal 2 MB.');
+    }
+    $info = @getimagesize($_FILES[$col]['tmp_name']);
+    if ($info === false) {
+        throw new InvalidArgumentException('Berkas ' . $col . ' harus berupa gambar.');
+    }
+    $data = file_get_contents($_FILES[$col]['tmp_name']);
+    if ($data === false) {
+        throw new InvalidArgumentException('Gagal membaca berkas ' . $col . '.');
+    }
+    if ($mime_col !== null && column_exists('payment_methods', $mime_col)) {
+        $_POST[$mime_col] = (string) ($info['mime'] ?? 'application/octet-stream');
+    }
+    return $data;
+}
+
+/** Kolom ada di tabel? (dipakai untuk kolom opsional seperti qr_mime). */
+function column_exists(string $table, string $column): bool
+{
+    static $cache = [];
+    $key = $table . '.' . $column;
+    if (!array_key_exists($key, $cache)) {
+        $st = db()->prepare('SELECT COUNT(*) FROM information_schema.columns
+            WHERE table_schema = DATABASE() AND table_name = ? AND column_name = ?');
+        $st->bind_param('ss', $table, $column);
+        $st->execute();
+        $cache[$key] = (int) $st->get_result()->fetch_row()[0] > 0;
+        $st->close();
+    }
+    return $cache[$key];
 }
 
 /** POST -> map nilai final sesuai spec. */
@@ -671,6 +764,23 @@ function master_map_input(array $spec, array $post): array
         $type = $f['type'] ?? 'text';
         if ($type === 'checkbox') {
             $out[$col] = isset($post[$col]) ? 1 : 0;
+            continue;
+        }
+        // Berkas biner: hanya diisi bila ada upload; jika tidak, pertahankan nilai lama.
+        if ($type === 'bytes') {
+            $up = master_upload_binary($col, $f['mime_col'] ?? null);
+            if ($up !== null) {
+                $out[$col] = $up;
+            }
+            continue;
+        }
+        // Nilai tersembunyi (mis. qr_mime) — ambil dari $_POST karena bisa diisi
+        // oleh master_upload_binary() sedangkan $post adalah salinan lama.
+        if ($type === 'hidden') {
+            $v = $_POST[$col] ?? ($post[$col] ?? '');
+            if ($v !== '') {
+                $out[$col] = (string) $v;
+            }
             continue;
         }
         $v = trim((string) ($post[$col] ?? ''));
@@ -818,6 +928,9 @@ function master_save(array $spec, int $id, array $in, ?int $cid): int
         } elseif (!empty($f['int']) || ($f['type'] ?? '') === 'checkbox') {
             $t = 'i';
         }
+        // ponytail: kolom biner (bytes) pakai tipe 's' — tipe 'b' MySQLi simpan 0 byte
+        // tanpa send_long_data yang rapuh terhadap banyak parameter. Limit LONGBLOB 4GB;
+        // ganti ke send_long_data bila suatu saat perlu unggah >16 MB (max_allowed_packet).
         $types_map[$f['col']] = $t;
     }
 
