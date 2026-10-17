@@ -65,14 +65,21 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             } else {
                 $sql = (string) file_get_contents($tmp);
                 @unlink($tmp);
-                [$sukses, $jumlah, $error] = backup_import_sql($sql);
+                [$sukses, $jumlah, $lewati, $error] = backup_import_sql($sql);
                 if ($sukses) {
-                    audit('database.restore', 'Restore database dari ' . $file['name'] . " ({$jumlah} statement)");
-                    flash('success', "Restore selesai: {$jumlah} statement dieksekusi.");
+                    // Flash + audit SEBELUM redirect, dan tulis session SEBELUM proses mati
+                    // supaya pesan "Restore selesai" benar-benar tampil di halaman berikutnya.
+                    flash(
+                        'success',
+                        "Restore selesai: {$jumlah} statement dieksekusi."
+                        . ($lewati > 0 ? " {$lewati} pernyataan skema (CREATE/DROP/ALTER) dilewati — skema dipertahankan agar sesi login tidak putus." : '')
+                    );
+                    audit('database.restore', 'Restore database dari ' . e((string) $file['name']) . " ({$jumlah} statement, {$lewati} DDL dilewati)");
+                    session_write_close();
                     redirect('pages/settings/backup.php');
                 }
                 $errors[] = 'Restore GAGAL pada ' . $error
-                    . '. Statement sebelum baris itu sudah ter-commit; pulihkan dari file backup bila perlu.';
+                    . '. Tidak ada perubahan yang disimpan (ROLLBACK); database tetap seperti semula.';
             }
         }
     }
@@ -98,9 +105,11 @@ require __DIR__ . '/../../includes/sidebar.php';
                 <div class="card-body">
                     <h6 class="fw-bold"><i class="bi bi-download me-1"></i>Backup</h6>
                     <p class="text-muted small mb-3">
-                        Menghasilkan file <code>.sql</code> (<code>CREATE TABLE</code> + <code>INSERT</code>)
-                        untuk seluruh <?= count(backup_tables()) ?> tabel, semua perusahaan.
-                        Simpan di tempat aman — isinya termasuk password user yang sudah di-hash.
+                        Menghasilkan file <code>.sql</code> (<code>CREATE TABLE</code> + <code>DELETE</code>
+                        + <code>INSERT</code>) untuk seluruh <?= count(backup_tables()) ?> tabel, semua perusahaan.
+                        Restore lewat halaman ini memulihkan <strong>data</strong>; skema sengaja tidak
+                        diubah supaya sesi login tidak putus. Simpan di tempat aman — isinya termasuk
+                        password user yang sudah di-hash.
                     </p>
                     <a class="btn btn-primary" href="?action=download"><i class="bi bi-download me-1"></i>Unduh Backup Sekarang</a>
                 </div>
@@ -113,9 +122,20 @@ require __DIR__ . '/../../includes/sidebar.php';
                     <h6 class="fw-bold text-danger"><i class="bi bi-exclamation-triangle me-1"></i>Restore</h6>
                     <p class="text-muted small mb-3">
                         Mengimpor file <code>.sql</code> dan <strong>MENIMPA seluruh data</strong> di database ini.
-                        Tidak bisa dibatalkan — unduh backup dulu.
+                        Tabel dikosongkan lalu diisi ulang dalam satu transaksi — gagal di tengah =
+                        tidak ada perubahan. Tidak bisa dibatalkan — unduh backup dulu.
                         Maksimal <?= number_format($max_bytes / 1048576, 0) ?> MB.
                     </p>
+                    <details class="small text-muted mb-3">
+                        <summary class="fw-semibold">Pindah server / install baru dari file backup?</summary>
+                        <p class="mb-0 mt-2">
+                            Halaman ini hanya untuk memulihkan data pada aplikasi yang sudah terpasang:
+                            pernyataan <code>CREATE</code>/<code>DROP</code>/<code>ALTER</code> di file
+                            diabaikan. Untuk server baru, impor file backup lewat phpMyAdmin/cPanel
+                            (atau <code>mysql</code>) — di sana skema ikut dibuat; sesi login tidak
+                            menjadi masalah karena tidak ada request web yang berjalan.
+                        </p>
+                    </details>
                     <form method="post" action="" enctype="multipart/form-data"
                           onsubmit="return confirm('Timpa seluruh data database dengan isi file ini?')">
                         <?= csrf_field() ?>

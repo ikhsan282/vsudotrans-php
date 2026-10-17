@@ -93,6 +93,8 @@ $body = (string) file_get_contents($tmp);
 ok(filesize($tmp) > 10000, 'ukuran dump wajar (' . filesize($tmp) . ' byte)');
 ok(str_contains($body, 'CREATE TABLE `users`') && str_contains($body, 'INSERT INTO `users`'), 'isi dump memuat CREATE + INSERT users');
 ok(str_contains($body, 'SET FOREIGN_KEY_CHECKS=0;'), 'header FOREIGN_KEY_CHECKS ada');
+ok(!preg_match('/^\s*DROP\s+TABLE/im', $body), 'dump TIDAK memuat pernyataan DROP TABLE (restore in-place aman)');
+ok(substr_count($body, 'DELETE FROM `') >= 53, 'tiap tabel dikosongkan dengan DELETE (' . substr_count($body, 'DELETE FROM `') . ')');
 ok(substr_count($body, 'CREATE TABLE') >= 53, 'semua tabel ikut (' . substr_count($body, 'CREATE TABLE') . ' CREATE TABLE)');
 @unlink($tmp);
 

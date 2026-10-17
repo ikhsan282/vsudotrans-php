@@ -36,6 +36,17 @@ function backup_quote_ident(string $name): string
 /**
  * Tulis dump seluruh database ke stream (default php://output), per tabel, bertahap
  * supaya tidak ada DB utuh yang ditampung di satu string.
+ *
+ * Isi dump: CREATE TABLE (tanpa DROP TABLE) + DELETE FROM tabel + INSERT data.
+ * Alasan: dump ini dipakai juga untuk restore IN-PLACE di aplikasi yang sedang hidup.
+ * DROP TABLE akan membuat tabel `users` hilang di tengah request -> sesi Super Admin
+ * yang menjalankan restore langsung tidak valid dan audit()/flash()/redirect() gagal.
+ * Karena itu tabel dikosongkan dengan DELETE, bukan dijatuhkan.
+ *
+ * Perlu skema baru (mis. kolom bertambah dari versi aplikasi yang lebih baru)?
+ * Buat dump sendiri dengan `SHOW CREATE TABLE` lalu impor lewat mySQL/phpMyAdmin —
+ * tugas Restore UI adalah memulihkan DATA, dan itu tidak butuh DDL.
+ *
  * Mengembalikan jumlah tabel yang ditulis.
  */
 function backup_dump_to_stream($out = null, int $batch = 200): int
@@ -51,6 +62,7 @@ function backup_dump_to_stream($out = null, int $batch = 200): int
     $write('-- Database: ' . DB_NAME . "\n");
     $write('-- Dibuat: ' . date('Y-m-d H:i:s') . " (Asia/Jakarta)\n");
     $write("-- Dibuat oleh: VSudoTrans (dump murni PHP, tanpa mysqldump)\n");
+    $write("-- Mode: restore in-place (skema tidak dijatuhkan — sesi login tidak terputus)\n");
     $write("--\n");
     $write("SET NAMES utf8mb4;\n");
     $write("SET FOREIGN_KEY_CHECKS=0;\n");
@@ -62,8 +74,9 @@ function backup_dump_to_stream($out = null, int $batch = 200): int
         $write("--\n-- Tabel {$q}\n--\n");
 
         $create = $db->query('SHOW CREATE TABLE ' . $q)->fetch_row();
-        $write('DROP TABLE IF EXISTS ' . $q . ";\n");
         $write($create[1] . ";\n\n");
+        // Kosongkan tabel (bukan DROP): idempoten, skema tetap, foreign key sudah non-aktif.
+        $write('DELETE FROM ' . $q . ";\n");
 
         $res = $db->query('SELECT * FROM ' . $q);
         $cols = [];
@@ -81,20 +94,16 @@ function backup_dump_to_stream($out = null, int $batch = 200): int
         $prefix = 'INSERT INTO ' . $q . ' (' . implode(', ', $cols) . ") VALUES\n";
         $chunk  = [];
         $rows   = 0;
-        $flush = static function () use (&$chunk, &$rows, $write, $prefix, $batch): void {
+        $flush = static function () use (&$chunk, &$rows, $write, $prefix): void {
             if (!$chunk) {
                 return;
             }
             $write($prefix . implode(",\n", $chunk) . ";\n");
-            // Commit tiap batch: dump yang terputus di tengah tetap bisa diimpor sampai batch terakhir.
-            $write("COMMIT;\n");
-            $write("START TRANSACTION;\n");
             $chunk = [];
             $rows  = 0;
         };
 
         $res->free();
-        $write("START TRANSACTION;\n");
         $res = $db->query('SELECT * FROM ' . $q);
         while ($row = $res->fetch_row()) {
             $vals = [];
@@ -110,7 +119,7 @@ function backup_dump_to_stream($out = null, int $batch = 200): int
         }
         $flush();
         $res->free();
-        $write("COMMIT;\n\n");
+        $write("\n");
         fflush($out);
     }
 
@@ -278,25 +287,43 @@ function backup_split_sql(string $sql): array
 
 /**
  * Jalankan dump, satu statement per query. Mengembalikan [sukses, dijalankan, error].
- * SINGLE_TRANSACTION sengaja TIDAK dipakai: dump kita sendiri selalu menyertakan
- * COMMIT/START TRANSACTION sendiri (kompatibel dengan dump dari phpMyAdmin juga).
+ *
+ * Restore in-place: skema TIDAK disentuh. Statement DDL (CREATE TABLE dari dump sendiri,
+ * atau DROP/ALTER dari dump phpMyAdmin) DILEWATI, bukan dijalankan:
+ *  - DDL tidak transaksional, jadi bisa merusak jaminan ROLLBACK;
+ *  - DROP/CREATE tabel yang sedang dipakai = sesi login putus di tengah request.
+ * Hasilnya: hanya data yang dipulihkan, dan seluruh impor berjalan dalam SATU transaksi
+ * InnoDB — gagal di tengah = ROLLBACK, database tetap seperti sebelum restore.
+ * Pindah server / perubahan skema: impor lewat mysql atau phpMyAdmin, bukan halaman ini.
  */
 function backup_import_sql(string $sql): array
 {
     $db = db();
+    // Koneksi persisten/terpakai ulang bisa masih punya transaksi terbuka: pastikan bersih.
+    try { $db->query('ROLLBACK'); } catch (mysqli_sql_exception) {}
     $db->query('SET FOREIGN_KEY_CHECKS=0');
+    $db->begin_transaction();
+
     $ok = 0;
     $err = null;
-    $stmts = backup_split_sql($sql);
-    foreach ($stmts as $s) {
-        try {
+    $skipped = 0;
+    $s = ['line' => 0];
+    try {
+        foreach (backup_split_sql($sql) as $s) {
+            if (preg_match('/^\s*(CREATE|ALTER|DROP|TRUNCATE|RENAME)\b/i', $s['sql'])) {
+                $skipped++;
+                continue;
+            }
             $db->query($s['sql']);
             $ok++;
-        } catch (mysqli_sql_exception $ex) {
-            $err = 'Baris ' . $s['line'] . ': ' . $ex->getMessage();
-            break;
         }
+    } catch (mysqli_sql_exception $ex) {
+        $db->rollback();
+        $db->query('SET FOREIGN_KEY_CHECKS=1');
+        return [false, $ok, 'Baris ' . $s['line'] . ': ' . $ex->getMessage() . ' — ROLLBACK, database tidak berubah'];
     }
+
+    $db->commit();
     $db->query('SET FOREIGN_KEY_CHECKS=1');
-    return [$err === null, $ok, $err];
+    return [true, $ok, $skipped, null];
 }
