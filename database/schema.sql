@@ -147,12 +147,8 @@ SELECT 2, `id` FROM `permissions` WHERE `name` NOT IN ('companies.manage', 'grou
 INSERT INTO `role_permissions` (`role_id`, `permission_id`)
 SELECT 3, `id` FROM `permissions` WHERE `name` IN
   ('companies.view','branches.view','branches.manage','employees.view','employees.manage');
--- Staff: view semua modul kecuali audit
-INSERT INTO `role_permissions` (`role_id`, `permission_id`)
-SELECT 4, `id` FROM `permissions` WHERE `name` LIKE '%.view' AND `name` <> 'audit.view';
--- Viewer: view saja
-INSERT INTO `role_permissions` (`role_id`, `permission_id`)
-SELECT 5, `id` FROM `permissions` WHERE `name` LIKE '%.view' AND `name` <> 'audit.view';
+-- Staff (4) & Viewer (5): grant dilakukan SETELAH semua permission modul baru dibuat
+-- (lihat blok "PERMISSION MODUL BARU" di bawah), agar '%.view' mencakup travel/payroll/dll.
 
 -- ---------------------------------------------------------------------
 -- 6. USERS + multi-company access
@@ -1246,10 +1242,12 @@ WHERE (p.module IN ('masters','hr','vehicles','travel','rental','invoices','disp
 INSERT INTO `role_permissions` (`role_id`, `permission_id`)
 SELECT 3, p.id FROM `permissions` p
 WHERE p.name IN ('masters.view','hr.view','hr.manage','attendance.view','attendance.manage','payroll.view','payroll.manage','travel.view','rental.view','vehicles.view');
--- Staff (4) dan Viewer (5): view modul baru saja
+-- Staff (4) & Viewer (5): semua .view kecuali audit/user directory/payroll/finance
+-- (finance & payroll mengandung nominal sensitif; users = direktori pengguna).
 INSERT INTO `role_permissions` (`role_id`, `permission_id`)
 SELECT r.id, p.id FROM `permissions` p JOIN (SELECT 4 AS id UNION ALL SELECT 5) r
-WHERE p.name LIKE '%.view' AND p.module IN ('masters','hr','vehicles','travel','rental','invoices','dispatch','attendance','payroll');
+WHERE p.name LIKE '%.view'
+  AND p.name NOT IN ('audit.view','users.view','payroll.view','finance.view');
 
 -- Laporan Booking: halaman babar membaca angka operasional booking (bukan buku kas),
 -- jadi modul-nya 'reports' dan ikut ".view" seperti modul lain → Staff & Viewer dapat.

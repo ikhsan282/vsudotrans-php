@@ -117,7 +117,9 @@ ok($has(3, 'payroll.view'), 'HRD (role 3) punya payroll.view');
 ok($has(3, 'payroll.manage'), 'HRD (role 3) punya payroll.manage');
 ok(!$has(4, 'payroll.manage'), 'Staff (role 4) TIDAK punya payroll.manage');
 ok(!$has(5, 'payroll.manage'), 'Viewer (role 5) TIDAK punya payroll.manage');
-ok($has(4, 'payroll.view') && $has(5, 'payroll.view'), 'Staff & Viewer punya payroll.view (read-only)');
+// Gaji = data sensitif: Staff/Viewer tidak boleh melihat payroll sama sekali
+// (detail periode memuat nominal gaji per karyawan).
+ok(!$has(4, 'payroll.view') && !$has(5, 'payroll.view'), 'Staff & Viewer TIDAK punya payroll.view (nominal gaji tertutup)');
 
 // 8. Bersihkan data uji (cascade menghapus item).
 $c->query("DELETE FROM payroll_periods WHERE company_id = $cid AND period_year = $YEAR");

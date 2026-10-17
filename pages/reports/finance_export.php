@@ -5,7 +5,7 @@
  * (pola sama dengan bookings_export.php).
  */
 require_once __DIR__ . '/../../config/config.php';
-require_permission('reports.view');
+require_permission('finance.view'); // laporan keuangan memuat pendapatan/biaya/laba — perlu izin Keuangan
 require_once __DIR__ . '/_finance_query.php';
 
 $f = report_filter($_GET);

@@ -16,7 +16,9 @@ PHP Native + MySQLi + Bootstrap 5. Konversi dari VSudoTrans.API (ASP.NET Core).
 mysql -u root -p < database/schema.sql
 ```
 
-> Schema lengkap di 1 file: 48 tabel, 5 role (Super Admin/Admin Perusahaan/HRD/Staff/Viewer), 5 user default dengan password `P@ssw0rd`. Terverifikasi fresh install: 48 tabel + 5 user.
+> Schema lengkap di 1 file: 53 tabel, 5 role (Super Admin/Admin Perusahaan/HRD/Staff/Viewer), 5 user default dengan password `P@ssw0rd`. Terverifikasi fresh install: 53 tabel + 5 user.
+>
+> **Hak akses (`.view`)**: Staff & Viewer hanya melihat modul **operasional** (travel, rental, kendaraan, absensi, referensi, laporan booking/operasional). Direktori pengguna (`users.view`), Payroll (`payroll.view` — memuat nominal gaji), dan Keuangan (`finance.view` + Laporan Keuangan) hanya untuk Super Admin, Admin Perusahaan, dan HRD (payroll).
 >
 > **Penting:** file ini sudah memuat `CREATE DATABASE IF NOT EXISTS \`vsudotrans\`` dan `USE \`vsudotrans\``. Jadi:
 > - Tidak perlu membuat database dulu; cukup import.
