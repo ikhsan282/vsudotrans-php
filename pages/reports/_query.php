@@ -42,7 +42,7 @@ function report_filter(?array $in = null): array
 function report_source(array $f): array
 {
     $cols = static fn(string $table, string $type) => "SELECT '{$type}' AS booking_type, b.id, b.company_id,
-            b.branch_id, b.date, b.time, b.total_price, b.total_payment,
+            b.branch_id, b.date, b.time, b.total_price, b.total_payment, b.document_number,
             (SELECT p.name FROM passengers p WHERE p.id = b.passenger_id) AS passenger_name,
             b.vehicle_id, b.pickup_point_city_id AS origin_city_id,
             b.delivery_point_city_id AS dest_city_id
@@ -75,13 +75,16 @@ function report_run(string $sql, string $types, array $params): array
     return $rows;
 }
 
-/** Ekspresi agregat yang sama untuk semua dimensi. */
+/** Ekspresi agregat yang sama untuk semua dimensi.
+ *  travel_price/rental_price dipakai laporan Keuangan (pendapatan per jenis). */
 function report_agg(): string
 {
     return "COUNT(*) AS total_bookings,
         COALESCE(SUM(x.total_price),0) AS total_price,
         COALESCE(SUM(x.total_payment),0) AS total_payment,
-        COALESCE(SUM(x.total_price - x.total_payment),0) AS total_receivable";
+        COALESCE(SUM(x.total_price - x.total_payment),0) AS total_receivable,
+        COALESCE(SUM(x.total_price * (x.booking_type = 'travel')),0) AS travel_price,
+        COALESCE(SUM(x.total_price * (x.booking_type = 'rental')),0) AS rental_price";
 }
 
 /** Ringkasan: total booking, nilai, terbayar, sisa piutang. */

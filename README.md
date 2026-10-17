@@ -91,9 +91,10 @@ Password semua user: `P@ssw0rd`. **Wajib diganti sebelum production.**
 | **Pembayaran** | ✅ | ✅ | Bayar sebagian/lunas, tolak overpay; `booking_cost_lines` cost_type `payment`; sinkron `total_payment` |
 | **Penjadwalan Driver** | ✅ | ✅ | Papan aktif + riwayat, tugaskan/selesaikan tugas, riwayat per booking; `trip_assignments` |
 | **Laporan Booking** | ✅ | ✅ | Rekap per periode, wilayah asal→tujuan, kendaraan, driver; export CSV & XLSX native |
-| Payroll (gaji pokok, uang harian) | ⏳ | ⏳ | Belum dirancang |
+| **Laporan Keuangan** | ✅ | ✅ | Arus uang per periode: pendapatan (travel/rental), terbayar, piutang, rincian tagihan belum lunas, biaya operasional per jenis, laba kotor; export CSV & XLSX |
+| **Laporan Operasional** | ✅ | ✅ | Utilisasi kendaraan (tugas + hari), aktivitas driver (selesai/berjalan), tingkat penyelesaian tugas, booking per status; export CSV & XLSX |
 | **Payroll** | ✅ | ✅ | Periode bulanan (draft→final→dibayar), generate per karyawan aktif, gaji dari grade, cetak |
-| Finance, Attendance | ⏳ | ⏳ | Belum dirancang |
+| Finance (kas/bank), Attendance | ⏳ | ⏳ | Belum dirancang |
 
 ✅ selesai · ⏳ belum
 
@@ -120,7 +121,7 @@ Menu sidebar, dan apa yang bisa dilakukan di dalamnya:
 | **Tiket publik** (tanpa login) | `tiket.php?no=<resi>` — cek tiket travel/rental: nomor, tanggal, jam, alamat, total |
 | **Keuangan** ▾ | **Invoice**: daftar + filter status, detail, catat pembayaran (sebagian/lunas), cetak invoice (browser → cetak/Simpan PDF) · **Metode Pembayaran**: CRUD bank/QRIS/e-wallet per perusahaan (atau global), upload gambar QR, aktif/nonaktif, urutan tampil |
 | **Keuangan** ▾ | **Invoice**: daftar + filter status, detail, catat pembayaran (sebagian/lunas) · **Metode Pembayaran**: CRUD bank/QRIS/e-wallet per perusahaan (atau global), upload gambar QR, aktif/nonaktif, urutan tampil |
-| **Laporan** ▾ | **Laporan Booking**: filter rentang tanggal + jenis (travel/rental/semua), kartu ringkasan (total booking, nilai, terbayar, sisa piutang), 4 tabel dimensi (periode, wilayah asal→tujuan, kendaraan, driver) dengan total di footer; unduh CSV (BOM UTF-8) atau Excel |
+| **Laporan** ▾ | **Laporan Booking**: filter rentang tanggal + jenis (travel/rental/semua), kartu ringkasan (total booking, nilai, terbayar, sisa piutang), 4 tabel dimensi (periode, wilayah asal→tujuan, kendaraan, driver) dengan total di footer; unduh CSV (BOM UTF-8) atau Excel · **Laporan Keuangan**: kartu laba kotor/pendapatan/biaya/piutang, pendapatan per jenis, biaya operasional per `cost_type`, daftar tagihan belum lunas urut sisa terbesar · **Laporan Operasional**: utilisesi kendaraan (tugas, hari, selesai/berjalan), aktivitas driver, tingkat penyelesaian tugas (%), booking per status (travel/rental) |
 
 **Tanpa halaman (logika saja):** rate limit login, tenant scoping, CSRF, level rule role.
 
@@ -141,13 +142,14 @@ php tests/invoice_pdf_check.php      # cetak invoice: render HTTP + scoping tena
 
 php tests/dispatch_check.php         # penjadwalan driver: assign/end, validasi tenant, RBAC
 php tests/payroll_check.php          # payroll: generate, hitung gaji bersih, transisi status, RBAC
+php tests/reports_check.php          # laporan booking (ringkasan, 4 dimensi, scoping, XLSX)
+php tests/reports_finance_check.php  # laporan keuangan (pendapatan/biaya/laba, piutang, scoping)
+php tests/reports_operations_check.php # laporan operasional (utilisasi, driver, status, scoping)
 ```
 
 > `tests/invoice_pdf_check.php` menguji halaman cetak lewat HTTP, jadi server harus hidup:
 > `php -d mysqli.default_socket=... -S 127.0.0.1:8091 -t <folder-induk-proyek>` lalu
 > `IV_BASE=http://127.0.0.1:8091/<nama-folder> php tests/invoice_pdf_check.php`.
-php tests/reports_check.php          # laporan booking (ringkasan, 4 dimensi, scoping, XLSX)
-```
 
 Export XLSX ditulis native tanpa Composer (`includes/xlsx.php`) — ZIP metode STORED + CRC32 manual,
 satu sheet, tanpa dependensi eksternal.
@@ -167,6 +169,8 @@ vsudotrans/
 │   ├── finance/       # payment_methods (metode pembayaran + QR), invoices (list + detail/bayar)
 │   ├── dispatch/      # penjadwalan driver: papan aktif/riwayat, tugaskan, detail booking+riwayat
 │   ├── reports/       # laporan booking (_query.php sumber bersama, bookings.php, bookings_export.php)
+│   │                  # + keuangan (_finance_query.php, finance.php, finance_export.php)
+│   │                  # + operasional (_operations_query.php, operations.php, operations_export.php)
 │   ├── payroll/       # periods (list + generate, detail item gaji, cetak)
 │   ├── travel/        # rutes, schedules, passengers, bookings
 │   └── rental/        # bookings

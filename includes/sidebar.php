@@ -49,6 +49,8 @@ $menu = [
     ]],
     ['key' => 'reports', 'label' => 'Laporan', 'icon' => 'file-earmark-bar-graph', 'perm' => 'reports.view', 'sub' => [
         ['label' => 'Laporan Booking', 'href' => 'pages/reports/bookings.php', 'perms' => 'reports.view'],
+        ['label' => 'Laporan Keuangan', 'href' => 'pages/reports/finance.php', 'perms' => 'reports.view'],
+        ['label' => 'Laporan Operasional', 'href' => 'pages/reports/operations.php', 'perms' => 'reports.view'],
     ]],
     ['key' => 'audit',     'label' => 'Audit Trail',     'icon' => 'clock-history', 'href' => 'pages/audit/index.php', 'perm' => 'audit.view'],
 ];
