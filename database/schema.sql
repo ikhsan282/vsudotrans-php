@@ -11,7 +11,7 @@ CREATE DATABASE IF NOT EXISTS `vsudotrans` CHARACTER SET utf8mb4 COLLATE utf8mb4
 USE `vsudotrans`;
 
 SET FOREIGN_KEY_CHECKS = 0;
-DROP TABLE IF EXISTS `audit_trails`, `login_attempts`, `user_permissions`, `user_companies`, `employees`, `users`, `roles`, `permissions`, `branches`, `companies`, `groups`, `role_permissions`, `banks`, `countries`, `provinces`, `cities`, `districts`, `villages`, `unit_measures`, `brand_vehicles`, `category_vehicles`, `model_units`, `type_engines`, `vehicles`, `rutes`, `schedules`, `passengers`, `trip_schedules`, `travel_ticket_bookings`, `rental_car_bookings`, `rental_car_regulation_employees`, `booking_passengers`, `booking_status_history`, `trip_assignments`, `premi_configs`, `booking_cost_lines`, `document_sequences`, `payment_methods`, `invoices`, `invoice_revisions`, `job_grades`, `job_grade_amounts`, `job_titles`, `job_positions`, `organization_structures`, `employee_recognitions`;
+DROP TABLE IF EXISTS `audit_trails`, `login_attempts`, `user_permissions`, `user_companies`, `employees`, `users`, `roles`, `permissions`, `branches`, `companies`, `groups`, `role_permissions`, `banks`, `countries`, `provinces`, `cities`, `districts`, `villages`, `unit_measures`, `brand_vehicles`, `category_vehicles`, `model_units`, `type_engines`, `vehicles`, `rutes`, `schedules`, `passengers`, `trip_schedules`, `travel_ticket_bookings`, `rental_car_bookings`, `rental_car_regulation_employees`, `booking_passengers`, `booking_status_history`, `trip_assignments`, `premi_configs`, `booking_cost_lines`, `document_sequences`, `payment_methods`, `invoices`, `invoice_revisions`, `job_grades`, `job_grade_amounts`, `job_titles`, `job_positions`, `organization_structures`, `employee_recognitions`, `wa_settings`, `wa_outbox`;
 SET FOREIGN_KEY_CHECKS = 1;
 SET NAMES utf8mb4;
 
@@ -855,6 +855,44 @@ CREATE TABLE `booking_cost_lines` (
   CONSTRAINT `fk_bcl_company` FOREIGN KEY (`company_id`) REFERENCES `companies` (`id`) ON DELETE RESTRICT,
   CONSTRAINT `fk_bcl_employee` FOREIGN KEY (`employee_id`) REFERENCES `employees` (`id`) ON DELETE SET NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+-- ---------- NOTIFIKASI WHATSAPP ----------
+-- Setelan gateway WA per perusahaan (satu baris per perusahaan).
+CREATE TABLE `wa_settings` (
+  `id` INT(11) NOT NULL AUTO_INCREMENT,
+  `company_id` INT(11) NOT NULL,
+  `is_active` TINYINT(1) NOT NULL DEFAULT 0,
+  `api_url` VARCHAR(255) NOT NULL COMMENT 'endpoint gateway WA, mis. https://api.example.com/send',
+  `api_token` VARCHAR(255) DEFAULT NULL,
+  `sender` VARCHAR(50) DEFAULT NULL,
+  `notify_phones` VARCHAR(1000) DEFAULT NULL COMMENT 'nomor tujuan, pisah koma; kosong = nomor penumpang',
+  `template_travel` VARCHAR(2000) DEFAULT NULL,
+  `template_rental` VARCHAR(2000) DEFAULT NULL,
+  `created_user` VARCHAR(255) DEFAULT NULL,
+  `created_date` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  `modified_user` VARCHAR(255) DEFAULT NULL,
+  `modified_date` DATETIME DEFAULT NULL,
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uq_wa_company` (`company_id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- Log pengiriman; tanpa cron, jadi baris 'failed' dikirim ulang manual dari halaman setelan.
+CREATE TABLE `wa_outbox` (
+  `id` INT(11) NOT NULL AUTO_INCREMENT,
+  `company_id` INT(11) NOT NULL,
+  `booking_type` VARCHAR(10) NOT NULL,
+  `booking_id` INT(11) NOT NULL,
+  `phone` VARCHAR(50) DEFAULT NULL,
+  `message` VARCHAR(2000) DEFAULT NULL,
+  `status` VARCHAR(20) NOT NULL COMMENT 'sent|failed|skipped',
+  `response` VARCHAR(1000) DEFAULT NULL,
+  `created_date` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (`id`),
+  KEY `ix_waout_company` (`company_id`),
+  KEY `ix_waout_booking` (`booking_type`, `booking_id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+-- Tanpa FOREIGN KEY: sengaja, lihat alasan di tabel booking_cost_lines (log historis
+-- harus tetap ada walau booking/perusahaan dihapus).
+
 -- ---------- INVOICE & DOKUMEN ----------
 CREATE TABLE `document_sequences` (
   `id` INT(11) NOT NULL AUTO_INCREMENT,

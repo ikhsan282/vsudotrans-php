@@ -72,6 +72,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         try {
             $res = booking_create('rental', $data);
             audit('booking.rental.create', "Booking #{$res['id']} {$res['document_number']}");
+            require_once __DIR__ . '/../../../includes/wa.php';
+            wa_notify_booking('rental', (int) $res['id']); // gagal WA tidak membatalkan booking
             flash('success', "Booking {$res['document_number']} berhasil dibuat.");
             redirect('pages/rental/bookings/detail.php?id=' . $res['id']);
         } catch (mysqli_sql_exception $ex) {
