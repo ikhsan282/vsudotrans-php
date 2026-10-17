@@ -12,15 +12,25 @@ function ok(bool $c, string $msg): void { global $fails; echo ($c ? '  ok  ' : '
 
 $c = db();
 // Fixture sementara: perusahaan B + booking travel B untuk uji scoping. Dibersihkan di akhir.
+// DB fresh kosong: fixture wajib lengkap (wilayah + penumpang) agar FK booking terpenuhi.
 $c->query("DELETE FROM travel_ticket_bookings WHERE document_number LIKE 'TRV-CHK%'");
+$c->query("DELETE FROM passengers WHERE code = 'CHK-PAX'");
+$c->query("DELETE FROM branches WHERE code = 'CHK-BR'");
 $c->query("DELETE FROM companies WHERE code = 'CHK-B'");
+$c->query("INSERT IGNORE INTO countries (id, code, name) VALUES (1, 'ID', 'Indonesia')");
+$c->query("INSERT IGNORE INTO provinces (id, country_id, code, name) VALUES (1, 1, 'BANTEN', 'Banten')");
+$c->query("INSERT IGNORE INTO cities (id, country_id, province_id, code, name) VALUES (1, 1, 1, 'TNG', 'Tangerang')");
+$c->query("INSERT IGNORE INTO districts (id, country_id, province_id, city_id, code, name) VALUES (1, 1, 1, 1, 'CBT', 'Cibodas')");
 $c->query("INSERT INTO companies (id, group_id, code, name, country_code, is_active)
            VALUES (990, 1, 'CHK-B', 'Perusahaan Cek B', '+62', 1)");
+$c->query("INSERT INTO branches (id, company_id, code, name) VALUES (9901, 990, 'CHK-BR', 'Cabang Cek')");
+$c->query("INSERT INTO passengers (id, company_id, code, name, phone_number)
+           VALUES (990, 990, 'CHK-PAX', 'Penumpang Cek', '0800')");
 $bid = 99001;
 $c->query("INSERT INTO travel_ticket_bookings
     (id, company_id, branch_id, document_number, date, time, pickup_point_district_id, delivery_point_district_id,
      total_price, total_payment, passenger_id, created_user)
-    VALUES ($bid, 990, 1, 'TRV-CHKB01', '2026-10-15', '09:00:00', 1, 1, 777777, 0, 1, 'reports-check')");
+    VALUES ($bid, 990, 9901, 'TRV-CHKB01', '2026-10-15', '09:00:00', 1, 1, 777777, 0, 990, 'reports-check')");
 
 try {
     // --- 1. Rentang uji: super admin (lihat semua) vs scoped company 1 ---
@@ -90,16 +100,28 @@ try {
 
     // --- 6. Booking tanpa assignment driver tetap tampil sebagai '-' (tidak hilang) ---
     $_SESSION['role_name'] = 'Super Admin';
+    // Fixture karyawan + booking company 1 (fresh install kosong).
     $c->query("DELETE FROM trip_assignments WHERE reason = 'reports-check'");
+    $c->query("DELETE FROM travel_ticket_bookings WHERE document_number = 'TRV-CHKDRV'");
+    $c->query("DELETE FROM employees WHERE code = 'CHK-EMP'");
+    $c->query("INSERT INTO employees (company_id, code, name, job_position, status, join_date) VALUES (1, 'CHK-EMP', 'Budi Cek Driver', 'Driver', 'aktif', '2026-01-01')");
+    $eid = $c->insert_id;
+    $c->query("INSERT INTO travel_ticket_bookings (company_id, branch_id, document_number, date, time,
+        pickup_point_district_id, delivery_point_district_id, total_price, total_payment, passenger_id, created_user)
+        VALUES (1, 1, 'TRV-CHKDRV', '2026-10-15', '10:00:00', 1, 1, 111000, 0, 990, 'reports-check')");
+    $b1 = $c->insert_id;
     $c->query("INSERT INTO trip_assignments (company_id, booking_type, booking_id, employee_id, started_at, reason, created_user)
-        VALUES (1, 'travel', 1, 1, NOW(), 'reports-check', 'uji')");
+        VALUES (1, 'travel', $b1, $eid, NOW(), 'reports-check', 'uji')");
+    $s_all = report_summary($f_all);
     $drv = report_by_driver($f_all);
     $names = array_column($drv, 'driver_name');
     ok(in_array('-', $names, true), "driver tanpa penugasan tampil sebagai '-' (dapat: " . implode('|', $names) . ')');
-    ok(in_array('Budi Santoso', $names, true), 'driver dengan penugasan tampil pakai nama karyawan');
+    ok(in_array('Budi Cek Driver', $names, true), 'driver dengan penugasan tampil pakai nama karyawan');
     $tot_drv = array_sum(array_map(static fn($r) => (int) $r['total_bookings'], $drv));
-    ok($tot_drv === (int) $s['total_bookings'], "driver: total booking utuh ($tot_drv), tidak ada baris hilang");
+    ok($tot_drv === (int) $s_all['total_bookings'], "driver: total booking utuh ($tot_drv), tidak ada baris hilang");
     $c->query("DELETE FROM trip_assignments WHERE reason = 'reports-check'");
+    $c->query("DELETE FROM travel_ticket_bookings WHERE document_number = 'TRV-CHKDRV'");
+    $c->query("DELETE FROM employees WHERE code = 'CHK-EMP'");
 
     // --- 7. RBAC: reports.view untuk Super Admin (r.id=1) & Staff (r.id=4) ---
     foreach ([[1, 'Super Admin'], [4, 'Staff']] as [$rid, $rname]) {
@@ -179,6 +201,8 @@ try {
 } finally {
     // Bersihkan fixture.
     $c->query("DELETE FROM travel_ticket_bookings WHERE document_number LIKE 'TRV-CHK%'");
+    $c->query("DELETE FROM passengers WHERE code = 'CHK-PAX'");
+    $c->query("DELETE FROM branches WHERE code = 'CHK-BR'");
     $c->query("DELETE FROM companies WHERE code = 'CHK-B'");
     $c->query("DELETE FROM trip_assignments WHERE reason = 'reports-check'");
 }
