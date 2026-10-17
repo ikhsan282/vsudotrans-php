@@ -10,6 +10,7 @@ $active = $active ?? '';
 $menu = [
     ['key' => 'dashboard', 'label' => 'Dashboard',       'icon' => 'speedometer2', 'href' => 'pages/dashboard/index.php', 'perm' => null],
     ['key' => 'companies', 'label' => 'Perusahaan',      'icon' => 'building',     'href' => 'pages/companies/index.php', 'perm' => 'companies.view'],
+    ['key' => 'groups',    'label' => 'Grup Perusahaan', 'icon' => 'diagram-2',    'href' => 'pages/groups/index.php',    'perm' => 'groups.view'],
     ['key' => 'branches',  'label' => 'Cabang',          'icon' => 'diagram-3',    'href' => 'pages/branches/index.php',  'perm' => 'branches.view'],
     ['key' => 'employees', 'label' => 'Karyawan',        'icon' => 'people',       'href' => 'pages/employees/index.php', 'perm' => 'employees.view'],
     ['key' => 'travel', 'label' => 'Travel', 'icon' => 'bus-front', 'perm' => 'travel.view', 'sub' => [
