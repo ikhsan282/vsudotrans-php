@@ -82,7 +82,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 $active = 'travel';
 $title  = $id > 0 ? 'Ubah Jadwal' : 'Tambah Jadwal';
 require __DIR__ . '/../../../includes/header.php';
-require __DIR__ . '/../../../includes/sidebar.php';
 ?>
 <main class="col-12 col-md-9 col-lg-10 p-4">
     <h4 class="fw-bold mb-3"><?= e($title) ?></h4>

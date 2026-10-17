@@ -471,7 +471,6 @@ function master_list(string $key): void
     $title  = $spec['title'];
     $list_cols = array_values(array_filter($spec['fields'], fn ($f) => !in_array($f['type'] ?? '', ['textarea', 'money', 'bytes', 'file'], true)));
     require __DIR__ . '/../../includes/header.php';
-    require __DIR__ . '/../../includes/sidebar.php';
     ?>
     <main class="col-12 col-md-9 col-lg-10 p-4">
         <div class="d-flex justify-content-between align-items-center mb-3">
@@ -616,7 +615,6 @@ function master_form(string $key): void
         }
     }
     require __DIR__ . '/../../includes/header.php';
-    require __DIR__ . '/../../includes/sidebar.php';
     ?>
     <main class="col-12 col-md-9 col-lg-10 p-4">
         <h4 class="fw-bold mb-3"><?= e($title) ?></h4>

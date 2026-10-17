@@ -69,7 +69,6 @@ $cols = $editable ? 8 : 7;
 $active = 'payroll';
 $title  = 'Detail Payroll — ' . payroll_period_label($period);
 require __DIR__ . '/../../../includes/header.php';
-require __DIR__ . '/../../../includes/sidebar.php';
 ?>
 <main class="col-12 col-md-9 col-lg-10 p-4">
     <div class="d-flex justify-content-between align-items-center mb-3">

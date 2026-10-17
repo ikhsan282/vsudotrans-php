@@ -41,7 +41,6 @@ $chart = dashboard_chart();
 $active = 'dashboard';
 $title  = 'Dashboard';
 require __DIR__ . '/../../includes/header.php';
-require __DIR__ . '/../../includes/sidebar.php';
 ?>
 <main class="col-12 col-md-9 col-lg-10 p-4">
     <h4 class="fw-bold mb-4">Dashboard</h4>

@@ -45,7 +45,6 @@ $me = profile_fetch($db, $uid) ?? [];
 $active = 'profile';
 $title  = 'Profil Saya';
 require __DIR__ . '/../../includes/header.php';
-require __DIR__ . '/../../includes/sidebar.php';
 ?>
 <main class="col-12 col-md-9 col-lg-10 p-4">
     <h4 class="fw-bold mb-3">Profil Saya</h4>

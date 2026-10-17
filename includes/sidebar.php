@@ -1,9 +1,8 @@
 <?php
 /**
- * Layout: sidebar menu, difilter dengan can().
- * Bergantung pada $active yang diset halaman sebelum include header.
- * Item dengan 'sub' = dropdown collapse; 'perm' menjaga seluruh grup,
- * tiap sub punya 'perms' sendiri (cek per item).
+ * Layout: sidebar menu ala Arya Green IPL (fixed, scroll terpisah),
+ * difilter dengan can(). Bergantung pada $active yang diset halaman
+ * sebelum include header. Item dengan 'sub' = dropdown collapse.
  */
 $active = $active ?? '';
 
@@ -80,34 +79,82 @@ $menu = [
     ['key' => 'audit',     'label' => 'Audit Trail',     'icon' => 'clock-history', 'href' => 'pages/audit/index.php', 'perm' => 'audit.view'],
     ['key' => 'profile',   'label' => 'Profil Saya',     'icon' => 'person-circle', 'href' => 'pages/profile/index.php', 'perm' => null],
 ];
+
+// $nav_icon dipakai topbar (header.php) untuk ikon di samping judul.
+$nav_icon = 'grid';
+foreach ($menu as $m) {
+    if ($m['key'] === $active) { $nav_icon = $m['icon']; break; }
+}
 ?>
-<aside class="col-12 col-md-3 col-lg-2 bg-white border-end sidebar">
-    <nav class="list-group list-group-flush py-2">
-        <?php foreach ($menu as $m): ?>
-            <?php if (!super_admin_menu($m)) continue; ?>
-            <?php if ($m['perm'] !== null && !can($m['perm'])) continue; ?>
-            <?php if (!empty($m['sub'])): ?>
-                <a class="list-group-item list-group-item-action border-0 rounded-0<?= $active === $m['key'] ? ' active' : '' ?>"
-                   data-bs-toggle="collapse" href="#menu-<?= e($m['key']) ?>" role="button"
-                   aria-expanded="<?= $active === $m['key'] ? 'true' : 'false' ?>" aria-controls="menu-<?= e($m['key']) ?>">
-                    <i class="bi bi-<?= e($m['icon']) ?> me-2"></i><?= e($m['label']) ?><i class="bi bi-chevron-down float-end small"></i>
-                </a>
-                <div class="collapse<?= $active === $m['key'] ? ' show' : '' ?>" id="menu-<?= e($m['key']) ?>">
-                    <?php foreach ($m['sub'] as $s): ?>
-                        <?php if (!super_admin_menu($s)) continue; ?>
-                        <?php if ($s['perms'] !== null && !can($s['perms'])) continue; ?>
-                        <a href="<?= e(APP_URL . '/' . $s['href']) ?>"
-                           class="list-group-item list-group-item-action border-0 ps-4 py-1 small">
-                            <?= e($s['label']) ?>
-                        </a>
-                    <?php endforeach; ?>
-                </div>
-            <?php else: ?>
-                <a href="<?= e(APP_URL . '/' . $m['href']) ?>"
-                   class="list-group-item list-group-item-action border-0 rounded-0<?= $active === $m['key'] ? ' active' : '' ?>">
-                    <i class="bi bi-<?= e($m['icon']) ?> me-2"></i><?= e($m['label']) ?>
-                </a>
-            <?php endif; ?>
-        <?php endforeach; ?>
-    </nav>
-</aside>
+<nav id="sidebar" class="sidebar d-flex flex-column flex-shrink-0 p-0">
+  <a href="<?= e(APP_URL) ?>/pages/dashboard/index.php"
+     class="d-flex align-items-center justify-content-center p-3 text-white text-decoration-none sidebar-brand"
+     title="<?= e(APP_NAME) ?>">
+    <img src="<?= e(APP_URL) ?>/assets/brand/mark-mtm-white.png" alt="<?= e(APP_NAME) ?>" class="sidebar-logo">
+  </a>
+  <hr class="text-white m-0">
+
+  <div class="nav-scroll">
+    <ul class="nav nav-pills flex-column px-2 py-2">
+      <?php foreach ($menu as $m): ?>
+        <?php if (!super_admin_menu($m)) continue; ?>
+        <?php if ($m['perm'] !== null && !can($m['perm'])) continue; ?>
+        <?php if (!empty($m['sub'])): ?>
+          <?php
+          // Sembunyikan grup kalau semua sub-nya tak terlihat.
+          $visible = array_filter($m['sub'], fn($s) =>
+              super_admin_menu($s) && ($s['perms'] === null || can($s['perms'])));
+          if (!$visible) continue;
+          ?>
+          <li class="nav-item">
+            <a class="nav-link text-white d-flex align-items-center"
+               data-bs-toggle="collapse" href="#menu-<?= e($m['key']) ?>" role="button"
+               aria-expanded="<?= $active === $m['key'] ? 'true' : 'false' ?>"
+               aria-controls="menu-<?= e($m['key']) ?>">
+              <i class="bi bi-<?= e($m['icon']) ?> me-2"></i><?= e($m['label']) ?>
+              <i class="bi bi-chevron-down ms-auto small"></i>
+            </a>
+            <div class="collapse<?= $active === $m['key'] ? ' show' : '' ?>" id="menu-<?= e($m['key']) ?>">
+              <ul class="nav flex-column ms-3">
+                <?php foreach ($visible as $s): ?>
+                  <li class="nav-item">
+                    <a href="<?= e(APP_URL . '/' . $s['href']) ?>"
+                       class="nav-link text-white py-1 ps-2 sidebar-sub"><?= e($s['label']) ?></a>
+                  </li>
+                <?php endforeach; ?>
+              </ul>
+            </div>
+          </li>
+        <?php else: ?>
+          <li class="nav-item">
+            <a href="<?= e(APP_URL . '/' . $m['href']) ?>"
+               class="nav-link text-white<?= $active === $m['key'] ? ' active' : '' ?>">
+              <i class="bi bi-<?= e($m['icon']) ?> me-2"></i><?= e($m['label']) ?>
+            </a>
+          </li>
+        <?php endif; ?>
+      <?php endforeach; ?>
+    </ul>
+  </div>
+
+  <hr class="text-white m-0">
+  <div class="p-3 sidebar-footer">
+    <div class="d-flex align-items-center mb-2">
+      <div class="avatar-sm me-2">
+        <i class="bi bi-person-circle fs-4 text-white-50"></i>
+      </div>
+      <div class="text-white lh-1 flex-grow-1 overflow-hidden">
+        <div class="fw-semibold text-truncate" style="font-size:.85rem"><?= e($user['name'] ?? '') ?></div>
+        <small class="text-white-50"><?= e($_SESSION['role_name'] ?? '') ?></small>
+      </div>
+      <button type="button" class="dark-toggle sidebar-theme-toggle text-white ms-2" aria-label="Ganti tema" title="Ganti tema">
+        <i class="bi bi-moon-stars"></i>
+      </button>
+    </div>
+    <a href="<?= e(APP_URL) ?>/pages/auth/logout.php"
+       class="btn btn-sm btn-outline-light w-100"
+       onclick="return confirm('Yakin ingin keluar?')">
+      <i class="bi bi-box-arrow-right me-1"></i> Keluar
+    </a>
+  </div>
+</nav>

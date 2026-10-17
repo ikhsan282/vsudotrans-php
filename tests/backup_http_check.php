@@ -80,7 +80,7 @@ ok(str_contains($r['body'], 'name="confirm_overwrite"'), 'checkbox konfirmasi "T
 ok(str_contains($r['body'], 'Timpa seluruh data'), 'teks konfirmasi eksplisit tampil');
 preg_match_all('/<b>(Warning|Notice|Fatal error|Deprecated|Parse error)<\/b>/', $r['body'], $w);
 ok($w[1] === [], 'tanpa warning/notice PHP' . ($w[1] ? ' (' . implode(',', $w[1]) . ')' : ''));
-ok(str_contains($r['body'], '>Sistem<') && str_contains($r['body'], 'Backup &amp; Restore'), 'menu grup "Sistem" tampil di sidebar');
+ok(str_contains($r['body'], 'id="menu-system"') && str_contains($r['body'], 'Backup &amp; Restore'), 'menu grup "Sistem" tampil di sidebar');
 
 echo "-- Unduhan --\n";
 $tmp = sys_get_temp_dir() . '/vsudo_dl_' . getmypid() . '.sql';
