@@ -15,8 +15,8 @@ $c = db();
 // DB fresh kosong: fixture wajib lengkap (wilayah + penumpang) agar FK booking terpenuhi.
 $c->query("DELETE FROM travel_ticket_bookings WHERE document_number LIKE 'TRV-CHK%'");
 $c->query("DELETE FROM passengers WHERE code = 'CHK-PAX'");
-$c->query("DELETE FROM branches WHERE code = 'CHK-BR'");
-$c->query("DELETE FROM companies WHERE code = 'CHK-B'");
+$c->query("DELETE FROM branches WHERE code = 'CHK-BR' OR id = 9901");
+$c->query("DELETE FROM companies WHERE code = 'CHK-B' OR id = 990");
 $c->query("INSERT IGNORE INTO countries (id, code, name) VALUES (1, 'ID', 'Indonesia')");
 $c->query("INSERT IGNORE INTO provinces (id, country_id, code, name) VALUES (1, 1, 'BANTEN', 'Banten')");
 $c->query("INSERT IGNORE INTO cities (id, country_id, province_id, code, name) VALUES (1, 1, 1, 'TNG', 'Tangerang')");
