@@ -70,6 +70,8 @@ foreach ($companies as $c) {
                     <ul class="dropdown-menu dropdown-menu-end">
                         <li><span class="dropdown-item-text small text-muted"><?= e($_SESSION['role_name'] ?? '') ?></span></li>
                         <li><hr class="dropdown-divider"></li>
+                        <li><a class="dropdown-item" href="<?= e(APP_URL) ?>/pages/profile/index.php">
+                            <i class="bi bi-person-circle"></i> Profil Saya</a></li>
                         <li><a class="dropdown-item text-danger" href="<?= e(APP_URL) ?>/pages/auth/logout.php">
                             <i class="bi bi-box-arrow-right"></i> Keluar</a></li>
                     </ul>

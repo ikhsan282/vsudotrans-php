@@ -51,6 +51,7 @@ $menu = [
         ['label' => 'Laporan Booking', 'href' => 'pages/reports/bookings.php', 'perms' => 'reports.view'],
     ]],
     ['key' => 'audit',     'label' => 'Audit Trail',     'icon' => 'clock-history', 'href' => 'pages/audit/index.php', 'perm' => 'audit.view'],
+    ['key' => 'profile',   'label' => 'Profil Saya',     'icon' => 'person-circle', 'href' => 'pages/profile/index.php', 'perm' => null],
 ];
 ?>
 <aside class="col-12 col-md-3 col-lg-2 bg-white border-end sidebar">
