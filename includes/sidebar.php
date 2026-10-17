@@ -39,6 +39,10 @@ $menu = [
         ['label' => 'Struktur Org.',  'href' => 'pages/hr/organization_structures/index.php', 'perms' => 'hr.view'],
         ['label' => 'Penghargaan',    'href' => 'pages/hr/employee_recognitions/index.php',   'perms' => 'hr.view'],
     ]],
+    ['key' => 'attendance', 'label' => 'Absensi', 'icon' => 'calendar-check', 'perm' => 'attendance.view', 'sub' => [
+        ['label' => 'Absensi Harian', 'href' => 'pages/attendance/index.php',   'perms' => 'attendance.view'],
+        ['label' => 'Rekap Absensi',  'href' => 'pages/attendance/summary.php', 'perms' => 'attendance.view'],
+    ]],
     ['key' => 'dispatch', 'label' => 'Penjadwalan', 'icon' => 'person-badge', 'perm' => null, 'sub' => [
         ['label' => 'Papan & Riwayat', 'href' => 'pages/dispatch/index.php',  'perms' => 'dispatch.view'],
         ['label' => 'Tugaskan Driver', 'href' => 'pages/dispatch/assign.php', 'perms' => 'dispatch.manage'],

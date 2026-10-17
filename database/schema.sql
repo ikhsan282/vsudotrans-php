@@ -1095,6 +1095,33 @@ CREATE TABLE `payroll_items` (
   CONSTRAINT `fk_payroll_items_company` FOREIGN KEY (`company_id`) REFERENCES `companies` (`id`) ON DELETE RESTRICT
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
+-- ---------------------------------------------------------------------
+-- MODUL ABSENSI (kehadiran harian karyawan)
+-- ---------------------------------------------------------------------
+-- Tanpa FOREIGN KEY: urutan tabel di schema ini tidak menjamin induk sudah ada saat import.
+-- Tautan lintas perusahaan dijaga di aplikasi (query di-scope company_id + validasi karyawan
+-- memakai perusahaan aktif). UNIQUE (employee_id, date) = satu karyawan satu baris per hari,
+-- sekaligus mencegah dobel input (form memakai INSERT ... ON DUPLICATE KEY UPDATE).
+-- Rekap (summary.php) dihitung on-the-fly; tidak ada tabel ringkasan tersimpan.
+CREATE TABLE `employee_attendances` (
+  `id` INT(11) NOT NULL AUTO_INCREMENT,
+  `company_id` INT(11) NOT NULL,
+  `employee_id` INT(11) NOT NULL,
+  `date` DATE NOT NULL,
+  `status` VARCHAR(20) NOT NULL COMMENT 'hadir|izin|sakit|cuti|alpa',
+  `check_in` TIME DEFAULT NULL,
+  `check_out` TIME DEFAULT NULL,
+  `note` VARCHAR(1000) DEFAULT NULL,
+  `created_user` VARCHAR(255) DEFAULT NULL,
+  `created_date` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  `modified_user` VARCHAR(255) DEFAULT NULL,
+  `modified_date` DATETIME DEFAULT NULL,
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uq_att_emp_date` (`employee_id`, `date`),
+  KEY `ix_att_company_date` (`company_id`, `date`),
+  KEY `ix_att_employee` (`employee_id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
 
 -- ---------------------------------------------------------------------
 -- PERMISSION MODUL BARU
