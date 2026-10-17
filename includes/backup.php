@@ -310,7 +310,14 @@ function backup_import_sql(string $sql): array
     $s = ['line' => 0];
     try {
         foreach (backup_split_sql($sql) as $s) {
-            if (preg_match('/^\s*(CREATE|ALTER|DROP|TRUNCATE|RENAME)\b/i', $s['sql'])) {
+            // Lewati DDL DAN statement yang memindahkan konteks database.
+            // PENTING: USE / CREATE DATABASE dari dump (mis. `USE \`vsudotrans\`` di
+            // database/schema.sql atau export phpMyAdmin) akan MEMINDAHKAN koneksi ke
+            // database lain — restore lalu menulis ke database yang salah (pernah
+            // menghancurkan DB kerja saat restore diuji pada DB terpisah). Server
+            // memilih database lewat kredensial koneksi; statement pemilih DB dibuang.
+            if (preg_match('/^\s*(CREATE|ALTER|DROP|TRUNCATE|RENAME)\b/i', $s['sql'])
+                || preg_match('/^\s*(USE\b|CREATE\s+DATABASE|DROP\s+DATABASE)/i', $s['sql'])) {
                 $skipped++;
                 continue;
             }
