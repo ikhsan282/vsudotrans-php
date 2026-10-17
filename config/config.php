@@ -37,7 +37,9 @@ defined('LOGIN_LOCKOUT_TIME')    || define('LOGIN_LOCKOUT_TIME', 900); // 15 men
 // --- AI Isi Cepat (9router, OpenAI-compatible) -----------------------
 // Kosongkan AI_API_KEY untuk mematikan fitur sepenuhnya (panel tidak muncul).
 defined('AI_BASE_URL') || define('AI_BASE_URL', getenv('VSUDO_AI_BASE_URL') ?: 'http://43.173.27.40:20128/v1');
-defined('AI_API_KEY')  || define('AI_API_KEY', getenv('HERMES_CUSTOM_9ROUTER_API_KEY') ?: 'sk-f0165475049974c9-foy90i-fd5b6c17');
+// Kunci TIDAK boleh di-hardcode di repo: isi lewat env VSUDO_AI_API_KEY (atau HERMES_CUSTOM_9ROUTER_API_KEY).
+// Kosong = fitur "Isi Cepat" mati (panel tidak muncul), bukan error.
+defined('AI_API_KEY')  || define('AI_API_KEY', getenv('VSUDO_AI_API_KEY') ?: (getenv('HERMES_CUSTOM_9ROUTER_API_KEY') ?: ''));
 defined('AI_MODEL')    || define('AI_MODEL', getenv('VSUDO_AI_MODEL') ?: 'ikhsan-reason');
 
 // --- Identitas perusahaan (untuk cetakan) ---------------------------
