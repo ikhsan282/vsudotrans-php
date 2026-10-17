@@ -8,7 +8,9 @@ require_permission('reports.view');
 require_once __DIR__ . '/_dispatch_query.php';
 
 $f   = report_filter($_GET);
-$fmt = ($_GET['format'] ?? 'xlsx') === 'csv' ? 'csv' : 'xlsx';
+$fmt = (string) ($_GET['format'] ?? 'xlsx');
+$fmt = in_array($fmt, ['csv', 'xlsx', 'pdf', 'html'], true) ? $fmt : 'xlsx';
+$sub = 'Periode ' . $f['from'] . ' s/d ' . $f['to'];
 $data = dispatch_all($f);
 
 $sum = $data['summary'];
@@ -56,6 +58,11 @@ function send_download_headers(string $base, string $ext, string $mime): void
     header('Cache-Control: no-store');
 }
 
+if ($fmt === 'pdf' || $fmt === 'html') {
+    require_once __DIR__ . '/_print.php';
+    rpt_send($table, 'Penjadwalan Driver', $base, $sub, null, 'portrait', 'reports.dispatch.print');
+}
+
 if ($fmt === 'csv') {
     send_download_headers($base, 'csv', 'text/csv; charset=UTF-8');
     echo "\xEF\xBB\xBF"; // BOM UTF-8 agar Excel membaca karakter Indonesia dengan benar
@@ -64,9 +71,11 @@ if ($fmt === 'csv') {
         fputcsv($out, $row, ',', '"', '');
     }
     fclose($out);
+    audit('reports.dispatch.print', $base . ' (CSV)');
     exit;
 }
 
 require_once __DIR__ . '/../../includes/xlsx.php';
 send_download_headers($base, 'xlsx', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+audit('reports.dispatch.print', $base . ' (XLSX)');
 echo xlsx_build($table, 'Penjadwalan Driver');

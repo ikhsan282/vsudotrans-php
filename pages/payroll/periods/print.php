@@ -25,7 +25,9 @@ $total_net = 0.0;
 foreach ($items as $i) {
     $total_net += (float) $i['net_salary'];
 }
-?><!DOCTYPE html>
+?>
+<?php if (($_GET['format'] ?? '') === 'pdf') { ob_start(); } ?>
+<!DOCTYPE html>
 <html lang="id">
 <head>
     <meta charset="UTF-8">
@@ -111,5 +113,13 @@ foreach ($items as $i) {
         <div>.................................</div>
     </div>
 </div>
+<?php if (($_GET['format'] ?? '') === 'pdf'): ?>
+<?php
+$html = ob_get_clean();
+require_once __DIR__ . '/../../../includes/pdf.php';
+audit('payroll.print', 'Slip Payroll periode #' . $id . ' (PDF)');
+pdf_send_or_html(pdf_prepare_screen_html($html, '.no-print'), 'Slip Payroll ' . $id);
+?>
+<?php endif; ?>
 </body>
 </html>

@@ -14,6 +14,7 @@ require_once __DIR__ . '/../../../includes/booking_service.php';
 
 $id    = (int) ($_GET['id'] ?? 0);
 $print = isset($_GET['print']);
+$pdf   = ($_GET['format'] ?? '') === 'pdf';
 $inv = $id > 0 ? invoice_find($id) : null;
 if ($inv) {
     assert_company_access((int) $inv['company_id']);
@@ -79,7 +80,9 @@ $paid      = $inv ? invoice_paid_total($id) : 0.0;
 $pay_status = $inv ? invoice_pay_status($inv) : 'unpaid';
 $remaining = $inv ? max(0, round((float) $inv['total'] - $paid, 2)) : 0.0;
 $logo = $company['logo'] ?? null;
-?><!DOCTYPE html>
+?>
+<?php if ($pdf) { ob_start(); } ?>
+<!DOCTYPE html>
 <html lang="id">
 <head>
     <meta charset="UTF-8">
@@ -267,6 +270,14 @@ $logo = $company['logo'] ?? null;
 </div>
 <?php if ($print && $inv): ?>
 <script>window.addEventListener('load', function () { window.print(); });</script>
+<?php endif; ?>
+<?php if ($pdf): ?>
+<?php
+$html = ob_get_clean();
+require_once __DIR__ . '/../../../includes/pdf.php';
+if ($inv) { audit('invoices.print', 'Invoice ' . $inv['invoice_no'] . ' (PDF)'); }
+pdf_send_or_html(pdf_prepare_screen_html($html, '.iv-no-print'), 'Invoice ' . ($inv['invoice_no'] ?? $id));
+?>
 <?php endif; ?>
 </body>
 </html>

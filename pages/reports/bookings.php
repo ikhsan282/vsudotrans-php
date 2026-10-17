@@ -43,6 +43,10 @@ require __DIR__ . '/../../includes/sidebar.php';
                 <i class="bi bi-filetype-csv"></i> CSV</a>
             <a class="btn btn-success" href="bookings_export.php?<?= e(str_replace('format=csv', 'format=xlsx', $export_qs)) ?>">
                 <i class="bi bi-file-earmark-excel"></i> Excel</a>
+            <a class="btn btn-danger" href="bookings_export.php?<?= e($export_qs) ?>&format=pdf">
+                <i class="bi bi-filetype-pdf"></i> PDF</a>
+            <a class="btn btn-outline-secondary" href="bookings_export.php?<?= e($export_qs) ?>&format=html&print=1" target="_blank">
+                <i class="bi bi-printer"></i> Cetak</a>
         </div>
     </div>
 
