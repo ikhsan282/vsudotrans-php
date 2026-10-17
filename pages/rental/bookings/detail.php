@@ -3,6 +3,7 @@ require_once __DIR__ . '/../../../config/config.php';
 require_permission('rental.view');
 require_once __DIR__ . '/../../travel/_helpers.php';
 require_once __DIR__ . '/../../../includes/booking_service.php';
+require_once __DIR__ . '/../../../includes/dispatch_service.php';
 
 $cid = require_active_company();
 $id  = (int) ($_GET['id'] ?? $_POST['id'] ?? 0);
@@ -83,6 +84,9 @@ $st->execute();
 $passenger = $st->get_result()->fetch_assoc() ?: ['name' => '-'];
 $st->close();
 
+// Riwayat penugasan driver (modul Penjadwalan) untuk booking ini.
+$assignments = dispatch_by_booking('rental', $id);
+
 $canManage = can('rental.manage');
 $employees = $canManage ? opts_employees($cid) : [];
 $vehicles  = $canManage ? opts_vehicles($cid) : [];
@@ -96,6 +100,9 @@ require __DIR__ . '/../../../includes/sidebar.php';
     <div class="d-flex justify-content-between align-items-center mb-3">
         <h4 class="fw-bold mb-0"><?= e($b['document_number']) ?> <?= status_badge($status) ?></h4>
         <div>
+            <?php if (can('dispatch.manage')): ?>
+                <a class="btn btn-primary btn-sm" href="<?= e(APP_URL) ?>/pages/dispatch/assign.php"><i class="bi bi-person-badge"></i> Tugaskan Driver</a>
+            <?php endif; ?>
             <a class="btn btn-dark btn-sm" target="_blank" href="<?= e(APP_URL) ?>/tiket.php?no=<?= urlencode((string) $b['document_number']) ?>&print=1">Cetak E-Tiket</a>
             <a class="btn btn-outline-secondary btn-sm" href="<?= e(APP_URL) ?>/pages/rental/bookings/index.php">Kembali</a>
         </div>
@@ -197,6 +204,32 @@ require __DIR__ . '/../../../includes/sidebar.php';
         </div></div></div>
     </div>
     <?php endif; ?>
+
+    <div class="card shadow-sm border-0 mb-3">
+        <div class="card-header bg-white fw-semibold d-flex justify-content-between align-items-center">
+            <span>Penugasan Driver</span>
+            <a class="btn btn-sm btn-outline-secondary" href="<?= e(APP_URL) ?>/pages/dispatch/detail.php?type=rental&amp;id=<?= $id ?>">Kelola</a>
+        </div>
+        <div class="table-responsive">
+            <table class="table mb-0 align-middle">
+                <thead><tr><th>Driver</th><th>Kendaraan</th><th>Mulai</th><th>Selesai</th><th>Status</th></tr></thead>
+                <tbody>
+                <?php foreach ($assignments as $a): ?>
+                    <tr>
+                        <td><?= e((string) $a['employee_name']) ?></td>
+                        <td><?= e((string) ($a['vehicle_number'] ?? '-')) ?></td>
+                        <td><?= e((string) $a['started_at']) ?></td>
+                        <td><?= e($a['ended_at'] ? (string) $a['ended_at'] : '—') ?></td>
+                        <td><span class="badge bg-<?= empty($a['ended_at']) ? 'warning text-dark' : 'secondary' ?>"><?= empty($a['ended_at']) ? 'sedang jalan' : 'selesai' ?></span></td>
+                    </tr>
+                <?php endforeach; ?>
+                <?php if (!$assignments): ?>
+                    <tr><td colspan="5" class="text-center text-muted py-3">Belum ada penugasan driver.</td></tr>
+                <?php endif; ?>
+                </tbody>
+            </table>
+        </div>
+    </div>
 
     <div class="card shadow-sm border-0">
         <div class="card-header bg-white fw-semibold">Riwayat Status</div>
