@@ -476,7 +476,10 @@ function master_list(string $key): void
         <div class="d-flex justify-content-between align-items-center mb-3">
             <h4 class="fw-bold mb-0"><?= e($spec['title']) ?></h4>
             <?php if (can($spec['perm_manage'])): ?>
-                <a class="btn btn-primary btn-sm" href="<?= e(master_base_url($spec)) ?>/form.php"><i class="bi bi-plus-lg"></i> Tambah</a>
+                <div>
+                    <a class="btn btn-outline-primary btn-sm" href="<?= e(master_base_url($spec)) ?>/import.php"><i class="bi bi-upload"></i> Import CSV</a>
+                    <a class="btn btn-primary btn-sm" href="<?= e(master_base_url($spec)) ?>/form.php"><i class="bi bi-plus-lg"></i> Tambah</a>
+                </div>
             <?php endif; ?>
         </div>
         <?= master_tabs($key) ?>
@@ -909,6 +912,49 @@ function master_code_unique(array $spec, string $code, ?int $cid, int $exclude_i
     $n = (int) $st->get_result()->fetch_row()[0];
     $st->close();
     return $n === 0;
+}
+
+/** Cari baris berdasarkan kode (discope tenant). null = belum ada. */
+function master_find_code(array $spec, string $code, ?int $cid): ?array
+{
+    if ($code === '') {
+        return null;
+    }
+    $sql = 'SELECT * FROM `' . $spec['table'] . '` WHERE code = ?';
+    $types = 's';
+    $params = [$code];
+    if (!empty($spec['company'])) {
+        if (is_super_admin()) {
+            $sql .= ' AND company_id <=> ?';
+            $types .= 'i';
+            $params[] = $cid;
+        } elseif (($spec['unique'] ?? '') === 'company_or_null') {
+            $sql .= ' AND (company_id = ? OR company_id IS NULL)';
+            $types .= 'i';
+            $params[] = (int) $cid;
+        } else {
+            $sql .= ' AND company_id = ?';
+            $types .= 'i';
+            $params[] = (int) $cid;
+        }
+    }
+    $st = db()->prepare($sql . ' LIMIT 1');
+    $st->bind_param($types, ...$params);
+    $st->execute();
+    $row = $st->get_result()->fetch_assoc();
+    $st->close();
+    return $row ?: null;
+}
+
+/** true bila ada nilai yang benar-benar berubah (untuk laporan upsert). */
+function master_import_only_changed(array $spec, array $existing, array $in): bool
+{
+    foreach ($in as $col => $v) {
+        if ((string) ($existing[$col] ?? null) !== (string) $v) {
+            return true;
+        }
+    }
+    return false;
 }
 
 /**
