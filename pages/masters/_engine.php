@@ -238,7 +238,7 @@ function master_tables(): array
         'payment_methods' => [
             'table' => 'payment_methods', 'title' => 'Metode Pembayaran', 'module' => 'finance',
             'perm_view' => 'finance.view', 'perm_manage' => 'finance.manage',
-            'company' => true, 'unique' => 'company_or_null', 'order' => 'sort_order',
+            'company' => true, 'unique' => 'company_or_null', 'order' => 'sort_order', 'reorder' => true,
             'fields' => [
                 mf_code(), mf_name(),
                 ['col' => 'account_name', 'label' => 'Nama Pemilik Rekening', 'type' => 'text', 'max' => 255, 'required' => false, 'nullable' => true],
@@ -438,6 +438,7 @@ function master_list(string $key): void
     $spec = master_spec($key);
     require_permission($spec['perm_view']);
     $cid = active_company_id();
+    $can_manage = can($spec['perm_manage']);
 
     [$where, $types, $params] = master_scope($spec);
     $table = $spec['table'];
@@ -505,7 +506,17 @@ function master_list(string $key): void
                                 </td>
                             <?php endforeach; ?>
                             <td class="text-end">
-                                <?php if (can($spec['perm_manage'])): ?>
+                                <?php if ($can_manage && !empty($spec['reorder'])): ?>
+                                    <?php foreach ([['up', '↑', 'Naikkan urutan'], ['down', '↓', 'Turunkan urutan']] as [$dir, $icon, $tip]): ?>
+                                        <form method="post" action="<?= e(master_base_url($spec)) ?>/move.php" class="d-inline">
+                                            <?= csrf_field() ?>
+                                            <input type="hidden" name="id" value="<?= (int) $r['id'] ?>">
+                                            <input type="hidden" name="dir" value="<?= $dir ?>">
+                                            <button type="submit" class="btn btn-sm btn-outline-secondary" title="<?= e($tip) ?>" aria-label="<?= e($tip) ?>"><?= $icon ?></button>
+                                        </form>
+                                    <?php endforeach; ?>
+                                <?php endif; ?>
+                                <?php if ($can_manage): ?>
                                     <a class="btn btn-sm btn-outline-primary" href="<?= e(master_base_url($spec)) ?>/form.php?id=<?= (int) $r['id'] ?>">Ubah</a>
                                     <form method="post" action="<?= e(master_base_url($spec)) ?>/delete.php" class="d-inline" onsubmit="return confirm('Hapus data ini?')">
                                         <?= csrf_field() ?>
@@ -1008,6 +1019,121 @@ function master_save(array $spec, int $id, array $in, ?int $cid): int
     $new_id = $id === 0 ? $st->insert_id : $id;
     $st->close();
     return $new_id;
+}
+
+// ---------------------------------------------------------------------
+// Reorder (naik/turun) — tabel master yang punya kolom urutan ($spec['order'])
+// ---------------------------------------------------------------------
+
+/**
+ * Beri ulang 10,20,30… menurut urutan efektif daftar (ORDER BY kolom urutan, id).
+ * Aktif HANYA bila ada duplikat/NULL — nilai unik yang sudah rapi (mis. 10,20,30
+ * dari awal) dibiarkan apa adanya, jadi memindahkan baris tidak pernah menolak
+ * urutan "aneh" yang ditulis manual di form.
+ */
+function master_normalize_order(array $spec): void
+{
+    [$where, $types, $params] = master_scope($spec);
+    $table = $spec['table'];
+    $col = $spec['order'];
+    $st = db()->prepare("SELECT id, `{$col}` FROM `{$table}` WHERE {$where} ORDER BY `{$col}`, id");
+    if ($types !== '') {
+        $st->bind_param($types, ...$params);
+    }
+    $st->execute();
+    $rows = $st->get_result()->fetch_all(MYSQLI_ASSOC);
+    $st->close();
+
+    $seen = [];
+    $dirty = false;
+    foreach ($rows as $r) {
+        $v = $r[$col] === null ? null : (int) $r[$col];
+        if ($v === null || isset($seen[$v])) {
+            $dirty = true;
+            break;
+        }
+        $seen[$v] = true;
+    }
+    if (!$dirty) {
+        return;
+    }
+
+    $fixes = [];
+    $n = 10;
+    foreach ($rows as $r) { // urutan efektif daftar dipertahankan, nilainya dinormalkan
+        $fixes[] = [(int) $r['id'], $n];
+        $n += 10;
+    }
+    $st = db()->prepare("UPDATE `{$table}` SET `{$col}` = ? WHERE id = ?");
+    foreach ($fixes as [$id, $v]) {
+        $st->bind_param('ii', $v, $id);
+        $st->execute();
+    }
+    $st->close();
+}
+
+/**
+ * Aksi POST naik/turun urutan item master. Param: id, dir ('up'|'down' → ±1), csrf_token.
+ * Tetangga diambil di dalam scope perusahaan aktif, lalu sort_order bertukar.
+ * Endpoint tipis: pages/<modul>/<tabel>/move.php memanggil master_move($key, $id, $dir).
+ */
+function master_move(string $key, int $id, int $dir): void
+{
+    $spec = master_spec($key);
+    $base = 'pages/' . $spec['module'] . '/' . $spec['table'] . '/index.php';
+    require_permission($spec['perm_manage']);
+
+    if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
+        redirect($base);
+    }
+    verify_csrf();
+
+    $row = $dir !== 0 ? master_find($spec, $id) : null; // 403 bila baris tenant lain
+    if (!$row) {
+        flash('error', $spec['title'] . ' tidak ditemukan.');
+        redirect($base);
+    }
+
+    master_normalize_order($spec);
+
+    // Ambil ulang baris setelah normalisasi: nilai urut bisa berubah di langkah itu.
+    $row = master_find($spec, (int) $row['id']);
+    if (!$row) {
+        flash('error', $spec['title'] . ' tidak ditemukan.');
+        redirect($base);
+    }
+
+    $col = $spec['order'];
+    $cmp = $dir < 0 ? '<' : '>';
+    $ord = $dir < 0 ? 'DESC' : 'ASC';
+    $val = $row[$col] === null ? 0 : (int) $row[$col];
+
+    // Tetangga terdekat dalam scope perusahaan aktif (company_id yang sama
+    // untuk NULL-global: global & milik perusahaan berbagi urutan di list).
+    [$where, $types, $params] = !empty($spec['company']) ? master_scope($spec) : ['1=1', '', []];
+    $table = $spec['table'];
+    $st = db()->prepare("SELECT id, `{$col}` FROM `{$table}` WHERE {$where} AND `{$col}` {$cmp} ? ORDER BY `{$col}` {$ord} LIMIT 1");
+    $types .= 'i'; // tambah satu parameter untuk nilai urutan
+    $params = [...$params, $val];
+    $st->bind_param($types, ...$params);
+    $st->execute();
+    $neighbor = $st->get_result()->fetch_assoc();
+    $st->close();
+
+    if (!$neighbor) {
+        redirect($base); // di tepi daftar — tidak ada yang diubah
+    }
+
+    $nval = $neighbor[$col] === null ? 0 : (int) $neighbor[$col];
+    $id = (int) $row['id'];
+    $nid = (int) $neighbor['id'];
+    $st = db()->prepare("UPDATE `{$table}` SET `{$col}` = CASE id WHEN ? THEN ? WHEN ? THEN ? END WHERE id IN (?, ?)");
+    $st->bind_param('iiiiii', $id, $nval, $nid, $val, $id, $nid);
+    $st->execute();
+    $st->close();
+
+    audit($spec['module'] . '.move', $spec['title'] . " #{$id} " . ($dir < 0 ? 'naik' : 'turun'));
+    redirect($base);
 }
 
 // ---------------------------------------------------------------------
