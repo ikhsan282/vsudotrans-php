@@ -11,7 +11,7 @@ CREATE DATABASE IF NOT EXISTS `vsudotrans` CHARACTER SET utf8mb4 COLLATE utf8mb4
 USE `vsudotrans`;
 
 SET FOREIGN_KEY_CHECKS = 0;
-DROP TABLE IF EXISTS `audit_trails`, `login_attempts`, `user_permissions`, `user_companies`, `employees`, `users`, `roles`, `permissions`, `branches`, `companies`, `groups`, `role_permissions`, `banks`, `countries`, `provinces`, `cities`, `districts`, `villages`, `unit_measures`, `brand_vehicles`, `category_vehicles`, `model_units`, `type_engines`, `vehicles`, `rutes`, `schedules`, `passengers`, `trip_schedules`, `travel_ticket_bookings`, `rental_car_bookings`, `rental_car_regulation_employees`, `booking_passengers`, `booking_status_history`, `trip_assignments`, `premi_configs`, `booking_cost_lines`, `document_sequences`, `payment_methods`, `invoices`, `invoice_revisions`, `job_grades`, `job_grade_amounts`, `job_titles`, `job_positions`, `organization_structures`, `employee_recognitions`;
+DROP TABLE IF EXISTS `audit_trails`, `login_attempts`, `user_permissions`, `user_companies`, `employees`, `users`, `roles`, `permissions`, `branches`, `companies`, `groups`, `role_permissions`, `banks`, `countries`, `provinces`, `cities`, `districts`, `villages`, `unit_measures`, `brand_vehicles`, `category_vehicles`, `model_units`, `type_engines`, `vehicles`, `rutes`, `schedules`, `passengers`, `trip_schedules`, `travel_ticket_bookings`, `rental_car_bookings`, `rental_car_regulation_employees`, `booking_passengers`, `booking_status_history`, `trip_assignments`, `premi_configs`, `booking_cost_lines`, `document_sequences`, `payment_methods`, `invoices`, `invoice_revisions`, `job_grades`, `job_grade_amounts`, `job_titles`, `job_positions`, `organization_structures`, `employee_recognitions`, `cash_accounts`, `cash_transactions`;
 SET FOREIGN_KEY_CHECKS = 1;
 SET NAMES utf8mb4;
 
@@ -892,6 +892,51 @@ CREATE TABLE `payment_methods` (
   UNIQUE KEY `uq_payment_methods_code` (`company_id`, `code`),
   KEY `ix_payment_methods_company` (`company_id`),
   CONSTRAINT `fk_payment_methods_company` FOREIGN KEY (`company_id`) REFERENCES `companies` (`id`) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- ---------------------------------------------------------------------
+-- KAS & BANK (buku kas di luar booking: uang masuk/keluar manual)
+-- ---------------------------------------------------------------------
+-- Tanpa FOREIGN KEY (mengikuti booking_cost_lines): urutan tabel di schema ini tidak
+-- menjamin induk sudah ada saat import. Tautan lintas perusahaan dijaga di aplikasi
+-- (semua query di-scope company_id + validasi akun memakai perusahaan aktif).
+CREATE TABLE `cash_accounts` (
+  `id` INT(11) NOT NULL AUTO_INCREMENT,
+  `company_id` INT(11) NOT NULL,
+  `code` VARCHAR(15) NOT NULL,
+  `name` VARCHAR(255) NOT NULL,
+  `type` VARCHAR(20) NOT NULL COMMENT 'kas|bank',
+  `opening_balance` DECIMAL(18,2) NOT NULL DEFAULT 0 COMMENT 'saldo awal sebelum transaksi',
+  `bank_name` VARCHAR(255) DEFAULT NULL,
+  `account_number` VARCHAR(50) DEFAULT NULL,
+  `is_active` TINYINT(1) NOT NULL DEFAULT 1,
+  `note` VARCHAR(2000) DEFAULT NULL,
+  `created_user` VARCHAR(255) DEFAULT NULL,
+  `created_date` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  `modified_user` VARCHAR(255) DEFAULT NULL,
+  `modified_date` DATETIME DEFAULT NULL,
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uq_cashacc_company_code` (`company_id`, `code`),
+  KEY `ix_cashacc_company` (`company_id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE `cash_transactions` (
+  `id` INT(11) NOT NULL AUTO_INCREMENT,
+  `company_id` INT(11) NOT NULL,
+  `cash_account_id` INT(11) NOT NULL,
+  `date` DATE NOT NULL,
+  `direction` VARCHAR(3) NOT NULL COMMENT 'in|out',
+  `amount` DECIMAL(18,2) NOT NULL,
+  `category` VARCHAR(50) DEFAULT NULL,
+  `description` VARCHAR(1000) DEFAULT NULL,
+  `payment_method_id` INT(11) DEFAULT NULL,
+  `created_user` VARCHAR(255) DEFAULT NULL,
+  `created_date` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  `modified_user` VARCHAR(255) DEFAULT NULL,
+  `modified_date` DATETIME DEFAULT NULL,
+  PRIMARY KEY (`id`),
+  KEY `ix_cashtx_company_date` (`company_id`, `date`),
+  KEY `ix_cashtx_account` (`cash_account_id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 CREATE TABLE `invoices` (
