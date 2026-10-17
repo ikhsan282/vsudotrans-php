@@ -120,7 +120,26 @@ require __DIR__ . '/../../includes/sidebar.php';
             </div>
             <div class="col-md-4">
                 <label class="form-label">Grade</label>
-                <input name="job_grade" class="form-control" maxlength="50" value="<?= e($v('job_grade')) ?>">
+                <?php
+                // Select dari master `job_grades` (gaji pokok + uang harian payroll).
+                $grade_opts = [];
+                try {
+                    $grade_opts = db()->query('SELECT name FROM job_grades WHERE is_active = 1 ORDER BY name')->fetch_all(MYSQLI_ASSOC);
+                } catch (mysqli_sql_exception $e) {
+                    $grade_opts = [];
+                }
+                $grade_val = $v('job_grade');
+                $grade_old = $grade_val !== '' && !in_array($grade_val, array_column($grade_opts, 'name'), true);
+                ?>
+                <select name="job_grade" class="form-select">
+                    <option value="">— pilih —</option>
+                    <?php foreach ($grade_opts as $g): ?>
+                        <option value="<?= e($g['name']) ?>" <?= $g['name'] === $grade_val ? 'selected' : '' ?>><?= e($g['name']) ?></option>
+                    <?php endforeach; ?>
+                    <?php if ($grade_old): ?>
+                        <option value="<?= e($grade_val) ?>" selected><?= e($grade_val) ?> (tidak terdaftar)</option>
+                    <?php endif; ?>
+                </select>
             </div>
 
             <h6 class="fw-bold text-muted mt-3 mb-0">Rekening Bank</h6>

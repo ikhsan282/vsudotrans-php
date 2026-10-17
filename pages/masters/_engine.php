@@ -190,10 +190,12 @@ function master_tables(): array
             'table' => 'job_grades', 'title' => 'Golongan Jabatan',
             'fields' => [
                 mf_code(), mf_name(),
-                ['col' => 'from_amount', 'label' => 'Nilai Bawah', 'type' => 'money', 'required' => false],
-                ['col' => 'mid_amount', 'label' => 'Nilai Tengah', 'type' => 'money', 'required' => false],
-                ['col' => 'to_amount', 'label' => 'Nilai Atas', 'type' => 'money', 'required' => false],
+                ['col' => 'basic_salary', 'label' => 'Gaji Pokok', 'type' => 'money', 'required' => false],
+                ['col' => 'daily_allowance', 'label' => 'Uang Harian', 'type' => 'money', 'required' => false],
                 mf_note(), mf_active(),
+            ],
+            'blockers' => [
+                ['table' => 'employees', 'col' => 'job_grade', 'label' => 'karyawan (via nama grade)'],
             ],
         ]),
         'job_titles' => $hr([

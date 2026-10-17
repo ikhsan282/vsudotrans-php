@@ -42,6 +42,7 @@ $menu = [
         ['label' => 'Papan & Riwayat', 'href' => 'pages/dispatch/index.php',  'perms' => 'dispatch.view'],
         ['label' => 'Tugaskan Driver', 'href' => 'pages/dispatch/assign.php', 'perms' => 'dispatch.manage'],
     ]],
+    ['key' => 'payroll', 'label' => 'Payroll', 'icon' => 'cash-stack', 'href' => 'pages/payroll/periods/index.php', 'perm' => 'payroll.view'],
     ['key' => 'finance', 'label' => 'Keuangan', 'icon' => 'cash-coin', 'perm' => null, 'sub' => [
         ['label' => 'Invoice',           'href' => 'pages/finance/invoices/index.php',        'perms' => 'invoices.view'],
         ['label' => 'Metode Pembayaran', 'href' => 'pages/finance/payment_methods/index.php', 'perms' => 'finance.view'],

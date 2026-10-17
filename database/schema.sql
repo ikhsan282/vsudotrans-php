@@ -11,7 +11,7 @@ CREATE DATABASE IF NOT EXISTS `vsudotrans` CHARACTER SET utf8mb4 COLLATE utf8mb4
 USE `vsudotrans`;
 
 SET FOREIGN_KEY_CHECKS = 0;
-DROP TABLE IF EXISTS `audit_trails`, `login_attempts`, `user_permissions`, `user_companies`, `employees`, `users`, `roles`, `permissions`, `branches`, `companies`, `groups`, `role_permissions`, `banks`, `countries`, `provinces`, `cities`, `districts`, `villages`, `unit_measures`, `brand_vehicles`, `category_vehicles`, `model_units`, `type_engines`, `vehicles`, `rutes`, `schedules`, `passengers`, `trip_schedules`, `travel_ticket_bookings`, `rental_car_bookings`, `rental_car_regulation_employees`, `booking_passengers`, `booking_status_history`, `trip_assignments`, `premi_configs`, `booking_cost_lines`, `document_sequences`, `payment_methods`, `invoices`, `invoice_revisions`, `job_grades`, `job_titles`, `job_positions`, `organization_structures`, `employee_recognitions`;
+DROP TABLE IF EXISTS `audit_trails`, `login_attempts`, `user_permissions`, `user_companies`, `employees`, `users`, `roles`, `permissions`, `branches`, `companies`, `groups`, `role_permissions`, `banks`, `countries`, `provinces`, `cities`, `districts`, `villages`, `unit_measures`, `brand_vehicles`, `category_vehicles`, `model_units`, `type_engines`, `vehicles`, `rutes`, `schedules`, `passengers`, `trip_schedules`, `travel_ticket_bookings`, `rental_car_bookings`, `rental_car_regulation_employees`, `booking_passengers`, `booking_status_history`, `trip_assignments`, `premi_configs`, `booking_cost_lines`, `document_sequences`, `payment_methods`, `invoices`, `invoice_revisions`, `job_grades`, `job_grade_amounts`, `job_titles`, `job_positions`, `organization_structures`, `employee_recognitions`;
 SET FOREIGN_KEY_CHECKS = 1;
 SET NAMES utf8mb4;
 
@@ -942,9 +942,9 @@ CREATE TABLE `job_grades` (
   `company_id` INT(11) NOT NULL,
   `code` VARCHAR(15) NOT NULL,
   `name` VARCHAR(255) NOT NULL,
-  `from_amount` DECIMAL(18,2) NOT NULL DEFAULT 0,
-  `mid_amount` DECIMAL(18,2) NOT NULL DEFAULT 0,
-  `to_amount` DECIMAL(18,2) NOT NULL DEFAULT 0,
+  -- Gaji pokok & uang harian: satu-satunya sumber nilai payroll (modul Payroll).
+  `basic_salary` DECIMAL(18,2) NOT NULL DEFAULT 0 COMMENT 'Gaji pokok per bulan',
+  `daily_allowance` DECIMAL(18,2) NOT NULL DEFAULT 0 COMMENT 'Uang harian per hari hadir',
   `note` VARCHAR(2000) DEFAULT NULL,
   `is_active` TINYINT(1) NOT NULL DEFAULT 1,
   `created_user` VARCHAR(255) DEFAULT NULL,
@@ -955,6 +955,18 @@ CREATE TABLE `job_grades` (
   UNIQUE KEY `uq_job_grades_code` (`company_id`, `code`),
   KEY `ix_job_grades_company` (`company_id`),
   CONSTRAINT `fk_job_grades_company` FOREIGN KEY (`company_id`) REFERENCES `companies` (`id`) ON DELETE RESTRICT
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- Skema sebelumnya memakai rentang from/mid/to_amount; gaji pokok + uang harian
+-- sekarang kolom utama (lihat job_grades di atas). Baris lama dipertahankan di kolom
+-- netral ini supaya nilai rentang tidak hilang setelah konversi.
+CREATE TABLE `job_grade_amounts` (
+  `job_grade_id` INT(11) NOT NULL,
+  `from_amount` DECIMAL(18,2) NOT NULL DEFAULT 0,
+  `mid_amount` DECIMAL(18,2) NOT NULL DEFAULT 0,
+  `to_amount` DECIMAL(18,2) NOT NULL DEFAULT 0,
+  PRIMARY KEY (`job_grade_id`),
+  CONSTRAINT `fk_job_grade_amounts_grade` FOREIGN KEY (`job_grade_id`) REFERENCES `job_grades` (`id`) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 CREATE TABLE `job_titles` (
@@ -1040,6 +1052,49 @@ CREATE TABLE `employee_recognitions` (
   CONSTRAINT `fk_employee_recognitions_employee` FOREIGN KEY (`employee_id`) REFERENCES `employees` (`id`) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
+-- ---------------------------------------------------------------------
+-- MODUL PAYROLL (gaji per periode bulanan)
+-- ---------------------------------------------------------------------
+CREATE TABLE `payroll_periods` (
+  `id` INT(11) NOT NULL AUTO_INCREMENT,
+  `company_id` INT(11) NOT NULL,
+  `period_year` SMALLINT(6) NOT NULL,
+  `period_month` TINYINT(4) NOT NULL,
+  `status` ENUM('draft','final','paid') NOT NULL DEFAULT 'draft',
+  `note` VARCHAR(2000) DEFAULT NULL,
+  `created_user` VARCHAR(255) DEFAULT NULL,
+  `created_date` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  `modified_user` VARCHAR(255) DEFAULT NULL,
+  `modified_date` DATETIME DEFAULT NULL,
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uq_payroll_periods_company_period` (`company_id`, `period_year`, `period_month`),
+  CONSTRAINT `fk_payroll_periods_company` FOREIGN KEY (`company_id`) REFERENCES `companies` (`id`) ON DELETE RESTRICT
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE `payroll_items` (
+  `id` INT(11) NOT NULL AUTO_INCREMENT,
+  `payroll_period_id` INT(11) NOT NULL,
+  `employee_id` INT(11) NOT NULL,
+  `company_id` INT(11) NOT NULL,
+  `basic_salary` DECIMAL(18,2) NOT NULL DEFAULT 0 COMMENT 'salinan gaji pokok grade saat generate',
+  `daily_allowance` DECIMAL(18,2) NOT NULL DEFAULT 0,
+  `days_present` INT(11) NOT NULL DEFAULT 0,
+  `deductions` DECIMAL(18,2) NOT NULL DEFAULT 0,
+  `net_salary` DECIMAL(18,2) NOT NULL DEFAULT 0,
+  `note` VARCHAR(2000) DEFAULT NULL,
+  `created_user` VARCHAR(255) DEFAULT NULL,
+  `created_date` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  `modified_user` VARCHAR(255) DEFAULT NULL,
+  `modified_date` DATETIME DEFAULT NULL,
+  PRIMARY KEY (`id`),
+  KEY `ix_payroll_items_period` (`payroll_period_id`),
+  KEY `ix_payroll_items_employee` (`employee_id`),
+  KEY `ix_payroll_items_company` (`company_id`),
+  CONSTRAINT `fk_payroll_items_period` FOREIGN KEY (`payroll_period_id`) REFERENCES `payroll_periods` (`id`) ON DELETE CASCADE,
+  CONSTRAINT `fk_payroll_items_employee` FOREIGN KEY (`employee_id`) REFERENCES `employees` (`id`) ON DELETE RESTRICT,
+  CONSTRAINT `fk_payroll_items_company` FOREIGN KEY (`company_id`) REFERENCES `companies` (`id`) ON DELETE RESTRICT
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
 
 -- ---------------------------------------------------------------------
 -- PERMISSION MODUL BARU
@@ -1084,7 +1139,7 @@ WHERE p.name IN ('masters.view','hr.view','hr.manage','attendance.view','attenda
 -- Staff (4) dan Viewer (5): view modul baru saja
 INSERT INTO `role_permissions` (`role_id`, `permission_id`)
 SELECT r.id, p.id FROM `permissions` p JOIN (SELECT 4 AS id UNION ALL SELECT 5) r
-WHERE p.name LIKE '%.view' AND p.module IN ('masters','hr','vehicles','travel','rental','invoices','dispatch','attendance');
+WHERE p.name LIKE '%.view' AND p.module IN ('masters','hr','vehicles','travel','rental','invoices','dispatch','attendance','payroll');
 
 -- Laporan Booking: halaman babar membaca angka operasional booking (bukan buku kas),
 -- jadi modul-nya 'reports' dan ikut ".view" seperti modul lain → Staff & Viewer dapat.
