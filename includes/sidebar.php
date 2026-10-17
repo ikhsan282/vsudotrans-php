@@ -7,6 +7,12 @@
  */
 $active = $active ?? '';
 
+/** Menu/entri 'admin_only' hanya untuk Super Admin (digerakkan is_super_admin(), bukan perm). */
+function super_admin_menu(array $item): bool
+{
+    return empty($item['admin_only']) || is_super_admin();
+}
+
 $menu = [
     ['key' => 'dashboard', 'label' => 'Dashboard',       'icon' => 'speedometer2', 'href' => 'pages/dashboard/index.php', 'perm' => null],
     ['key' => 'companies', 'label' => 'Perusahaan',      'icon' => 'building',     'href' => 'pages/companies/index.php', 'perm' => 'companies.view'],
@@ -57,6 +63,14 @@ $menu = [
         ['label' => 'Invoice',           'href' => 'pages/finance/invoices/index.php',        'perms' => 'invoices.view'],
         ['label' => 'Metode Pembayaran', 'href' => 'pages/finance/payment_methods/index.php', 'perms' => 'finance.view'],
     ]],
+    // Grup "Sistem": khusus Super Admin. Backend gate memakai is_super_admin() (halaman
+    // memuat seluruh data lintas perusahaan), jadi 'perm' => null di sini dan visibilitas
+    // menu diuji langsung dengan super_admin_menu() — bukan perm string.
+    // 'system.view' TIDAK dipakai: permissions hanya boleh dikelola dari halaman
+    // Role & Hak Akses, dan is_super_admin() tidak melihat daftar permission.
+    ['key' => 'system', 'label' => 'Sistem', 'icon' => 'gear', 'perm' => null, 'admin_only' => true, 'sub' => [
+        ['label' => 'Backup & Restore', 'href' => 'pages/settings/backup.php', 'perms' => null, 'admin_only' => true],
+    ]],
     ['key' => 'reports', 'label' => 'Laporan', 'icon' => 'file-earmark-bar-graph', 'perm' => 'reports.view', 'sub' => [
         ['label' => 'Laporan Booking', 'href' => 'pages/reports/bookings.php', 'perms' => 'reports.view'],
         ['label' => 'Laporan Keuangan', 'href' => 'pages/reports/finance.php', 'perms' => 'finance.view'],
@@ -69,6 +83,7 @@ $menu = [
 <aside class="col-12 col-md-3 col-lg-2 bg-white border-end sidebar">
     <nav class="list-group list-group-flush py-2">
         <?php foreach ($menu as $m): ?>
+            <?php if (!super_admin_menu($m)) continue; ?>
             <?php if ($m['perm'] !== null && !can($m['perm'])) continue; ?>
             <?php if (!empty($m['sub'])): ?>
                 <a class="list-group-item list-group-item-action border-0 rounded-0<?= $active === $m['key'] ? ' active' : '' ?>"
@@ -78,7 +93,8 @@ $menu = [
                 </a>
                 <div class="collapse<?= $active === $m['key'] ? ' show' : '' ?>" id="menu-<?= e($m['key']) ?>">
                     <?php foreach ($m['sub'] as $s): ?>
-                        <?php if (!can($s['perms'])) continue; ?>
+                        <?php if (!super_admin_menu($s)) continue; ?>
+                        <?php if ($s['perms'] !== null && !can($s['perms'])) continue; ?>
                         <a href="<?= e(APP_URL . '/' . $s['href']) ?>"
                            class="list-group-item list-group-item-action border-0 ps-4 py-1 small">
                             <?= e($s['label']) ?>
