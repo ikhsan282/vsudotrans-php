@@ -16,6 +16,7 @@ if ($id > 0) {
     }
     $row = $found;
     $is_super = role_is_super($row);
+    assert_role_manageable($row); // non-Super hanya boleh menyentuh role di bawah levelnya
 }
 
 $errors = [];
@@ -37,6 +38,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     }
     if ($row['level'] < 0 || $row['level'] > 999) {
         $errors[] = 'Level wajib angka 0–999.';
+    }
+    // Non-Super tidak boleh menetapkan level setinggi/setiinggi dirinya (cegah eskalasi).
+    if (!is_super_admin() && $row['level'] <= actor_role_level()) {
+        $errors[] = 'Level harus lebih rendah dari level role Anda.';
     }
 
     if (!$errors) {

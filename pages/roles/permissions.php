@@ -17,6 +17,8 @@ if (role_is_super($role)) {
     flash('error', 'Role Super Admin selalu memiliki semua hak akses dan tidak dapat diubah.');
     redirect('pages/roles/index.php');
 }
+// Non-Super hanya boleh mengatur hak akses role di bawah levelnya (cegah eskalasi diri).
+assert_role_manageable($role);
 
 // Daftar permission selalu dari tabel permissions — jangan hardcode.
 $perms = $db->query('SELECT id, name, description, module FROM permissions ORDER BY module, name')->fetch_all(MYSQLI_ASSOC);
