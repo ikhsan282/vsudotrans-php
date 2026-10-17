@@ -42,12 +42,18 @@ $menu = [
         ['label' => 'Struktur Org.',  'href' => 'pages/hr/organization_structures/index.php', 'perms' => 'hr.view'],
         ['label' => 'Penghargaan',    'href' => 'pages/hr/employee_recognitions/index.php',   'perms' => 'hr.view'],
     ]],
+    ['key' => 'attendance', 'label' => 'Absensi', 'icon' => 'calendar-check', 'perm' => 'attendance.view', 'sub' => [
+        ['label' => 'Absensi Harian', 'href' => 'pages/attendance/index.php',   'perms' => 'attendance.view'],
+        ['label' => 'Rekap Absensi',  'href' => 'pages/attendance/summary.php', 'perms' => 'attendance.view'],
+    ]],
     ['key' => 'dispatch', 'label' => 'Penjadwalan', 'icon' => 'person-badge', 'perm' => null, 'sub' => [
         ['label' => 'Papan & Riwayat', 'href' => 'pages/dispatch/index.php',  'perms' => 'dispatch.view'],
         ['label' => 'Tugaskan Driver', 'href' => 'pages/dispatch/assign.php', 'perms' => 'dispatch.manage'],
     ]],
     ['key' => 'payroll', 'label' => 'Payroll', 'icon' => 'cash-stack', 'href' => 'pages/payroll/periods/index.php', 'perm' => 'payroll.view'],
     ['key' => 'finance', 'label' => 'Keuangan', 'icon' => 'cash-coin', 'perm' => null, 'sub' => [
+        ['label' => 'Buku Kas & Bank',   'href' => 'pages/finance/cash/index.php',            'perms' => 'finance.view'],
+        ['label' => 'Akun Kas/Bank',     'href' => 'pages/finance/cash_accounts/index.php',   'perms' => 'finance.view'],
         ['label' => 'Invoice',           'href' => 'pages/finance/invoices/index.php',        'perms' => 'invoices.view'],
         ['label' => 'Metode Pembayaran', 'href' => 'pages/finance/payment_methods/index.php', 'perms' => 'finance.view'],
     ]],

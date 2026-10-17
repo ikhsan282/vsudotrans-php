@@ -23,7 +23,7 @@ $cleanup = static function () use ($c): void {
     $c->query("DELETE FROM rental_car_bookings WHERE id >= 990000 OR document_number LIKE 'RNT-OCHK%'");
     $c->query("DELETE FROM vehicles WHERE id >= 990000");
     $c->query("DELETE FROM employees WHERE id >= 990000 OR code = 'OCHK-EMP1' OR code = 'OCHK-EMP2'");
-    $c->query("DELETE FROM passengers WHERE id >= 990000 OR code = 'OCHK-PAX'");
+    $c->query("DELETE FROM passengers WHERE id >= 990000 OR id = 991 OR code LIKE 'OCHK-PAX%'");
     $c->query("DELETE FROM branches WHERE id >= 990000 OR code = 'OCHK-BR'");
     $c->query("DELETE FROM companies WHERE id = 992 OR code = 'OCHK-B'");
 };
@@ -43,6 +43,8 @@ $c->query("INSERT INTO companies (id, group_id, code, name, country_code, is_act
            VALUES (992, 1, 'OCHK-B', 'Perusahaan Ochk B', '+62', 1)");
 $c->query("INSERT INTO branches (id, company_id, code, name) VALUES (990010, 992, 'OCHK-BR', 'Cabang Ochk')");
 $c->query("INSERT INTO passengers (id, company_id, code, name, phone_number) VALUES (990010, 992, 'OCHK-PAX', 'Pax Ochk', '0800')");
+// Penumpang milik perusahaan 1 (target FK passenger_id pada booking ops di bawah).
+$c->query("INSERT INTO passengers (id, company_id, code, name, phone_number) VALUES (991, 1, 'OCHK-PAX1', 'Pax Ochk 1', '0801')");
 
 // Dua kendaraan: satu dipakai 2 tugas (1 selesai, 1 berjalan), satu menganggur.
 $veh = static function (int $id, string $no) use ($c): void {

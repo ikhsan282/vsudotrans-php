@@ -20,6 +20,7 @@ if (role_is_super($role)) {
     flash('error', 'Role Super Admin tidak dapat dihapus.');
     redirect('pages/roles/index.php');
 }
+assert_role_manageable($role); // non-Super hanya boleh menghapus role di bawah levelnya
 
 $st = db()->prepare('SELECT COUNT(*) FROM users WHERE role_id = ?');
 $st->bind_param('i', $id);
