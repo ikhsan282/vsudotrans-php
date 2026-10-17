@@ -26,7 +26,7 @@ $cleanup = static function () use ($c): void {
     $c->query("DELETE FROM rental_car_bookings WHERE id >= 990000 OR document_number LIKE 'RNT-FCHK%'");
     $c->query("DELETE FROM vehicles WHERE id >= 990000");
     $c->query("DELETE FROM employees WHERE id >= 990000");
-    $c->query("DELETE FROM passengers WHERE id >= 990000 OR code = 'FCHK-PAX'");
+    $c->query("DELETE FROM passengers WHERE id >= 990000 OR id = 991 OR code LIKE 'FCHK-PAX%'");
     $c->query("DELETE FROM branches WHERE id >= 990000 OR code = 'FCHK-BR'");
     $c->query("DELETE FROM companies WHERE id = 991 OR code = 'FCHK-B'");
 };
@@ -47,6 +47,8 @@ $c->query("INSERT INTO companies (id, group_id, code, name, country_code, is_act
            VALUES (991, 1, 'FCHK-B', 'Perusahaan Fchk B', '+62', 1)");
 $c->query("INSERT INTO branches (id, company_id, code, name) VALUES (990001, 991, 'FCHK-BR', 'Cabang Fchk')");
 $c->query("INSERT INTO passengers (id, company_id, code, name, phone_number) VALUES (990001, 991, 'FCHK-PAX', 'Pax Fchk', '0800')");
+// Penumpang milik perusahaan 1 (target FK passenger_id pada booking di bawah).
+$c->query("INSERT INTO passengers (id, company_id, code, name, phone_number) VALUES (991, 1, 'FCHK-PAX1', 'Pax Fchk 1', '0801')");
 
 // Booking MILIK perusahaan 1 (dibuat lewat id tinggi agar ikut bersih-bersih).
 $c->query("INSERT INTO travel_ticket_bookings
