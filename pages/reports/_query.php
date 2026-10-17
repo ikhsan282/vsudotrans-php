@@ -144,15 +144,19 @@ function report_by_vehicle(array $f): array
         ORDER BY total_bookings DESC, vehicle_number ASC", $j['types'], $j['params']);
 }
 
-/** Per driver: LEFT JOIN penugasan ke karyawan; booking tanpa driver = '-'. */
+/** Per driver: LEFT JOIN penugasan ke karyawan; booking tanpa driver = '-'.
+ *  Dedup: satu booking bisa punya >1 penugasan (driver diganti / riwayat) — ambil yang TERBARU
+ *  saja agar COUNT()/SUM() tidak fan-out dan total antar-dimensi tetap sama. */
 function report_by_driver(array $f): array
 {
     $j = report_joined($f);
     return report_run("SELECT COALESCE(e.name, '-') AS driver_name, " . report_agg() . "
         FROM {$j['sql']}
         LEFT JOIN trip_assignments ta
-               ON ta.booking_type = x.booking_type AND ta.booking_id = x.id
-              AND ta.company_id = x.company_id
+               ON ta.id = (SELECT MAX(ta2.id) FROM trip_assignments ta2
+                            WHERE ta2.booking_type = x.booking_type
+                              AND ta2.booking_id = x.id
+                              AND ta2.company_id = x.company_id)
         LEFT JOIN employees e ON e.id = ta.employee_id
         GROUP BY driver_name
         ORDER BY total_bookings DESC, driver_name ASC", $j['types'], $j['params']);

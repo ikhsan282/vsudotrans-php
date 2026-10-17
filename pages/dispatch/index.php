@@ -71,7 +71,7 @@ require __DIR__ . '/../../includes/sidebar.php';
             <table class="table table-hover mb-0 align-middle">
                 <thead><tr>
                     <th>Booking</th><th>Tipe</th><th>Driver</th><th>Kendaraan</th>
-                    <th><?= $tab === 'riwayat' ? 'Mulai' : 'Mulai' ?></th>
+                    <th>Mulai</th>
                     <?php if ($tab === 'riwayat'): ?><th>Selesai</th><th>Status</th><?php endif; ?>
                     <th>Catatan</th><th class="text-end">Aksi</th>
                 </tr></thead>
