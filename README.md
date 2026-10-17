@@ -136,7 +136,7 @@ Menu sidebar, dan apa yang bisa dilakukan di dalamnya:
 
 **Tanpa halaman (logika saja):** rate limit login, tenant scoping, CSRF, level rule role.
 
-**Belum ada:** jurnal/neraca double-entry, portal pelanggan/driver, lembur otomatis, antrean/retry WhatsApp (butuh cron). Kolom pajak invoice sudah ada tapi belum dihitung otomatis.
+**Belum ada / tidak dipakai:** jurnal/neraca double-entry, portal pelanggan/driver, lembur otomatis, antrean/retry WhatsApp (butuh cron). **Pajak invoice sengaja tidak dipakai** — tarif tetap 0 (`booking_tax_percent()`), kolom `tax_percent`/`tax_amount` dipertahankan hanya agar invoice lama tetap terbaca bila nanti diperlukan.
 
 ## Pengujian
 
