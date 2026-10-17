@@ -16,6 +16,13 @@
  * mulai beda per perusahaan.
  */
 
+/**
+ * Hari yang dihitung sebagai "hadir" per status absensi (kebijakan satu tempat).
+ * Ubah di sini bila aturan perusahaan berubah; status yang tidak terdaftar = 0,
+ * sama seperti hari tanpa catatan absensi.
+ */
+const PAYROLL_ATTENDANCE_DAYS = ['hadir' => 1, 'izin' => 1, 'sakit' => 1, 'cuti' => 1, 'alpa' => 0];
+
 /** Nama bulan Indonesia, 1-12. */
 function payroll_month_name(int $m): string
 {
@@ -218,6 +225,78 @@ function payroll_item_update(int $period_id, int $company_id, int $item_id, int 
     }
 
     return ['item_id' => $item_id, 'days_present' => $days_present, 'deductions' => $deductions, 'net_salary' => $net];
+}
+
+/**
+ * Tarik hari hadir tiap item payroll periode $period_id dari tabel
+ * employee_attendances, untuk bulan periode. Skema pemetaan status via
+ * PAYROLL_ATTENDANCE_DAYS; hari tanpa catatan = 0. Net dihitung ulang
+ * via payroll_net(); deductions & note item dibiarkan apa adanya.
+ *
+ * @return array{updated:int} jumlah item yang days_present-nya berubah
+ */
+function payroll_pull_attendance(int $period_id, int $company_id, ?string $user): array
+{
+    $db = db();
+    $db->begin_transaction();
+    try {
+        $period = payroll_period_assert($period_id, $company_id);
+        $year  = (int) $period['period_year'];
+        $month = (int) $period['period_month'];
+        if ($period['status'] !== 'draft') {
+            throw new RuntimeException('Periode tidak berstatus draft — angka sudah dikunci.');
+        }
+        $from = sprintf('%04d-%02d-01', $year, $month);
+        $to   = date('Y-m-t', strtotime($from . ' last day of this month'));
+
+        $st = $db->prepare('SELECT id, employee_id, basic_salary, daily_allowance, days_present, deductions, net_salary
+            FROM payroll_items WHERE payroll_period_id = ? AND company_id = ? FOR UPDATE');
+        $st->bind_param('ii', $period_id, $company_id);
+        $st->execute();
+        $rows = $st->get_result()->fetch_all(MYSQLI_ASSOC);
+        $st->close();
+
+        // Hari terhitung per karyawan, dari absensi bulan periode. Hari tanpa
+        // catatan absensi tidak pernah muncul di sini — nilainya tetap 0.
+        $days = [];
+        if ($rows) {
+            $ids = array_map(static fn(array $r) => (int) $r['employee_id'], $rows);
+            $in  = implode(',', array_fill(0, count($ids), '?'));
+            $st = $db->prepare("SELECT employee_id, status FROM employee_attendances
+                WHERE company_id = ? AND date BETWEEN ? AND ? AND employee_id IN ($in)");
+            $st->bind_param('iss' . str_repeat('i', count($ids)), ...array_merge([$company_id, $from, $to], $ids));
+            $st->execute();
+            foreach ($st->get_result()->fetch_all(MYSQLI_ASSOC) as $a) {
+                $eid = (int) $a['employee_id'];
+                $days[$eid] = ($days[$eid] ?? 0) + (PAYROLL_ATTENDANCE_DAYS[$a['status']] ?? 0);
+            }
+            $st->close();
+        }
+
+        $st = $db->prepare('UPDATE payroll_items
+            SET days_present = ?, net_salary = ?, modified_user = ?, modified_date = NOW()
+            WHERE id = ?');
+        $updated = 0;
+        foreach ($rows as $r) {
+            $d = $days[(int) $r['employee_id']] ?? 0;
+            $net = payroll_net((float) $r['basic_salary'], (float) $r['daily_allowance'], $d, (float) $r['deductions']);
+            $changed = (int) $r['days_present'] !== $d || abs((float) $r['net_salary'] - $net) >= 0.005;
+            if (!$changed) {
+                continue; // idempoten: angka sudah sesuai, tidak perlu ditulis
+            }
+            $st->bind_param('idsi', $d, $net, $user, $r['id']);
+            $st->execute();
+            $updated++;
+        }
+        $st->close();
+
+        $db->commit();
+    } catch (Throwable $ex) {
+        $db->rollback();
+        throw $ex;
+    }
+
+    return ['updated' => $updated];
 }
 
 /**

@@ -40,6 +40,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $res = payroll_item_update($id, $cid, $item_id, $days, $ded, $note === '' ? null : $note, $user);
             audit('payroll.item', "Periode #{$id} item #{$item_id} net " . rupiah((float) $res['net_salary']));
             flash('success', 'Item gaji diperbarui: ' . rupiah((float) $res['net_salary']) . '.');
+        } elseif ($act === 'pull_attendance') {
+            $res = payroll_pull_attendance($id, $cid, $user);
+            audit('payroll.pull_attendance', "Periode #{$id} ({$period['period_year']}-{$period['period_month']}): {$res['updated']} item diperbarui dari Absensi");
+            flash('success', $res['updated'] . ' item gaji diperbarui dari Absensi.');
         } elseif ($act === 'final' || $act === 'pay') {
             $next = $act === 'final' ? 'final' : 'paid';
             payroll_period_set_status($id, $cid, $next, $user);
@@ -71,6 +75,15 @@ require __DIR__ . '/../../../includes/sidebar.php';
     <div class="d-flex justify-content-between align-items-center mb-3">
         <h4 class="fw-bold mb-0">Payroll <?= e(payroll_period_label($period)) ?> <?= payroll_status_badge($period['status']) ?></h4>
         <div class="d-flex gap-2">
+            <?php if ($can_manage && $period['status'] === 'draft'): ?>
+            <form method="post" action="" class="d-inline"
+                  onsubmit="return confirm('Tarik hari hadir dari Absensi dan timpa Hari Hadir semua item periode ini?')">
+                <?= csrf_field() ?>
+                <input type="hidden" name="id" value="<?= $id ?>">
+                <input type="hidden" name="act" value="pull_attendance">
+                <button class="btn btn-sm btn-primary" type="submit"><i class="bi bi-calendar-check"></i> Tarik dari Absensi</button>
+            </form>
+            <?php endif; ?>
             <a class="btn btn-outline-secondary btn-sm" href="<?= e(APP_URL) ?>/pages/payroll/periods/print.php?id=<?= $id ?>" target="_blank">
                 <i class="bi bi-printer"></i> Cetak
             </a>
