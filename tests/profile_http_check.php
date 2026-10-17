@@ -8,7 +8,7 @@
  */
 require_once __DIR__ . '/../config/config.php';
 
-$BASE = getenv('VSUDO_HTTP_BASE') ?: 'http://127.0.0.1:8090/vsudotrans-profile';
+$BASE = getenv('VSUDO_HTTP_BASE') ?: 'http://127.0.0.1:8090/vsudotrans';
 $JAR  = sys_get_temp_dir() . '/vsudo_profile_cookies.txt';
 $db   = db();
 $fails = 0;
