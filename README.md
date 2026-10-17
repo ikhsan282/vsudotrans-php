@@ -90,6 +90,7 @@ Password semua user: `P@ssw0rd`. **Wajib diganti sebelum production.**
 | **Invoice** | ✅ | ✅ | Otomatis saat booking; list + filter status; detail + catat pembayaran; cetak invoice (browser → PDF) |
 | **Pembayaran** | ✅ | ✅ | Bayar sebagian/lunas, tolak overpay; `booking_cost_lines` cost_type `payment`; sinkron `total_payment` |
 | **Penjadwalan Driver** | ✅ | ✅ | Papan aktif + riwayat, tugaskan/selesaikan tugas, riwayat per booking; `trip_assignments` |
+| **Laporan Booking** | ✅ | ✅ | Rekap per periode, wilayah asal→tujuan, kendaraan, driver; export CSV & XLSX native |
 | Payroll (gaji pokok, uang harian) | ⏳ | ⏳ | Belum dirancang |
 | Finance, Attendance | ⏳ | ⏳ | Belum dirancang |
 
@@ -116,6 +117,8 @@ Menu sidebar, dan apa yang bisa dilakukan di dalamnya:
 | **Audit Trail** | Read-only: waktu, user, aksi, IP, keterangan (login, logout, switch perusahaan, create/update/delete semua modul, aksi booking) |
 | **Tiket publik** (tanpa login) | `tiket.php?no=<resi>` — cek tiket travel/rental: nomor, tanggal, jam, alamat, total |
 | **Keuangan** ▾ | **Invoice**: daftar + filter status, detail, catat pembayaran (sebagian/lunas), cetak invoice (browser → cetak/Simpan PDF) · **Metode Pembayaran**: CRUD bank/QRIS/e-wallet per perusahaan (atau global), upload gambar QR, aktif/nonaktif, urutan tampil |
+| **Keuangan** ▾ | **Invoice**: daftar + filter status, detail, catat pembayaran (sebagian/lunas) · **Metode Pembayaran**: CRUD bank/QRIS/e-wallet per perusahaan (atau global), upload gambar QR, aktif/nonaktif, urutan tampil |
+| **Laporan** ▾ | **Laporan Booking**: filter rentang tanggal + jenis (travel/rental/semua), kartu ringkasan (total booking, nilai, terbayar, sisa piutang), 4 tabel dimensi (periode, wilayah asal→tujuan, kendaraan, driver) dengan total di footer; unduh CSV (BOM UTF-8) atau Excel |
 
 **Tanpa halaman (logika saja):** rate limit login, tenant scoping, CSRF, level rule role.
 
@@ -140,6 +143,11 @@ php tests/dispatch_check.php         # penjadwalan driver: assign/end, validasi 
 > `tests/invoice_pdf_check.php` menguji halaman cetak lewat HTTP, jadi server harus hidup:
 > `php -d mysqli.default_socket=... -S 127.0.0.1:8091 -t <folder-induk-proyek>` lalu
 > `IV_BASE=http://127.0.0.1:8091/<nama-folder> php tests/invoice_pdf_check.php`.
+php tests/reports_check.php          # laporan booking (ringkasan, 4 dimensi, scoping, XLSX)
+```
+
+Export XLSX ditulis native tanpa Composer (`includes/xlsx.php`) — ZIP metode STORED + CRC32 manual,
+satu sheet, tanpa dependensi eksternal.
 
 ## Struktur
 
@@ -155,6 +163,7 @@ vsudotrans/
 │   ├── vehicles/ hr/  # master kendaraan + master HR
 │   ├── finance/       # payment_methods (metode pembayaran + QR), invoices (list + detail/bayar)
 │   ├── dispatch/      # penjadwalan driver: papan aktif/riwayat, tugaskan, detail booking+riwayat
+│   ├── reports/       # laporan booking (_query.php sumber bersama, bookings.php, bookings_export.php)
 │   ├── travel/        # rutes, schedules, passengers, bookings
 │   └── rental/        # bookings
 ├── tests/             # self-check assert-style

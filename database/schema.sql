@@ -1086,4 +1086,13 @@ INSERT INTO `role_permissions` (`role_id`, `permission_id`)
 SELECT r.id, p.id FROM `permissions` p JOIN (SELECT 4 AS id UNION ALL SELECT 5) r
 WHERE p.name LIKE '%.view' AND p.module IN ('masters','hr','vehicles','travel','rental','invoices','dispatch','attendance');
 
+-- Laporan Booking: halaman babar membaca angka operasional booking (bukan buku kas),
+-- jadi modul-nya 'reports' dan ikut ".view" seperti modul lain → Staff & Viewer dapat.
+INSERT INTO `permissions` (`name`, `description`, `module`) VALUES
+('reports.view', 'Lihat Laporan Booking', 'reports');
+
+INSERT INTO `role_permissions` (`role_id`, `permission_id`)
+SELECT r.id, p.id FROM `permissions` p JOIN (SELECT 1 AS id UNION ALL SELECT 2 UNION ALL SELECT 4 UNION ALL SELECT 5) r
+WHERE p.name = 'reports.view';
+
 COMMIT;
