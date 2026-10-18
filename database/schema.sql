@@ -268,13 +268,22 @@ CREATE TABLE `login_attempts` (
 -- 9. SEED: grup, perusahaan contoh, dan pengguna default
 -- ---------------------------------------------------------------------
 INSERT INTO `groups` (`id`, `code`, `name`, `note`) VALUES
-(1, 'VST', 'VSudoTech Group', 'Holding grup perusahaan');
+(1, 'TM', 'Trans Mandiri', 'Grup Trans Mandiri'),
+(2, 'LIZ', 'LIZ', 'LIZ Wisata Alam Indah');
 
-INSERT INTO `companies` (`id`, `group_id`, `code`, `name`, `country_code`, `phone_number`, `email`, `address`, `city`) VALUES
-(1, 1, 'VST-TRANS', 'VSudo Trans', '+62', '021-0000000', 'info@vsudotrans.test', 'Jl. Contoh No. 1', 'Jakarta');
+INSERT INTO `companies` (`id`, `group_id`, `code`, `name`, `country_code`, `phone_number`, `email`, `address`, `city`, `logo`) VALUES
+(1, 1, 'MTM', 'Maura Trans Mandiri', '+62', '021-0000000', 'info@mauratransmandiri.com', 'Jl. Contoh No. 1', 'Tangerang', 'logo-transmandiri.png'),
+(2, 1, 'NTM', 'Nugi Trans Mandiri', '+62', '021-0000000', 'info@nugitransmandiri.com', 'Jl. Contoh No. 2', 'Tangerang', 'logo-transmandiri.png'),
+(3, 1, 'GTM', 'Gibran Trans Mandiri', '+62', '021-0000000', 'info@gibrantransmandiri.com', 'Jl. Contoh No. 3', 'Tangerang', 'logo-transmandiri.png'),
+(4, 1, 'TTM', 'Trisula Trans Mandiri', '+62', '021-0000000', 'info@trisulatransmandiri.com', 'Jl. Contoh No. 4', 'Tangerang', 'logo-transmandiri.png'),
+(5, 2, 'LIZ', 'LIZ Wisata Alam Indah', '+62', '021-0000000', 'info@lizwisata.com', 'Jl. Contoh No. 5', 'Tangerang', 'logo-transmandiri.png');
 
 INSERT INTO `branches` (`id`, `company_id`, `code`, `name`, `country_code`, `phone_number`) VALUES
-(1, 1, 'PST', 'Kantor Pusat', '+62', '021-0000001');
+(1, 1, 'PST', 'Kantor Pusat', '+62', '021-0000001'),
+(2, 2, 'PST', 'Kantor Pusat', '+62', '021-0000002'),
+(3, 3, 'PST', 'Kantor Pusat', '+62', '021-0000003'),
+(4, 4, 'PST', 'Kantor Pusat', '+62', '021-0000004'),
+(5, 5, 'PST', 'Kantor Pusat', '+62', '021-0000005');
 
 -- Semua password default: P@ssw0rd  (hash bcrypt, password_verify() true)
 INSERT INTO `users` (`id`, `username`, `email`, `password`, `full_name`, `phone_number`, `role_id`, `company_id`) VALUES

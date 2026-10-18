@@ -61,7 +61,7 @@ require __DIR__ . '/../../includes/header.php';
                 </div>
                 <div class="col-md-6">
                     <label class="form-label small mb-1">Driver</label>
-                    <select class="form-select form-select-sm" name="employee_id" required>
+                    <select class="form-select form-select-sm ts-select" name="employee_id" required>
                         <option value="">— pilih driver —</option>
                         <?= select_options($drivers, '') ?>
                     </select>
@@ -69,7 +69,7 @@ require __DIR__ . '/../../includes/header.php';
                 </div>
                 <div class="col-md-6">
                     <label class="form-label small mb-1">Kendaraan (opsional)</label>
-                    <select class="form-select form-select-sm" name="vehicle_id">
+                    <select class="form-select form-select-sm ts-select" name="vehicle_id">
                         <option value="">— tanpa kendaraan —</option>
                         <?= select_options($vehicles, '') ?>
                     </select>

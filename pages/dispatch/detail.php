@@ -107,7 +107,7 @@ require __DIR__ . '/../../includes/header.php';
                                 <input type="hidden" name="id" value="<?= $id ?>">
                                 <input type="hidden" name="assignment_id" value="<?= (int) $r['id'] ?>">
                                 <input class="form-control form-control-sm" name="reason" placeholder="Catatan selesai" maxlength="2000" style="max-width:10rem">
-                                <button class="btn btn-sm btn-outline-success" type="submit" onclick="return confirm('Selesaikan tugas ini?')">Selesaikan Tugas</button>
+                                <button class="btn btn-sm btn-outline-success" type="submit" data-confirm="Selesaikan tugas ini?">Selesaikan Tugas</button>
                             </form>
                             <?php endif; ?>
                         </td>

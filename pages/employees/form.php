@@ -75,7 +75,7 @@ require __DIR__ . '/../../includes/header.php';
             </div>
             <div class="col-md-4">
                 <label class="form-label">Cabang</label>
-                <select name="branch_id" class="form-select">
+                <select name="branch_id" class="form-select ts-select">
                     <option value="">— Tanpa cabang —</option>
                     <?php foreach ($branches as $b): ?>
                         <option value="<?= (int) $b['id'] ?>" <?= (string) $b['id'] === $v('branch_id') ? 'selected' : '' ?>>

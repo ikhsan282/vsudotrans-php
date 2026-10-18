@@ -115,11 +115,11 @@ require __DIR__ . '/../../../includes/header.php';
             <div class="col-md-8"><label class="form-label">Nama</label>
                 <input class="form-control" name="name" maxlength="255" required value="<?= e($row['name']) ?>"></div>
             <div class="col-md-6"><label class="form-label">Kota Asal</label>
-                <select class="form-select" name="pickup_point_city_id" required><option value="">-- Pilih --</option><?= select_options($cities, $row['pickup_point_city_id']) ?></select></div>
+                <select class="form-select ts-select" name="pickup_point_city_id" required><option value="">-- Pilih --</option><?= select_options($cities, $row['pickup_point_city_id']) ?></select></div>
             <div class="col-md-6"><label class="form-label">Kota Tujuan</label>
-                <select class="form-select" name="delivery_point_city_id" required><option value="">-- Pilih --</option><?= select_options($cities, $row['delivery_point_city_id']) ?></select></div>
+                <select class="form-select ts-select" name="delivery_point_city_id" required><option value="">-- Pilih --</option><?= select_options($cities, $row['delivery_point_city_id']) ?></select></div>
             <div class="col-md-12"><label class="form-label">Kategori Kendaraan</label>
-                <select class="form-select" name="category_vehicle_id" required><option value="">-- Pilih --</option><?= select_options($cats, $row['category_vehicle_id']) ?></select></div>
+                <select class="form-select ts-select" name="category_vehicle_id" required><option value="">-- Pilih --</option><?= select_options($cats, $row['category_vehicle_id']) ?></select></div>
             <div class="col-md-4"><label class="form-label">Harga Minimum</label>
                 <input type="number" step="0.01" min="0" class="form-control" name="min_price" value="<?= e((string) $row['min_price']) ?>"></div>
             <div class="col-md-4"><label class="form-label">Harga</label>

@@ -112,19 +112,19 @@ require __DIR__ . '/../../../includes/header.php';
             <div class="col-md-3"><label class="form-label">Selesai Sewa</label>
                 <input type="date" class="form-control" name="end_date" required value="<?= e($in['end_date']) ?>"></div>
             <div class="col-md-6"><label class="form-label">Cabang</label>
-                <select class="form-select" name="branch_id" required><option value="">-- Pilih --</option><?= select_options($branches, $in['branch_id']) ?></select></div>
+                <select class="form-select ts-select" name="branch_id" required><option value="">-- Pilih --</option><?= select_options($branches, $in['branch_id']) ?></select></div>
             <div class="col-md-6"><label class="form-label">Penumpang Utama</label>
-                <select class="form-select" name="passenger_id" required><option value="">-- Pilih --</option><?= select_options($passengers, $in['passenger_id']) ?></select></div>
+                <select class="form-select ts-select" name="passenger_id" required><option value="">-- Pilih --</option><?= select_options($passengers, $in['passenger_id']) ?></select></div>
             <div class="col-md-6"><label class="form-label">Penumpang Tambahan <span class="text-muted small">(Ctrl/Cmd klik untuk banyak)</span></label>
                 <select class="form-select" name="passenger_ids[]" multiple size="4"><?= select_options($passengers, $in_passengers, true) ?></select></div>
             <div class="col-md-6"><label class="form-label">Kategori Kendaraan</label>
-                <select class="form-select" name="category_vehicle_id"><option value="">-- Pilih --</option><?= select_options($cats, $in['category_vehicle_id']) ?></select></div>
+                <select class="form-select ts-select" name="category_vehicle_id"><option value="">-- Pilih --</option><?= select_options($cats, $in['category_vehicle_id']) ?></select></div>
             <div class="col-md-6"><label class="form-label">Kendaraan</label>
-                <select class="form-select" name="vehicle_id"><option value="">-- Pilih --</option><?= select_options($vehicles, $in['vehicle_id']) ?></select></div>
+                <select class="form-select ts-select" name="vehicle_id"><option value="">-- Pilih --</option><?= select_options($vehicles, $in['vehicle_id']) ?></select></div>
             <div class="col-md-6"><label class="form-label">Kecamatan Asal</label>
-                <select class="form-select" name="pickup_point_district_id" required><option value="">-- Pilih --</option><?= select_options($districts, $in['pickup_point_district_id']) ?></select></div>
+                <select class="form-select ts-select" name="pickup_point_district_id" required><option value="">-- Pilih --</option><?= select_options($districts, $in['pickup_point_district_id']) ?></select></div>
             <div class="col-md-6"><label class="form-label">Kecamatan Tujuan</label>
-                <select class="form-select" name="delivery_point_district_id" required><option value="">-- Pilih --</option><?= select_options($districts, $in['delivery_point_district_id']) ?></select></div>
+                <select class="form-select ts-select" name="delivery_point_district_id" required><option value="">-- Pilih --</option><?= select_options($districts, $in['delivery_point_district_id']) ?></select></div>
             <div class="col-md-6"><label class="form-label">Alamat Penjemputan</label>
                 <input class="form-control" name="pickup_address" maxlength="2000" value="<?= e($in['pickup_address']) ?>"></div>
             <div class="col-md-6"><label class="form-label">Alamat Tujuan</label>

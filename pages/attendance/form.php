@@ -79,7 +79,7 @@ require __DIR__ . '/../../includes/header.php';
             <div class="row g-3">
                 <div class="col-md-4">
                     <label class="form-label">Karyawan <span class="text-danger">*</span></label>
-                    <select name="employee_id" class="form-select" required>
+                    <select name="employee_id" class="form-select ts-select" required>
                         <option value="">— pilih karyawan —</option>
                         <?php foreach ($employees as $emp): ?>
                             <option value="<?= (int) $emp['id'] ?>"<?= (int) $v('employee_id') === (int) $emp['id'] ? ' selected' : '' ?>>

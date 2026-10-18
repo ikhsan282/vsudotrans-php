@@ -90,7 +90,7 @@ foreach ($menu as $m) {
   <a href="<?= e(APP_URL) ?>/pages/dashboard/index.php"
      class="d-flex align-items-center justify-content-center p-3 text-white text-decoration-none sidebar-brand"
      title="<?= e(APP_NAME) ?>">
-    <img src="<?= e(APP_URL) ?>/assets/brand/mark-mtm-white.png" alt="<?= e(APP_NAME) ?>" class="sidebar-logo">
+    <img src="<?= e(APP_URL) ?>/assets/brand/logo-transmandiri.png" alt="<?= e(APP_NAME) ?>" class="sidebar-logo">
   </a>
   <hr class="text-white m-0">
 

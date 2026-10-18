@@ -178,10 +178,10 @@ require __DIR__ . '/../../../includes/header.php';
                 <?= csrf_field() ?>
                 <input type="hidden" name="id" value="<?= $id ?>">
                 <input type="hidden" name="act" value="driver">
-                <select class="form-select form-select-sm" name="employee_id" required>
+                <select class="form-select form-select-sm ts-select" name="employee_id" required>
                     <option value="">-- Karyawan --</option><?= select_options($employees, $assignment['employee_id'] ?? '') ?>
                 </select>
-                <select class="form-select form-select-sm" name="vehicle_id">
+                <select class="form-select form-select-sm ts-select" name="vehicle_id">
                     <option value="">-- Kendaraan --</option><?= select_options($vehicles, $assignment['vehicle_id'] ?? '') ?>
                 </select>
                 <button class="btn btn-sm btn-outline-primary" type="submit">Tugaskan</button>

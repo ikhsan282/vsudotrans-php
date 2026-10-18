@@ -51,7 +51,7 @@ require __DIR__ . '/../../includes/header.php';
                 </div>
                 <div class="col-6 col-lg-3">
                     <label class="form-label small mb-1">Karyawan</label>
-                    <select class="form-select form-select-sm" name="employee_id">
+                    <select class="form-select form-select-sm ts-select" name="employee_id">
                         <option value="">Semua karyawan</option>
                         <?php foreach ($employees as $emp): ?>
                             <option value="<?= (int) $emp['id'] ?>"<?= $emp_filter === (int) $emp['id'] ? ' selected' : '' ?>>
