@@ -1,10 +1,12 @@
 <?php
 /**
- * Dashboard: ringkasan jumlah karyawan, cabang, perusahaan (scoped tenant)
- * + 2 grafik ringkas 6 bulan terakhir (booking & pendapatan), murni HTML/CSS.
+ * Dashboard: ringkasan operasional (booking hari/minggu ini, driver bertugas,
+ * piutang jatuh tempo), jumlah karyawan/cabang/perusahaan (scoped tenant),
+ * dan 2 grafik ringkas 6 bulan terakhir (booking & pendapatan), murni HTML/CSS.
  */
 require_once __DIR__ . '/../../config/config.php';
 require_once __DIR__ . '/_chart.php';
+require_once __DIR__ . '/_ops.php';
 require_login();
 
 /** Hitung baris pada tabel company-scoped memakai company_scope(). */
@@ -38,12 +40,156 @@ $branches  = count_scoped('branches');
 $n_companies = count(accessible_companies());
 $chart = dashboard_chart();
 
+// Operasional hari ini
+$today      = date('Y-m-d');
+$week_start = date('Y-m-d', strtotime('monday this week'));
+$week_end   = date('Y-m-d', strtotime('sunday this week'));
+$today_book = dash_bookings($today, $today);
+$week_book  = dash_bookings($week_start, $week_end);
+$drivers    = dash_active_drivers();
+$overdue    = dash_overdue_receivables(0, 8);
+
 $active = 'dashboard';
 $title  = 'Dashboard';
 require __DIR__ . '/../../includes/header.php';
 ?>
 <main class="col-12 col-md-9 col-lg-10 p-4">
     <h4 class="fw-bold mb-4">Dashboard</h4>
+
+    <!-- Operasional hari ini -->
+    <div class="row g-3 mb-3">
+        <div class="col-6 col-lg-3">
+            <div class="card shadow-sm border-0 h-100">
+                <div class="card-body d-flex align-items-center">
+                    <div class="fs-2 text-primary me-3"><i class="bi bi-calendar-day"></i></div>
+                    <div>
+                        <div class="text-muted small">Booking Hari Ini</div>
+                        <div class="fs-4 fw-bold"><?= $today_book['n'] ?></div>
+                        <div class="small text-muted"><?= e(rupiah_singkat($today_book['total'])) ?></div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <div class="col-6 col-lg-3">
+            <div class="card shadow-sm border-0 h-100">
+                <div class="card-body d-flex align-items-center">
+                    <div class="fs-2 text-info me-3"><i class="bi bi-calendar-week"></i></div>
+                    <div>
+                        <div class="text-muted small">Booking Minggu Ini</div>
+                        <div class="fs-4 fw-bold"><?= $week_book['n'] ?></div>
+                        <div class="small text-muted"><?= e(rupiah_singkat($week_book['total'])) ?></div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <div class="col-6 col-lg-3">
+            <div class="card shadow-sm border-0 h-100">
+                <div class="card-body d-flex align-items-center">
+                    <div class="fs-2 text-success me-3"><i class="bi bi-truck"></i></div>
+                    <div>
+                        <div class="text-muted small">Driver Bertugas</div>
+                        <div class="fs-4 fw-bold"><?= count($drivers) ?></div>
+                        <div class="small text-muted">sedang jalan</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <div class="col-6 col-lg-3">
+            <div class="card shadow-sm border-0 h-100 <?= $overdue['total'] > 0 ? 'border-start border-danger border-3' : '' ?>">
+                <div class="card-body d-flex align-items-center">
+                    <div class="fs-2 <?= $overdue['total'] > 0 ? 'text-danger' : 'text-secondary' ?> me-3">
+                        <i class="bi bi-exclamation-triangle"></i>
+                    </div>
+                    <div>
+                        <div class="text-muted small">Piutang Jatuh Tempo</div>
+                        <div class="fs-6 fw-bold <?= $overdue['total'] > 0 ? 'text-danger' : '' ?>">
+                            <?= e(rupiah_singkat($overdue['total'])) ?>
+                        </div>
+                        <div class="small text-muted"><?= count($overdue['rows']) ?> invoice</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Driver bertugas + piutang jatuh tempo -->
+    <div class="row g-3 mb-3">
+        <div class="col-12 col-xl-6">
+            <div class="card shadow-sm border-0 h-100">
+                <div class="card-header bg-white fw-semibold d-flex justify-content-between align-items-center">
+                    <span><i class="bi bi-truck me-1 text-success"></i> Driver Sedang Bertugas</span>
+                    <a href="<?= e(APP_URL) ?>/pages/dispatch/index.php" class="small text-decoration-none">Semua →</a>
+                </div>
+                <div class="card-body p-0">
+                    <div class="table-responsive">
+                        <table class="table table-sm table-hover mb-0 align-middle">
+                            <thead class="table-light"><tr>
+                                <th>Driver</th><th>Kendaraan</th><th>Booking</th><th>Mulai</th>
+                            </tr></thead>
+                            <tbody>
+                            <?php foreach ($drivers as $d): ?>
+                                <tr>
+                                    <td>
+                                        <div class="fw-semibold small"><?= e($d['driver_name']) ?></div>
+                                        <div class="text-muted" style="font-size:.75rem"><?= e($d['code']) ?></div>
+                                    </td>
+                                    <td class="small"><?= e($d['vehicle_number'] ?? '—') ?></td>
+                                    <td class="small">
+                                        <span class="badge bg-secondary text-uppercase" style="font-size:.65rem"><?= e($d['booking_type']) ?></span>
+                                        <?= e($d['document_number'] ?? '—') ?>
+                                    </td>
+                                    <td class="small text-muted"><?= e(date('d/m H:i', strtotime($d['started_at']))) ?></td>
+                                </tr>
+                            <?php endforeach; ?>
+                            <?php if (!$drivers): ?>
+                                <tr><td colspan="4" class="text-center text-muted py-4">Tidak ada driver yang bertugas saat ini.</td></tr>
+                            <?php endif; ?>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="col-12 col-xl-6">
+            <div class="card shadow-sm border-0 h-100">
+                <div class="card-header bg-white fw-semibold d-flex justify-content-between align-items-center">
+                    <span><i class="bi bi-exclamation-triangle me-1 text-danger"></i> Piutang Jatuh Tempo</span>
+                    <a href="<?= e(APP_URL) ?>/pages/finance/invoices/index.php" class="small text-decoration-none">Semua →</a>
+                </div>
+                <div class="card-body p-0">
+                    <div class="table-responsive">
+                        <table class="table table-sm table-hover mb-0 align-middle">
+                            <thead class="table-light"><tr>
+                                <th>Invoice</th><th>Tanggal</th><th class="text-end">Sisa</th><th class="text-end">Umur</th>
+                            </tr></thead>
+                            <tbody>
+                            <?php foreach ($overdue['rows'] as $o): ?>
+                                <tr>
+                                    <td class="small">
+                                        <span class="badge bg-secondary text-uppercase" style="font-size:.6rem"><?= e($o['booking_type']) ?></span>
+                                        <?= e($o['invoice_no']) ?>
+                                    </td>
+                                    <td class="small text-muted"><?= e(date('d/m/Y', strtotime($o['booking_date']))) ?></td>
+                                    <td class="small text-end text-danger fw-semibold"><?= e(rupiah_singkat((float) $o['sisa'])) ?></td>
+                                    <td class="small text-end"><?= (int) $o['umur_hari'] ?> hr</td>
+                                </tr>
+                            <?php endforeach; ?>
+                            <?php if (!$overdue['rows']): ?>
+                                <tr><td colspan="4" class="text-center text-muted py-4">
+                                    <i class="bi bi-check-circle text-success me-1"></i>Tidak ada piutang jatuh tempo.
+                                </td></tr>
+                            <?php endif; ?>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Statistik dasar -->
+    <h6 class="text-muted text-uppercase small fw-semibold mb-2">Ringkasan Data</h6>
     <div class="row g-3">
         <div class="col-12 col-md-4">
             <div class="card shadow-sm border-0 h-100">

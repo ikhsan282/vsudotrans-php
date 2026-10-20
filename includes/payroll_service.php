@@ -67,7 +67,8 @@ function payroll_period_find(int $id): ?array
 /** Item gaji satu periode, urut nama karyawan. */
 function payroll_items(int $period_id): array
 {
-    $st = db()->prepare("SELECT i.*, e.code AS employee_code, e.name AS employee_name, e.bank_name, e.account_number
+    $st = db()->prepare("SELECT i.*, e.code AS employee_code, e.name AS employee_name, e.bank_name, e.account_number,
+            e.job_position
         FROM payroll_items i JOIN employees e ON e.id = i.employee_id
         WHERE i.payroll_period_id = ? ORDER BY e.name");
     $st->bind_param('i', $period_id);

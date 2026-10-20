@@ -113,7 +113,7 @@ Menu sidebar, dan apa yang bisa dilakukan di dalamnya:
 
 | Menu | Fitur |
 |------|-------|
-| **Dashboard** | Kartu statistik: jumlah karyawan, cabang, perusahaan (sesuai hak akses) |
+| **Dashboard** | **Operasional:** booking hari ini & minggu ini (jumlah + nilai), driver sedang bertugas (nama, kendaraan, nomor booking, jam mulai), piutang jatuh tempo (invoice belum lunas lewat tanggal booking, urut sisa terbesar). **Grafik:** booking & pendapatan 6 bulan terakhir. **Statistik:** jumlah karyawan, cabang, perusahaan (sesuai hak akses) |
 | **Perusahaan** | CRUD perusahaan + detail; switch perusahaan aktif (multi-tenant) |
 | **Cabang** | CRUD cabang per perusahaan |
 | **Karyawan** | CRUD karyawan + detail; filter per cabang/jabatan |
@@ -127,11 +127,11 @@ Menu sidebar, dan apa yang bisa dilakukan di dalamnya:
 | **Import CSV** (semua master) | Setiap master data (12 master: bank, wilayah 5 level, satuan, + 5 master HR) punya tombol **Import CSV**: unduh template, unggah, mode upsert — all-or-nothing (satu baris salah → tidak ada yang tersimpan), `company_id` selalu dari sesi, kolom file/gambar dilewati |
 | **Penjadwalan** ▾ | **Papan & Riwayat**: assignment aktif ("sedang jalan") + tombol Selesaikan Tugas, tab Riwayat dengan filter rentang tanggal · **Tugaskan Driver**: pilih booking travel/rental yang belum punya penugasan aktif (50 terbaru per tipe), driver (`job_position` = "Driver"), kendaraan opsional, catatan |
 | **Audit Trail** | Read-only: waktu, user, aksi, IP, keterangan (login, logout, switch perusahaan, create/update/delete semua modul, aksi booking) |
-| **Payroll** | Daftar periode per tahun + generate periode bulanan (satu item per karyawan aktif, nilai dari grade jabatan); detail: ubah hari hadir/potongan per baris lalu gaji bersih dihitung ulang; alur status draft→final→dibayar (tidak bisa mundur, edit diblokir setelah dibayar); halaman cetak daftar gaji |
+| **Payroll** | Daftar periode per tahun + generate periode bulanan (satu item per karyawan aktif, nilai dari grade jabatan); detail: ubah hari hadir/potongan per baris lalu gaji bersih dihitung ulang; alur status draft→final→dibayar (tidak bisa mundur, edit diblokir setelah dibayar); halaman cetak daftar gaji; **export CSV, Excel (XLSX), PDF** per periode |
 | **Tiket publik** (tanpa login) | `tiket.php?no=<resi>` — cek tiket travel/rental: nomor, tanggal, jam, alamat, total |
 | **Keuangan** ▾ | **Buku Kas & Bank**: buku besar transaksi + saldo, export CSV/XLSX/PDF/cetak · **Akun Kas/Bank**: CRUD akun · **Invoice**: daftar + filter status, detail, catat pembayaran (sebagian/lunas), cetak + **unduh PDF** · **Metode Pembayaran**: CRUD bank/QRIS/e-wallet per perusahaan (atau global), upload gambar QR, aktif/nonaktif, urutan tampil (naik/turun) |
 | **Laporan** ▾ | **Laporan Booking**: filter rentang tanggal + jenis (travel/rental/semua), kartu ringkasan (total booking, nilai, terbayar, sisa piutang), 4 tabel dimensi (periode, wilayah asal→tujuan, kendaraan, driver) dengan total di footer · **Laporan Keuangan**: kartu laba kotor/pendapatan/biaya/piutang, pendapatan per jenis, biaya operasional per `cost_type`, daftar tagihan belum lunas urut sisa terbesar · **Laporan Operasional**: utilisasi kendaraan (tugas, hari, selesai/berjalan), aktivitas driver, tingkat penyelesaian tugas (%), booking per status · **Laporan Driver**: beban kerja driver + detail penugasan. Semua laporan export **CSV, Excel (XLSX), PDF**, dan **Cetak** (HTML siap cetak) |
-| **Absensi** ▾ | **Absensi Harian**: input/daftar kehadiran per tanggal · **Rekap Absensi**: rekap hari hadir per karyawan (sumber data Payroll) |
+| **Absensi** ▾ | **Absensi Harian**: input/daftar kehadiran per tanggal · **Rekap Absensi**: rekap hari hadir/izin/sakit/cuti/alpa per karyawan pada rentang tanggal (default bulan berjalan), sumber data Payroll, **export CSV, Excel (XLSX), PDF, cetak** |
 | **Sistem** ▾ | **Backup & Restore** (khusus Super Admin): unduh dump `.sql` seluruh database, restore dari file unggahan (aman: DDL/`USE`/`CREATE DATABASE` dari dump diabaikan, transaksional) |
 
 **Tanpa halaman (logika saja):** rate limit login, tenant scoping, CSRF, level rule role.

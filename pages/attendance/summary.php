@@ -20,6 +20,46 @@ foreach ($rows as $r) {
     }
 }
 
+// ── Export CSV / XLSX / PDF / cetak ──────────────────────────────────────────
+$fmt = (string) ($_GET['format'] ?? '');
+if (in_array($fmt, ['csv', 'xlsx', 'pdf', 'html'], true)) {
+    $table = [['Kode', 'Karyawan', 'Hadir', 'Izin', 'Sakit', 'Cuti', 'Alpa', 'Total Hari']];
+    foreach ($rows as $r) {
+        $table[] = [$r['code'], $r['name'], (int) $r['hadir'], (int) $r['izin'],
+                    (int) $r['sakit'], (int) $r['cuti'], (int) $r['alpa'], (int) $r['total']];
+    }
+    $table[] = ['', 'TOTAL', $grand['hadir'], $grand['izin'], $grand['sakit'],
+                $grand['cuti'], $grand['alpa'], $grand['total']];
+
+    $base = 'Rekap Absensi ' . $from . ' s-d ' . $to;
+    $sub  = tanggal_indo($from) . ' s/d ' . tanggal_indo($to);
+
+    if ($fmt === 'pdf' || $fmt === 'html') {
+        require_once __DIR__ . '/../reports/_print.php';
+        rpt_send($table, 'Rekap Absensi', $base, $sub, null, 'portrait', 'attendance.summary.print');
+    }
+    if ($fmt === 'csv') {
+        $ascii = preg_replace('/[^\x20-\x7E]/', '_', $base);
+        header('Content-Type: text/csv; charset=UTF-8');
+        header('Content-Disposition: attachment; filename="' . str_replace('"', '', $ascii) . '.csv"; filename*=UTF-8\'\'' . rawurlencode($base . '.csv'));
+        header('Cache-Control: no-store');
+        echo "\xEF\xBB\xBF";
+        $out = fopen('php://output', 'w');
+        foreach ($table as $row) fputcsv($out, $row, ',', '"', '');
+        fclose($out);
+        audit('attendance.summary.print', $base . ' (CSV)');
+        exit;
+    }
+    require_once __DIR__ . '/../../includes/xlsx.php';
+    $ascii = preg_replace('/[^\x20-\x7E]/', '_', $base);
+    header('Content-Type: application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+    header('Content-Disposition: attachment; filename="' . str_replace('"', '', $ascii) . '.xlsx"; filename*=UTF-8\'\'' . rawurlencode($base . '.xlsx'));
+    header('Cache-Control: no-store');
+    audit('attendance.summary.print', $base . ' (XLSX)');
+    echo xlsx_build($table, 'Rekap Absensi');
+    exit;
+}
+
 $active = 'attendance';
 $title  = 'Rekap Absensi';
 require __DIR__ . '/../../includes/header.php';
@@ -27,8 +67,18 @@ require __DIR__ . '/../../includes/header.php';
 <main class="col-12 col-md-9 col-lg-10 p-4">
     <div class="d-flex justify-content-between align-items-center mb-3 flex-wrap gap-2">
         <h4 class="fw-bold mb-0">Rekap Absensi</h4>
-        <a class="btn btn-sm btn-outline-secondary" href="index.php?from=<?= e($from) ?>&to=<?= e($to) ?>">
-            <i class="bi bi-list-ul"></i> Absensi Harian</a>
+        <div class="d-flex gap-2 flex-wrap">
+            <a class="btn btn-sm btn-outline-secondary" href="index.php?from=<?= e($from) ?>&to=<?= e($to) ?>">
+                <i class="bi bi-list-ul"></i> Absensi Harian</a>
+            <a class="btn btn-sm btn-outline-success" href="?from=<?= e($from) ?>&to=<?= e($to) ?>&format=csv">
+                <i class="bi bi-filetype-csv"></i> CSV</a>
+            <a class="btn btn-sm btn-outline-success" href="?from=<?= e($from) ?>&to=<?= e($to) ?>&format=xlsx">
+                <i class="bi bi-file-earmark-excel"></i> Excel</a>
+            <a class="btn btn-sm btn-outline-danger" href="?from=<?= e($from) ?>&to=<?= e($to) ?>&format=pdf">
+                <i class="bi bi-file-earmark-pdf"></i> PDF</a>
+            <button type="button" class="btn btn-sm btn-outline-secondary" onclick="window.print()">
+                <i class="bi bi-printer"></i> Cetak</button>
+        </div>
     </div>
 
     <?= flash_html() ?>

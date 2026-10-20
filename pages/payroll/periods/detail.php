@@ -86,6 +86,8 @@ require __DIR__ . '/../../../includes/header.php';
             <a class="btn btn-outline-secondary btn-sm" href="<?= e(APP_URL) ?>/pages/payroll/periods/print.php?id=<?= $id ?>" target="_blank">
                 <i class="bi bi-printer"></i> Cetak
             </a>
+            <a class="btn btn-outline-success btn-sm" href="export.php?id=<?= $id ?>&format=csv"><i class="bi bi-filetype-csv"></i> CSV</a>
+            <a class="btn btn-outline-success btn-sm" href="export.php?id=<?= $id ?>&format=xlsx"><i class="bi bi-file-earmark-excel"></i> Excel</a>
             <a class="btn btn-danger btn-sm" href="print.php?id=<?= $id ?>&format=pdf"><i class="bi bi-filetype-pdf"></i> PDF</a>
             <a class="btn btn-outline-secondary btn-sm" href="<?= e(APP_URL) ?>/pages/payroll/periods/index.php">Kembali</a>
         </div>
