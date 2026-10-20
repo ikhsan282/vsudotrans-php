@@ -25,6 +25,7 @@ $costs = $data['cost_types'];
 $ct    = fin_cost_totals($costs);
 $unpaid = $data['unpaid'];
 $ut     = fin_unpaid_totals($unpaid);
+$mo     = $data['monthly'];
 
 $cards = [
     ['Laba Kotor',   rupiah($data['gross_profit']), $data['gross_profit'] >= 0 ? 'success' : 'danger', 'graph-up-arrow'],
@@ -92,6 +93,45 @@ require __DIR__ . '/../../includes/header.php';
                 </div>
             </div>
         <?php endforeach; ?>
+    </div>
+
+    <div class="card shadow-sm border-0 mb-3">
+        <div class="card-header bg-white d-flex justify-content-between align-items-center">
+            <span class="fw-semibold"><i class="bi bi-bar-chart-line me-1 text-primary"></i>Tren Pendapatan vs Biaya</span>
+            <span class="small text-muted"><?= e($f['from']) ?> s/d <?= e($f['to']) ?></span>
+        </div>
+        <div class="card-body">
+            <?php if (count($mo['labels']) < 2): ?>
+                <div class="text-center text-muted py-4">
+                    Grafik butuh rentang minimal 2 bulan. Perluas filter tanggal.
+                </div>
+            <?php else: ?>
+                <canvas id="finTrend" height="260"></canvas>
+            <?php endif; ?>
+        </div>
+    </div>
+
+    <div class="row g-3 mb-3">
+        <div class="col-12 col-xl-6">
+            <div class="card shadow-sm border-0 h-100">
+                <div class="card-header bg-white fw-semibold">Pendapatan per Jenis Booking</div>
+                <div class="card-body">
+                    <canvas id="finByType" height="220"></canvas>
+                </div>
+            </div>
+        </div>
+        <div class="col-12 col-xl-6">
+            <div class="card shadow-sm border-0 h-100">
+                <div class="card-header bg-white fw-semibold">Biaya Operasional per Jenis</div>
+                <div class="card-body">
+                    <?php if (!$costs): ?>
+                        <div class="text-center text-muted py-4">Tidak ada biaya pada periode ini.</div>
+                    <?php else: ?>
+                        <canvas id="finCost" height="220"></canvas>
+                    <?php endif; ?>
+                </div>
+            </div>
+        </div>
     </div>
 
     <div class="card shadow-sm border-0 mb-3">
@@ -198,3 +238,81 @@ require __DIR__ . '/../../includes/header.php';
     </div>
 </main>
 <?php require __DIR__ . '/../../includes/footer.php'; ?>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.5.1/dist/chart.umd.min.js"></script>
+<script>
+(function () {
+  if (typeof Chart === 'undefined') return;
+  const fmt = v => 'Rp ' + Number(v).toLocaleString('id-ID');
+  const jt  = v => 'Rp ' + (v / 1000000).toLocaleString('id-ID', { maximumFractionDigits: 1 }) + ' jt';
+  const mo  = <?= json_encode($mo, JSON_UNESCAPED_UNICODE) ?>;
+
+  // 1) Tren pendapatan vs biaya (garis)
+  const elTrend = document.getElementById('finTrend');
+  if (elTrend) {
+    new Chart(elTrend, {
+      type: 'line',
+      data: {
+        labels: mo.labels,
+        datasets: [
+          { label: 'Pendapatan', data: mo.revenue, borderColor: '#0d6efd', backgroundColor: 'rgba(13,110,253,.12)', fill: true, tension: .3 },
+          { label: 'Terbayar',   data: mo.paid,    borderColor: '#198754', backgroundColor: 'rgba(25,135,84,.12)',  fill: true, tension: .3 },
+          { label: 'Biaya',      data: mo.cost,    borderColor: '#dc3545', backgroundColor: 'rgba(220,53,69,.12)',  fill: true, tension: .3 }
+        ]
+      },
+      options: {
+        plugins: {
+          legend: { position: 'bottom' },
+          tooltip: { callbacks: { label: c => c.dataset.label + ': ' + fmt(c.parsed.y) } }
+        },
+        scales: { y: { ticks: { callback: jt } } }
+      }
+    });
+  }
+
+  // 2) Pendapatan per jenis booking (donat)
+  const elType = document.getElementById('finByType');
+  if (elType) {
+    new Chart(elType, {
+      type: 'doughnut',
+      data: {
+        labels: ['Travel', 'Rental'],
+        datasets: [{
+          data: [<?= (float) $rev['travel'] ?>, <?= (float) $rev['rental'] ?>],
+          backgroundColor: ['#0d6efd', '#fd7e14']
+        }]
+      },
+      options: {
+        plugins: {
+          legend: { position: 'bottom' },
+          tooltip: { callbacks: { label: c => c.label + ': ' + fmt(c.parsed) } }
+        }
+      }
+    });
+  }
+
+  // 3) Biaya per jenis (batang horizontal)
+  const elCost = document.getElementById('finCost');
+  if (elCost) {
+    new Chart(elCost, {
+      type: 'bar',
+      data: {
+        labels: <?= json_encode(array_column($costs, 'cost_type'), JSON_UNESCAPED_UNICODE) ?>,
+        datasets: [{
+          label: 'Biaya',
+          data: <?= json_encode(array_map('floatval', array_column($costs, 'amount'))) ?>,
+          backgroundColor: 'rgba(220,53,69,.7)',
+          borderRadius: 4
+        }]
+      },
+      options: {
+        indexAxis: 'y',
+        plugins: {
+          legend: { display: false },
+          tooltip: { callbacks: { label: c => fmt(c.parsed.x) } }
+        },
+        scales: { x: { ticks: { callback: jt } } }
+      }
+    });
+  }
+})();
+</script>

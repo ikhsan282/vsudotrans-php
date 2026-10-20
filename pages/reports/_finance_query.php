@@ -108,7 +108,52 @@ function fin_all(array $f, ?int $unpaid_limit = 200): array
         'gross_profit' => $rev['total'] - $cost,
         'cost_types'   => fin_cost_by_type($f),
         'unpaid'       => fin_unpaid($f, $unpaid_limit),
+        'monthly'      => fin_monthly($f),
     ];
+}
+
+/**
+ * Seri bulanan untuk grafik: pendapatan, terbayar, biaya per bulan dalam rentang.
+ * Hanya dipakai halaman (bukan export) — export tetap memakai agregat periode.
+ * Bulan tanpa data diisi 0 agar sumbu waktu tidak bolong.
+ */
+function fin_monthly(array $f): array
+{
+    $s = report_source($f);
+    $rev = report_run(
+        "SELECT DATE_FORMAT(x.date, '%Y-%m') AS ym, COALESCE(SUM(x.total_price),0) AS total,
+                COALESCE(SUM(x.total_payment),0) AS paid
+         FROM {$s['sql']} GROUP BY ym",
+        $s['types'],
+        $s['params']
+    );
+    $cs = fin_cost_source($f);
+    $cost = report_run(
+        "SELECT DATE_FORMAT(z.created_date, '%Y-%m') AS ym, COALESCE(SUM(z.amount),0) AS total
+         FROM {$cs['sql']} GROUP BY ym",
+        $cs['types'],
+        $cs['params']
+    );
+
+    $rev_map  = array_column($rev, null, 'ym');
+    $cost_map = array_column($cost, null, 'ym');
+
+    $out = ['labels' => [], 'revenue' => [], 'paid' => [], 'cost' => [], 'profit' => []];
+    $cursor = strtotime(date('Y-m-01', strtotime($f['from'])));
+    $end    = strtotime(date('Y-m-01', strtotime($f['to'])));
+    // ponytail: maks 36 titik; rentang tahunan = 12, cukup untuk semua filter wajar.
+    for ($i = 0; $cursor <= $end && $i < 36; $i++, $cursor = strtotime('+1 month', $cursor)) {
+        $ym = date('Y-m', $cursor);
+        $r  = (float) ($rev_map[$ym]['total'] ?? 0);
+        $p  = (float) ($rev_map[$ym]['paid']  ?? 0);
+        $c  = (float) ($cost_map[$ym]['total'] ?? 0);
+        $out['labels'][]  = date('M Y', $cursor);
+        $out['revenue'][] = $r;
+        $out['paid'][]    = $p;
+        $out['cost'][]    = $c;
+        $out['profit'][]  = $r - $c;
+    }
+    return $out;
 }
 
 /** Total kolom untuk baris <tfoot> tabel biaya. */
