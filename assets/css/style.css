@@ -157,3 +157,20 @@ body { background: var(--page-bg); color: var(--text-color); font-size: .9rem; }
 .cursor-pointer { cursor: pointer; }
 .fs-7 { font-size: .8rem; }
 .avatar-sm { width: 32px; height: 32px; }
+
+/* Clear keyboard focus, refined surface hierarchy, and compact mobile spacing. */
+:focus-visible { outline: 3px solid #80bdff; outline-offset: 2px; }
+.using-keyboard :focus:not(:focus-visible) { outline: none; }
+.topbar { box-shadow: 0 1px 3px rgba(16,24,40,.04); }
+.content-main-row > main { padding: 1.25rem !important; }
+.card { border-radius: 10px; }
+.table-responsive { border-radius: 8px; }
+.btn, .form-control, .form-select { border-radius: 7px; }
+.sidebar .nav-link { padding: .55rem .75rem; }
+.sidebar .sidebar-sub { font-size: .82rem; opacity: .9; }
+@media (max-width: 575.98px) {
+  .content-main-row > main { padding: .75rem !important; }
+  .topbar { padding-inline: .75rem !important; }
+  .topbar h6 { font-size: .9rem; }
+  .flash-wrap { padding: .5rem .75rem 0; }
+}

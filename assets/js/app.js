@@ -6,25 +6,50 @@ const sidebar  = document.getElementById('sidebar');
 const overlay  = document.getElementById('sidebarOverlay');
 const toggler  = document.getElementById('sidebarToggler');
 
-if (toggler && sidebar) {
-  toggler.addEventListener('click', () => {
-    sidebar.classList.toggle('show');
-    overlay && overlay.classList.toggle('show');
-  });
+function setSidebarOpen(open, restoreFocus = false) {
+  if (!sidebar) return;
+  sidebar.classList.toggle('show', open);
+  overlay && overlay.classList.toggle('show', open);
+  toggler && toggler.setAttribute('aria-expanded', String(open));
+  toggler && toggler.setAttribute('aria-label', open ? 'Tutup menu' : 'Buka menu');
+  if (open) sidebar.querySelector('a.nav-link')?.focus();
+  else if (restoreFocus && toggler && toggler.getClientRects().length) toggler.focus();
 }
-if (overlay) {
-  overlay.addEventListener('click', () => {
-    sidebar.classList.remove('show');
-    overlay && overlay.classList.remove('show');
-  });
-}
+if (toggler && sidebar) toggler.addEventListener('click', () => {
+  const open = !sidebar.classList.contains('show');
+  setSidebarOpen(open);
+  if (open) sidebar.querySelector('a.nav-link')?.focus();
+});
+if (overlay) overlay.addEventListener('click', () => setSidebarOpen(false, true));
+document.addEventListener('keydown', e => {
+  if (e.key === 'Escape' && sidebar?.classList.contains('show')) setSidebarOpen(false, true);
+});
 if (sidebar) {
   sidebar.querySelectorAll('a.nav-link:not([data-bs-toggle])').forEach(a => {
-    a.addEventListener('click', () => {
-      if (window.innerWidth < 992) { sidebar.classList.remove('show'); overlay && overlay.classList.remove('show'); }
-    });
+    a.addEventListener('click', () => { if (window.innerWidth < 992) setSidebarOpen(false); });
   });
 }
+window.addEventListener('resize', () => { if (window.innerWidth >= 992) setSidebarOpen(false); });
+document.addEventListener('keydown', e => {
+  if (e.key !== 'Tab' || !sidebar?.classList.contains('show') || window.innerWidth >= 992) return;
+  const items = [...sidebar.querySelectorAll('a[href], button:not(:disabled), input:not(:disabled), select:not(:disabled), textarea:not(:disabled)')]
+    .filter(el => el.getClientRects().length);
+  const first = items[0], last = items[items.length - 1];
+  if (e.shiftKey && document.activeElement === first) { e.preventDefault(); last?.focus(); }
+  else if (!e.shiftKey && document.activeElement === last) { e.preventDefault(); first?.focus(); }
+});
+
+// Keep collapsible navigation state available to assistive technology.
+document.querySelectorAll('.sidebar [data-bs-toggle="collapse"]').forEach(toggle => {
+  const target = document.querySelector(toggle.getAttribute('href'));
+  if (!target) return;
+  target.addEventListener('shown.bs.collapse', () => toggle.setAttribute('aria-expanded', 'true'));
+  target.addEventListener('hidden.bs.collapse', () => toggle.setAttribute('aria-expanded', 'false'));
+});
+
+// Use a visible focus ring for keyboard users without changing pointer styling.
+document.addEventListener('keydown', e => { if (e.key === 'Tab') document.body.classList.add('using-keyboard'); });
+document.addEventListener('pointerdown', () => document.body.classList.remove('using-keyboard'));
 
 // ── Auto-dismiss alerts ────────────────────────────────────────────────────
 // Alert flash dari flash_html() sudah alert-dismissible; alert statis di

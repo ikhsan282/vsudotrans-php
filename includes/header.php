@@ -40,8 +40,8 @@ foreach ($companies as $c) {
 <?php require __DIR__ . '/sidebar.php'; ?>
 <div class="content-wrapper">
     <div class="topbar d-flex align-items-center px-3 gap-2">
-        <button class="btn btn-sm btn-outline-secondary d-lg-none" id="sidebarToggler" type="button" aria-label="Buka menu">
-            <i class="bi bi-list fs-5"></i>
+        <button class="btn btn-sm btn-outline-secondary d-lg-none" id="sidebarToggler" type="button" aria-label="Buka menu" aria-controls="sidebar" aria-expanded="false">
+            <i class="bi bi-list fs-5" aria-hidden="true"></i>
         </button>
         <h6 class="mb-0 fw-semibold"><i class="bi bi-<?= e($nav_icon ?? 'grid') ?> me-1 text-primary"></i> <?= e($title) ?></h6>
         <div class="ms-auto d-flex align-items-center gap-2">
