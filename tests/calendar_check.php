@@ -15,6 +15,7 @@ $view = file_get_contents($viewPath);
 $sidebar = file_get_contents($sidebarPath);
 check(str_contains($events, "require_permission('dispatch.view')"), 'event endpoint enforces RBAC');
 check(substr_count($events, '{$companySql}') === 2, 'both event sources apply company scope for normal users');
+check(str_contains($events, '$errors[\'warning_count\']') && str_contains($events, '$errors[\'error_count\']'), 'date validation rejects normalized invalid dates');
 check(str_contains($events, "'travel' AS kind") && str_contains($events, "'rental' AS kind"), 'calendar feeds travel and rental');
 check(str_contains($events, "b.start_date < ? AND b.end_date >= ?"), 'rental feed includes overlapping multi-day bookings');
 check(str_contains($events, 'DATE_ADD(b.end_date, INTERVAL 1 DAY)'), 'rental event uses exclusive end date');

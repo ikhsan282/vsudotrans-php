@@ -12,7 +12,9 @@ $from = trim((string) ($_GET['start'] ?? date('Y-m-01')));
 $to = trim((string) ($_GET['end'] ?? date('Y-m-t')));
 $validDate = static function (string $value): bool {
     $date = DateTimeImmutable::createFromFormat('!Y-m-d', $value);
-    return $date !== false && $date->format('Y-m-d') === $value;
+    $errors = DateTimeImmutable::getLastErrors();
+    return $date !== false && ($errors === false || ($errors['warning_count'] === 0 && $errors['error_count'] === 0))
+        && $date->format('Y-m-d') === $value;
 };
 if (!$validDate($from) || !$validDate($to) || $from > $to || (strtotime($to) - strtotime($from)) > 370 * 86400) {
     http_response_code(400);
