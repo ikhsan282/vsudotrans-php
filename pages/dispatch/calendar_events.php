@@ -20,13 +20,22 @@ if (!$travelAllowed && !$rentalAllowed) {
 $fromRaw = trim((string) ($_GET['start'] ?? date('Y-m-01')));
 $toRaw = trim((string) ($_GET['end'] ?? date('Y-m-t')));
 $parseCalendarDate = static function (string $value): ?string {
-    if (!preg_match('/^\d{4}-\d{2}-\d{2}(?:T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:\d{2}))?$/D', $value)) {
+    if (preg_match('/^\d{4}-\d{2}-\d{2}$/D', $value)) {
+        $date = DateTimeImmutable::createFromFormat('!Y-m-d', $value);
+        $errors = DateTimeImmutable::getLastErrors();
+        return $date !== false && ($errors === false || ($errors['warning_count'] === 0 && $errors['error_count'] === 0))
+            ? $date->format('Y-m-d') : null;
+    }
+    if (!preg_match('/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:\d{2})$/D', $value)) {
         return null;
     }
-    $date = DateTimeImmutable::createFromFormat('!Y-m-d', substr($value, 0, 10));
-    $errors = DateTimeImmutable::getLastErrors();
-    return $date !== false && ($errors === false || ($errors['warning_count'] === 0 && $errors['error_count'] === 0))
-        ? $date->format('Y-m-d') : null;
+    try {
+        $dateTime = new DateTimeImmutable($value);
+        return $dateTime->format('Y-m-d\\TH:i:s') === substr($value, 0, 19)
+            ? substr($value, 0, 10) : null;
+    } catch (Throwable) {
+        return null;
+    }
 };
 $from = $parseCalendarDate($fromRaw);
 $to = $parseCalendarDate($toRaw);
