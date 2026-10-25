@@ -8,21 +8,37 @@ if ($companyId === null && !is_super_admin()) {
     exit('Pilih perusahaan terlebih dahulu.');
 }
 
-$from = trim((string) ($_GET['start'] ?? date('Y-m-01')));
-$to = trim((string) ($_GET['end'] ?? date('Y-m-t')));
-$validDate = static function (string $value): bool {
-    $date = DateTimeImmutable::createFromFormat('!Y-m-d', $value);
+$travelAllowed = can('travel.view');
+$rentalAllowed = can('rental.view');
+if (!$travelAllowed && !$rentalAllowed) {
+    http_response_code(403);
+    header('Content-Type: application/json; charset=utf-8');
+    echo json_encode(['error' => 'Tidak memiliki izin melihat booking.']);
+    exit;
+}
+
+$fromRaw = trim((string) ($_GET['start'] ?? date('Y-m-01')));
+$toRaw = trim((string) ($_GET['end'] ?? date('Y-m-t')));
+$parseCalendarDate = static function (string $value): ?string {
+    if (!preg_match('/^\d{4}-\d{2}-\d{2}(?:T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:\d{2}))?$/D', $value)) {
+        return null;
+    }
+    $date = DateTimeImmutable::createFromFormat('!Y-m-d', substr($value, 0, 10));
     $errors = DateTimeImmutable::getLastErrors();
     return $date !== false && ($errors === false || ($errors['warning_count'] === 0 && $errors['error_count'] === 0))
-        && $date->format('Y-m-d') === $value;
+        ? $date->format('Y-m-d') : null;
 };
-if (!$validDate($from) || !$validDate($to) || $from > $to || (strtotime($to) - strtotime($from)) > 370 * 86400) {
+$from = $parseCalendarDate($fromRaw);
+$to = $parseCalendarDate($toRaw);
+if ($from === null || $to === null || $from >= $to || (strtotime($to) - strtotime($from)) > 371 * 86400) {
     http_response_code(400);
     header('Content-Type: application/json; charset=utf-8');
     echo json_encode(['error' => 'Rentang tanggal tidak valid.']);
     exit;
 }
 
+$travelVisibility = $travelAllowed ? '1=1' : '1=0';
+$rentalVisibility = $rentalAllowed ? '1=1' : '1=0';
 $companySql = $companyId === null ? '' : ' AND b.company_id = ?';
 $companyTypes = $companyId === null ? '' : 'i';
 $sql = "SELECT 'travel' AS kind, b.id, b.company_id, b.document_number, b.date AS starts_on, b.time AS starts_at,
@@ -34,7 +50,7 @@ $sql = "SELECT 'travel' AS kind, b.id, b.company_id, b.document_number, b.date A
         LEFT JOIN vehicles v ON v.id=b.vehicle_id
         LEFT JOIN trip_assignments ta ON ta.id=(SELECT MAX(t2.id) FROM trip_assignments t2 WHERE t2.booking_type='travel' AND t2.booking_id=b.id AND t2.ended_at IS NULL)
         LEFT JOIN employees e ON e.id=ta.employee_id
-        WHERE b.date >= ? AND b.date < ?{$companySql}
+        WHERE {$travelVisibility} AND b.date >= ? AND b.date < ?{$companySql}
         UNION ALL
         SELECT 'rental' AS kind, b.id, b.company_id, b.document_number, b.start_date AS starts_on, b.time AS starts_at,
                DATE_ADD(b.end_date, INTERVAL 1 DAY) AS ends_on, NULL AS ends_at, p.name AS passenger,
@@ -45,7 +61,7 @@ $sql = "SELECT 'travel' AS kind, b.id, b.company_id, b.document_number, b.date A
         LEFT JOIN vehicles v ON v.id=b.vehicle_id
         LEFT JOIN trip_assignments ta ON ta.id=(SELECT MAX(t2.id) FROM trip_assignments t2 WHERE t2.booking_type='rental' AND t2.booking_id=b.id AND t2.ended_at IS NULL)
         LEFT JOIN employees e ON e.id=ta.employee_id
-        WHERE b.start_date < ? AND b.end_date >= ?{$companySql}
+        WHERE {$rentalVisibility} AND b.start_date < ? AND b.end_date >= ?{$companySql}
         ORDER BY starts_on, starts_at";
 $st = db()->prepare($sql);
 $types = 'ssss' . $companyTypes . 'ss' . $companyTypes;
