@@ -52,6 +52,7 @@ $menu = [
         ['label' => 'Rekap Absensi',  'href' => 'pages/attendance/summary.php', 'perms' => 'attendance.view'],
     ]],
     ['key' => 'dispatch', 'label' => 'Penjadwalan', 'icon' => 'person-badge', 'perm' => null, 'sub' => [
+        ['label' => 'Kalender Operasional', 'href' => 'pages/dispatch/calendar.php', 'perms' => 'dispatch.view'],
         ['label' => 'Papan & Riwayat', 'href' => 'pages/dispatch/index.php',  'perms' => 'dispatch.view'],
         ['label' => 'Tugaskan Driver', 'href' => 'pages/dispatch/assign.php', 'perms' => 'dispatch.manage'],
     ]],
