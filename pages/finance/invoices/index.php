@@ -51,8 +51,8 @@ $active = 'finance';
 $title  = 'Invoice';
 require __DIR__ . '/../../../includes/header.php';
 ?>
-<main class="col-12 col-md-9 col-lg-10 p-4">
-    <div class="d-flex justify-content-between align-items-center mb-3">
+<main class="col-12 col-md-9 col-lg-10 p-3 p-lg-4">
+    <div class="d-flex justify-content-between align-items-center mb-3 flex-wrap gap-2">
         <h4 class="fw-bold mb-0">Invoice</h4>
         <div class="btn-group btn-group-sm">
             <?php foreach (['' => 'Semua', 'unpaid' => 'Belum Bayar', 'partial' => 'Sebagian', 'paid' => 'Lunas'] as $k => $lbl): ?>
@@ -62,7 +62,7 @@ require __DIR__ . '/../../../includes/header.php';
     </div>
     <div class="card shadow-sm border-0">
         <div class="table-responsive">
-            <table class="table table-hover mb-0 align-middle">
+            <table class="table table-hover mb-0 align-middle text-nowrap">
                 <thead><tr>
                     <th>No. Invoice</th><th>Resi</th><th>Tipe</th><th>Terbit</th>
                     <th class="text-end">Total</th><th class="text-end">Dibayar</th><th>Status</th><th class="text-end">Aksi</th>
@@ -74,10 +74,10 @@ require __DIR__ . '/../../../includes/header.php';
                         <td><?= e($r['document_number']) ?></td>
                         <td><span class="badge bg-light text-dark"><?= e($r['booking_type']) ?></span></td>
                         <td><?= e(substr((string) $r['issued_at'], 0, 16)) ?></td>
-                        <td class="text-end"><?= e(rupiah((float) $r['total'])) ?></td>
-                        <td class="text-end"><?= e(rupiah((float) $r['paid_total'])) ?></td>
+                        <td class="text-end text-nowrap"><?= e(rupiah((float) $r['total'])) ?></td>
+                        <td class="text-end text-nowrap"><?= e(rupiah((float) $r['paid_total'])) ?></td>
                         <td><?= invoice_pay_badge($r['pay_status']) ?></td>
-                        <td class="text-end">
+                        <td class="text-end text-nowrap">
                             <a class="btn btn-sm btn-outline-dark" target="_blank" title="Cetak Invoice" href="<?= e(APP_URL) ?>/pages/finance/invoices/print.php?id=<?= (int) $r['id'] ?>&print=1">Cetak</a>
                             <a class="btn btn-sm btn-outline-danger" title="Unduh PDF" href="<?= e(APP_URL) ?>/pages/finance/invoices/print.php?id=<?= (int) $r['id'] ?>&format=pdf">PDF</a>
                             <a class="btn btn-sm btn-outline-secondary" href="<?= e(APP_URL) ?>/pages/finance/invoices/detail.php?id=<?= (int) $r['id'] ?>">Detail</a>

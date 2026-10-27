@@ -43,7 +43,7 @@ $active = 'finance';
 $title  = 'Kas & Bank';
 require __DIR__ . '/../../../includes/header.php';
 ?>
-<main class="col-12 col-md-9 col-lg-10 p-4">
+<main class="col-12 col-md-9 col-lg-10 p-3 p-lg-4">
     <div class="d-flex justify-content-between align-items-center mb-3 flex-wrap gap-2">
         <h4 class="fw-bold mb-0">Kas &amp; Bank</h4>
         <div class="d-flex gap-2">
@@ -118,7 +118,7 @@ require __DIR__ . '/../../../includes/header.php';
 
     <div class="card shadow-sm border-0">
         <div class="table-responsive">
-            <table class="table table-hover mb-0 align-middle">
+            <table class="table table-hover mb-0 align-middle text-nowrap">
                 <thead><tr>
                     <th>Tanggal</th><th>Akun</th><th>Arah</th><th>Kategori</th>
                     <th>Keterangan</th><th class="text-end">Nominal</th><th class="text-end">Aksi</th>
