@@ -56,10 +56,10 @@ require __DIR__ . '/../../includes/header.php';
     <?php if ($tab === 'riwayat'): ?>
     <form class="row g-2 mb-3" method="get">
         <input type="hidden" name="tab" value="riwayat">
-        <div class="col-auto"><label class="col-form-label-sm">Dari</label></div>
-        <div class="col-auto"><input type="date" class="form-control form-control-sm" name="from" value="<?= e($from) ?>"></div>
-        <div class="col-auto"><label class="col-form-label-sm">Sampai</label></div>
-        <div class="col-auto"><input type="date" class="form-control form-control-sm" name="to" value="<?= e($to) ?>"></div>
+        <div class="col-auto"><label class="col-form-label-sm" for="dispatch-from">Dari</label></div>
+        <div class="col-auto"><input id="dispatch-from" type="date" class="form-control form-control-sm" name="from" value="<?= e($from) ?>"></div>
+        <div class="col-auto"><label class="col-form-label-sm" for="dispatch-to">Sampai</label></div>
+        <div class="col-auto"><input id="dispatch-to" type="date" class="form-control form-control-sm" name="to" value="<?= e($to) ?>"></div>
         <div class="col-auto"><button class="btn btn-sm btn-outline-secondary">Filter</button></div>
         <div class="col-auto"><a class="btn btn-sm btn-link" href="?tab=riwayat">Reset</a></div>
     </form>
@@ -71,8 +71,8 @@ require __DIR__ . '/../../includes/header.php';
                 <thead><tr>
                     <th>Booking</th><th>Tipe</th><th>Driver</th><th>Kendaraan</th>
                     <th>Mulai</th>
-                    <?php if ($tab === 'riwayat'): ?><th>Selesai</th><th>Status</th><?php endif; ?>
-                    <th>Catatan</th><th class="text-end">Aksi</th>
+                    <?php if ($tab === 'riwayat'): ?><th scope="col">Selesai</th><th scope="col">Status</th><?php endif; ?>
+                    <th scope="col">Catatan</th><th scope="col" class="text-end">Aksi</th>
                 </tr></thead>
                 <tbody>
                 <?php foreach ($rows as $r): ?>
