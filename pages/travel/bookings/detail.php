@@ -96,10 +96,10 @@ $active = 'travel';
 $title  = 'Detail Booking Travel';
 require __DIR__ . '/../../../includes/header.php';
 ?>
-<main class="col-12 col-md-9 col-lg-10 p-4">
-    <div class="d-flex justify-content-between align-items-center mb-3">
-        <h4 class="fw-bold mb-0"><?= e($b['document_number']) ?> <?= status_badge($status) ?></h4>
-        <div>
+<main class="col-12 col-md-9 col-lg-10 p-3 p-md-4">
+    <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-3">
+        <h1 class="h4 fw-bold mb-0 text-break"><?= e($b['document_number']) ?> <?= status_badge($status) ?></h1>
+        <div class="d-flex flex-wrap gap-2">
             <?php if (can('dispatch.manage')): ?>
                 <a class="btn btn-primary btn-sm" href="<?= e(APP_URL) ?>/pages/dispatch/assign.php"><i class="bi bi-person-badge"></i> Tugaskan Driver</a>
             <?php endif; ?>
@@ -147,7 +147,7 @@ require __DIR__ . '/../../../includes/header.php';
         <div class="col-md-6"><div class="card shadow-sm border-0 h-100"><div class="card-body">
             <h6 class="fw-bold">Ubah Status</h6>
             <?php if ($next): ?>
-            <form method="post" action="" class="d-flex gap-2">
+            <form method="post" action="" class="d-flex flex-column flex-sm-row gap-2">
                 <?= csrf_field() ?>
                 <input type="hidden" name="id" value="<?= $id ?>">
                 <input type="hidden" name="act" value="status">
@@ -161,7 +161,7 @@ require __DIR__ . '/../../../includes/header.php';
         </div></div></div>
         <div class="col-md-6"><div class="card shadow-sm border-0 h-100"><div class="card-body">
             <h6 class="fw-bold">Reschedule</h6>
-            <form method="post" action="" class="d-flex gap-2">
+            <form method="post" action="" class="d-flex flex-column flex-sm-row gap-2">
                 <?= csrf_field() ?>
                 <input type="hidden" name="id" value="<?= $id ?>">
                 <input type="hidden" name="act" value="reschedule">
@@ -172,7 +172,7 @@ require __DIR__ . '/../../../includes/header.php';
         </div></div></div>
         <div class="col-md-6"><div class="card shadow-sm border-0 h-100"><div class="card-body">
             <h6 class="fw-bold">Tugaskan Driver</h6>
-            <form method="post" action="" class="d-flex gap-2">
+            <form method="post" action="" class="d-flex flex-column flex-sm-row gap-2">
                 <?= csrf_field() ?>
                 <input type="hidden" name="id" value="<?= $id ?>">
                 <input type="hidden" name="act" value="driver">
@@ -190,7 +190,7 @@ require __DIR__ . '/../../../includes/header.php';
             <?php if ($status === 'cancelled'): ?>
                 <p class="text-muted mb-0 small">Booking sudah dibatalkan.</p>
             <?php else: ?>
-            <form method="post" action="" class="d-flex gap-2" onsubmit="return confirm('Batalkan booking ini?')">
+            <form method="post" action="" class="d-flex flex-column flex-sm-row gap-2" onsubmit="return confirm('Batalkan booking ini?')">
                 <?= csrf_field() ?>
                 <input type="hidden" name="id" value="<?= $id ?>">
                 <input type="hidden" name="act" value="cancel">

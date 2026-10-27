@@ -93,8 +93,8 @@ $active = 'rental';
 $title  = 'Booking Rental Baru';
 require __DIR__ . '/../../../includes/header.php';
 ?>
-<main class="col-12 col-md-9 col-lg-10 p-4">
-    <h4 class="fw-bold mb-3"><?= e($title) ?></h4>
+<main class="col-12 col-md-9 col-lg-10 p-3 p-md-4">
+    <h1 class="h4 fw-bold mb-3"><?= e($title) ?></h1>
     <?php
     $ai_endpoint = APP_URL . '/pages/rental/bookings/ai_parse.php';
     require __DIR__ . '/../../../includes/ai_panel.php';
@@ -138,7 +138,7 @@ require __DIR__ . '/../../../includes/header.php';
             <div class="col-md-3"><label class="form-label">Catatan</label>
                 <input class="form-control" name="note" maxlength="2000" value="<?= e($in['note']) ?>"></div>
         </div>
-        <div class="mt-4">
+        <div class="mt-4 d-flex flex-wrap gap-2">
             <button class="btn btn-primary" type="submit">Simpan</button>
             <a class="btn btn-outline-secondary" href="<?= e(APP_URL) ?>/pages/rental/bookings/index.php">Batal</a>
         </div>

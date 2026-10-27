@@ -33,7 +33,7 @@ require __DIR__ . '/../../../includes/header.php';
     <div class="d-flex justify-content-between align-items-center mb-3">
         <h4 class="fw-bold mb-0">Booking Travel</h4>
         <?php if (can('travel.manage') && active_company_id() !== null): ?>
-            <a class="btn btn-primary btn-sm" href="<?= e(APP_URL) ?>/pages/travel/bookings/form.php"><i class="bi bi-plus-lg"></i> Tambah</a>
+            <a class="btn btn-primary btn-sm" href="<?= e(APP_URL) ?>/pages/travel/bookings/form.php"><i class="bi bi-plus-lg" aria-hidden="true"></i> Tambah</a>
         <?php endif; ?>
     </div>
     <div class="card shadow-sm border-0">
@@ -59,7 +59,7 @@ require __DIR__ . '/../../../includes/header.php';
                 </tbody>
             </table>
         </div>
-        <div class="card-footer bg-white"><?= pagination_html($p, '') ?></div>
+        <div class="card-footer bg-white d-flex flex-wrap justify-content-between align-items-center gap-2"><span class="small text-muted"><?= $total ?> booking</span><?= pagination_html($p, '') ?></div>
     </div>
 </main>
 <?php require __DIR__ . '/../../../includes/footer.php'; ?>

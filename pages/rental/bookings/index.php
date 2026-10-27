@@ -29,11 +29,11 @@ $active = 'rental';
 $title  = 'Booking Rental';
 require __DIR__ . '/../../../includes/header.php';
 ?>
-<main class="col-12 col-md-9 col-lg-10 p-4">
-    <div class="d-flex justify-content-between align-items-center mb-3">
-        <h4 class="fw-bold mb-0">Booking Rental</h4>
+<main class="col-12 col-md-9 col-lg-10 p-3 p-md-4">
+    <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-3">
+        <h1 class="h4 fw-bold mb-0">Booking Rental</h1>
         <?php if (can('rental.manage') && active_company_id() !== null): ?>
-            <a class="btn btn-primary btn-sm" href="<?= e(APP_URL) ?>/pages/rental/bookings/form.php"><i class="bi bi-plus-lg"></i> Tambah</a>
+            <a class="btn btn-primary btn-sm" href="<?= e(APP_URL) ?>/pages/rental/bookings/form.php"><i class="bi bi-plus-lg" aria-hidden="true"></i> Tambah</a>
         <?php endif; ?>
     </div>
     <div class="card shadow-sm border-0">
@@ -61,7 +61,7 @@ require __DIR__ . '/../../../includes/header.php';
                 </tbody>
             </table>
         </div>
-        <div class="card-footer bg-white"><?= pagination_html($p, '') ?></div>
+        <div class="card-footer bg-white d-flex flex-wrap justify-content-between align-items-center gap-2"><span class="small text-muted"><?= $total ?> booking</span><?= pagination_html($p, '') ?></div>
     </div>
 </main>
 <?php require __DIR__ . '/../../../includes/footer.php'; ?>
