@@ -72,6 +72,11 @@ function flash_html(): string
         . '<button type="button" class="btn-close" data-bs-dismiss="alert"></button></div>';
 }
 
+function render_flash(): string
+{
+    return flash_html();
+}
+
 /** Pagination sederhana: kembalikan offset & info halaman. */
 function paginate(int $total, int $page, int $per_page = PER_PAGE): array
 {

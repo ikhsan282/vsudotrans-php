@@ -36,3 +36,4 @@ foreach ($files as $name => $url) {
     echo "Downloaded $name: " . round($bytes / 1024 / 1024, 2) . " MB\n";
 }
 echo "Download complete.\n";
+

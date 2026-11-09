@@ -306,7 +306,7 @@ require __DIR__ . '/../../includes/header.php';
         </a>
     </div>
 
-    <?= render_flash() ?>
+    <?= flash_html() ?>
     <?php if ($errors): ?>
         <div class="alert alert-danger py-2">
             <?php foreach ($errors as $err): ?><div><?= e($err) ?></div><?php endforeach; ?>

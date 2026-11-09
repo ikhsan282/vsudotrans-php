@@ -7,9 +7,11 @@
 $active = $active ?? '';
 
 /** Menu/entri 'admin_only' hanya untuk Super Admin (digerakkan is_super_admin(), bukan perm). */
-function super_admin_menu(array $item): bool
-{
-    return empty($item['admin_only']) || is_super_admin();
+if (!function_exists('super_admin_menu')) {
+    function super_admin_menu(array $item): bool
+    {
+        return empty($item['admin_only']) || is_super_admin();
+    }
 }
 
 $menu = [
