@@ -87,11 +87,11 @@ require __DIR__ . '/../../includes/header.php';
 <main class="col-12 col-md-9 col-lg-10 p-3 p-lg-4">
     <?= ui_page_header(
         $title,
-        ['Dashboard' => 'pages/dashboard/index.php', 'Grup' => 'pages/groups/index.php', ($id > 0 ? $name : 'Tambah Baru') => null],
+        ['Dashboard' => 'pages/dashboard/index.php', 'Grup' => 'pages/groups/index.php', ($id > 0 ? $row['name'] : 'Tambah Baru') => null],
         $id > 0 ? array_values(array_filter([
-            !empty($code) ? ['text' => $code, 'class' => 'bg-primary-subtle text-primary border border-primary-subtle font-monospace'] : null,
+            !empty($row['code']) ? ['text' => $row['code'], 'class' => 'bg-primary-subtle text-primary border border-primary-subtle font-monospace'] : null,
             ['text' => 'ID #' . $id, 'class' => 'bg-light text-secondary border'],
-            ['text' => $active ? 'Aktif' : 'Nonaktif', 'class' => 'bg-' . ($active ? 'success' : 'secondary') . '-subtle text-' . ($active ? 'success' : 'secondary') . ' border'],
+            isset($row['is_active']) ? ['text' => !empty($row['is_active']) ? 'Aktif' : 'Nonaktif', 'class' => 'bg-' . (!empty($row['is_active']) ? 'success' : 'secondary') . '-subtle text-' . (!empty($row['is_active']) ? 'success' : 'secondary') . ' border'] : null,
         ])) : [],
         [['label' => 'Kembali ke Daftar', 'icon' => 'arrow-left', 'href' => 'pages/groups/index.php']]
     ) ?>
