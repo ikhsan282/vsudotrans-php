@@ -9,18 +9,22 @@
  */
 require_once __DIR__ . '/config/config.php';
 require_once __DIR__ . '/includes/booking_service.php';
+require_once __DIR__ . '/includes/payment_gateway.php';
 
 $no = strtoupper(trim((string) ($_GET['no'] ?? '')));
+$companyCode = strtoupper(trim((string) ($_GET['company'] ?? '')));
 $print = isset($_GET['print']);
 $row = null;
 $passengers = [];
+$canPayQris = false;
 if (preg_match('/^(TRV|RNT)-[A-Z2-9]{8}$/', $no)) {
     $type = str_starts_with($no, 'RNT') ? 'rental' : 'travel';
     $table = $type === 'rental' ? 'rental_car_bookings' : 'travel_ticket_bookings';
     // Rute dicetak dari nama kota asal -> tujuan (booking tidak menyimpan nama rute).
-    $st = db()->prepare("SELECT b.id, b.document_number, b.date, b.time, b.pickup_address, b.delivery_address,
-            b.total_price, b.created_user, b.passenger_id, c.name AS company_name, c.address, c.phone_number, c.email, c.logo,
-            i.status AS invoice_status, i.total AS invoice_total, i.invoice_no,
+    $sql = "SELECT b.id, b.company_id, b.document_number, b.date, b.time, b.pickup_address, b.delivery_address,
+            b.total_price, b.total_payment, b.created_user, b.passenger_id,
+            c.code AS company_code, c.name AS company_name, c.address, c.phone_number, c.email, c.logo, c.stamp,
+            i.id AS invoice_id, i.status AS invoice_status, i.total AS invoice_total, i.invoice_no,
             cp1.name AS city_from, cp2.name AS city_to,
             p.name AS passenger_name, p.phone_number AS passenger_phone
         FROM {$table} b
@@ -29,13 +33,27 @@ if (preg_match('/^(TRV|RNT)-[A-Z2-9]{8}$/', $no)) {
         LEFT JOIN cities cp1 ON cp1.id = b.pickup_point_city_id
         LEFT JOIN cities cp2 ON cp2.id = b.delivery_point_city_id
         LEFT JOIN passengers p ON p.id = b.passenger_id
-        WHERE b.document_number = ? LIMIT 1");
-    $st->bind_param('s', $no);
+        WHERE b.document_number = ?";
+    if ($companyCode !== '') {
+        $sql .= ' AND c.code = ? LIMIT 1';
+        $st = db()->prepare($sql);
+        $st->bind_param('ss', $no, $companyCode);
+    } else {
+        $sql .= ' LIMIT 1';
+        $st = db()->prepare($sql);
+        $st->bind_param('s', $no);
+    }
     $st->execute();
     $row = $st->get_result()->fetch_assoc();
     $st->close();
     if ($row) {
         $passengers = booking_passengers_list($type, (int) $row['id'], (int) $row['passenger_id']);
+        $invTotal = (float) ($row['invoice_total'] ?? $row['total_price']);
+        $paid = !empty($row['invoice_id']) ? invoice_paid_total((int) $row['invoice_id']) : (float) $row['total_payment'];
+        $rem = max(0.0, round($invTotal - $paid, 2));
+        if ($rem > 0.01 && ($row['invoice_status'] ?? 'issued') !== 'cancelled') {
+            $canPayQris = gateway_active_channel((int) $row['company_id']) !== null;
+        }
     }
 }
 
@@ -97,6 +115,9 @@ $title = 'Tiket' . ($row ? ' ' . $row['document_number'] : '');
 </head>
 <body class="bg-body-tertiary">
 <div class="no-print container py-2 text-end" style="max-width: 860px;">
+    <?php if ($canPayQris && $row): ?>
+        <a class="btn btn-primary btn-sm" href="<?= e(APP_URL . '/pages/finance/invoices/gateway_pay.php?no=' . urlencode($row['document_number'])) ?>">Bayar via QRIS</a>
+    <?php endif; ?>
     <button class="btn btn-dark btn-sm" onclick="window.print()">Cetak / Simpan PDF</button>
     <a class="btn btn-outline-secondary btn-sm" href="<?= e(APP_URL) ?>/index.php">Beranda</a>
 </div>
@@ -108,8 +129,14 @@ $title = 'Tiket' . ($row ? ' ' . $row['document_number'] : '');
         <div class="card-body">
             <table class="tk-lay tk-head w-100"><tr>
                 <td class="align-top" style="width:340px">
-                    <?php if (!empty($row['logo'])): ?>
-                        <img src="<?= e(APP_URL . '/' . ltrim((string) $row['logo'], '/')) ?>" alt="<?= e($row['company_name']) ?>" class="tk-logo">
+                    <?php
+                    $logoPath = trim((string) ($row['logo'] ?? ''));
+                    if ($logoPath !== '' && !str_contains($logoPath, '/')) {
+                        $logoPath = 'assets/brand/' . $logoPath;
+                    }
+                    ?>
+                    <?php if ($logoPath !== ''): ?>
+                        <img src="<?= e(APP_URL . '/' . ltrim($logoPath, '/')) ?>" alt="<?= e($row['company_name']) ?>" class="tk-logo">
                     <?php else: ?>
                         <div class="fw-bold" style="font-size:14pt"><?= e($row['company_name']) ?></div>
                     <?php endif; ?>
@@ -176,7 +203,15 @@ $title = 'Tiket' . ($row ? ' ' . $row['document_number'] : '');
                     <div><span class="text-muted">pada tanggal</span> <strong><?= e(tanggal_indo((string) $row['date'])) ?></strong></div>
                 </td>
                 <td class="text-end align-top" style="width:170px;padding-top:22pt">
-                    <img class="tk-stamp" src="<?= e(APP_URL . '/assets/brand/stamp-mtm.png') ?>" alt="Stempel Maura Trans Mandiri">
+                    <?php
+                    $stampPath = trim((string) ($row['stamp'] ?? ''));
+                    if ($stampPath !== '' && !str_contains($stampPath, '/')) {
+                        $stampPath = 'assets/brand/' . $stampPath;
+                    }
+                    ?>
+                    <?php if ($stampPath !== ''): ?>
+                        <img class="tk-stamp" src="<?= e(APP_URL . '/' . ltrim($stampPath, '/')) ?>" alt="Stempel <?= e($row['company_name']) ?>">
+                    <?php endif; ?>
                 </td>
             </tr></table>
 

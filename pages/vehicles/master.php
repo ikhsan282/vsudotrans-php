@@ -70,22 +70,29 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         if ($used > 0) {
             flash('error', "{$m['label']} tidak dapat dihapus: masih dipakai " . implode(', ', $usedIn) . '.');
         } else {
-            $st = $db->prepare("DELETE FROM {$t} WHERE id = ?");
-            $st->bind_param('i', $id);
+            $st = $db->prepare("DELETE FROM {$t} WHERE id = ? AND company_id = ?");
+            $st->bind_param('ii', $id, $cid);
             $st->execute();
+            $affected = $st->affected_rows;
             $st->close();
-            audit("vehicle_master.{$key}.delete", "{$m['label']} #{$id} {$found['code']}");
-            flash('success', "{$m['label']} berhasil dihapus.");
+            if ($affected > 0) {
+                audit("vehicle_master.{$key}.delete", "{$m['label']} #{$id} {$found['code']}");
+                flash('success', "{$m['label']} berhasil dihapus.");
+            } else {
+                flash('error', "{$m['label']} tidak dapat dihapus.");
+            }
         }
         redirect("pages/vehicles/master.php?t={$key}");
     }
 
     // Simpan (tambah / ubah)
-    $in = fn (string $k, int $max): string => mb_substr(trim((string) ($_POST[$k] ?? '')), 0, $max);
+    $raw_code = strtoupper(trim((string) ($_POST['code'] ?? '')));
+    $raw_name = trim((string) ($_POST['name'] ?? ''));
+    $raw_note = trim((string) ($_POST['note'] ?? ''));
     $row = [
-        'code'      => strtoupper($in('code', 15)),
-        'name'      => $in('name', 255),
-        'note'      => $in('note', 2000),
+        'code'      => $raw_code,
+        'name'      => $raw_name,
+        'note'      => $raw_note,
         'is_active' => isset($_POST['is_active']) ? 1 : 0,
         'brand_id'  => (int) ($_POST['brand_id'] ?? 0),
     ];
@@ -94,6 +101,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     }
     if ($row['name'] === '') {
         $errors[] = 'Nama wajib diisi.';
+    } elseif (mb_strlen($row['name']) > 255) {
+        $errors[] = 'Nama maksimal 255 karakter.';
+    }
+    if (mb_strlen($row['note']) > 2000) {
+        $errors[] = 'Catatan maksimal 2000 karakter.';
     }
     if ($key === 'model' && !vehicle_owned($db, 'brand_vehicles', $row['brand_id'], $cid)) {
         $errors[] = 'Merek wajib dipilih dari perusahaan ini.';

@@ -11,7 +11,7 @@ CREATE DATABASE IF NOT EXISTS `vsudotrans` CHARACTER SET utf8mb4 COLLATE utf8mb4
 USE `vsudotrans`;
 
 SET FOREIGN_KEY_CHECKS = 0;
-DROP TABLE IF EXISTS `audit_trails`, `login_attempts`, `user_permissions`, `user_companies`, `employees`, `users`, `roles`, `permissions`, `branches`, `companies`, `groups`, `role_permissions`, `banks`, `countries`, `provinces`, `cities`, `districts`, `villages`, `unit_measures`, `brand_vehicles`, `category_vehicles`, `model_units`, `type_engines`, `vehicles`, `rutes`, `schedules`, `passengers`, `trip_schedules`, `travel_ticket_bookings`, `rental_car_bookings`, `rental_car_regulation_employees`, `booking_passengers`, `booking_status_history`, `trip_assignments`, `premi_configs`, `booking_cost_lines`, `document_sequences`, `payment_methods`, `invoices`, `invoice_revisions`, `job_grades`, `job_grade_amounts`, `job_titles`, `job_positions`, `organization_structures`, `employee_recognitions`, `employee_attendances`, `payroll_periods`, `payroll_items`, `cash_accounts`, `cash_transactions`, `wa_settings`, `wa_outbox`;
+DROP TABLE IF EXISTS `audit_trails`, `login_attempts`, `user_permissions`, `user_companies`, `employees`, `users`, `roles`, `permissions`, `branches`, `companies`, `groups`, `role_permissions`, `banks`, `countries`, `provinces`, `cities`, `districts`, `villages`, `unit_measures`, `brand_vehicles`, `category_vehicles`, `model_units`, `type_engines`, `vehicles`, `rutes`, `schedules`, `passengers`, `trip_schedules`, `travel_ticket_bookings`, `rental_car_bookings`, `rental_car_regulation_employees`, `booking_passengers`, `booking_status_history`, `trip_assignments`, `premi_configs`, `booking_cost_lines`, `document_sequences`, `payment_methods`, `payment_channels`, `payment_gateway_orders`, `bot_request_logs`, `invoices`, `invoice_revisions`, `job_grades`, `job_grade_amounts`, `job_titles`, `job_positions`, `organization_structures`, `employee_recognitions`, `employee_attendances`, `payroll_periods`, `payroll_items`, `cash_accounts`, `cash_transactions`, `wa_settings`, `wa_outbox`;
 SET FOREIGN_KEY_CHECKS = 1;
 SET NAMES utf8mb4;
 
@@ -50,6 +50,7 @@ CREATE TABLE `companies` (
   `address` VARCHAR(1000) DEFAULT NULL,
   `city` VARCHAR(100) DEFAULT NULL,
   `logo` VARCHAR(255) DEFAULT NULL,
+  `stamp` VARCHAR(255) DEFAULT NULL,
   `is_active` TINYINT(1) NOT NULL DEFAULT 1,
   `created_user` VARCHAR(255) DEFAULT NULL,
   `created_date` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -271,12 +272,12 @@ INSERT INTO `groups` (`id`, `code`, `name`, `note`) VALUES
 (1, 'TM', 'Trans Mandiri', 'Grup Trans Mandiri'),
 (2, 'LIZ', 'LIZ', 'LIZ Wisata Alam Indah');
 
-INSERT INTO `companies` (`id`, `group_id`, `code`, `name`, `country_code`, `phone_number`, `email`, `address`, `city`, `logo`) VALUES
-(1, 1, 'MTM', 'Maura Trans Mandiri', '+62', '021-0000000', 'info@mauratransmandiri.com', 'Jl. Contoh No. 1', 'Tangerang', 'logo-transmandiri.png'),
-(2, 1, 'NTM', 'Nugi Trans Mandiri', '+62', '021-0000000', 'info@nugitransmandiri.com', 'Jl. Contoh No. 2', 'Tangerang', 'logo-transmandiri.png'),
-(3, 1, 'GTM', 'Gibran Trans Mandiri', '+62', '021-0000000', 'info@gibrantransmandiri.com', 'Jl. Contoh No. 3', 'Tangerang', 'logo-transmandiri.png'),
-(4, 1, 'TTM', 'Trisula Trans Mandiri', '+62', '021-0000000', 'info@trisulatransmandiri.com', 'Jl. Contoh No. 4', 'Tangerang', 'logo-transmandiri.png'),
-(5, 2, 'LIZ', 'LIZ Wisata Alam Indah', '+62', '021-0000000', 'info@lizwisata.com', 'Jl. Contoh No. 5', 'Tangerang', 'logo-transmandiri.png');
+INSERT INTO `companies` (`id`, `group_id`, `code`, `name`, `country_code`, `phone_number`, `email`, `address`, `city`, `logo`, `stamp`) VALUES
+(1, 1, 'MTM', 'Maura Trans Mandiri', '+62', '021-0000000', 'info@mauratransmandiri.com', 'Jl. Contoh No. 1', 'Tangerang', 'logo-transmandiri.png', 'assets/brand/stamp-mtm.png'),
+(2, 1, 'NTM', 'Nugi Trans Mandiri', '+62', '021-0000000', 'info@nugitransmandiri.com', 'Jl. Contoh No. 2', 'Tangerang', 'logo-transmandiri.png', NULL),
+(3, 1, 'GTM', 'Gibran Trans Mandiri', '+62', '021-0000000', 'info@gibrantransmandiri.com', 'Jl. Contoh No. 3', 'Tangerang', 'logo-transmandiri.png', NULL),
+(4, 1, 'TTM', 'Trisula Trans Mandiri', '+62', '021-0000000', 'info@trisulatransmandiri.com', 'Jl. Contoh No. 4', 'Tangerang', 'logo-transmandiri.png', NULL),
+(5, 2, 'LIZ', 'LIZ Wisata Alam Indah', '+62', '021-0000000', 'info@lizwisata.com', 'Jl. Contoh No. 5', 'Tangerang', 'logo-transmandiri.png', NULL);
 
 INSERT INTO `branches` (`id`, `company_id`, `code`, `name`, `country_code`, `phone_number`) VALUES
 (1, 1, 'PST', 'Kantor Pusat', '+62', '021-0000001'),
@@ -880,23 +881,102 @@ CREATE TABLE `wa_settings` (
   UNIQUE KEY `uq_wa_company` (`company_id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
--- Log pengiriman; tanpa cron, jadi baris 'failed' dikirim ulang manual dari halaman setelan.
+-- Log pengiriman; mendukung kirim langsung (wa_send) maupun antrean pull/webhook Hermes.
 CREATE TABLE `wa_outbox` (
   `id` INT(11) NOT NULL AUTO_INCREMENT,
   `company_id` INT(11) NOT NULL,
-  `booking_type` VARCHAR(10) NOT NULL,
-  `booking_id` INT(11) NOT NULL,
+  `booking_type` VARCHAR(10) NOT NULL DEFAULT 'travel',
+  `booking_id` INT(11) NOT NULL DEFAULT 0,
+  `event_id` VARCHAR(64) DEFAULT NULL,
+  `event_type` VARCHAR(50) DEFAULT NULL,
   `phone` VARCHAR(50) DEFAULT NULL,
   `message` VARCHAR(2000) DEFAULT NULL,
-  `status` VARCHAR(20) NOT NULL COMMENT 'sent|failed|skipped',
+  `payload` LONGTEXT DEFAULT NULL,
+  `status` VARCHAR(20) NOT NULL COMMENT 'pending|sent|failed|skipped',
+  `attempts` INT(11) NOT NULL DEFAULT 0,
+  `next_try_at` DATETIME DEFAULT NULL,
+  `sent_at` DATETIME DEFAULT NULL,
+  `last_error` VARCHAR(500) DEFAULT NULL,
   `response` VARCHAR(1000) DEFAULT NULL,
   `created_date` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
   PRIMARY KEY (`id`),
+  UNIQUE KEY `uq_waout_event_id` (`event_id`),
   KEY `ix_waout_company` (`company_id`),
-  KEY `ix_waout_booking` (`booking_type`, `booking_id`)
+  KEY `ix_waout_booking` (`booking_type`, `booking_id`),
+  KEY `ix_waout_status_next` (`status`, `next_try_at`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 -- Tanpa FOREIGN KEY: sengaja, lihat alasan di tabel booking_cost_lines (log historis
 -- harus tetap ada walau booking/perusahaan dihapus).
+
+-- ---------- PAYMENT GATEWAY QRIS DINAMIS & BOT HERMES ----------
+CREATE TABLE `payment_channels` (
+  `id` INT(11) NOT NULL AUTO_INCREMENT,
+  `company_id` INT(11) NOT NULL,
+  `code` VARCHAR(30) NOT NULL,
+  `name` VARCHAR(255) NOT NULL,
+  `provider` VARCHAR(20) NOT NULL COMMENT 'gopay|shopeepay|klikqris',
+  `api_key` TEXT DEFAULT NULL COMMENT 'Header JSON (GoPay), Bearer Token B: (ShopeePay), atau API Key (KlikQRIS)',
+  `merchant_id` TEXT DEFAULT NULL COMMENT 'String QRIS Statis EMVCo (GoPay/ShopeePay) atau ID Merchant (KlikQRIS)',
+  `config` TEXT DEFAULT NULL COMMENT 'JSON refresh_token, merchant_name, fee, dll.',
+  `mode` VARCHAR(20) NOT NULL DEFAULT 'production',
+  `webhook_token` VARCHAR(128) DEFAULT NULL,
+  `instructions` VARCHAR(2000) DEFAULT NULL,
+  `is_active` TINYINT(1) NOT NULL DEFAULT 0,
+  `sort_order` INT(11) NOT NULL DEFAULT 0,
+  `created_user` VARCHAR(255) DEFAULT NULL,
+  `created_date` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  `modified_user` VARCHAR(255) DEFAULT NULL,
+  `modified_date` DATETIME DEFAULT NULL,
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uq_paychan_company_provider` (`company_id`, `provider`),
+  KEY `ix_paychan_company` (`company_id`),
+  CONSTRAINT `fk_paychan_company` FOREIGN KEY (`company_id`) REFERENCES `companies` (`id`) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE `payment_gateway_orders` (
+  `id` INT(11) NOT NULL AUTO_INCREMENT,
+  `company_id` INT(11) NOT NULL,
+  `channel_id` INT(11) NOT NULL,
+  `order_id` VARCHAR(64) NOT NULL,
+  `invoice_id` INT(11) NOT NULL,
+  `booking_type` VARCHAR(10) NOT NULL,
+  `booking_id` INT(11) NOT NULL,
+  `amount` DECIMAL(18,2) NOT NULL COMMENT 'nominal tagihan + fee sebelum kode unik',
+  `total_amount` DECIMAL(18,2) NOT NULL COMMENT 'nominal tagihan + fee + kode unik',
+  `status` ENUM('PENDING','PAID','EXPIRED','FAILED') NOT NULL DEFAULT 'PENDING',
+  `qris_url` VARCHAR(2000) DEFAULT NULL,
+  `direct_url` VARCHAR(2000) DEFAULT NULL,
+  `signature` VARCHAR(191) DEFAULT NULL COMMENT 'id mutasi unik dari GoPay/ShopeePay',
+  `gateway_type` VARCHAR(30) DEFAULT NULL,
+  `source` VARCHAR(20) NOT NULL DEFAULT 'web' COMMENT 'web|whatsapp_bot',
+  `payload` LONGTEXT DEFAULT NULL,
+  `paid_at` DATETIME DEFAULT NULL,
+  `expired_at` DATETIME DEFAULT NULL,
+  `cost_line_id` INT(11) DEFAULT NULL COMMENT 'id baris di booking_cost_lines setelah lunas',
+  `created_user` VARCHAR(255) DEFAULT NULL,
+  `created_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  `updated_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uq_pgo_order_id` (`order_id`),
+  KEY `ix_pgo_company_status` (`company_id`, `status`),
+  KEY `ix_pgo_invoice_status` (`invoice_id`, `status`),
+  KEY `ix_pgo_channel_status` (`channel_id`, `status`),
+  KEY `ix_pgo_signature` (`channel_id`, `signature`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE `bot_request_logs` (
+  `id` INT(11) NOT NULL AUTO_INCREMENT,
+  `company_id` INT(11) DEFAULT NULL,
+  `key_id` VARCHAR(64) DEFAULT NULL,
+  `phone` VARCHAR(50) NOT NULL,
+  `endpoint` VARCHAR(64) NOT NULL,
+  `http_status` INT(11) NOT NULL,
+  `ip_address` VARCHAR(45) DEFAULT NULL,
+  `created_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (`id`),
+  KEY `ix_brl_phone_created` (`phone`, `created_at`),
+  KEY `ix_brl_company` (`company_id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- ---------- INVOICE & DOKUMEN ----------
 CREATE TABLE `document_sequences` (

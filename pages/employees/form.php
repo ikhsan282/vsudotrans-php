@@ -123,7 +123,16 @@ require __DIR__ . '/../../includes/header.php';
                 // Select dari master `job_grades` (gaji pokok + uang harian payroll).
                 $grade_opts = [];
                 try {
-                    $grade_opts = db()->query('SELECT name FROM job_grades WHERE is_active = 1 ORDER BY name')->fetch_all(MYSQLI_ASSOC);
+                    $emp_cid = $row ? (int) $row['company_id'] : active_company_id();
+                    if ($emp_cid !== null) {
+                        $st_grade = db()->prepare('SELECT name FROM job_grades WHERE is_active = 1 AND company_id = ? ORDER BY name');
+                        $st_grade->bind_param('i', $emp_cid);
+                        $st_grade->execute();
+                        $grade_opts = $st_grade->get_result()->fetch_all(MYSQLI_ASSOC);
+                        $st_grade->close();
+                    } else {
+                        $grade_opts = db()->query('SELECT name FROM job_grades WHERE is_active = 1 ORDER BY name')->fetch_all(MYSQLI_ASSOC);
+                    }
                 } catch (mysqli_sql_exception $e) {
                     $grade_opts = [];
                 }

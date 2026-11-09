@@ -91,12 +91,44 @@ function pagination_html(array $p, string $query_base): string
     if ($p['total_pages'] <= 1) {
         return '';
     }
-    $html = '<nav><ul class="pagination pagination-sm mb-0">';
-    for ($i = 1; $i <= $p['total_pages']; $i++) {
-        $active = $i === $p['current'] ? ' active' : '';
-        $html .= '<li class="page-item' . $active . '"><a class="page-link" href="?' . e($query_base) . '&page=' . $i . '">' . $i . '</a></li>';
+    $prefix = $query_base !== '' ? rtrim($query_base, '&') . '&' : '';
+    $current = $p['current'];
+    $total = $p['total_pages'];
+
+    $link = static function (int $page, string $text, bool $active = false, bool $disabled = false) use ($prefix): string {
+        $cls = 'page-item' . ($active ? ' active' : '') . ($disabled ? ' disabled' : '');
+        $href = $disabled ? '#' : '?' . e($prefix) . 'page=' . $page;
+        return '<li class="' . $cls . '"><a class="page-link" href="' . $href . '">' . $text . '</a></li>';
+    };
+
+    $html = '<nav aria-label="Navigasi Halaman"><ul class="pagination pagination-sm mb-0">';
+    $html .= $link($current - 1, '&laquo;', false, $current <= 1);
+
+    if ($total <= 9) {
+        for ($i = 1; $i <= $total; $i++) {
+            $html .= $link($i, (string) $i, $i === $current);
+        }
+    } else {
+        $html .= $link(1, '1', 1 === $current);
+        if ($current > 4) {
+            $html .= '<li class="page-item disabled"><span class="page-link">&hellip;</span></li>';
+        }
+
+        $start = max(2, $current - 2);
+        $end = min($total - 1, $current + 2);
+        for ($i = $start; $i <= $end; $i++) {
+            $html .= $link($i, (string) $i, $i === $current);
+        }
+
+        if ($current < $total - 3) {
+            $html .= '<li class="page-item disabled"><span class="page-link">&hellip;</span></li>';
+        }
+        $html .= $link($total, (string) $total, $total === $current);
     }
-    return $html . '</ul></nav>';
+
+    $html .= $link($current + 1, '&raquo;', false, $current >= $total);
+    $html .= '</ul></nav>';
+    return $html;
 }
 
 /** Catat aktivitas ke audit_trails. */

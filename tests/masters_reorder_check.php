@@ -77,7 +77,8 @@ $run_move = static function (int $id, string $dir, bool $csrf_ok = true): string
         $cmd .= ' -c ' . escapeshellarg((string) php_ini_loaded_file());
     }
     $cmd .= ' ' . escapeshellarg(__DIR__ . '/_move_run.php') . ' ' . escapeshellarg($f);
-    shell_exec($cmd . ' >/dev/null 2>&1');
+    $devnull = DIRECTORY_SEPARATOR === '\\' ? 'NUL' : '/dev/null';
+    shell_exec($cmd . " >$devnull 2>&1");
     return (string) @file_get_contents($f . '.out');
 };
 

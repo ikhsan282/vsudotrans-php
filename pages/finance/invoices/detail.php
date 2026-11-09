@@ -2,6 +2,7 @@
 require_once __DIR__ . '/../../../config/config.php';
 require_permission('invoices.view');
 require_once __DIR__ . '/../../../includes/invoice_service.php';
+require_once __DIR__ . '/../../../includes/payment_gateway.php';
 require_once __DIR__ . '/../../../includes/booking_service.php';
 require_once __DIR__ . '/../../../includes/booking.php';
 require_once __DIR__ . '/../../travel/_helpers.php';
@@ -57,6 +58,7 @@ $methods = $mst->get_result()->fetch_all(MYSQLI_ASSOC);
 $mst->close();
 
 $remaining = max(0, round((float) $inv['total'] - (float) $inv['paid_total'], 2));
+$qrisChannels = $remaining > 0 ? gateway_active_channels((int) $inv['company_id']) : [];
 $link = $inv['booking_type'] === 'rental' ? 'pages/rental/bookings/detail.php' : 'pages/travel/bookings/detail.php';
 
 $active = 'finance';
@@ -67,6 +69,11 @@ require __DIR__ . '/../../../includes/header.php';
     <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-3">
         <h4 class="fw-bold mb-0"><?= e($inv['invoice_no']) ?> <?= invoice_pay_badge($inv['pay_status']) ?></h4>
         <div class="d-flex flex-wrap gap-2">
+            <?php foreach ($qrisChannels as $qch): ?>
+                <a class="btn btn-primary btn-sm" href="<?= e(APP_URL) ?>/pages/finance/invoices/gateway_pay.php?invoice_id=<?= $id ?>&provider=<?= e($qch['provider']) ?>">
+                    <i class="bi bi-qr-code-scan me-1"></i> Bayar <?= e($qch['name']) ?>
+                </a>
+            <?php endforeach; ?>
             <a class="btn btn-dark btn-sm" target="_blank" href="<?= e(APP_URL) ?>/pages/finance/invoices/print.php?id=<?= $id ?>&print=1">Cetak Invoice</a>
             <a class="btn btn-danger btn-sm" href="<?= e(APP_URL) ?>/pages/finance/invoices/print.php?id=<?= $id ?>&format=pdf"><i class="bi bi-filetype-pdf"></i> PDF</a>
             <a class="btn btn-outline-secondary btn-sm" href="<?= e(APP_URL) ?>/<?= e($link) ?>?id=<?= (int) $inv['booking_id'] ?>">Lihat Booking</a>

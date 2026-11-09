@@ -195,7 +195,7 @@ function master_tables(): array
                 mf_note(), mf_active(),
             ],
             'blockers' => [
-                ['table' => 'employees', 'col' => 'job_grade', 'label' => 'karyawan (via nama grade)'],
+                ['table' => 'employees', 'col' => 'job_grade', 'match' => 'name', 'label' => 'karyawan'],
             ],
         ]),
         'job_titles' => $hr([
@@ -349,8 +349,7 @@ function master_lookup(string $source, ?int $cid = null): array
             break;
         case 'job_titles':
             $sql = 'SELECT id, name FROM job_titles';
-            $params = [];
-            if (!is_super_admin()) {
+            if ($cid !== null) {
                 $sql .= ' WHERE company_id = ? OR company_id IS NULL';
                 $types = 'i';
                 $params = [(int) $cid];
@@ -359,7 +358,7 @@ function master_lookup(string $source, ?int $cid = null): array
             break;
         case 'job_positions':
             $sql = 'SELECT id, name FROM job_positions';
-            if (!is_super_admin()) {
+            if ($cid !== null) {
                 $sql .= ' WHERE company_id = ?';
                 $types = 'i';
                 $params = [(int) $cid];
@@ -368,7 +367,7 @@ function master_lookup(string $source, ?int $cid = null): array
             break;
         case 'employees':
             $sql = 'SELECT id, CONCAT(code, \' - \', name) AS name FROM employees';
-            if (!is_super_admin()) {
+            if ($cid !== null) {
                 $sql .= ' WHERE company_id = ?';
                 $types = 'i';
                 $params = [(int) $cid];
@@ -410,16 +409,19 @@ function master_relation_ok(string $source, int $id, ?int $cid): bool
     $sql = 'SELECT 1 FROM `' . $source . '` WHERE id = ?';
     $types = 'i';
     $params = [$id];
-    // Sumber ber-scope company selalu dibatasi perusahaan aktif, termasuk untuk Super Admin,
-    // agar tidak ada tautan lintas perusahaan dalam konteks perusahaan yang sedang aktif.
+    // Sumber ber-scope company dibatasi perusahaan aktif jika konteks $cid ada.
     if ($source === 'job_titles') {
-        $sql .= ' AND (company_id = ? OR company_id IS NULL)';
-        $types = 'ii';
-        $params[] = (int) $cid;
+        if ($cid !== null) {
+            $sql .= ' AND (company_id = ? OR company_id IS NULL)';
+            $types = 'ii';
+            $params[] = (int) $cid;
+        }
     } elseif ($source === 'job_positions' || $source === 'employees') {
-        $sql .= ' AND company_id = ?';
-        $types = 'ii';
-        $params[] = (int) $cid;
+        if ($cid !== null) {
+            $sql .= ' AND company_id = ?';
+            $types = 'ii';
+            $params[] = (int) $cid;
+        }
     }
     $stmt = db()->prepare($sql);
     $stmt->bind_param($types, ...$params);
@@ -443,6 +445,25 @@ function master_list(string $key): void
     [$where, $types, $params] = master_scope($spec);
     $table = $spec['table'];
     $order = $spec['order'] === 'index_no' ? 'index_no, id' : '`' . $spec['order'] . '`';
+
+    $q = trim((string) ($_GET['q'] ?? ''));
+    if ($q !== '') {
+        $q_like = '%' . $q . '%';
+        if (column_exists($table, 'code') && column_exists($table, 'name')) {
+            $where .= " AND (`code` LIKE ? OR `name` LIKE ?)";
+            $types .= 'ss';
+            $params[] = $q_like;
+            $params[] = $q_like;
+        } elseif (column_exists($table, 'name')) {
+            $where .= " AND `name` LIKE ?";
+            $types .= 's';
+            $params[] = $q_like;
+        } elseif (column_exists($table, 'code')) {
+            $where .= " AND `code` LIKE ?";
+            $types .= 's';
+            $params[] = $q_like;
+        }
+    }
 
     $st = db()->prepare("SELECT COUNT(*) FROM `{$table}` WHERE {$where}");
     if ($types !== '') {
@@ -470,6 +491,7 @@ function master_list(string $key): void
     $active = $spec['module'];
     $title  = $spec['title'];
     $list_cols = array_values(array_filter($spec['fields'], fn ($f) => !in_array($f['type'] ?? '', ['textarea', 'money', 'bytes', 'file'], true)));
+    $query_base = $q !== '' ? 'q=' . urlencode($q) : '';
     require __DIR__ . '/../../includes/header.php';
     ?>
     <main class="col-12 col-md-9 col-lg-10 p-4">
@@ -483,6 +505,26 @@ function master_list(string $key): void
             <?php endif; ?>
         </div>
         <?= master_tabs($key) ?>
+        <div class="card shadow-sm border-0 mb-3">
+            <div class="card-body py-2">
+                <form method="get" class="row g-2 align-items-center">
+                    <div class="col-auto">
+                        <div class="input-group input-group-sm">
+                            <input type="text" name="q" class="form-control" placeholder="Cari kode atau nama..." value="<?= e($q) ?>" style="min-width: 220px;">
+                            <button class="btn btn-outline-secondary" type="submit"><i class="bi bi-search"></i> Cari</button>
+                            <?php if ($q !== ''): ?>
+                                <a class="btn btn-outline-danger" href="<?= e(master_base_url($spec)) ?>/index.php" title="Reset pencarian"><i class="bi bi-x-lg"></i></a>
+                            <?php endif; ?>
+                        </div>
+                    </div>
+                    <?php if ($q !== ''): ?>
+                        <div class="col-auto">
+                            <span class="small text-muted">Menampilkan hasil untuk: <strong><?= e($q) ?></strong> (<?= $total ?> data)</span>
+                        </div>
+                    <?php endif; ?>
+                </form>
+            </div>
+        </div>
         <div class="card shadow-sm border-0">
             <div class="table-responsive">
                 <table class="table table-hover mb-0 align-middle">
@@ -491,9 +533,12 @@ function master_list(string $key): void
                         <th class="text-end">Aksi</th>
                     </tr></thead>
                     <tbody>
-                    <?php foreach ($rows as $r): ?>
+                    <?php foreach ($rows as $r):
+                        $is_global = !empty($spec['company']) && ($r['company_id'] === null);
+                        $can_edit_this = $can_manage && (!$is_global || is_super_admin());
+                    ?>
                         <tr>
-                            <?php foreach ($list_cols as $f): $col = $f['col']; ?>
+                            <?php foreach ($list_cols as $idx_c => $f): $col = $f['col']; ?>
                                 <td>
                                 <?php if (($f['type'] ?? '') === 'checkbox'): ?>
                                     <span class="badge bg-<?= $r[$col] ? 'success' : 'secondary' ?>"><?= $r[$col] ? 'Aktif' : 'Nonaktif' ?></span>
@@ -502,10 +547,13 @@ function master_list(string $key): void
                                 <?php else: ?>
                                     <?= e((string) $r[$col]) ?>
                                 <?php endif; ?>
+                                <?php if ($idx_c === 0 && $is_global): ?>
+                                    <span class="badge bg-light text-secondary border ms-1" title="Data bawaan sistem / berlaku semua perusahaan">Global</span>
+                                <?php endif; ?>
                                 </td>
                             <?php endforeach; ?>
                             <td class="text-end">
-                                <?php if ($can_manage && !empty($spec['reorder'])): ?>
+                                <?php if ($can_edit_this && !empty($spec['reorder'])): ?>
                                     <?php foreach ([['up', '↑', 'Naikkan urutan'], ['down', '↓', 'Turunkan urutan']] as [$dir, $icon, $tip]): ?>
                                         <form method="post" action="<?= e(master_base_url($spec)) ?>/move.php" class="d-inline">
                                             <?= csrf_field() ?>
@@ -515,24 +563,26 @@ function master_list(string $key): void
                                         </form>
                                     <?php endforeach; ?>
                                 <?php endif; ?>
-                                <?php if ($can_manage): ?>
+                                <?php if ($can_edit_this): ?>
                                     <a class="btn btn-sm btn-outline-primary" href="<?= e(master_base_url($spec)) ?>/form.php?id=<?= (int) $r['id'] ?>">Ubah</a>
                                     <form method="post" action="<?= e(master_base_url($spec)) ?>/delete.php" class="d-inline" onsubmit="return confirm('Hapus data ini?')">
                                         <?= csrf_field() ?>
                                         <input type="hidden" name="id" value="<?= (int) $r['id'] ?>">
                                         <button type="submit" class="btn btn-sm btn-outline-danger">Hapus</button>
                                     </form>
+                                <?php elseif ($is_global): ?>
+                                    <span class="badge bg-light text-muted border">Bawaan Sistem</span>
                                 <?php endif; ?>
                             </td>
                         </tr>
                     <?php endforeach; ?>
                     <?php if (!$rows): ?>
-                        <tr><td colspan="<?= count($list_cols) + 1 ?>" class="text-center text-muted py-4">Belum ada data.</td></tr>
+                        <tr><td colspan="<?= count($list_cols) + 1 ?>" class="text-center text-muted py-4">Belum ada data<?= $q !== '' ? ' yang sesuai pencarian' : '' ?>.</td></tr>
                     <?php endif; ?>
                     </tbody>
                 </table>
             </div>
-            <div class="card-footer bg-white"><?= pagination_html($p, '') ?></div>
+            <div class="card-footer bg-white"><?= pagination_html($p, $query_base) ?></div>
         </div>
     </main>
     <?php
@@ -803,15 +853,76 @@ function master_map_input(array $spec, array $post): array
         } elseif (!empty($f['upper'])) {
             $v = strtoupper($v);
         }
-        if (mb_strlen($v) > (int) ($f['max'] ?? ($type === 'money' || $type === 'number' ? 20 : 255))) {
-            $v = mb_substr($v, 0, (int) ($f['max'] ?? 255));
-        }
         if (empty($f['required']) && $v === '') {
             $v = !empty($f['nullable']) ? null : (($type === 'money' || $type === 'number') ? '0' : $v);
         }
         $out[$col] = $v;
     }
     return $out;
+}
+
+/** Validasi konsistensi hierarki wilayah (geografis). */
+function master_validate_geo_hierarchy(string $table, array $in): array
+{
+    $errors = [];
+    $db = db();
+    if ($table === 'cities') {
+        $cid = (int) ($in['country_id'] ?? 0);
+        $pid = (int) ($in['province_id'] ?? 0);
+        if ($cid > 0 && $pid > 0) {
+            $st = $db->prepare('SELECT country_id FROM provinces WHERE id = ?');
+            $st->bind_param('i', $pid);
+            $st->execute();
+            $prov_cid = $st->get_result()->fetch_column();
+            $st->close();
+            if ($prov_cid !== false && (int) $prov_cid !== $cid) {
+                $errors[] = 'Provinsi tidak sesuai dengan Negara yang dipilih.';
+            }
+        }
+    } elseif ($table === 'districts') {
+        $cid = (int) ($in['country_id'] ?? 0);
+        $pid = (int) ($in['province_id'] ?? 0);
+        $cty = (int) ($in['city_id'] ?? 0);
+        if ($cty > 0) {
+            $st = $db->prepare('SELECT country_id, province_id FROM cities WHERE id = ?');
+            $st->bind_param('i', $cty);
+            $st->execute();
+            $c_row = $st->get_result()->fetch_assoc();
+            $st->close();
+            if ($c_row) {
+                if ($pid > 0 && (int) $c_row['province_id'] !== $pid) {
+                    $errors[] = 'Kota / Kabupaten tidak sesuai dengan Provinsi yang dipilih.';
+                }
+                if ($cid > 0 && (int) $c_row['country_id'] !== $cid) {
+                    $errors[] = 'Kota / Kabupaten tidak sesuai dengan Negara yang dipilih.';
+                }
+            }
+        }
+    } elseif ($table === 'villages') {
+        $cid = (int) ($in['country_id'] ?? 0);
+        $pid = (int) ($in['province_id'] ?? 0);
+        $cty = (int) ($in['city_id'] ?? 0);
+        $did = (int) ($in['district_id'] ?? 0);
+        if ($did > 0) {
+            $st = $db->prepare('SELECT country_id, province_id, city_id FROM districts WHERE id = ?');
+            $st->bind_param('i', $did);
+            $st->execute();
+            $d_row = $st->get_result()->fetch_assoc();
+            $st->close();
+            if ($d_row) {
+                if ($cty > 0 && (int) $d_row['city_id'] !== $cty) {
+                    $errors[] = 'Kecamatan tidak sesuai dengan Kota / Kabupaten yang dipilih.';
+                }
+                if ($pid > 0 && (int) $d_row['province_id'] !== $pid) {
+                    $errors[] = 'Kecamatan tidak sesuai dengan Provinsi yang dipilih.';
+                }
+                if ($cid > 0 && (int) $d_row['country_id'] !== $cid) {
+                    $errors[] = 'Kecamatan tidak sesuai dengan Negara yang dipilih.';
+                }
+            }
+        }
+    }
+    return $errors;
 }
 
 /** Validasi lengkap. Kembalikan daftar pesan error (kosong = valid). */
@@ -830,6 +941,10 @@ function master_validate(array $spec, array $in, int $id, ?int $cid): array
         }
         if ($v === null || $v === '') {
             continue;
+        }
+        $max_len = (int) ($f['max'] ?? ($type === 'money' || $type === 'number' ? 20 : 255));
+        if ($max_len > 0 && mb_strlen((string) $v) > $max_len) {
+            $errors[] = $label . ' maksimal ' . $max_len . ' karakter.';
         }
         if (!empty($f['code']) && !master_code_ok((string) $v)) {
             $errors[] = $label . ' wajib 1–15 karakter: huruf, angka, atau strip.';
@@ -850,6 +965,14 @@ function master_validate(array $spec, array $in, int $id, ?int $cid): array
                     $errors[] = $label . ' membentuk siklus struktur.';
                 }
             }
+        }
+    }
+
+    // Validasi konsistensi hierarki wilayah (geografis)
+    if (in_array($spec['table'], ['cities', 'districts', 'villages'], true)) {
+        $geo_errors = master_validate_geo_hierarchy($spec['table'], $in);
+        if ($geo_errors) {
+            $errors = array_merge($errors, $geo_errors);
         }
     }
 
@@ -955,6 +1078,99 @@ function master_find_code(array $spec, string $code, ?int $cid): ?array
     return $row ?: null;
 }
 
+/** Cari data existing untuk form/import (berdasarkan code atau kunci unik alternatif). */
+function master_find_existing(array $spec, array $in, ?int $cid): ?array
+{
+    if (!empty($in['code'])) {
+        return master_find_code($spec, (string) $in['code'], $cid);
+    }
+    if ($spec['table'] === 'employee_recognitions') {
+        $emp_id = (int) ($in['employee_id'] ?? 0);
+        $type = (string) ($in['type'] ?? '');
+        $idx = (int) ($in['index_no'] ?? 0);
+        if ($emp_id > 0 && $type !== '') {
+            $st = db()->prepare('SELECT * FROM employee_recognitions WHERE employee_id = ? AND type = ? AND index_no = ? AND company_id = ? LIMIT 1');
+            $st->bind_param('isii', $emp_id, $type, $idx, $cid);
+            $st->execute();
+            $row = $st->get_result()->fetch_assoc();
+            $st->close();
+            return $row ?: null;
+        }
+    }
+    return null;
+}
+
+/**
+ * Resolusi nilai relasi: bisa ID angka, Kode, atau Nama.
+ * Berguna saat import CSV agar user tidak harus tahu ID integer internal.
+ */
+function master_resolve_relation_id(string $source, string $raw_val, ?int $cid): ?int
+{
+    $val = trim($raw_val);
+    if ($val === '') {
+        return null;
+    }
+    $db = db();
+    // 1. Coba sebagai ID numerik langsung
+    if (ctype_digit($val)) {
+        $id = (int) $val;
+        if (master_relation_ok($source, $id, $cid)) {
+            return $id;
+        }
+    }
+    // 2. Coba lookup berdasarkan code jika ada kolom code
+    if (column_exists($source, 'code')) {
+        $sql = "SELECT id FROM `{$source}` WHERE code = ?";
+        $types = 's';
+        $params = [$val];
+        if ($source === 'job_titles') {
+            if ($cid !== null) {
+                $sql .= ' AND (company_id = ? OR company_id IS NULL)';
+                $types .= 'i';
+                $params[] = (int) $cid;
+            }
+        } elseif (column_exists($source, 'company_id') && $cid !== null) {
+            $sql .= ' AND company_id = ?';
+            $types .= 'i';
+            $params[] = (int) $cid;
+        }
+        $st = $db->prepare($sql . ' LIMIT 1');
+        $st->bind_param($types, ...$params);
+        $st->execute();
+        $found = $st->get_result()->fetch_column();
+        $st->close();
+        if ($found) {
+            return (int) $found;
+        }
+    }
+    // 3. Coba lookup berdasarkan name jika ada kolom name
+    if (column_exists($source, 'name')) {
+        $sql = "SELECT id FROM `{$source}` WHERE name = ?";
+        $types = 's';
+        $params = [$val];
+        if ($source === 'job_titles') {
+            if ($cid !== null) {
+                $sql .= ' AND (company_id = ? OR company_id IS NULL)';
+                $types .= 'i';
+                $params[] = (int) $cid;
+            }
+        } elseif (column_exists($source, 'company_id') && $cid !== null) {
+            $sql .= ' AND company_id = ?';
+            $types .= 'i';
+            $params[] = (int) $cid;
+        }
+        $st = $db->prepare($sql . ' LIMIT 1');
+        $st->bind_param($types, ...$params);
+        $st->execute();
+        $found = $st->get_result()->fetch_column();
+        $st->close();
+        if ($found) {
+            return (int) $found;
+        }
+    }
+    return null;
+}
+
 /** true bila ada nilai yang benar-benar berubah (untuk laporan upsert). */
 function master_import_only_changed(array $spec, array $existing, array $in): bool
 {
@@ -1000,6 +1216,19 @@ function master_save(array $spec, int $id, array $in, ?int $cid): int
         $sql = "INSERT INTO `{$table}` (`" . implode('`,`', $cols_sql) . '`) VALUES ('
             . implode(',', array_fill(0, count($cols_sql), '?')) . ')';
     } else {
+        $old_name = null;
+        if ($table === 'job_grades' && isset($in['name'])) {
+            $st_old = db()->prepare('SELECT name, company_id FROM job_grades WHERE id = ?');
+            $st_old->bind_param('i', $id);
+            $st_old->execute();
+            $r_old = $st_old->get_result()->fetch_assoc();
+            $st_old->close();
+            if ($r_old) {
+                $old_name = $r_old['name'];
+                $cid = $cid ?? ($r_old['company_id'] !== null ? (int) $r_old['company_id'] : null);
+            }
+        }
+
         $set = array_merge(['modified_user', 'modified_date'], $cols);
         $vals = array_merge([$user, $now], array_map(fn ($c) => $in[$c], $cols), [$id]);
         $types = 'ss' . implode('', array_map(fn ($c) => $types_map[$c], $cols)) . 'i';
@@ -1016,6 +1245,15 @@ function master_save(array $spec, int $id, array $in, ?int $cid): int
     $st->execute();
     $new_id = $id === 0 ? $st->insert_id : $id;
     $st->close();
+
+    // Sinkronisasi nama grade pada employees jika grade diubah namanya
+    if ($id > 0 && isset($old_name) && $old_name !== '' && $old_name !== $in['name'] && $cid !== null) {
+        $st_sync = db()->prepare('UPDATE employees SET job_grade = ? WHERE job_grade = ? AND company_id = ?');
+        $st_sync->bind_param('ssi', $in['name'], $old_name, $cid);
+        $st_sync->execute();
+        $st_sync->close();
+    }
+
     return $new_id;
 }
 
@@ -1106,10 +1344,25 @@ function master_move(string $key, int $id, int $dir): void
     $ord = $dir < 0 ? 'DESC' : 'ASC';
     $val = $row[$col] === null ? 0 : (int) $row[$col];
 
-    // Tetangga terdekat dalam scope perusahaan aktif (company_id yang sama
-    // untuk NULL-global: global & milik perusahaan berbagi urutan di list).
-    [$where, $types, $params] = !empty($spec['company']) ? master_scope($spec) : ['1=1', '', []];
+    // Tetangga terdekat di dalam scope tenant yang sama dengan baris yang dipindahkan
+    $row_cid = $row['company_id'] ?? null;
     $table = $spec['table'];
+    if (!empty($spec['company'])) {
+        if ($row_cid !== null) {
+            $where = "company_id = ?";
+            $types = "i";
+            $params = [(int) $row_cid];
+        } else {
+            $where = "company_id IS NULL";
+            $types = "";
+            $params = [];
+        }
+    } else {
+        $where = "1=1";
+        $types = "";
+        $params = [];
+    }
+
     $st = db()->prepare("SELECT id, `{$col}` FROM `{$table}` WHERE {$where} AND `{$col}` {$cmp} ? ORDER BY `{$col}` {$ord} LIMIT 1");
     $types .= 'i'; // tambah satu parameter untuk nilai urutan
     $params = [...$params, $val];
@@ -1158,8 +1411,31 @@ function master_delete(string $key): void
 
     // Cek relasi dulu agar tidak muncul error SQL mentah (FK RESTRICT).
     foreach ($spec['blockers'] ?? [] as $b) {
-        $st = db()->prepare("SELECT COUNT(*) FROM `{$b['table']}` WHERE `{$b['col']}` = ?");
-        $st->bind_param('i', $id);
+        $match_by = $b['match'] ?? 'id';
+        if ($match_by === 'name') {
+            $val = (string) ($row['name'] ?? '');
+            if (!empty($spec['company']) && column_exists($b['table'], 'company_id')) {
+                $sql_b = "SELECT COUNT(*) FROM `{$b['table']}` WHERE `{$b['col']}` = ? AND company_id = ?";
+                $st = db()->prepare($sql_b);
+                $cid_val = (int) ($row['company_id'] ?? active_company_id());
+                $st->bind_param('si', $val, $cid_val);
+            } else {
+                $sql_b = "SELECT COUNT(*) FROM `{$b['table']}` WHERE `{$b['col']}` = ?";
+                $st = db()->prepare($sql_b);
+                $st->bind_param('s', $val);
+            }
+        } else {
+            $sql_b = "SELECT COUNT(*) FROM `{$b['table']}` WHERE `{$b['col']}` = ?";
+            if (!empty($spec['company']) && column_exists($b['table'], 'company_id')) {
+                $sql_b .= " AND company_id = ?";
+                $st = db()->prepare($sql_b);
+                $cid_val = (int) ($row['company_id'] ?? active_company_id());
+                $st->bind_param('ii', $id, $cid_val);
+            } else {
+                $st = db()->prepare($sql_b);
+                $st->bind_param('i', $id);
+            }
+        }
         $st->execute();
         $n = (int) $st->get_result()->fetch_row()[0];
         $st->close();
@@ -1173,17 +1449,26 @@ function master_delete(string $key): void
         $sql = "DELETE FROM `{$spec['table']}` WHERE id = ?";
         $params = [$id];
         $types = 'i';
-        if (!empty($spec['company'])) { // defense-in-depth: scope tenant di SQL juga (NULL = global)
-            $sql .= ' AND (company_id = ? OR company_id IS NULL)';
-            $params[] = active_company_id();
+        if (!empty($spec['company']) && !is_super_admin()) { // Non-superadmin dibatasi ke perusahaannya
+            if ($row['company_id'] === null) {
+                flash('error', 'Data bawaan sistem (global) hanya dapat dihapus oleh Super Admin.');
+                redirect($base);
+            }
+            $sql .= ' AND company_id = ?';
+            $params[] = (int) active_company_id();
             $types .= 'i';
         }
         $st = db()->prepare($sql);
         $st->bind_param($types, ...$params);
         $st->execute();
+        $affected = $st->affected_rows;
         $st->close();
-        audit($spec['module'] . '.delete', $spec['title'] . " #{$id} " . ($row['code'] ?? ''));
-        flash('success', $spec['title'] . ' berhasil dihapus.');
+        if ($affected > 0) {
+            audit($spec['module'] . '.delete', $spec['title'] . " #{$id} " . ($row['code'] ?? ''));
+            flash('success', $spec['title'] . ' berhasil dihapus.');
+        } else {
+            flash('error', $spec['title'] . ' tidak dapat dihapus atau sudah dihapus.');
+        }
     } catch (mysqli_sql_exception $ex) {
         if ((int) $ex->getCode() === 1451) {
             flash('error', $spec['title'] . ' tidak dapat dihapus: masih dipakai oleh data lain.');
@@ -1204,6 +1489,7 @@ function master_delete(string $key): void
  */
 function master_options_json(string $source, string $parent_col, string $param): void
 {
+    require_login();
     header('Content-Type: application/json; charset=utf-8');
     $parent = (int) ($_GET[$param] ?? 0);
     if ($parent <= 0) {

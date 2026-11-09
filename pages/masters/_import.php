@@ -134,13 +134,19 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 }
                 $raw = [];
                 foreach ($idx as $i => $col) {
-                    $raw[$col] = (string) ($cells[$i] ?? '');
+                    $val = (string) ($cells[$i] ?? '');
+                    if (isset($cols[$col]) && ($cols[$col]['type'] ?? '') === 'select' && $val !== '') {
+                        $resolved_id = master_resolve_relation_id($cols[$col]['source'], $val, $cid);
+                        if ($resolved_id !== null) {
+                            $val = (string) $resolved_id;
+                        }
+                    }
+                    $raw[$col] = $val;
                 }
                 $in = master_map_input($spec, $raw);
 
-                // Cari baris existing LEBIH DULU: validasi keunikan kode harus tahu
-                // baris ini sendiri (id) agar kode yang sama tidak dianggap duplikat.
-                $existing = !empty($in['code']) ? master_find_code($spec, (string) $in['code'], $cid) : null;
+                // Cari baris existing: bisa via code atau kunci unik alternatif (mis. employee_recognitions)
+                $existing = master_find_existing($spec, $in, $cid);
                 $row_id = $existing ? (int) $existing['id'] : 0;
 
                 $err = master_validate($spec, $in, $row_id, $cid);
@@ -151,7 +157,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
                 if ($existing) {
                     if ($mode === 'insert') {
-                        $errs[] = [$line_no, 'Kode ' . $in['code'] . ' sudah ada (mode hanya-tambah).'];
+                        $lbl = !empty($in['code']) ? 'Kode ' . $in['code'] : 'Data baris ' . $line_no;
+                        $errs[] = [$line_no, $lbl . ' sudah ada (mode hanya-tambah).'];
                         continue;
                     }
                     if (master_import_only_changed($spec, $existing, $in)) {

@@ -7,19 +7,28 @@
 require_once __DIR__ . '/config/config.php';
 
 $no = strtoupper(trim((string) ($_GET['no'] ?? '')));
+$companyCode = strtoupper(trim((string) ($_GET['company'] ?? '')));
 $row = null;
 if (preg_match('/^(TRV|RNT)-[A-Z2-9]{8}$/', $no)) {
     $type = str_starts_with($no, 'RNT') ? 'rental' : 'travel';
     $table = $type === 'rental' ? 'rental_car_bookings' : 'travel_ticket_bookings';
-    $st = db()->prepare("SELECT b.document_number, b.date, b.time, c.name AS company_name,
+    $sql = "SELECT b.document_number, b.date, b.time, c.code AS company_code, c.name AS company_name,
             i.status AS invoice_status, cp1.name AS city_from, cp2.name AS city_to
         FROM {$table} b
         JOIN companies c ON c.id = b.company_id
         LEFT JOIN invoices i ON i.document_number = b.document_number
         LEFT JOIN cities cp1 ON cp1.id = b.pickup_point_city_id
         LEFT JOIN cities cp2 ON cp2.id = b.delivery_point_city_id
-        WHERE b.document_number = ? LIMIT 1");
-    $st->bind_param('s', $no);
+        WHERE b.document_number = ?";
+    if ($companyCode !== '') {
+        $sql .= ' AND c.code = ? LIMIT 1';
+        $st = db()->prepare($sql);
+        $st->bind_param('ss', $no, $companyCode);
+    } else {
+        $sql .= ' LIMIT 1';
+        $st = db()->prepare($sql);
+        $st->bind_param('s', $no);
+    }
     $st->execute();
     $row = $st->get_result()->fetch_assoc();
     $st->close();
