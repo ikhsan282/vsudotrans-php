@@ -14,12 +14,13 @@ $user   = current_user();
 $companies  = accessible_companies();
 $activeCid  = active_company_id();
 $activeName = 'Semua Perusahaan';
-foreach ($companies as $c) {
-    if ((int) $c['id'] === $activeCid) {
-        $activeName = $c['name'];
+foreach ($companies as $comp) {
+    if ((int) $comp['id'] === $activeCid) {
+        $activeName = $comp['name'];
         break;
     }
 }
+unset($comp);
 ?><!DOCTYPE html>
 <html lang="id">
 <head>
@@ -53,13 +54,13 @@ foreach ($companies as $c) {
                     <?php if (!$companies): ?>
                         <li><span class="dropdown-item-text text-muted small">Tidak ada perusahaan</span></li>
                     <?php endif; ?>
-                    <?php foreach ($companies as $c): ?>
+                    <?php foreach ($companies as $comp): ?>
                         <li>
                             <form method="post" action="<?= e(APP_URL) ?>/pages/companies/switch.php">
                                 <?= csrf_field() ?>
-                                <input type="hidden" name="company_id" value="<?= (int) $c['id'] ?>">
-                                <button type="submit" class="dropdown-item<?= (int) $c['id'] === $activeCid ? ' active' : '' ?>">
-                                    <?= e($c['name']) ?> <span class="text-muted small">(<?= e($c['code']) ?>)</span>
+                                <input type="hidden" name="company_id" value="<?= (int) $comp['id'] ?>">
+                                <button type="submit" class="dropdown-item<?= (int) $comp['id'] === $activeCid ? ' active' : '' ?>">
+                                    <?= e($comp['name']) ?> <span class="text-muted small">(<?= e($comp['code']) ?>)</span>
                                 </button>
                             </form>
                         </li>

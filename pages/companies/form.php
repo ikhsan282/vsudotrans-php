@@ -289,21 +289,89 @@ if ($id > 0) {
     }
 }
 
+$curGroupName = '';
+if (!empty($row['group_id'])) {
+    foreach ($groups as $g) {
+        if ((int) $g['id'] === (int) $row['group_id']) {
+            $curGroupName = $g['name'];
+            break;
+        }
+    }
+}
+
 $active = 'companies';
 $title  = $id > 0 ? ('Pengaturan ' . $row['name']) : 'Tambah Perusahaan';
 require __DIR__ . '/../../includes/header.php';
 ?>
 <main class="col-12 col-md-9 col-lg-10 p-3 p-lg-4">
-    <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-3">
-        <div>
-            <h4 class="fw-bold mb-0"><?= e($title) ?></h4>
-            <?php if ($id > 0): ?>
-                <small class="text-muted">Kode Perusahaan: <strong><?= e($row['code']) ?></strong> · ID #<?= $id ?></small>
-            <?php endif; ?>
+    <!-- Breadcrumb Navigasi -->
+    <nav aria-label="breadcrumb" class="mb-2">
+        <ol class="breadcrumb mb-0 py-1" style="font-size: 0.85rem;">
+            <li class="breadcrumb-item">
+                <a href="<?= e(APP_URL) ?>/pages/dashboard/index.php" class="text-decoration-none text-secondary">
+                    <i class="bi bi-speedometer2 me-1"></i>Dashboard
+                </a>
+            </li>
+            <li class="breadcrumb-item">
+                <a href="<?= e(APP_URL) ?>/pages/companies/index.php" class="text-decoration-none text-secondary">
+                    Perusahaan
+                </a>
+            </li>
+            <li class="breadcrumb-item active text-dark fw-semibold" aria-current="page">
+                <?= $id > 0 ? e($row['name']) : 'Tambah Baru' ?>
+            </li>
+        </ol>
+    </nav>
+
+    <!-- Page Header Card -->
+    <div class="card border-0 shadow-sm mb-3">
+        <div class="card-body p-3 p-md-4">
+            <div class="d-flex flex-wrap justify-content-between align-items-center gap-3">
+                <div class="d-flex align-items-center gap-3">
+                    <div class="d-flex align-items-center justify-content-center bg-primary-subtle text-primary rounded-3 flex-shrink-0" style="width: 52px; height: 52px;">
+                        <i class="bi bi-building fs-3"></i>
+                    </div>
+                    <div>
+                        <div class="d-flex align-items-center gap-2 flex-wrap mb-1">
+                            <h4 class="fw-bold mb-0 text-dark"><?= e($id > 0 ? $row['name'] : 'Tambah Perusahaan Baru') ?></h4>
+                            <?php if ($id > 0): ?>
+                                <span class="badge bg-primary-subtle text-primary border border-primary-subtle font-monospace px-2 py-1">
+                                    <i class="bi bi-upc-scan me-1"></i><?= e($row['code']) ?>
+                                </span>
+                                <span class="badge bg-<?= !empty($row['is_active']) ? 'success' : 'secondary' ?>-subtle text-<?= !empty($row['is_active']) ? 'success' : 'secondary' ?> border border-<?= !empty($row['is_active']) ? 'success' : 'secondary' ?>-subtle px-2 py-1">
+                                    <i class="bi bi-<?= !empty($row['is_active']) ? 'check-circle' : 'dash-circle' ?> me-1"></i><?= !empty($row['is_active']) ? 'Aktif' : 'Nonaktif' ?>
+                                </span>
+                            <?php endif; ?>
+                        </div>
+                        <div class="d-flex align-items-center gap-2 flex-wrap text-muted small">
+                            <?php if ($id > 0): ?>
+                                <span><i class="bi bi-hash"></i>ID: <strong><?= $id ?></strong></span>
+                                <?php if (!empty($curGroupName)): ?>
+                                    <span>&bull;</span>
+                                    <span><i class="bi bi-diagram-2 me-1"></i>Grup: <strong><?= e($curGroupName) ?></strong></span>
+                                <?php endif; ?>
+                                <?php if (!empty($row['city'])): ?>
+                                    <span>&bull;</span>
+                                    <span><i class="bi bi-geo-alt me-1"></i><?= e($row['city']) ?></span>
+                                <?php endif; ?>
+                            <?php else: ?>
+                                <span>Form pendaftaran entitas perusahaan travel &amp; rental baru</span>
+                            <?php endif; ?>
+                        </div>
+                    </div>
+                </div>
+                <div class="d-flex align-items-center gap-2">
+                    <?php if ($id > 0): ?>
+                        <a class="btn btn-sm btn-outline-secondary rounded-pill px-3" href="<?= e(APP_URL) ?>/pages/companies/detail.php?id=<?= $id ?>" title="Lihat Detail Profil">
+                            <i class="bi bi-eye me-1"></i> Detail
+                        </a>
+                    <?php endif; ?>
+                    <a class="btn btn-sm btn-outline-primary rounded-pill px-3" href="<?= e(APP_URL) ?>/pages/companies/index.php">
+                        <i class="bi bi-arrow-left me-1"></i> Kembali ke Daftar
+                    </a>
+                </div>
+            </div>
         </div>
-        <a class="btn btn-outline-secondary btn-sm" href="<?= e(APP_URL) ?>/pages/companies/index.php">
-            <i class="bi bi-arrow-left me-1"></i> Kembali ke Daftar Perusahaan
-        </a>
     </div>
 
     <?= flash_html() ?>
@@ -314,18 +382,20 @@ require __DIR__ . '/../../includes/header.php';
     <?php endif; ?>
 
     <?php if ($id > 0): ?>
-    <ul class="nav nav-tabs mb-4" id="companyTabs">
-        <li class="nav-item">
-            <a class="nav-link <?= $tab === 'profile' ? 'active fw-bold' : '' ?>" href="?id=<?= $id ?>&tab=profile">
-                <i class="bi bi-building me-1"></i> Profil &amp; Legalitas
-            </a>
-        </li>
-        <li class="nav-item">
-            <a class="nav-link <?= $tab === 'payment' ? 'active fw-bold' : '' ?>" href="?id=<?= $id ?>&tab=payment&provider=<?= e($activeProv) ?>">
-                <i class="bi bi-qr-code-scan me-1"></i> Channel QRIS Otomatis
-            </a>
-        </li>
-    </ul>
+    <div class="mb-3">
+        <ul class="nav nav-pills gap-2" id="companyTabs">
+            <li class="nav-item">
+                <a class="nav-link <?= $tab === 'profile' ? 'active shadow-sm fw-semibold' : 'text-secondary bg-white border shadow-sm' ?> rounded-pill px-3 py-2" href="?id=<?= $id ?>&tab=profile">
+                    <i class="bi bi-building me-1"></i> Profil &amp; Legalitas
+                </a>
+            </li>
+            <li class="nav-item">
+                <a class="nav-link <?= $tab === 'payment' ? 'active shadow-sm fw-semibold' : 'text-secondary bg-white border shadow-sm' ?> rounded-pill px-3 py-2" href="?id=<?= $id ?>&tab=payment&provider=<?= e($activeProv) ?>">
+                    <i class="bi bi-qr-code-scan me-1"></i> Channel QRIS Otomatis
+                </a>
+            </li>
+        </ul>
+    </div>
     <?php endif; ?>
 
     <!-- ============================================================== -->
