@@ -49,8 +49,17 @@ $title = $id > 0 ? 'Ubah Karyawan' : 'Tambah Karyawan';
 $active = 'employees';
 require __DIR__ . '/../../includes/header.php';
 ?>
-<main class="col-12 col-md-9 col-lg-10 p-4">
-<h4 class="fw-bold mb-4"><?= e($title) ?></h4>
+<main class="col-12 col-md-9 col-lg-10 p-3 p-lg-4">
+<?= ui_page_header(
+    $title,
+    ['Dashboard' => 'pages/dashboard/index.php', 'Karyawan' => 'pages/employees/index.php', ($id > 0 ? $v('name') : 'Tambah Baru') => null],
+    $id > 0 ? array_values(array_filter([
+        !empty($v('code')) ? ['text' => $v('code'), 'class' => 'bg-primary-subtle text-primary border border-primary-subtle font-monospace'] : null,
+        ['text' => 'ID #' . $id, 'class' => 'bg-light text-secondary border'],
+        !empty($v('status')) ? ['text' => ucfirst($v('status')), 'class' => 'bg-' . ($v('status') === 'aktif' ? 'success' : 'secondary') . '-subtle text-' . ($v('status') === 'aktif' ? 'success' : 'secondary') . ' border'] : null,
+    ])) : [],
+    [['label' => 'Kembali ke Daftar', 'icon' => 'arrow-left', 'href' => 'pages/employees/index.php']]
+) ?>
 <?php if ($errors): ?>
     <div class="alert alert-danger">
         <ul class="mb-0">

@@ -149,3 +149,68 @@ function audit(string $action, string $description = ''): void
     $stmt->execute();
     $stmt->close();
 }
+
+/**
+ * Render standar breadcrumb navigasi ringkas.
+ * $items = ['Label' => 'url', 'Label Aktif' => null]
+ */
+function ui_breadcrumb(array $items): string
+{
+    if (empty($items)) {
+        return '';
+    }
+    $html = '<nav aria-label="breadcrumb" class="mb-2"><ol class="breadcrumb mb-0" style="font-size: 0.8rem;">';
+    $keys = array_keys($items);
+    $last = end($keys);
+    foreach ($items as $label => $url) {
+        if ($label === $last || empty($url)) {
+            $html .= '<li class="breadcrumb-item active text-dark" aria-current="page">' . e($label) . '</li>';
+        } else {
+            $href = str_starts_with($url, 'http') ? $url : APP_URL . '/' . ltrim($url, '/');
+            $html .= '<li class="breadcrumb-item"><a href="' . e($href) . '" class="text-decoration-none text-muted">' . e($label) . '</a></li>';
+        }
+    }
+    $html .= '</ol></nav>';
+    return $html;
+}
+
+/**
+ * Render standar baris judul & aksi ringkas (Page Header).
+ * $badges: list of ['text' => '...', 'class' => '...'] or plain strings
+ * $actions: list of ['label' => '...', 'href' => '...', 'icon' => '...', 'class' => '...']
+ */
+function ui_page_header(string $title, array $breadcrumb = [], array $badges = [], array $actions = [], string $meta = ''): string
+{
+    $html = ui_breadcrumb($breadcrumb);
+    $html .= '<div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-3">';
+    $html .= '<div class="d-flex align-items-center gap-2 flex-wrap">';
+    $html .= '<h4 class="fw-bold mb-0 text-dark">' . e($title) . '</h4>';
+
+    foreach ($badges as $b) {
+        if (is_string($b) && $b !== '') {
+            $html .= '<span class="badge bg-light text-secondary border px-2 py-1">' . e($b) . '</span>';
+        } elseif (is_array($b) && !empty($b['text'])) {
+            $cls = $b['class'] ?? 'bg-light text-secondary border';
+            $html .= '<span class="badge ' . e($cls) . ' px-2 py-1">' . e($b['text']) . '</span>';
+        }
+    }
+    if ($meta !== '') {
+        $html .= '<span class="text-muted small ms-1">&bull; ' . $meta . '</span>';
+    }
+    $html .= '</div>';
+
+    if (!empty($actions)) {
+        $html .= '<div class="d-flex align-items-center gap-2">';
+        foreach ($actions as $act) {
+            $cls = $act['class'] ?? 'btn btn-sm btn-outline-secondary';
+            $href = str_starts_with($act['href'], 'http') ? $act['href'] : APP_URL . '/' . ltrim($act['href'], '/');
+            $icon = !empty($act['icon']) ? '<i class="bi bi-' . e($act['icon']) . ' me-1"></i>' : '';
+            $html .= '<a class="' . e($cls) . '" href="' . e($href) . '">' . $icon . e($act['label']) . '</a>';
+        }
+        $html .= '</div>';
+    }
+    $html .= '</div>';
+
+    return $html;
+}
+

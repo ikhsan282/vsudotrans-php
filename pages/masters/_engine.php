@@ -494,16 +494,16 @@ function master_list(string $key): void
     $query_base = $q !== '' ? 'q=' . urlencode($q) : '';
     require __DIR__ . '/../../includes/header.php';
     ?>
-    <main class="col-12 col-md-9 col-lg-10 p-4">
-        <div class="d-flex justify-content-between align-items-center mb-3">
-            <h4 class="fw-bold mb-0"><?= e($spec['title']) ?></h4>
-            <?php if (can($spec['perm_manage'])): ?>
-                <div>
-                    <a class="btn btn-outline-primary btn-sm" href="<?= e(master_base_url($spec)) ?>/import.php"><i class="bi bi-upload"></i> Import CSV</a>
-                    <a class="btn btn-primary btn-sm" href="<?= e(master_base_url($spec)) ?>/form.php"><i class="bi bi-plus-lg"></i> Tambah</a>
-                </div>
-            <?php endif; ?>
-        </div>
+    <main class="col-12 col-md-9 col-lg-10 p-3 p-lg-4">
+        <?= ui_page_header(
+            $spec['title'],
+            ['Dashboard' => 'pages/dashboard/index.php', ($spec['module'] === 'hr' ? 'Master HR' : 'Master Data') => null, $spec['title'] => null],
+            [],
+            array_filter([
+                can($spec['perm_manage']) ? ['label' => 'Import CSV', 'icon' => 'upload', 'href' => master_base_url($spec) . '/import.php', 'class' => 'btn btn-outline-primary btn-sm'] : null,
+                can($spec['perm_manage']) ? ['label' => 'Tambah', 'icon' => 'plus-lg', 'href' => master_base_url($spec) . '/form.php', 'class' => 'btn btn-primary btn-sm'] : null,
+            ])
+        ) ?>
         <?= master_tabs($key) ?>
         <div class="card shadow-sm border-0 mb-3">
             <div class="card-body py-2">
@@ -666,8 +666,17 @@ function master_form(string $key): void
     }
     require __DIR__ . '/../../includes/header.php';
     ?>
-    <main class="col-12 col-md-9 col-lg-10 p-4">
-        <h4 class="fw-bold mb-3"><?= e($title) ?></h4>
+    <main class="col-12 col-md-9 col-lg-10 p-3 p-lg-4">
+        <?= ui_page_header(
+            $title,
+            ['Dashboard' => 'pages/dashboard/index.php', $spec['title'] => master_base_url($spec) . '/index.php', ($id > 0 ? 'Ubah' : 'Tambah Baru') => null],
+            $id > 0 ? array_values(array_filter([
+                !empty($row['code']) ? ['text' => $row['code'], 'class' => 'bg-primary-subtle text-primary border border-primary-subtle font-monospace'] : null,
+                ['text' => 'ID #' . $id, 'class' => 'bg-light text-secondary border'],
+                isset($row['is_active']) ? ['text' => !empty($row['is_active']) ? 'Aktif' : 'Nonaktif', 'class' => 'bg-' . (!empty($row['is_active']) ? 'success' : 'secondary') . '-subtle text-' . (!empty($row['is_active']) ? 'success' : 'secondary') . ' border'] : null,
+            ])) : [],
+            [['label' => 'Kembali ke Daftar', 'icon' => 'arrow-left', 'href' => master_base_url($spec) . '/index.php']]
+        ) ?>
         <?php if ($errors): ?>
             <div class="alert alert-danger py-2"><?php foreach ($errors as $err): ?><div><?= e($err) ?></div><?php endforeach; ?></div>
         <?php endif; ?>

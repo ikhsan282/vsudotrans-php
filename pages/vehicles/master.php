@@ -203,11 +203,13 @@ $active = 'vehicles';
 $title  = 'Master ' . $m['label'];
 require __DIR__ . '/../../includes/header.php';
 ?>
-<main class="col-12 col-md-9 col-lg-10 p-4">
-    <div class="d-flex justify-content-between align-items-center mb-3">
-        <h4 class="fw-bold mb-0">Master Kendaraan</h4>
-        <a class="btn btn-outline-secondary btn-sm" href="<?= e(APP_URL) ?>/pages/vehicles/index.php">Kembali ke Kendaraan</a>
-    </div>
+<main class="col-12 col-md-9 col-lg-10 p-3 p-lg-4">
+    <?= ui_page_header(
+        'Master ' . $m['label'],
+        ['Dashboard' => 'pages/dashboard/index.php', 'Kendaraan' => 'pages/vehicles/index.php', 'Master Kendaraan' => null],
+        [],
+        [['label' => 'Kembali ke Kendaraan', 'icon' => 'arrow-left', 'href' => 'pages/vehicles/index.php']]
+    ) ?>
     <ul class="nav nav-pills mb-3">
         <?php foreach ($MASTERS as $k => $def): ?>
             <li class="nav-item"><a class="nav-link<?= $k === $key ? ' active' : '' ?>" href="?t=<?= e($k) ?>"><?= e($def['label']) ?></a></li>

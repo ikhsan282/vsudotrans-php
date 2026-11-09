@@ -20,9 +20,16 @@ $active = 'employees';
 $title = 'Karyawan';
 require __DIR__ . '/../../includes/header.php';
 ?>
-<main class="col-12 col-md-9 col-lg-10 p-4">
-<h4 class="fw-bold mb-4"><?= e($title) ?></h4>
-<div class="card shadow-sm">
+<main class="col-12 col-md-9 col-lg-10 p-3 p-lg-4">
+<?= ui_page_header(
+    'Karyawan',
+    ['Dashboard' => 'pages/dashboard/index.php', 'Karyawan' => null],
+    [],
+    $can_manage ? [
+        ['label' => 'Tambah Karyawan', 'icon' => 'plus-lg', 'href' => 'pages/employees/form.php', 'class' => 'btn btn-primary btn-sm'],
+    ] : []
+) ?>
+<div class="card shadow-sm border-0">
     <div class="card-body">
         <form method="get" class="row g-2 align-items-center mb-3">
             <div class="col-auto flex-grow-1">

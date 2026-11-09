@@ -82,8 +82,17 @@ $active = 'travel';
 $title  = $id > 0 ? 'Ubah Penumpang' : 'Tambah Penumpang';
 require __DIR__ . '/../../../includes/header.php';
 ?>
-<main class="col-12 col-md-9 col-lg-10 p-4">
-    <h4 class="fw-bold mb-3"><?= e($title) ?></h4>
+<main class="col-12 col-md-9 col-lg-10 p-3 p-lg-4">
+    <?= ui_page_header(
+        $title,
+        ['Dashboard' => 'pages/dashboard/index.php', 'Travel' => null, 'Penumpang' => 'pages/travel/passengers/index.php', ($id > 0 ? $row['name'] : 'Tambah Baru') => null],
+        $id > 0 ? array_values(array_filter([
+            !empty($row['code']) ? ['text' => $row['code'], 'class' => 'bg-primary-subtle text-primary border border-primary-subtle font-monospace'] : null,
+            ['text' => 'ID #' . $id, 'class' => 'bg-light text-secondary border'],
+            !empty($row['phone_number']) ? ['text' => $row['phone_number'], 'class' => 'bg-light text-secondary border'] : null,
+        ])) : [],
+        [['label' => 'Kembali ke Daftar', 'icon' => 'arrow-left', 'href' => 'pages/travel/passengers/index.php']]
+    ) ?>
     <div class="card shadow-sm border-0"><div class="card-body">
     <form method="post" action="">
         <?= csrf_field() ?>

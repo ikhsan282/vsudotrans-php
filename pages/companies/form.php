@@ -304,43 +304,20 @@ $title  = $id > 0 ? ('Pengaturan ' . $row['name']) : 'Tambah Perusahaan';
 require __DIR__ . '/../../includes/header.php';
 ?>
 <main class="col-12 col-md-9 col-lg-10 p-3 p-lg-4">
-    <!-- Breadcrumb Navigasi -->
-    <nav aria-label="breadcrumb" class="mb-2">
-        <ol class="breadcrumb mb-0" style="font-size: 0.8rem;">
-            <li class="breadcrumb-item"><a href="<?= e(APP_URL) ?>/pages/dashboard/index.php" class="text-decoration-none text-muted">Dashboard</a></li>
-            <li class="breadcrumb-item"><a href="<?= e(APP_URL) ?>/pages/companies/index.php" class="text-decoration-none text-muted">Perusahaan</a></li>
-            <li class="breadcrumb-item active text-dark" aria-current="page"><?= $id > 0 ? e($row['name']) : 'Tambah Baru' ?></li>
-        </ol>
-    </nav>
-
-    <!-- Header Ringkas (Title Bar & Aksi) -->
-    <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-3">
-        <div class="d-flex align-items-center gap-2 flex-wrap">
-            <h4 class="fw-bold mb-0 text-dark"><?= e($id > 0 ? $row['name'] : 'Tambah Perusahaan') ?></h4>
-            <?php if ($id > 0): ?>
-                <span class="badge bg-primary-subtle text-primary border border-primary-subtle font-monospace px-2 py-1">
-                    <?= e($row['code']) ?>
-                </span>
-                <span class="badge bg-light text-secondary border px-2 py-1">ID #<?= $id ?></span>
-                <span class="badge bg-<?= !empty($row['is_active']) ? 'success' : 'secondary' ?>-subtle text-<?= !empty($row['is_active']) ? 'success' : 'secondary' ?> border border-<?= !empty($row['is_active']) ? 'success' : 'secondary' ?>-subtle px-2 py-1">
-                    <?= !empty($row['is_active']) ? 'Aktif' : 'Nonaktif' ?>
-                </span>
-                <?php if (!empty($curGroupName)): ?>
-                    <span class="text-muted small ms-1">&bull; Grup: <?= e($curGroupName) ?></span>
-                <?php endif; ?>
-            <?php endif; ?>
-        </div>
-        <div class="d-flex align-items-center gap-2">
-            <?php if ($id > 0): ?>
-                <a class="btn btn-sm btn-outline-secondary" href="<?= e(APP_URL) ?>/pages/companies/detail.php?id=<?= $id ?>">
-                    <i class="bi bi-eye me-1"></i> Detail
-                </a>
-            <?php endif; ?>
-            <a class="btn btn-sm btn-outline-secondary" href="<?= e(APP_URL) ?>/pages/companies/index.php">
-                <i class="bi bi-arrow-left me-1"></i> Kembali ke Daftar
-            </a>
-        </div>
-    </div>
+    <?= ui_page_header(
+        $id > 0 ? $row['name'] : 'Tambah Perusahaan',
+        ['Dashboard' => 'pages/dashboard/index.php', 'Perusahaan' => 'pages/companies/index.php', ($id > 0 ? $row['name'] : 'Tambah Baru') => null],
+        $id > 0 ? [
+            ['text' => $row['code'], 'class' => 'bg-primary-subtle text-primary border border-primary-subtle font-monospace'],
+            ['text' => 'ID #' . $id, 'class' => 'bg-light text-secondary border'],
+            ['text' => !empty($row['is_active']) ? 'Aktif' : 'Nonaktif', 'class' => 'bg-' . (!empty($row['is_active']) ? 'success' : 'secondary') . '-subtle text-' . (!empty($row['is_active']) ? 'success' : 'secondary') . ' border'],
+        ] : [],
+        array_merge(
+            $id > 0 ? [['label' => 'Detail', 'icon' => 'eye', 'href' => 'pages/companies/detail.php?id=' . $id]] : [],
+            [['label' => 'Kembali ke Daftar', 'icon' => 'arrow-left', 'href' => 'pages/companies/index.php']]
+        ),
+        $id > 0 && !empty($curGroupName) ? 'Grup: ' . e($curGroupName) : ''
+    ) ?>
 
     <?= flash_html() ?>
     <?php if ($errors): ?>

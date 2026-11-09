@@ -38,18 +38,16 @@ $active = 'vehicles';
 $title  = 'Kendaraan';
 require __DIR__ . '/../../includes/header.php';
 ?>
-<main class="col-12 col-md-9 col-lg-10 p-4">
-    <div class="d-flex justify-content-between align-items-center mb-3">
-        <h4 class="fw-bold mb-0">Kendaraan</h4>
-        <div class="d-flex gap-2">
-            <?php if (can('vehicles.manage')): ?>
-                <a class="btn btn-outline-secondary btn-sm" href="<?= e(APP_URL) ?>/pages/vehicles/master.php">Master</a>
-                <?php if (active_company_id() !== null): ?>
-                    <a class="btn btn-primary btn-sm" href="<?= e(APP_URL) ?>/pages/vehicles/form.php"><i class="bi bi-plus-lg"></i> Tambah</a>
-                <?php endif; ?>
-            <?php endif; ?>
-        </div>
-    </div>
+<main class="col-12 col-md-9 col-lg-10 p-3 p-lg-4">
+    <?= ui_page_header(
+        'Armada Kendaraan',
+        ['Dashboard' => 'pages/dashboard/index.php', 'Kendaraan' => null],
+        [],
+        can('vehicles.manage') ? array_filter([
+            ['label' => 'Master Kendaraan', 'icon' => 'gear', 'href' => 'pages/vehicles/master.php', 'class' => 'btn btn-outline-secondary btn-sm'],
+            active_company_id() !== null ? ['label' => 'Tambah Unit', 'icon' => 'plus-lg', 'href' => 'pages/vehicles/form.php', 'class' => 'btn btn-primary btn-sm'] : null,
+        ]) : []
+    ) ?>
     <form class="row g-2 mb-3" method="get">
         <div class="col-auto"><input class="form-control form-control-sm" name="q" placeholder="Cari nomor polisi / rangka" value="<?= e($q) ?>"></div>
         <div class="col-auto"><button class="btn btn-sm btn-outline-secondary">Cari</button></div>

@@ -20,41 +20,20 @@ $title  = 'Detail ' . $company['name'];
 require __DIR__ . '/../../includes/header.php';
 ?>
 <main class="col-12 col-md-9 col-lg-10 p-3 p-lg-4">
-    <!-- Breadcrumb Navigasi -->
-    <nav aria-label="breadcrumb" class="mb-2">
-        <ol class="breadcrumb mb-0" style="font-size: 0.8rem;">
-            <li class="breadcrumb-item"><a href="<?= e(APP_URL) ?>/pages/dashboard/index.php" class="text-decoration-none text-muted">Dashboard</a></li>
-            <li class="breadcrumb-item"><a href="<?= e(APP_URL) ?>/pages/companies/index.php" class="text-decoration-none text-muted">Perusahaan</a></li>
-            <li class="breadcrumb-item active text-dark" aria-current="page">Detail <?= e($company['name']) ?></li>
-        </ol>
-    </nav>
-
-    <!-- Header Ringkas (Title Bar & Aksi) -->
-    <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-3">
-        <div class="d-flex align-items-center gap-2 flex-wrap">
-            <h4 class="fw-bold mb-0 text-dark"><?= e($company['name']) ?></h4>
-            <span class="badge bg-primary-subtle text-primary border border-primary-subtle font-monospace px-2 py-1">
-                <?= e($company['code']) ?>
-            </span>
-            <span class="badge bg-light text-secondary border px-2 py-1">ID #<?= (int) $company['id'] ?></span>
-            <span class="badge bg-<?= !empty($company['is_active']) ? 'success' : 'secondary' ?>-subtle text-<?= !empty($company['is_active']) ? 'success' : 'secondary' ?> border border-<?= !empty($company['is_active']) ? 'success' : 'secondary' ?>-subtle px-2 py-1">
-                <?= !empty($company['is_active']) ? 'Aktif' : 'Nonaktif' ?>
-            </span>
-            <?php if (!empty($company['group_name'])): ?>
-                <span class="text-muted small ms-1">&bull; Grup: <?= e($company['group_name']) ?></span>
-            <?php endif; ?>
-        </div>
-        <div class="d-flex align-items-center gap-2">
-            <?php if (can('companies.manage')): ?>
-                <a class="btn btn-sm btn-primary" href="<?= e(APP_URL) ?>/pages/companies/form.php?id=<?= (int) $company['id'] ?>">
-                    <i class="bi bi-pencil-square me-1"></i> Ubah Pengaturan
-                </a>
-            <?php endif; ?>
-            <a class="btn btn-sm btn-outline-secondary" href="<?= e(APP_URL) ?>/pages/companies/index.php">
-                <i class="bi bi-arrow-left me-1"></i> Kembali ke Daftar
-            </a>
-        </div>
-    </div>
+    <?= ui_page_header(
+        $company['name'],
+        ['Dashboard' => 'pages/dashboard/index.php', 'Perusahaan' => 'pages/companies/index.php', 'Detail ' . $company['name'] => null],
+        [
+            ['text' => $company['code'], 'class' => 'bg-primary-subtle text-primary border border-primary-subtle font-monospace'],
+            ['text' => 'ID #' . (int) $company['id'], 'class' => 'bg-light text-secondary border'],
+            ['text' => !empty($company['is_active']) ? 'Aktif' : 'Nonaktif', 'class' => 'bg-' . (!empty($company['is_active']) ? 'success' : 'secondary') . '-subtle text-' . (!empty($company['is_active']) ? 'success' : 'secondary') . ' border'],
+        ],
+        array_merge(
+            can('companies.manage') ? [['label' => 'Ubah Pengaturan', 'icon' => 'pencil-square', 'href' => 'pages/companies/form.php?id=' . (int) $company['id'], 'class' => 'btn btn-sm btn-primary']] : [],
+            [['label' => 'Kembali ke Daftar', 'icon' => 'arrow-left', 'href' => 'pages/companies/index.php']]
+        ),
+        !empty($company['group_name']) ? 'Grup: ' . e($company['group_name']) : ''
+    ) ?>
     <div class="card shadow-sm border-0" style="max-width: 760px;">
         <dl class="row mb-0 card-body">
             <dt class="col-sm-3">Grup</dt><dd class="col-sm-9"><?= e($company['group_name']) ?></dd>

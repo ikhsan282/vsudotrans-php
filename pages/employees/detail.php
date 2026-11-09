@@ -38,8 +38,21 @@ $active = 'employees';
 $title = 'Detail Karyawan';
 require __DIR__ . '/../../includes/header.php';
 ?>
-<main class="col-12 col-md-9 col-lg-10 p-4">
-<h4 class="fw-bold mb-4"><?= e($title) ?></h4>
+<main class="col-12 col-md-9 col-lg-10 p-3 p-lg-4">
+<?= ui_page_header(
+    $row['name'],
+    ['Dashboard' => 'pages/dashboard/index.php', 'Karyawan' => 'pages/employees/index.php', 'Detail ' . $row['name'] => null],
+    [
+        ['text' => $row['code'], 'class' => 'bg-primary-subtle text-primary border border-primary-subtle font-monospace'],
+        ['text' => 'ID #' . (int) $row['id'], 'class' => 'bg-light text-secondary border'],
+        ['text' => ucfirst((string) $row['status']), 'class' => 'bg-' . ($row['status'] === 'aktif' ? 'success' : 'secondary') . '-subtle text-' . ($row['status'] === 'aktif' ? 'success' : 'secondary') . ' border'],
+    ],
+    array_merge(
+        can('employees.manage') ? [['label' => 'Ubah Karyawan', 'icon' => 'pencil-square', 'href' => 'pages/employees/form.php?id=' . (int) $row['id'], 'class' => 'btn btn-sm btn-primary']] : [],
+        [['label' => 'Kembali ke Daftar', 'icon' => 'arrow-left', 'href' => 'pages/employees/index.php']]
+    ),
+    !empty($row['job_title']) ? 'Jabatan: ' . e($row['job_title']) : ''
+) ?>
 <div class="card shadow-sm">
     <div class="card-body">
         <dl class="row mb-0">

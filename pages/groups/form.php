@@ -84,8 +84,17 @@ $active = 'groups';
 $title  = $id > 0 ? 'Ubah Grup' : 'Tambah Grup';
 require __DIR__ . '/../../includes/header.php';
 ?>
-<main class="col-12 col-md-9 col-lg-10 p-4">
-    <h4 class="fw-bold mb-3"><?= e($title) ?></h4>
+<main class="col-12 col-md-9 col-lg-10 p-3 p-lg-4">
+    <?= ui_page_header(
+        $title,
+        ['Dashboard' => 'pages/dashboard/index.php', 'Grup' => 'pages/groups/index.php', ($id > 0 ? $name : 'Tambah Baru') => null],
+        $id > 0 ? array_values(array_filter([
+            !empty($code) ? ['text' => $code, 'class' => 'bg-primary-subtle text-primary border border-primary-subtle font-monospace'] : null,
+            ['text' => 'ID #' . $id, 'class' => 'bg-light text-secondary border'],
+            ['text' => $active ? 'Aktif' : 'Nonaktif', 'class' => 'bg-' . ($active ? 'success' : 'secondary') . '-subtle text-' . ($active ? 'success' : 'secondary') . ' border'],
+        ])) : [],
+        [['label' => 'Kembali ke Daftar', 'icon' => 'arrow-left', 'href' => 'pages/groups/index.php']]
+    ) ?>
     <?php if ($errors): ?>
         <div class="alert alert-danger py-2"><?php foreach ($errors as $err): ?><div><?= e($err) ?></div><?php endforeach; ?></div>
     <?php endif; ?>

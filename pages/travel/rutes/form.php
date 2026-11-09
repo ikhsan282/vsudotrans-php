@@ -103,8 +103,17 @@ $active = 'travel';
 $title  = $id > 0 ? 'Ubah Rute' : 'Tambah Rute';
 require __DIR__ . '/../../../includes/header.php';
 ?>
-<main class="col-12 col-md-9 col-lg-10 p-4">
-    <h4 class="fw-bold mb-3"><?= e($title) ?></h4>
+<main class="col-12 col-md-9 col-lg-10 p-3 p-lg-4">
+    <?= ui_page_header(
+        $title,
+        ['Dashboard' => 'pages/dashboard/index.php', 'Travel' => null, 'Rute' => 'pages/travel/rutes/index.php', ($id > 0 ? $row['name'] : 'Tambah Baru') => null],
+        $id > 0 ? array_values(array_filter([
+            !empty($row['code']) ? ['text' => $row['code'], 'class' => 'bg-primary-subtle text-primary border border-primary-subtle font-monospace'] : null,
+            ['text' => 'ID #' . $id, 'class' => 'bg-light text-secondary border'],
+            isset($row['is_active']) ? ['text' => !empty($row['is_active']) ? 'Aktif' : 'Nonaktif', 'class' => 'bg-' . (!empty($row['is_active']) ? 'success' : 'secondary') . '-subtle text-' . (!empty($row['is_active']) ? 'success' : 'secondary') . ' border'] : null,
+        ])) : [],
+        [['label' => 'Kembali ke Daftar', 'icon' => 'arrow-left', 'href' => 'pages/travel/rutes/index.php']]
+    ) ?>
     <div class="card shadow-sm border-0"><div class="card-body">
     <form method="post" action="">
         <?= csrf_field() ?>

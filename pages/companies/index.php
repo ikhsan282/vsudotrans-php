@@ -25,13 +25,15 @@ $active = 'companies';
 $title  = 'Perusahaan';
 require __DIR__ . '/../../includes/header.php';
 ?>
-<main class="col-12 col-md-9 col-lg-10 p-4">
-    <div class="d-flex justify-content-between align-items-center mb-3">
-        <h4 class="fw-bold mb-0">Perusahaan</h4>
-        <?php if (is_super_admin() && can('companies.manage')): ?>
-            <a class="btn btn-primary btn-sm" href="<?= e(APP_URL) ?>/pages/companies/form.php"><i class="bi bi-plus-lg"></i> Tambah</a>
-        <?php endif; ?>
-    </div>
+<main class="col-12 col-md-9 col-lg-10 p-3 p-lg-4">
+    <?= ui_page_header(
+        'Perusahaan',
+        ['Dashboard' => 'pages/dashboard/index.php', 'Perusahaan' => null],
+        [],
+        is_super_admin() && can('companies.manage') ? [
+            ['label' => 'Tambah', 'icon' => 'plus-lg', 'href' => 'pages/companies/form.php', 'class' => 'btn btn-primary btn-sm'],
+        ] : []
+    ) ?>
     <div class="card shadow-sm border-0">
         <div class="table-responsive">
             <table class="table table-hover mb-0 align-middle">

@@ -83,8 +83,16 @@ $active = 'travel';
 $title  = $id > 0 ? 'Ubah Jadwal' : 'Tambah Jadwal';
 require __DIR__ . '/../../../includes/header.php';
 ?>
-<main class="col-12 col-md-9 col-lg-10 p-4">
-    <h4 class="fw-bold mb-3"><?= e($title) ?></h4>
+<main class="col-12 col-md-9 col-lg-10 p-3 p-lg-4">
+    <?= ui_page_header(
+        $title,
+        ['Dashboard' => 'pages/dashboard/index.php', 'Travel' => null, 'Jadwal' => 'pages/travel/schedules/index.php', ($id > 0 ? 'Ubah' : 'Tambah Baru') => null],
+        $id > 0 ? [
+            ['text' => 'ID #' . $id, 'class' => 'bg-light text-secondary border'],
+            ['text' => $row['start'] . ' - ' . $row['end'], 'class' => 'bg-primary-subtle text-primary border border-primary-subtle font-monospace'],
+        ] : [],
+        [['label' => 'Kembali ke Daftar', 'icon' => 'arrow-left', 'href' => 'pages/travel/schedules/index.php']]
+    ) ?>
     <div class="card shadow-sm border-0"><div class="card-body">
     <form method="post" action="">
         <?= csrf_field() ?>
