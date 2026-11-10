@@ -129,14 +129,9 @@ $title = 'Tiket' . ($row ? ' ' . $row['document_number'] : '');
         <div class="card-body">
             <table class="tk-lay tk-head w-100"><tr>
                 <td class="align-top" style="width:340px">
-                    <?php
-                    $logoPath = trim((string) ($row['logo'] ?? ''));
-                    if ($logoPath !== '' && !str_contains($logoPath, '/')) {
-                        $logoPath = 'assets/brand/' . $logoPath;
-                    }
-                    ?>
-                    <?php if ($logoPath !== ''): ?>
-                        <img src="<?= e(APP_URL . '/' . ltrim($logoPath, '/')) ?>" alt="<?= e($row['company_name']) ?>" class="tk-logo">
+                    <?php $logoSrc = resolve_asset_url((string) ($row['logo'] ?? '')); ?>
+                    <?php if ($logoSrc !== ''): ?>
+                        <img src="<?= e($logoSrc) ?>" alt="<?= e($row['company_name']) ?>" class="tk-logo">
                     <?php else: ?>
                         <div class="fw-bold" style="font-size:14pt"><?= e($row['company_name']) ?></div>
                     <?php endif; ?>
@@ -203,14 +198,9 @@ $title = 'Tiket' . ($row ? ' ' . $row['document_number'] : '');
                     <div><span class="text-muted">pada tanggal</span> <strong><?= e(tanggal_indo((string) $row['date'])) ?></strong></div>
                 </td>
                 <td class="text-end align-top" style="width:170px;padding-top:22pt">
-                    <?php
-                    $stampPath = trim((string) ($row['stamp'] ?? ''));
-                    if ($stampPath !== '' && !str_contains($stampPath, '/')) {
-                        $stampPath = 'assets/brand/' . $stampPath;
-                    }
-                    ?>
-                    <?php if ($stampPath !== ''): ?>
-                        <img class="tk-stamp" src="<?= e(APP_URL . '/' . ltrim($stampPath, '/')) ?>" alt="Stempel <?= e($row['company_name']) ?>">
+                    <?php $stampSrc = resolve_asset_url((string) ($row['stamp'] ?? '')); ?>
+                    <?php if ($stampSrc !== ''): ?>
+                        <img class="tk-stamp" src="<?= e($stampSrc) ?>" alt="Stempel <?= e($row['company_name']) ?>">
                     <?php endif; ?>
                 </td>
             </tr></table>

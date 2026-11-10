@@ -274,12 +274,13 @@ INSERT INTO `groups` (`id`, `code`, `name`, `note`) VALUES
 (1, 'TM', 'Trans Mandiri', 'Grup Trans Mandiri'),
 (2, 'LIZ', 'LIZ', 'LIZ Wisata Alam Indah');
 
+-- logo & stamp = path Azure Blob (container `vsudotrans`, prefix {company_code}/company/...)
 INSERT INTO `companies` (`id`, `group_id`, `code`, `name`, `country_code`, `phone_number`, `email`, `address`, `city`, `logo`, `stamp`) VALUES
-(1, 1, 'MTM', 'Maura Trans Mandiri', '+62', '021-0000000', 'info@mauratransmandiri.com', 'Jl. Contoh No. 1', 'Tangerang', 'logo-transmandiri.png', 'assets/brand/stamp-mtm.png'),
-(2, 1, 'NTM', 'Nugi Trans Mandiri', '+62', '021-0000000', 'info@nugitransmandiri.com', 'Jl. Contoh No. 2', 'Tangerang', 'logo-transmandiri.png', NULL),
-(3, 1, 'GTM', 'Gibran Trans Mandiri', '+62', '021-0000000', 'info@gibrantransmandiri.com', 'Jl. Contoh No. 3', 'Tangerang', 'logo-transmandiri.png', NULL),
-(4, 1, 'TTM', 'Trisula Trans Mandiri', '+62', '021-0000000', 'info@trisulatransmandiri.com', 'Jl. Contoh No. 4', 'Tangerang', 'logo-transmandiri.png', NULL),
-(5, 2, 'LIZ', 'LIZ Wisata Alam Indah', '+62', '021-0000000', 'info@lizwisata.com', 'Jl. Contoh No. 5', 'Tangerang', 'logo-transmandiri.png', NULL);
+(1, 1, 'MTM', 'Maura Trans Mandiri', '+62', '021-0000000', 'info@mauratransmandiri.com', 'Jl. Contoh No. 1', 'Tangerang', 'mtm/company/logo_mtm.png', 'mtm/company/stamp_mtm.png'),
+(2, 1, 'NTM', 'Nugi Trans Mandiri', '+62', '021-0000000', 'info@nugitransmandiri.com', 'Jl. Contoh No. 2', 'Tangerang', 'ntm/company/logo_ntm.png', NULL),
+(3, 1, 'GTM', 'Gibran Trans Mandiri', '+62', '021-0000000', 'info@gibrantransmandiri.com', 'Jl. Contoh No. 3', 'Tangerang', 'gtm/company/logo_gtm.png', NULL),
+(4, 1, 'TTM', 'Trisula Trans Mandiri', '+62', '021-0000000', 'info@trisulatransmandiri.com', 'Jl. Contoh No. 4', 'Tangerang', 'ttm/company/logo_ttm.png', NULL),
+(5, 2, 'LIZ', 'LIZ Wisata Alam Indah', '+62', '021-0000000', 'info@lizwisata.com', 'Jl. Contoh No. 5', 'Tangerang', 'liz/company/logo_liz.png', NULL);
 
 INSERT INTO `branches` (`id`, `company_id`, `code`, `name`, `country_code`, `phone_number`) VALUES
 (1, 1, 'PST', 'Kantor Pusat', '+62', '021-0000001'),
@@ -1005,8 +1006,6 @@ CREATE TABLE `payment_methods` (
   `name` VARCHAR(255) NOT NULL,
   `account_name` VARCHAR(255) DEFAULT NULL,
   `account_number` VARCHAR(50) DEFAULT NULL,
-  `qr_image` LONGBLOB DEFAULT NULL COMMENT 'gambar QR mentah',
-  `qr_mime` VARCHAR(60) DEFAULT NULL,
   `qr_blob_path` VARCHAR(255) DEFAULT NULL COMMENT 'path gambar QR di Azure Blob Storage',
   `instructions` VARCHAR(2000) DEFAULT NULL,
   `sort_order` INT(11) NOT NULL DEFAULT 0,

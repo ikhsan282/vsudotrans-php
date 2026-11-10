@@ -151,8 +151,8 @@ ticket_api_reply(200, [
             'website'   => $row['company_website'],
             'address'   => $row['company_address'],
             'city'      => $row['company_city'],
-            'logo_url'  => !empty($row['company_logo']) ? ($baseUrl . '/assets/brand/' . ltrim(basename((string) $row['company_logo']), '/')) : null,
-            'stamp_url' => !empty($row['company_stamp']) ? ($baseUrl . '/' . ltrim((string) $row['company_stamp'], '/')) : null,
+            'logo_url'  => !empty($row['company_logo']) ? (azure_blob_url((string) $row['company_logo']) ?: null) : null,
+            'stamp_url' => !empty($row['company_stamp']) ? (azure_blob_url((string) $row['company_stamp']) ?: null) : null,
         ],
         'route'            => [
             'origin_city'          => $row['city_from'],

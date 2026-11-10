@@ -118,9 +118,11 @@ function azure_blob_company_prefix(?int $company_id = null): string
 /**
  * Susun path blob standar: {company_code}/{module}/{sub_folder}/{slug}_{timestamp}_{rand}.{ext}
  */
-function azure_blob_build_path(?int $company_id, string $module, string $sub_folder, string $slug, string $ext): string
+function azure_blob_build_path(?int $company_id, string $module, string $sub_folder, string $slug, string $ext, ?string $company_code = null): string
 {
-    $prefix = azure_blob_company_prefix($company_id);
+    // $company_code dipakai bila perusahaan belum punya ID (mis. saat membuat perusahaan baru).
+    $code_clean = $company_code !== null ? strtolower(preg_replace('/[^a-zA-Z0-9\-]/', '', $company_code)) : '';
+    $prefix = $code_clean !== '' ? $code_clean : azure_blob_company_prefix($company_id);
     $module = strtolower(preg_replace('/[^a-zA-Z0-9\-_\/]/', '', trim($module, '/')));
     $sub    = trim(preg_replace('/[^a-zA-Z0-9\-_\/]/', '-', trim($sub_folder, '/')), '-/');
     $slug   = strtolower(trim(preg_replace('/[^a-zA-Z0-9\-_]/', '-', $slug), '-')) ?: 'file';
@@ -298,98 +300,66 @@ function azure_blob_ensure_container(): bool
 }
 
 /**
- * Unggah data biner ke Azure Blob Storage (dengan fallback ke folder uploads/ lokal jika offline).
+ * Unggah data biner ke Azure Blob Storage. false bila Azure belum dikonfigurasi / gagal.
  */
 function azure_blob_put(string $blob_path, string $binary_data, string $content_type = 'application/octet-stream'): bool
 {
     $blob_path = ltrim(str_replace('\\', '/', trim($blob_path)), '/');
     $cfg = azure_blob_config();
-
-    if ($cfg) {
-        azure_blob_ensure_container();
-        $encoded = azure_blob_encode_path($blob_path);
-        $res = azure_blob_request(
-            'PUT',
-            $cfg['container'] . '/' . $encoded,
-            [],
-            $binary_data,
-            $content_type,
-            ['x-ms-blob-type' => 'BlockBlob']
-        );
-        if ($res['status'] === 201) {
-            return true;
-        }
+    if (!$cfg || $blob_path === '') {
+        return false;
     }
 
-    // Fallback lokal di uploads/{blob_path} bila lingkungan offline / tes CLI tanpa internet
-    $local_full = dirname(__DIR__) . '/uploads/' . $blob_path;
-    $dir = dirname($local_full);
-    if (!is_dir($dir)) {
-        @mkdir($dir, 0775, true);
-    }
-    return @file_put_contents($local_full, $binary_data) !== false;
+    azure_blob_ensure_container();
+    $encoded = azure_blob_encode_path($blob_path);
+    $res = azure_blob_request(
+        'PUT',
+        $cfg['container'] . '/' . $encoded,
+        [],
+        $binary_data,
+        $content_type,
+        ['x-ms-blob-type' => 'BlockBlob']
+    );
+    return $res['status'] === 201;
 }
 
 /**
- * Unduh isi blob dari Azure Storage (atau dari fallback lokal uploads/).
+ * Unduh isi blob dari Azure Storage.
  * Mengembalikan ['data' => string, 'mime' => string] atau null bila tidak ditemukan.
  */
 function azure_blob_get(string $blob_path): ?array
 {
     $blob_path = ltrim(str_replace('\\', '/', trim($blob_path)), '/');
-    if ($blob_path === '') {
+    $cfg = azure_blob_config();
+    if (!$cfg || $blob_path === '') {
         return null;
     }
 
-    $cfg = azure_blob_config();
-    if ($cfg) {
-        $encoded = azure_blob_encode_path($blob_path);
-        $res = azure_blob_request('GET', $cfg['container'] . '/' . $encoded);
-        if ($res['status'] === 200) {
-            return [
-                'data' => $res['body'],
-                'mime' => $res['headers']['content-type'] ?? 'application/octet-stream',
-            ];
-        }
+    $encoded = azure_blob_encode_path($blob_path);
+    $res = azure_blob_request('GET', $cfg['container'] . '/' . $encoded);
+    if ($res['status'] !== 200) {
+        return null;
     }
-
-    $local_full = dirname(__DIR__) . '/uploads/' . $blob_path;
-    if (is_file($local_full)) {
-        $mime = @mime_content_type($local_full) ?: 'application/octet-stream';
-        $data = @file_get_contents($local_full);
-        if ($data !== false) {
-            return ['data' => $data, 'mime' => $mime];
-        }
-    }
-    return null;
+    return [
+        'data' => $res['body'],
+        'mime' => $res['headers']['content-type'] ?? 'application/octet-stream',
+    ];
 }
 
 /**
- * Hapus blob dari Azure Storage (dan fallback lokal bila ada).
+ * Hapus blob dari Azure Storage (404 dianggap sudah terhapus).
  */
 function azure_blob_delete(?string $blob_path): bool
 {
     $blob_path = ltrim(str_replace('\\', '/', trim((string) $blob_path)), '/');
-    if ($blob_path === '') {
+    $cfg = azure_blob_config();
+    if (!$cfg || $blob_path === '') {
         return false;
     }
 
-    $ok = false;
-    $cfg = azure_blob_config();
-    if ($cfg) {
-        $encoded = azure_blob_encode_path($blob_path);
-        $res = azure_blob_request('DELETE', $cfg['container'] . '/' . $encoded);
-        if (in_array($res['status'], [202, 404], true)) {
-            $ok = true;
-        }
-    }
-
-    $local_full = dirname(__DIR__) . '/uploads/' . $blob_path;
-    if (is_file($local_full)) {
-        @unlink($local_full);
-        $ok = true;
-    }
-    return $ok;
+    $encoded = azure_blob_encode_path($blob_path);
+    $res = azure_blob_request('DELETE', $cfg['container'] . '/' . $encoded);
+    return in_array($res['status'], [202, 404], true);
 }
 
 /**
@@ -406,10 +376,9 @@ function azure_blob_url(?string $blob_path, int $ttl_minutes = 120): string
         return $blob_path;
     }
 
-    // Jika file ada di fallback lokal uploads/ dan Azure tidak aktif
     $cfg = azure_blob_config();
     if (!$cfg) {
-        return (defined('APP_URL') ? APP_URL : '') . '/uploads/' . azure_blob_encode_path($blob_path);
+        return '';
     }
 
     $sp  = 'r';
@@ -457,24 +426,13 @@ function azure_blob_url(?string $blob_path, int $ttl_minutes = 120): string
 }
 
 /**
- * Resolusi URL gambar/dokumen secara pintar:
- * - Bila path statis bawaan ('assets/...' atau tanpa '/'): gunakan APP_URL lokal.
- * - Bila path Azure Blob ('{company_code}/{module}/...'): gunakan azure_blob_url() dengan SAS token.
+ * URL tampilan untuk path berkas yang tersimpan di database.
+ * Semua berkas unggahan disimpan di Azure Blob ('{company_code}/{module}/...'),
+ * sehingga cukup diteruskan ke azure_blob_url() (SAS token). URL absolut diteruskan apa adanya.
  */
 function resolve_asset_url(?string $path, int $ttl_minutes = 120): string
 {
-    $path = trim((string) $path);
-    if ($path === '') {
-        return '';
-    }
-    if (str_starts_with($path, 'http://') || str_starts_with($path, 'https://')) {
-        return $path;
-    }
-    $clean = ltrim(str_replace('\\', '/', $path), '/');
-    if (str_starts_with($clean, 'assets/') || !str_contains($clean, '/')) {
-        return (defined('APP_URL') ? APP_URL : '') . '/' . $clean;
-    }
-    return azure_blob_url($clean, $ttl_minutes);
+    return azure_blob_url($path, $ttl_minutes);
 }
 
 /**
@@ -487,6 +445,7 @@ function resolve_asset_url(?string $path, int $ttl_minutes = 120): string
  * @param string   $slug         Nama dasar file (mis. 'logo', 'stnk', 'ktp')
  * @param bool     $allow_pdf    Izinkan berkas PDF selain gambar (default false)
  * @param int      $max_mb       Ukuran maksimal dalam MB (default 5 MB)
+ * @param ?string  $company_code Kode perusahaan eksplisit untuk prefix (opsional; menimpa lookup dari $company_id)
  * @return ?string Path blob relatif bila ada file baru yang diunggah, atau null bila tidak ada file diunggah.
  * @throws InvalidArgumentException Bila validasi ukuran/tipe file gagal atau unggah gagal.
  */
@@ -497,7 +456,8 @@ function azure_blob_handle_upload(
     string $sub_folder = '',
     string $slug = 'file',
     bool $allow_pdf = false,
-    int $max_mb = 5
+    int $max_mb = 5,
+    ?string $company_code = null
 ): ?string {
     if (empty($_FILES[$field_name]) || empty($_FILES[$field_name]['tmp_name'])) {
         return null;
@@ -539,7 +499,7 @@ function azure_blob_handle_upload(
     }
 
     $ext = $mime_map[$mime];
-    $blob_path = azure_blob_build_path($company_id, $module, $sub_folder, $slug, $ext);
+    $blob_path = azure_blob_build_path($company_id, $module, $sub_folder, $slug, $ext, $company_code);
 
     if (!azure_blob_put($blob_path, $data, $mime)) {
         throw new InvalidArgumentException('Gagal mengunggah berkas ke Azure Blob Storage.');

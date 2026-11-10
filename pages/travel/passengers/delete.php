@@ -1,6 +1,8 @@
 <?php
 require_once __DIR__ . '/../../../config/config.php';
-require_permission('travel.manage');
+if (!can('travel.manage') && !can('rental.manage')) {
+    require_permission('travel.manage');
+}
 
 if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
     redirect('pages/travel/passengers/index.php');

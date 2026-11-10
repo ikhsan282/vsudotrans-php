@@ -1,6 +1,8 @@
 <?php
 require_once __DIR__ . '/../../../config/config.php';
-require_permission('travel.manage');
+if (!can('travel.manage') && !can('rental.manage')) {
+    require_permission('travel.manage');
+}
 require_once __DIR__ . '/../_helpers.php';
 
 $cid = require_active_company();
@@ -78,14 +80,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         'phone_number' => $in['phone'], 'email' => $in['email'], 'note' => $in['note']]);
 }
 
-$active = 'travel';
+$active = 'passengers';
 $title  = $id > 0 ? 'Ubah Penumpang' : 'Tambah Penumpang';
 require __DIR__ . '/../../../includes/header.php';
 ?>
 <main class="col-12 col-md-9 col-lg-10 p-3 p-lg-4">
     <?= ui_page_header(
         $title,
-        ['Dashboard' => 'pages/dashboard/index.php', 'Travel' => null, 'Penumpang' => 'pages/travel/passengers/index.php', ($id > 0 ? $row['name'] : 'Tambah Baru') => null],
+        ['Dashboard' => 'pages/dashboard/index.php', 'Operasional' => null, 'Penumpang' => 'pages/travel/passengers/index.php', ($id > 0 ? $row['name'] : 'Tambah Baru') => null],
         $id > 0 ? array_values(array_filter([
             !empty($row['code']) ? ['text' => $row['code'], 'class' => 'bg-primary-subtle text-primary border border-primary-subtle font-monospace'] : null,
             ['text' => 'ID #' . $id, 'class' => 'bg-light text-secondary border'],

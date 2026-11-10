@@ -66,7 +66,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     // SECTION 1: PROFIL & IDENTITAS PERUSAHAAN
     // ==========================================
     if ($section === 'profile') {
-        $existing_code = (string) ($row['code'] ?? '');
+        $existing_code  = (string) ($row['code'] ?? '');
+        $existing_logo  = (string) ($row['logo'] ?? '');
+        $existing_stamp = (string) ($row['stamp'] ?? '');
         $row = [
             'group_id'     => (string) (int) ($_POST['group_id'] ?? 0),
             'code'         => $id > 0 ? $existing_code : strtoupper($in('code', 15)),
@@ -78,8 +80,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             'email'        => $in('email', 200),
             'address'      => $in('address', 1000),
             'city'         => $in('city', 100),
-            'logo'         => $in('logo', 255),
-            'stamp'        => $in('stamp', 255),
+            'logo'         => $existing_logo,  // path Azure Blob; hanya berubah via unggah berkas
+            'stamp'        => $existing_stamp,
             'is_active'    => isset($_POST['is_active']) ? 1 : 0,
         ];
         $group_id = (int) $row['group_id'];
@@ -111,22 +113,20 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             }
         }
 
+        $old_blobs = [];
         if (!$errors) {
             try {
-                // Gunakan kode perusahaan dari input untuk prefix folder di Azure Blob
-                $comp_code_slug = strtolower(preg_replace('/[^a-zA-Z0-9\-]/', '', $row['code'])) ?: 'company';
-                if (!empty($_FILES['logo_file']['tmp_name'])) {
-                    $ext = pathinfo((string) $_FILES['logo_file']['name'], PATHINFO_EXTENSION) ?: 'png';
-                    $up_logo = azure_blob_handle_upload('logo_file', $id > 0 ? $id : null, 'company', '', 'logo-' . $comp_code_slug, false, 3);
-                    if ($up_logo !== null) {
-                        $row['logo'] = $up_logo;
-                    }
+                // Prefix folder Azure Blob = kode perusahaan (permanen, juga untuk perusahaan baru).
+                $code = $row['code'];
+                $up_logo = azure_blob_handle_upload('logo_file', $id > 0 ? $id : null, 'company', '', 'logo', false, 3, $code);
+                if ($up_logo !== null) {
+                    $old_blobs[] = $existing_logo;
+                    $row['logo'] = $up_logo;
                 }
-                if (!empty($_FILES['stamp_file']['tmp_name'])) {
-                    $up_stamp = azure_blob_handle_upload('stamp_file', $id > 0 ? $id : null, 'company', '', 'stamp-' . $comp_code_slug, false, 3);
-                    if ($up_stamp !== null) {
-                        $row['stamp'] = $up_stamp;
-                    }
+                $up_stamp = azure_blob_handle_upload('stamp_file', $id > 0 ? $id : null, 'company', '', 'stamp', false, 3, $code);
+                if ($up_stamp !== null) {
+                    $old_blobs[] = $existing_stamp;
+                    $row['stamp'] = $up_stamp;
                 }
             } catch (InvalidArgumentException $e) {
                 $errors[] = $e->getMessage();
@@ -146,6 +146,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     $st->bind_param('isssssssssssisi', ...[...$vals, $user, $id]);
                     $st->execute();
                     $st->close();
+                    foreach ($old_blobs as $old) {
+                        if ($old !== '') {
+                            azure_blob_delete($old); // berkas lama yang diganti
+                        }
+                    }
                     audit('company.update', "Perusahaan #{$id} {$row['code']}");
                     flash('success', 'Profil perusahaan berhasil diperbarui.');
                     redirect("pages/companies/form.php?id={$id}&tab=profile");
@@ -429,7 +434,6 @@ require __DIR__ . '/../../includes/header.php';
                     <div class="col-md-6">
                         <label class="form-label" for="logo_file">Logo Perusahaan (Azure Blob)</label>
                         <input class="form-control mb-1" type="file" id="logo_file" name="logo_file" accept="image/*">
-                        <input type="hidden" name="logo" value="<?= e((string) ($row['logo'] ?? '')) ?>">
                         <?php if (!empty($row['logo'])): ?>
                             <div class="d-flex align-items-center gap-2 mt-1">
                                 <img src="<?= e(resolve_asset_url($row['logo'])) ?>" alt="Logo" style="max-height: 36px; max-width: 120px;" class="border rounded p-1 bg-light">
@@ -442,7 +446,6 @@ require __DIR__ . '/../../includes/header.php';
                     <div class="col-md-6">
                         <label class="form-label" for="stamp_file">Stempel / Cap Perusahaan (Azure Blob)</label>
                         <input class="form-control mb-1" type="file" id="stamp_file" name="stamp_file" accept="image/*">
-                        <input type="hidden" name="stamp" value="<?= e((string) ($row['stamp'] ?? '')) ?>">
                         <?php if (!empty($row['stamp'])): ?>
                             <div class="d-flex align-items-center gap-2 mt-1">
                                 <img src="<?= e(resolve_asset_url($row['stamp'])) ?>" alt="Stempel" style="max-height: 36px; max-width: 120px;" class="border rounded p-1 bg-light">

@@ -5,7 +5,7 @@
  * 1. Validasi format nomor tiket (`INVALID_TICKET_FORMAT`).
  * 2. Respons JSON lengkap `/api/ticket.php?no=...&company=MTM` (rute, jadwal, harga, masking nomor telepon penumpang, tautan cetak & QRIS).
  * 3. Isolasi Multi-Tenant: tiket milik `MTM` ditolak (`404 TICKET_NOT_FOUND`) bila dicek dengan `?company=LIZ`.
- * 4. Rendering stempel dinamis pada `tiket.php` (`stamp-mtm.png` tampil untuk MTM, dan tidak bocor ke perusahaan tanpa stempel seperti LIZ).
+ * 4. Rendering stempel dinamis pada `tiket.php` (stempel MTM dari Azure Blob `mtm/company/stamp_mtm.png` tampil untuk MTM, dan tidak bocor ke perusahaan tanpa stempel seperti LIZ).
  */
 
 require_once __DIR__ . '/../config/config.php';
@@ -118,12 +118,12 @@ check_tk(!empty($okMtm['data']['links']['print_pdf_url']), 'Ticket JSON includes
 $crossRes = call_ticket_api(['no' => $docMtm, 'company' => 'LIZ']);
 check_tk(($crossRes['ok'] ?? true) === false && ($crossRes['error']['code'] ?? '') === 'TICKET_NOT_FOUND', 'Multi-tenant isolation: MTM ticket is hidden when queried with company=LIZ');
 
-// 4. Dynamic stamp rendering in tiket.php
+// 4. Dynamic stamp rendering in tiket.php (stempel dari Azure Blob, URL ber-SAS)
 $htmlMtm = call_php_script('tiket.php', ['no' => $docMtm, 'company' => 'MTM']);
-check_tk(str_contains($htmlMtm, 'stamp-mtm.png'), 'tiket.php renders stamp-mtm.png for Maura Trans Mandiri (MTM)');
+check_tk(str_contains($htmlMtm, 'mtm/company/stamp_mtm.png') && str_contains($htmlMtm, 'sig='), 'tiket.php renders Azure Blob stamp (mtm/company/stamp_mtm.png + SAS) for MTM');
 
 $htmlLiz = call_php_script('tiket.php', ['no' => $docLiz, 'company' => 'LIZ']);
-check_tk(str_contains($htmlLiz, 'LIZ Wisata Alam Indah') && !str_contains($htmlLiz, 'stamp-mtm.png'), 'tiket.php renders LIZ Wisata Alam Indah without leaking MTM stamp');
+check_tk(str_contains($htmlLiz, 'LIZ Wisata Alam Indah') && !str_contains($htmlLiz, 'stamp_mtm.png'), 'tiket.php renders LIZ Wisata Alam Indah without leaking MTM stamp');
 
 $htmlCross = call_php_script('tiket.php', ['no' => $docMtm, 'company' => 'LIZ']);
 check_tk(str_contains($htmlCross, 'Tiket tidak ditemukan'), 'tiket.php rejects cross-company ticket when ?company=LIZ is passed');

@@ -1,6 +1,9 @@
 <?php
 require_once __DIR__ . '/../../../config/config.php';
-require_permission('travel.view');
+if (!can('travel.view') && !can('rental.view')) {
+    require_permission('travel.view');
+}
+$can_manage = can('travel.manage') || can('rental.manage');
 require_once __DIR__ . '/../_helpers.php';
 
 [$where, $types, $params] = company_scope('p.company_id');
@@ -64,20 +67,20 @@ $rows = $st->get_result()->fetch_all(MYSQLI_ASSOC);
 $st->close();
 
 $header_actions = ui_export_actions();
-if (can('travel.manage') && active_company_id() !== null) {
+if ($can_manage && active_company_id() !== null) {
     $header_actions[] = ['label' => 'Tambah', 'icon' => 'plus-lg', 'href' => 'pages/travel/passengers/form.php', 'class' => 'btn btn-primary btn-sm'];
 }
 
 $query_base = http_build_query(array_filter(['q' => $q]));
 
-$active = 'travel';
+$active = 'passengers';
 $title  = 'Penumpang';
 require __DIR__ . '/../../../includes/header.php';
 ?>
 <main class="col-12 col-md-9 col-lg-10 p-3 p-lg-4">
     <?= ui_page_header(
         'Data Penumpang',
-        ['Dashboard' => 'pages/dashboard/index.php', 'Travel' => null, 'Penumpang' => null],
+        ['Dashboard' => 'pages/dashboard/index.php', 'Operasional' => null, 'Penumpang' => null],
         [['text' => number_format($total, 0, ',', '.') . ' Orang', 'class' => 'bg-light text-secondary border']],
         $header_actions
     ) ?>
@@ -112,7 +115,7 @@ require __DIR__ . '/../../../includes/header.php';
                         <td><?= e(trim($r['country_code'] . ' ' . (string) $r['phone_number'])) ?: '-' ?></td>
                         <td><?= e($r['email'] ?: '-') ?></td>
                         <td class="text-end">
-                            <?php if (can('travel.manage')): ?>
+                            <?php if ($can_manage): ?>
                                 <a class="btn btn-sm btn-outline-primary" href="<?= e(APP_URL) ?>/pages/travel/passengers/form.php?id=<?= (int) $r['id'] ?>">Ubah</a>
                                 <form method="post" action="<?= e(APP_URL) ?>/pages/travel/passengers/delete.php" class="d-inline" onsubmit="return confirm('Hapus penumpang ini?')">
                                     <?= csrf_field() ?>

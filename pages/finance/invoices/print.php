@@ -63,7 +63,7 @@ if ($inv) {
 
     // Metode bayar aktif (milik perusahaan atau global) + gambar QR.
     $st = db()->prepare("SELECT id, code, name, account_name, account_number, instructions,
-            ((qr_blob_path IS NOT NULL AND qr_blob_path <> '') OR (qr_image IS NOT NULL AND qr_image <> '')) AS has_qr
+            (qr_blob_path IS NOT NULL AND qr_blob_path <> '') AS has_qr
         FROM payment_methods
         WHERE is_active = 1 AND (company_id = ? OR company_id IS NULL)
         ORDER BY sort_order, name");
@@ -144,9 +144,7 @@ $logo = $company['logo'] ?? null;
     <table class="iv-lay"><tr>
         <td style="width:60%">
             <?php if ($logo):
-                $logo_src = (str_contains((string) $logo, '/') && !str_starts_with((string) $logo, 'assets/'))
-                    ? azure_blob_url((string) $logo)
-                    : (APP_URL . '/' . ltrim((string) $logo, '/'));
+                $logo_src = resolve_asset_url((string) $logo);
             ?>
                 <img class="iv-logo" src="<?= e($logo_src) ?>" alt="<?= e((string) ($company['name'] ?? COMPANY_NAME)) ?>">
             <?php else: ?>

@@ -90,11 +90,11 @@ function mf_file(string $col, string $label, string $dir, array $extra = []): ar
 {
     return ['col' => $col, 'label' => $label, 'type' => 'file', 'dir' => $dir] + $extra;
 }
-/** Berkas biner (QR) dimuat ke kolom LONGBLOB; tidak di-list, hanya unggah/ganti.
- *  $mime_col: kolom penyimpan MIME (opsional). */
-function mf_bytes(string $col, string $label, array $extra = []): array
+/** Upload gambar ke Azure Blob Storage; kolom menyimpan path blob
+ *  ({company_code}/{module}/{sub}/...). Extra: module, sub, max_mb. */
+function mf_blob(string $col, string $label, array $extra = []): array
 {
-    return ['col' => $col, 'label' => $label, 'type' => 'bytes'] + $extra;
+    return ['col' => $col, 'label' => $label, 'type' => 'blob'] + $extra;
 }
 
 function master_tables(): array
@@ -243,10 +243,8 @@ function master_tables(): array
                 mf_code(), mf_name(),
                 ['col' => 'account_name', 'label' => 'Nama Pemilik Rekening', 'type' => 'text', 'max' => 255, 'required' => false, 'nullable' => true],
                 ['col' => 'account_number', 'label' => 'Nomor Rekening / Tujuan', 'type' => 'text', 'max' => 50, 'required' => false, 'nullable' => true],
-                mf_bytes('qr_image', 'Gambar QR (opsional)', ['mime_col' => 'qr_mime']),
+                mf_blob('qr_blob_path', 'Gambar QR (opsional)', ['module' => 'finance', 'sub' => 'qris', 'max_mb' => 2]),
                 ['col' => 'instructions', 'label' => 'Instruksi Pembayaran', 'type' => 'textarea', 'max' => 2000, 'required' => false, 'nullable' => true],
-                ['col' => 'qr_mime', 'label' => 'Jenis QR', 'type' => 'hidden'],
-                ['col' => 'qr_blob_path', 'label' => 'Path Azure Blob QR', 'type' => 'hidden'],
                 ['col' => 'sort_order', 'label' => 'Urutan', 'type' => 'number', 'int' => true, 'required' => false],
                 mf_active(),
                 mf_note(),
@@ -479,7 +477,7 @@ function master_list(string $key): void
     // -----------------------------------------------------------------
     $export_format = strtolower(trim((string) ($_GET['export'] ?? '')));
     if (in_array($export_format, ['xlsx', 'pdf'], true)) {
-        $export_cols = array_values(array_filter($spec['fields'], fn ($f) => !in_array($f['type'] ?? '', ['bytes', 'file'], true)));
+        $export_cols = array_values(array_filter($spec['fields'], fn ($f) => !in_array($f['type'] ?? '', ['blob', 'file', 'hidden'], true)));
         $export_headers = array_map(fn ($f) => $f['label'], $export_cols);
 
         $lookup_maps = [];
@@ -574,7 +572,7 @@ function master_list(string $key): void
 
     $active = $spec['module'];
     $title  = $spec['title'];
-    $list_cols = array_values(array_filter($spec['fields'], fn ($f) => !in_array($f['type'] ?? '', ['textarea', 'money', 'bytes', 'file'], true)));
+    $list_cols = array_values(array_filter($spec['fields'], fn ($f) => !in_array($f['type'] ?? '', ['textarea', 'money', 'blob', 'file', 'hidden'], true)));
     $query_base = $q !== '' ? 'q=' . urlencode($q) : '';
     require __DIR__ . '/../../includes/header.php';
     ?>
@@ -720,8 +718,31 @@ function master_form(string $key): void
         $errors = master_validate($spec, $in, $id, $cid);
         $row = array_merge($row, $in);
         if (!$errors) {
+            // Unggah gambar Azure Blob (field 'blob') setelah validasi lolos.
+            $old_blobs = [];
+            try {
+                foreach ($spec['fields'] as $f) {
+                    if (($f['type'] ?? '') !== 'blob') {
+                        continue;
+                    }
+                    $new_path = master_upload_blob($f, $cid);
+                    if ($new_path !== null) {
+                        $old_blobs[] = (string) ($row[$f['col']] ?? '');
+                        $in[$f['col']] = $new_path;
+                    }
+                }
+            } catch (InvalidArgumentException $ex) {
+                $errors[] = $ex->getMessage();
+            }
+        }
+        if (!$errors) {
             try {
                 master_save($spec, $id, $in, $cid);
+                foreach ($old_blobs as $old) {
+                    if ($old !== '') {
+                        azure_blob_delete($old); // bersihkan berkas lama yang diganti
+                    }
+                }
                 flash('success', $spec['title'] . ' berhasil ' . ($id > 0 ? 'diperbarui' : 'ditambahkan') . '.');
                 redirect('pages/' . $spec['module'] . '/' . $table . '/index.php');
             } catch (mysqli_sql_exception $ex) {
@@ -778,16 +799,15 @@ function master_form(string $key): void
                             </div>
                             <?php continue; ?>
                         <?php endif; ?>
-                        <?php if (($f['type'] ?? '') === 'bytes'): ?>
+                        <?php if (($f['type'] ?? '') === 'blob'): ?>
                             <div class="mb-3">
                                 <label class="form-label" for="<?= e($col) ?>"><?= e($f['label']) ?></label>
                                 <input class="form-control" type="file" id="<?= e($col) ?>" name="<?= e($col) ?>" accept="image/*">
-                                <?php if ($id > 0 && (!empty($row['qr_blob_path']) || !empty($row[$col]))): ?>
+                                <?php if ($id > 0 && !empty($val)): ?>
                                     <div class="form-text d-flex align-items-center gap-2 mt-1">
-                                        <span>Berkas tersimpan<?= !empty($row['qr_blob_path']) ? ' di Azure Blob (<code>' . e($row['qr_blob_path']) . '</code>)' : '' ?>. Unggah ulang untuk mengganti.</span>
-                                        <?php if (!empty($row['qr_blob_path'])): ?>
-                                            <a href="<?= e(azure_blob_url($row['qr_blob_path'])) ?>" target="_blank" class="btn btn-xs btn-outline-primary py-0 px-2">Lihat QR</a>
-                                        <?php endif; ?>
+                                        <img src="<?= e(azure_blob_url((string) $val)) ?>" alt="" style="height:48px;width:48px;object-fit:contain" class="border rounded bg-white">
+                                        <span>Tersimpan di Azure Blob (<code><?= e((string) $val) ?></code>). Unggah ulang untuk mengganti.</span>
+                                        <a href="<?= e(azure_blob_url((string) $val)) ?>" target="_blank" class="btn btn-xs btn-outline-primary py-0 px-2">Lihat</a>
                                     </div>
                                 <?php endif; ?>
                             </div>
@@ -865,8 +885,8 @@ function master_empty_row(array $spec): array
         $t = $f['type'] ?? '';
         if ($t === 'checkbox') {
             $row[$f['col']] = 1;
-        } elseif ($t === 'hidden') {
-            $row[$f['col']] = in_array($f['col'], ['qr_mime'], true) ? '' : null;
+        } elseif ($t === 'hidden' || $t === 'blob') {
+            $row[$f['col']] = null;
         } else {
             $row[$f['col']] = '';
         }
@@ -874,38 +894,26 @@ function master_empty_row(array $spec): array
     return $row;
 }
 
-/** Upload berkas biner (QR/gambar) dari $_FILES[$col]; null bila tidak ada upload.
- *  $mime_col: kolom penyimpan MIME (opsional) — diisi lewat $_POST agar ikut tersimpan. */
-function master_upload_binary(string $col, ?string $mime_col = null): ?string
+/**
+ * Upload gambar field 'blob' dari $_FILES[$col] ke Azure Blob Storage.
+ * Mengembalikan path blob baru, atau null bila tidak ada berkas diunggah.
+ * Folder: {company_code}/{module}/{sub}/{slug}_... (slug = kode baris).
+ */
+function master_upload_blob(array $f, ?int $cid): ?string
 {
-    if (empty($_FILES[$col]['tmp_name']) || (int) ($_FILES[$col]['error'] ?? 1) !== UPLOAD_ERR_OK) {
-        return null;
-    }
-    if ((int) $_FILES[$col]['size'] > 2 * 1024 * 1024) {
-        throw new InvalidArgumentException('Ukuran berkas ' . $col . ' maksimal 2 MB.');
-    }
-    $info = @getimagesize($_FILES[$col]['tmp_name']);
-    if ($info === false) {
-        throw new InvalidArgumentException('Berkas ' . $col . ' harus berupa gambar.');
-    }
-    $data = file_get_contents($_FILES[$col]['tmp_name']);
-    if ($data === false) {
-        throw new InvalidArgumentException('Gagal membaca berkas ' . $col . '.');
-    }
-    if ($mime_col !== null && column_exists('payment_methods', $mime_col)) {
-        $_POST[$mime_col] = (string) ($info['mime'] ?? 'application/octet-stream');
-    }
-    if (function_exists('azure_blob_handle_upload') && column_exists('payment_methods', 'qr_blob_path')) {
-        $slug = strtolower(trim((string) ($_POST['code'] ?? 'qr')));
-        $blob_path = azure_blob_handle_upload($col, active_company_id(), 'finance', 'qris', $slug ?: 'qr', false, 2);
-        if ($blob_path !== null) {
-            $_POST['qr_blob_path'] = $blob_path;
-        }
-    }
-    return $data;
+    $slug = strtolower(trim((string) ($_POST['code'] ?? ''))) ?: $f['col'];
+    return azure_blob_handle_upload(
+        $f['col'],
+        $cid,
+        (string) ($f['module'] ?? 'masters'),
+        (string) ($f['sub'] ?? ''),
+        $slug,
+        false,
+        (int) ($f['max_mb'] ?? 2)
+    );
 }
 
-/** Kolom ada di tabel? (dipakai untuk kolom opsional seperti qr_mime). */
+/** Kolom ada di tabel? (dipakai untuk kolom opsional / lookup dinamis). */
 function column_exists(string $table, string $column): bool
 {
     static $cache = [];
@@ -932,18 +940,14 @@ function master_map_input(array $spec, array $post): array
             $out[$col] = isset($post[$col]) ? 1 : 0;
             continue;
         }
-        // Berkas biner: hanya diisi bila ada upload; jika tidak, pertahankan nilai lama.
-        if ($type === 'bytes') {
-            $up = master_upload_binary($col, $f['mime_col'] ?? null);
-            if ($up !== null) {
-                $out[$col] = $up;
-            }
+        // Gambar Azure Blob: diunggah di master_form() SETELAH validasi lolos
+        // (hindari blob yatim). Tanpa upload, nilai lama dipertahankan.
+        if ($type === 'blob') {
             continue;
         }
-        // Nilai tersembunyi (mis. qr_mime) — ambil dari $_POST karena bisa diisi
-        // oleh master_upload_binary() sedangkan $post adalah salinan lama.
+        // Nilai tersembunyi — tidak menimpa nilai lama bila kosong.
         if ($type === 'hidden') {
-            $v = $_POST[$col] ?? ($post[$col] ?? '');
+            $v = $post[$col] ?? '';
             if ($v !== '') {
                 $out[$col] = (string) $v;
             }
@@ -1034,7 +1038,10 @@ function master_validate(array $spec, array $in, int $id, ?int $cid): array
     foreach ($spec['fields'] as $f) {
         $col = $f['col'];
         $type = $f['type'] ?? 'text';
-        $v = $in[$col];
+        if ($type === 'blob' || $type === 'hidden') {
+            continue;
+        }
+        $v = $in[$col] ?? null;
         $label = $f['label'];
 
         if (!empty($f['required']) && ($v === null || $v === '')) {
@@ -1303,9 +1310,7 @@ function master_save(array $spec, int $id, array $in, ?int $cid): int
         } elseif (!empty($f['int']) || ($f['type'] ?? '') === 'checkbox') {
             $t = 'i';
         }
-        // ponytail: kolom biner (bytes) pakai tipe 's' — tipe 'b' MySQLi simpan 0 byte
-        // tanpa send_long_data yang rapuh terhadap banyak parameter. Limit LONGBLOB 4GB;
-        // ganti ke send_long_data bila suatu saat perlu unggah >16 MB (max_allowed_packet).
+        // Kolom blob (path Azure) bertipe 's' (VARCHAR).
         $types_map[$f['col']] = $t;
     }
 

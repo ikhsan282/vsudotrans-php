@@ -1,7 +1,7 @@
 <?php
 /**
- * Self-check modul Metode Pembayaran (tanpa framework, butuh DB lokal).
- * Fokus: tipe field baru (bytes/hidden) di engine + kolom schema.
+ * Self-check modul Metode Pembayaran (tanpa framework, butuh DB lokal + Azure Blob).
+ * Fokus: field gambar QR tersimpan murni di Azure Blob (qr_blob_path), kolom LONGBLOB lama sudah dihapus.
  * Jalankan: php tests/payment_methods_check.php
  */
 require_once __DIR__ . '/../config/config.php';
@@ -27,44 +27,36 @@ ok($spec['perm_manage'] === 'finance.manage', 'permission manage = finance.manag
 ok(!empty($spec['company']), 'ber-company_id (tenant scoped)');
 ok(($spec['unique'] ?? '') === 'company_or_null', 'unik company_or_null');
 
-echo "2. Field bytes & hidden\n";
+echo "2. Field gambar QR (Azure Blob)\n";
 $by_col = [];
 foreach ($spec['fields'] as $f) {
     $by_col[$f['col']] = $f;
 }
-ok(($by_col['qr_image']['type'] ?? '') === 'bytes', 'qr_image bertipe bytes');
-ok(($by_col['qr_image']['mime_col'] ?? '') === 'qr_mime', 'qr_image.mime_col = qr_mime');
-ok(($by_col['qr_mime']['type'] ?? '') === 'hidden', 'qr_mime bertipe hidden');
+ok(($by_col['qr_blob_path']['type'] ?? '') === 'blob', 'qr_blob_path bertipe blob');
+ok(($by_col['qr_blob_path']['module'] ?? '') === 'finance', 'qr_blob_path.module = finance');
+ok(($by_col['qr_blob_path']['sub'] ?? '') === 'qris', 'qr_blob_path.sub = qris');
+ok(!isset($by_col['qr_image']) && !isset($by_col['qr_mime']), 'field qr_image/qr_mime lama tidak ada');
 ok(($by_col['instructions']['type'] ?? '') === 'textarea', 'instructions textarea');
 
 echo "3. Kolom schema\n";
-ok(column_exists('payment_methods', 'qr_image'), 'kolom qr_image ada');
-ok(column_exists('payment_methods', 'qr_mime'), 'kolom qr_mime ada');
+ok(column_exists('payment_methods', 'qr_blob_path'), 'kolom qr_blob_path ada');
+ok(!column_exists('payment_methods', 'qr_image'), 'kolom qr_image (LONGBLOB) sudah dihapus');
+ok(!column_exists('payment_methods', 'qr_mime'), 'kolom qr_mime sudah dihapus');
 
-$t = db()->query("SHOW COLUMNS FROM payment_methods LIKE 'qr_image'")->fetch_assoc();
-ok(stripos($t['Type'], 'longblob') !== false, 'qr_image LONGBLOB (bukan VARCHAR)');
-
-echo "4. Blob round-trip (tipe s untuk kolom biner)\n";
-$bin = random_bytes(512);
-$st = db()->prepare('INSERT INTO payment_methods (company_id, code, name, qr_image, qr_mime) VALUES (?, ?, ?, ?, ?)');
-$code = 'CHK-' . strtoupper(bin2hex(random_bytes(3)));
-$mime = 'image/png';
-$cid = active_company_id() ?: 1;
-$name = 'Uji blob';
-$blob = $bin;
-$st->bind_param('issss', $cid, $code, $name, $blob, $mime);
-$st->execute();
-$st->close();
-
-$row = db()->prepare('SELECT LENGTH(qr_image) AS len, qr_mime FROM payment_methods WHERE code = ?');
-$row->bind_param('s', $code);
-$row->execute();
-$r = $row->get_result()->fetch_assoc();
-$row->close();
-ok((int) $r['len'] === 512, 'blob tersimpan utuh (512 byte), dapat ' . ($r['len'] ?? '-'));
-ok($r['qr_mime'] === 'image/png', 'mime tersimpan');
-
-db()->query("DELETE FROM payment_methods WHERE code = '$code'");
+echo "4. Round-trip Azure Blob\n";
+if (!azure_blob_is_enabled()) {
+    ok(false, 'Azure Blob belum dikonfigurasi (.env BLOB_STORAGE_CONNECTION_STRING)');
+} else {
+    $cid  = active_company_id() ?: 1;
+    $bin  = random_bytes(512);
+    $path = azure_blob_build_path($cid, 'finance', 'qris', 'chk-test', 'png');
+    ok(str_starts_with($path, azure_blob_company_prefix($cid) . '/finance/qris/'), 'path = {company_code}/finance/qris/... (' . $path . ')');
+    ok(azure_blob_put($path, $bin, 'image/png'), 'upload ke Azure');
+    $got = azure_blob_get($path);
+    ok($got !== null && $got['data'] === $bin, 'unduh kembali utuh (512 byte)');
+    ok(azure_blob_delete($path), 'hapus blob');
+    ok(azure_blob_get($path) === null, 'blob sudah tidak ada');
+}
 
 echo $fail === 0 ? "\nSemua kasus metode pembayaran lolos.\n" : "\n$fail kasus GAGAL.\n";
 exit($fail === 0 ? 0 : 1);

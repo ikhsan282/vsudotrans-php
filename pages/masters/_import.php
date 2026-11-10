@@ -32,7 +32,7 @@ function master_import_cols(array $spec): array
 {
     $out = [];
     foreach ($spec['fields'] as $f) {
-        if (in_array($f['type'] ?? 'text', ['bytes', 'file', 'hidden'], true)) {
+        if (in_array($f['type'] ?? 'text', ['blob', 'file', 'hidden'], true)) {
             continue;
         }
         $out[$f['col']] = $f;
