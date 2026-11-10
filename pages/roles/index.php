@@ -8,23 +8,50 @@ $rows = db()->query('SELECT r.id, r.name, r.description, r.level,
         (SELECT COUNT(*) FROM role_permissions rp WHERE rp.role_id = r.id) AS perm_count
     FROM roles r ORDER BY r.level, r.name')->fetch_all(MYSQLI_ASSOC);
 
+$export_format = strtolower(trim((string) ($_GET['export'] ?? '')));
+if (in_array($export_format, ['xlsx', 'pdf'], true)) {
+    $export_rows = [];
+    foreach ($rows as $r) {
+        $export_rows[] = [
+            $r['name'],
+            $r['description'] ?: '-',
+            $r['level'],
+            $r['perm_count'],
+            $r['user_count'],
+        ];
+    }
+    grid_export_send(
+        'Daftar Role dan Hak Akses',
+        ['Nama Role', 'Deskripsi', 'Level', 'Jumlah Permission', 'Jumlah Pengguna'],
+        $export_rows,
+        $export_format,
+        'portrait'
+    );
+}
+
+$header_actions = ui_export_actions();
+$header_actions[] = ['label' => 'Tambah', 'icon' => 'plus-lg', 'href' => 'pages/roles/form.php', 'class' => 'btn btn-primary btn-sm'];
+
 $active = 'roles';
 $title  = 'Role & Hak Akses';
 require __DIR__ . '/../../includes/header.php';
 ?>
-<main class="col-12 col-md-9 col-lg-10 p-4">
-    <div class="d-flex justify-content-between align-items-center mb-3">
-        <h4 class="fw-bold mb-0">Role &amp; Hak Akses</h4>
-        <a class="btn btn-primary btn-sm" href="<?= e(APP_URL) ?>/pages/roles/form.php"><i class="bi bi-plus-lg"></i> Tambah</a>
-    </div>
+<main class="col-12 col-md-9 col-lg-10 p-3 p-lg-4">
+    <?= ui_page_header(
+        'Role & Hak Akses',
+        ['Dashboard' => 'pages/dashboard/index.php', 'Role' => null],
+        [['text' => count($rows) . ' Role', 'class' => 'bg-light text-secondary border']],
+        $header_actions
+    ) ?>
     <div class="card shadow-sm border-0">
         <div class="table-responsive">
             <table class="table table-hover mb-0 align-middle">
-                <thead><tr><th>Nama</th><th>Deskripsi</th><th>Level</th><th>Permission</th><th>Pengguna</th><th class="text-end">Aksi</th></tr></thead>
+                <thead class="table-light"><tr><th class="text-center" style="width: 52px;">No</th><th>Nama</th><th>Deskripsi</th><th>Level</th><th>Permission</th><th>Pengguna</th><th class="text-end">Aksi</th></tr></thead>
                 <tbody>
-                <?php foreach ($rows as $r): ?>
+                <?php foreach ($rows as $idx => $r): ?>
                     <?php $is_super = $r['name'] === ROLE_SUPER_ADMIN; ?>
                     <tr>
+                        <td class="text-center text-muted small"><?= $idx + 1 ?></td>
                         <td class="fw-semibold"><?= e($r['name']) ?><?= $is_super ? ' <span class="badge bg-dark">dikunci</span>' : '' ?></td>
                         <td><?= e($r['description'] ?? '') ?></td>
                         <td><?= (int) $r['level'] ?></td>
@@ -47,7 +74,7 @@ require __DIR__ . '/../../includes/header.php';
                     </tr>
                 <?php endforeach; ?>
                 <?php if (!$rows): ?>
-                    <tr><td colspan="6" class="text-center text-muted py-4">Belum ada role.</td></tr>
+                    <tr><td colspan="7" class="text-center text-muted py-4">Belum ada role.</td></tr>
                 <?php endif; ?>
                 </tbody>
             </table>

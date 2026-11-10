@@ -2,13 +2,79 @@
 require_once __DIR__ . '/../../config/config.php';
 require_permission('groups.view');
 
-$total = (int) db()->query('SELECT COUNT(*) FROM groups')->fetch_row()[0];
+$q = trim((string) ($_GET['q'] ?? ''));
+$status = trim((string) ($_GET['status'] ?? ''));
+
+$where = '1=1';
+$types = '';
+$params = [];
+
+if ($q !== '') {
+    $where .= ' AND (code LIKE ? OR name LIKE ?)';
+    $types .= 'ss';
+    $params[] = '%' . $q . '%';
+    $params[] = '%' . $q . '%';
+}
+if ($status === '1' || $status === '0') {
+    $where .= ' AND is_active = ?';
+    $types .= 'i';
+    $params[] = (int) $status;
+}
+
+$st = db()->prepare("SELECT COUNT(*) FROM groups WHERE {$where}");
+if ($types !== '') {
+    $st->bind_param($types, ...$params);
+}
+$st->execute();
+$total = (int) $st->get_result()->fetch_row()[0];
+$st->close();
+
+$export_format = strtolower(trim((string) ($_GET['export'] ?? '')));
+if (in_array($export_format, ['xlsx', 'pdf'], true)) {
+    $sql_export = "SELECT code, name, is_active FROM groups WHERE {$where} ORDER BY code";
+    $max_export_rows = $export_format === 'pdf' ? GRID_PDF_MAX_ROWS : null;
+
+    $row_stream = grid_query_stream(
+        $sql_export,
+        $types,
+        $params,
+        static fn (array $r): array => [
+            $r['code'],
+            $r['name'],
+            $r['is_active'] ? 'Aktif' : 'Nonaktif',
+        ],
+        $max_export_rows
+    );
+
+    $sub = $q !== '' ? 'Pencarian: "' . $q . '"' : 'Semua Data';
+    grid_export_send(
+        'Daftar Grup Perusahaan',
+        ['Kode', 'Nama Grup', 'Status'],
+        $row_stream,
+        $export_format,
+        'portrait',
+        $sub,
+        $total
+    );
+}
+
 $p = paginate($total, (int) ($_GET['page'] ?? 1));
-$st = db()->prepare('SELECT id, code, name, is_active FROM groups ORDER BY code LIMIT ? OFFSET ?');
-$st->bind_param('ii', $p['per_page'], $p['offset']);
+$st = db()->prepare("SELECT id, code, name, is_active FROM groups WHERE {$where} ORDER BY code LIMIT ? OFFSET ?");
+if ($types !== '') {
+    $st->bind_param($types . 'ii', ...[...$params, $p['per_page'], $p['offset']]);
+} else {
+    $st->bind_param('ii', $p['per_page'], $p['offset']);
+}
 $st->execute();
 $rows = $st->get_result()->fetch_all(MYSQLI_ASSOC);
 $st->close();
+
+$header_actions = ui_export_actions();
+if (can('groups.manage')) {
+    $header_actions[] = ['label' => 'Tambah', 'icon' => 'plus-lg', 'href' => 'pages/groups/form.php', 'class' => 'btn btn-primary btn-sm'];
+}
+
+$query_base = http_build_query(array_filter(['q' => $q, 'status' => $status]));
 
 $active = 'groups';
 $title  = 'Grup Perusahaan';
@@ -18,19 +84,43 @@ require __DIR__ . '/../../includes/header.php';
     <?= ui_page_header(
         'Grup Perusahaan',
         ['Dashboard' => 'pages/dashboard/index.php', 'Grup' => null],
-        [],
-        can('groups.manage') ? [
-            ['label' => 'Tambah', 'icon' => 'plus-lg', 'href' => 'pages/groups/form.php', 'class' => 'btn btn-primary btn-sm'],
-        ] : []
+        [['text' => number_format($total, 0, ',', '.') . ' Data', 'class' => 'bg-light text-secondary border']],
+        $header_actions
     ) ?>
+    <div class="card shadow-sm border-0 mb-3">
+        <div class="card-body py-2 px-3">
+            <form method="get" class="row g-2 align-items-center">
+                <div class="col-12 col-md-4">
+                    <div class="input-group input-group-sm">
+                        <span class="input-group-text bg-white text-muted"><i class="bi bi-search"></i></span>
+                        <input type="text" name="q" class="form-control" placeholder="Cari kode atau nama..." value="<?= e($q) ?>">
+                    </div>
+                </div>
+                <div class="col-6 col-md-3">
+                    <select name="status" class="form-select form-select-sm" onchange="this.form.submit()">
+                        <option value="">Semua Status</option>
+                        <option value="1" <?= $status === '1' ? 'selected' : '' ?>>Aktif</option>
+                        <option value="0" <?= $status === '0' ? 'selected' : '' ?>>Nonaktif</option>
+                    </select>
+                </div>
+                <div class="col-auto d-flex gap-1">
+                    <button type="submit" class="btn btn-sm btn-secondary">Filter</button>
+                    <?php if ($q !== '' || $status !== ''): ?>
+                        <a href="<?= e(APP_URL) ?>/pages/groups/index.php" class="btn btn-sm btn-outline-danger" title="Reset"><i class="bi bi-x-lg"></i> Reset</a>
+                    <?php endif; ?>
+                </div>
+            </form>
+        </div>
+    </div>
     <div class="card shadow-sm border-0">
         <div class="table-responsive">
             <table class="table table-hover mb-0 align-middle">
-                <thead><tr><th>Kode</th><th>Nama</th><th>Status</th><th class="text-end">Aksi</th></tr></thead>
+                <thead class="table-light"><tr><th class="text-center" style="width: 52px;">No</th><th>Kode</th><th>Nama</th><th>Status</th><th class="text-end">Aksi</th></tr></thead>
                 <tbody>
-                <?php foreach ($rows as $r): ?>
+                <?php foreach ($rows as $idx => $r): ?>
                     <tr>
-                        <td><?= e($r['code']) ?></td>
+                        <td class="text-center text-muted small"><?= number_format($p['offset'] + $idx + 1, 0, ',', '.') ?></td>
+                        <td class="fw-semibold"><?= e($r['code']) ?></td>
                         <td><?= e($r['name']) ?></td>
                         <td><span class="badge bg-<?= $r['is_active'] ? 'success' : 'secondary' ?>"><?= $r['is_active'] ? 'Aktif' : 'Nonaktif' ?></span></td>
                         <td class="text-end">
@@ -46,12 +136,21 @@ require __DIR__ . '/../../includes/header.php';
                     </tr>
                 <?php endforeach; ?>
                 <?php if (!$rows): ?>
-                    <tr><td colspan="4" class="text-center text-muted py-4">Belum ada data.</td></tr>
+                    <tr><td colspan="5" class="text-center text-muted py-4">Belum ada data.</td></tr>
                 <?php endif; ?>
                 </tbody>
             </table>
         </div>
-        <div class="card-footer bg-white"><?= pagination_html($p, '') ?></div>
+        <div class="card-footer bg-white d-flex flex-wrap justify-content-between align-items-center gap-2 py-2">
+            <div class="small text-muted">
+                <?php if ($total > 0): ?>
+                    Menampilkan <strong><?= number_format($p['offset'] + 1, 0, ',', '.') ?>&ndash;<?= number_format(min($total, $p['offset'] + count($rows)), 0, ',', '.') ?></strong> dari <strong><?= number_format($total, 0, ',', '.') ?></strong> data
+                <?php else: ?>
+                    Total <strong>0</strong> data
+                <?php endif; ?>
+            </div>
+            <?= pagination_html($p, $query_base) ?>
+        </div>
     </div>
 </main>
 <?php require __DIR__ . '/../../includes/footer.php'; ?>

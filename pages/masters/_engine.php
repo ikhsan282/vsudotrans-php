@@ -473,6 +473,61 @@ function master_list(string $key): void
     $total = (int) $st->get_result()->fetch_row()[0];
     $st->close();
 
+    // -----------------------------------------------------------------
+    // Export Grid (Excel .xlsx & PDF .pdf)
+    // -----------------------------------------------------------------
+    $export_format = strtolower(trim((string) ($_GET['export'] ?? '')));
+    if (in_array($export_format, ['xlsx', 'pdf'], true)) {
+        $export_cols = array_values(array_filter($spec['fields'], fn ($f) => !in_array($f['type'] ?? '', ['bytes', 'file'], true)));
+        $export_headers = array_map(fn ($f) => $f['label'], $export_cols);
+
+        $lookup_maps = [];
+        foreach ($export_cols as $f) {
+            if (($f['type'] ?? '') === 'select' && !isset($lookup_maps[$f['source']])) {
+                $lookup_maps[$f['source']] = master_lookup($f['source'], $cid);
+            }
+        }
+
+        $sql_export = "SELECT * FROM `{$table}` WHERE {$where} ORDER BY {$order}";
+        $max_export_rows = $export_format === 'pdf' ? GRID_PDF_MAX_ROWS : null;
+
+        $row_stream = grid_query_stream(
+            $sql_export,
+            $types,
+            $params,
+            static function (array $r) use ($export_cols, $lookup_maps): array {
+                $line = [];
+                foreach ($export_cols as $f) {
+                    $c = $f['col'];
+                    $t = $f['type'] ?? '';
+                    $val = $r[$c] ?? null;
+                    if ($t === 'checkbox') {
+                        $line[] = $val ? 'Aktif' : 'Nonaktif';
+                    } elseif ($t === 'select') {
+                        $line[] = master_label($lookup_maps[$f['source']] ?? [], $val);
+                    } elseif ($t === 'money') {
+                        $line[] = $val !== null ? (float) $val : 0;
+                    } else {
+                        $line[] = $val !== null ? (string) $val : '-';
+                    }
+                }
+                return $line;
+            },
+            $max_export_rows
+        );
+
+        $sub = $q !== '' ? 'Pencarian: "' . $q . '"' : 'Semua Data';
+        grid_export_send(
+            'Master ' . $spec['title'],
+            $export_headers,
+            $row_stream,
+            $export_format,
+            'landscape',
+            $sub,
+            $total
+        );
+    }
+
     $p = paginate($total, (int) ($_GET['page'] ?? 1));
     $st = db()->prepare("SELECT * FROM `{$table}` WHERE {$where} ORDER BY {$order} LIMIT ? OFFSET ?");
     $st->bind_param($types . 'ii', ...[...$params, $p['per_page'], $p['offset']]);
@@ -488,6 +543,12 @@ function master_list(string $key): void
         }
     }
 
+    $header_actions = ui_export_actions();
+    if (can($spec['perm_manage'])) {
+        $header_actions[] = ['label' => 'Import CSV', 'icon' => 'upload', 'href' => master_base_url($spec) . '/import.php', 'class' => 'btn btn-outline-primary btn-sm'];
+        $header_actions[] = ['label' => 'Tambah', 'icon' => 'plus-lg', 'href' => master_base_url($spec) . '/form.php', 'class' => 'btn btn-primary btn-sm'];
+    }
+
     $active = $spec['module'];
     $title  = $spec['title'];
     $list_cols = array_values(array_filter($spec['fields'], fn ($f) => !in_array($f['type'] ?? '', ['textarea', 'money', 'bytes', 'file'], true)));
@@ -498,11 +559,8 @@ function master_list(string $key): void
         <?= ui_page_header(
             $spec['title'],
             ['Dashboard' => 'pages/dashboard/index.php', ($spec['module'] === 'hr' ? 'Master HR' : 'Master Data') => null, $spec['title'] => null],
-            [],
-            array_filter([
-                can($spec['perm_manage']) ? ['label' => 'Import CSV', 'icon' => 'upload', 'href' => master_base_url($spec) . '/import.php', 'class' => 'btn btn-outline-primary btn-sm'] : null,
-                can($spec['perm_manage']) ? ['label' => 'Tambah', 'icon' => 'plus-lg', 'href' => master_base_url($spec) . '/form.php', 'class' => 'btn btn-primary btn-sm'] : null,
-            ])
+            [['text' => number_format($total, 0, ',', '.') . ' Data', 'class' => 'bg-light text-secondary border']],
+            $header_actions
         ) ?>
         <?= master_tabs($key) ?>
         <div class="card shadow-sm border-0 mb-3">

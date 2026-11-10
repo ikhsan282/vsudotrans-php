@@ -4,6 +4,7 @@ require_permission('travel.view');
 require_once __DIR__ . '/../_helpers.php';
 
 [$where, $types, $params] = company_scope('s.company_id');
+
 $st = db()->prepare("SELECT COUNT(*) FROM schedules s WHERE {$where}");
 if ($types !== '') {
     $st->bind_param($types, ...$params);
@@ -11,6 +12,37 @@ if ($types !== '') {
 $st->execute();
 $total = (int) $st->get_result()->fetch_row()[0];
 $st->close();
+
+$export_format = strtolower(trim((string) ($_GET['export'] ?? '')));
+if (in_array($export_format, ['xlsx', 'pdf'], true)) {
+    $sql_export = "SELECT s.start, s.end, s.start_break, s.end_break, s.duration, s.total_duration
+                   FROM schedules s WHERE {$where} ORDER BY s.start";
+    $max_export_rows = $export_format === 'pdf' ? GRID_PDF_MAX_ROWS : null;
+
+    $row_stream = grid_query_stream(
+        $sql_export,
+        $types,
+        $params,
+        static fn (array $r): array => [
+            substr($r['start'], 0, 5),
+            substr($r['end'], 0, 5),
+            $r['start_break'] ? substr($r['start_break'], 0, 5) . ' - ' . substr((string) $r['end_break'], 0, 5) : '-',
+            (float) $r['duration'],
+            (float) $r['total_duration'],
+        ],
+        $max_export_rows
+    );
+
+    grid_export_send(
+        'Daftar Jadwal Travel',
+        ['Jam Mulai', 'Jam Selesai', 'Jam Istirahat', 'Durasi (Jam)', 'Total Durasi (Jam)'],
+        $row_stream,
+        $export_format,
+        'portrait',
+        'Semua Data',
+        $total
+    );
+}
 
 $p = paginate($total, (int) ($_GET['page'] ?? 1));
 $st = db()->prepare("SELECT s.id, s.start, s.end, s.start_break, s.end_break, s.duration, s.total_duration
@@ -20,6 +52,11 @@ $st->execute();
 $rows = $st->get_result()->fetch_all(MYSQLI_ASSOC);
 $st->close();
 
+$header_actions = ui_export_actions();
+if (can('travel.manage') && active_company_id() !== null) {
+    $header_actions[] = ['label' => 'Tambah', 'icon' => 'plus-lg', 'href' => 'pages/travel/schedules/form.php', 'class' => 'btn btn-primary btn-sm'];
+}
+
 $active = 'travel';
 $title  = 'Jadwal';
 require __DIR__ . '/../../../includes/header.php';
@@ -28,18 +65,17 @@ require __DIR__ . '/../../../includes/header.php';
     <?= ui_page_header(
         'Jadwal Keberangkatan',
         ['Dashboard' => 'pages/dashboard/index.php', 'Travel' => null, 'Jadwal' => null],
-        [],
-        can('travel.manage') && active_company_id() !== null ? [
-            ['label' => 'Tambah', 'icon' => 'plus-lg', 'href' => 'pages/travel/schedules/form.php', 'class' => 'btn btn-primary btn-sm'],
-        ] : []
+        [['text' => number_format($total, 0, ',', '.') . ' Jadwal', 'class' => 'bg-light text-secondary border']],
+        $header_actions
     ) ?>
     <div class="card shadow-sm border-0">
         <div class="table-responsive">
             <table class="table table-hover mb-0 align-middle">
-                <thead><tr><th>Mulai</th><th>Selesai</th><th>Istirahat</th><th class="text-end">Durasi (jam)</th><th class="text-end">Total (jam)</th><th class="text-end">Aksi</th></tr></thead>
+                <thead class="table-light"><tr><th class="text-center" style="width: 52px;">No</th><th>Mulai</th><th>Selesai</th><th>Istirahat</th><th class="text-end">Durasi (jam)</th><th class="text-end">Total (jam)</th><th class="text-end">Aksi</th></tr></thead>
                 <tbody>
-                <?php foreach ($rows as $r): ?>
+                <?php foreach ($rows as $idx => $r): ?>
                     <tr>
+                        <td class="text-center text-muted small"><?= number_format($p['offset'] + $idx + 1, 0, ',', '.') ?></td>
                         <td><?= e(substr($r['start'], 0, 5)) ?></td>
                         <td><?= e(substr($r['end'], 0, 5)) ?></td>
                         <td><?= $r['start_break'] ? e(substr($r['start_break'], 0, 5)) . ' - ' . e(substr((string) $r['end_break'], 0, 5)) : '-' ?></td>
@@ -58,12 +94,21 @@ require __DIR__ . '/../../../includes/header.php';
                     </tr>
                 <?php endforeach; ?>
                 <?php if (!$rows): ?>
-                    <tr><td colspan="6" class="text-center text-muted py-4">Belum ada data.</td></tr>
+                    <tr><td colspan="7" class="text-center text-muted py-4">Belum ada data jadwal.</td></tr>
                 <?php endif; ?>
                 </tbody>
             </table>
         </div>
-        <div class="card-footer bg-white"><?= pagination_html($p, '') ?></div>
+        <div class="card-footer bg-white d-flex flex-wrap justify-content-between align-items-center gap-2 py-2">
+            <div class="small text-muted">
+                <?php if ($total > 0): ?>
+                    Menampilkan <strong><?= number_format($p['offset'] + 1, 0, ',', '.') ?>&ndash;<?= number_format(min($total, $p['offset'] + count($rows)), 0, ',', '.') ?></strong> dari <strong><?= number_format($total, 0, ',', '.') ?></strong> data
+                <?php else: ?>
+                    Total <strong>0</strong> data
+                <?php endif; ?>
+            </div>
+            <?= pagination_html($p, '') ?>
+        </div>
     </div>
 </main>
 <?php require __DIR__ . '/../../../includes/footer.php'; ?>
