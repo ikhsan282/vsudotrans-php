@@ -17,7 +17,7 @@ if ($id === 0 && !is_super_admin()) {
 }
 
 $tab = (string) ($_GET['tab'] ?? $_POST['tab'] ?? 'profile');
-if (!in_array($tab, ['profile', 'payment'], true)) {
+if (!in_array($tab, ['profile', 'payment', 'hermes'], true)) {
     $tab = 'profile';
 }
 
@@ -34,6 +34,8 @@ $row = [
     'city'         => '',
     'logo'         => '',
     'stamp'        => '',
+    'bot_secret'   => '',
+    'bot_phone'    => '',
     'is_active'    => 1,
 ];
 
@@ -48,6 +50,15 @@ if ($id > 0) {
         redirect('pages/companies/index.php');
     }
     assert_company_access((int) $found['id']);
+    // Pastikan setiap perusahaan aktif memiliki dedicated bot_secret sendiri
+    if (empty($found['bot_secret'])) {
+        $autoSecret = strtolower((string) $found['code']) . '_hermes_secret_key_' . bin2hex(random_bytes(12));
+        $stSec = $db->prepare('UPDATE companies SET bot_secret = ? WHERE id = ?');
+        $stSec->bind_param('si', $autoSecret, $id);
+        $stSec->execute();
+        $stSec->close();
+        $found['bot_secret'] = $autoSecret;
+    }
     $row = $found;
     gateway_ensure_company_channels($id);
 }
@@ -155,15 +166,16 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     flash('success', 'Profil perusahaan berhasil diperbarui.');
                     redirect("pages/companies/form.php?id={$id}&tab=profile");
                 } else {
+                    $botSecret = strtolower($row['code']) . '_hermes_secret_key_' . bin2hex(random_bytes(12));
                     $st = $db->prepare('INSERT INTO companies (group_id, code, name, note, country_code, phone_number,
-                        website, email, address, city, logo, stamp, is_active, created_user) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)');
-                    $st->bind_param('isssssssssssis', ...[...$vals, $user]);
+                        website, email, address, city, logo, stamp, bot_secret, is_active, created_user) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)');
+                    $st->bind_param('issssssssssssis', ...[...array_slice($vals, 0, 12), $botSecret, $vals[12], $user]);
                     $st->execute();
                     $new_id = (int) $db->insert_id;
                     $st->close();
                     gateway_ensure_company_channels($new_id);
                     audit('company.create', "Perusahaan #{$new_id} {$row['code']}");
-                    flash('success', 'Perusahaan berhasil ditambahkan. Silakan atur channel QRIS Dinamis.');
+                    flash('success', 'Perusahaan berhasil ditambahkan beserta Secret Key Bot Hermes khusus perusahaan ini.');
                     redirect("pages/companies/form.php?id={$new_id}&tab=payment");
                 }
             } catch (mysqli_sql_exception $ex) {
@@ -290,6 +302,37 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             }
         }
     }
+
+    // ==========================================
+    // SECTION 3: BOT WHATSAPP (HERMES) PER PERUSAHAAN
+    // ==========================================
+    elseif ($section === 'hermes' && $id > 0) {
+        $act = (string) ($_POST['_action'] ?? 'save_phone');
+        if ($act === 'save_phone') {
+            $rawBotPhone = trim((string) ($_POST['bot_phone'] ?? ''));
+            $normBotPhone = $rawBotPhone !== '' ? bot_normalize_phone($rawBotPhone) : null;
+            if ($rawBotPhone !== '' && $normBotPhone === null) {
+                $errors[] = 'Format Nomor WhatsApp Bot tidak valid (contoh: 0812xxxxxxxx atau 62812xxxxxxxx).';
+            } else {
+                $st = $db->prepare('UPDATE companies SET bot_phone = ?, modified_user = ?, modified_date = NOW() WHERE id = ?');
+                $st->bind_param('ssi', $normBotPhone, $user, $id);
+                $st->execute();
+                $st->close();
+                audit('company.bot_phone_update', "Perusahaan #{$id} {$row['code']} bot_phone: " . ($normBotPhone ?? 'NULL'));
+                flash('success', "Nomor WhatsApp Bot untuk {$row['name']} berhasil disimpan.");
+                redirect("pages/companies/form.php?id={$id}&tab=hermes");
+            }
+        } elseif ($act === 'regenerate') {
+            $newSecret = strtolower((string) $row['code']) . '_hermes_secret_key_' . bin2hex(random_bytes(12));
+            $st = $db->prepare('UPDATE companies SET bot_secret = ?, modified_user = ?, modified_date = NOW() WHERE id = ?');
+            $st->bind_param('ssi', $newSecret, $user, $id);
+            $st->execute();
+            $st->close();
+            audit('company.bot_secret_renew', "Perusahaan #{$id} {$row['code']}");
+            flash('success', "Secret Key Bot Hermes untuk {$row['name']} ({$row['code']}) berhasil dibuat ulang.");
+            redirect("pages/companies/form.php?id={$id}&tab=hermes");
+        }
+    }
 }
 
 // Data Pendukung Tab Payment
@@ -365,6 +408,11 @@ require __DIR__ . '/../../includes/header.php';
             <li class="nav-item">
                 <a class="nav-link <?= $tab === 'payment' ? 'active shadow-sm fw-semibold' : 'text-secondary bg-white border shadow-sm' ?> rounded-pill px-3 py-2" href="?id=<?= $id ?>&tab=payment&provider=<?= e($activeProv) ?>">
                     <i class="bi bi-qr-code-scan me-1"></i> Channel QRIS Otomatis
+                </a>
+            </li>
+            <li class="nav-item">
+                <a class="nav-link <?= $tab === 'hermes' ? 'active shadow-sm fw-semibold' : 'text-secondary bg-white border shadow-sm' ?> rounded-pill px-3 py-2" href="?id=<?= $id ?>&tab=hermes">
+                    <i class="bi bi-robot me-1"></i> Bot WhatsApp (Hermes)
                 </a>
             </li>
         </ul>
@@ -666,6 +714,88 @@ require __DIR__ . '/../../includes/header.php';
                     <button class="btn btn-outline-warning btn-sm" type="submit">Buat Ulang Token Webhook</button>
                 </form>
             <?php endif; ?>
+        </div>
+    </div>
+    <?php endif; ?>
+
+    <!-- ============================================================== -->
+    <!-- TAB 3: BOT WHATSAPP (HERMES) KHUSUS PERUSAHAAN INI             -->
+    <!-- ============================================================== -->
+    <?php if ($tab === 'hermes' && $id > 0): ?>
+    <?php $baseUrl = rtrim((string) APP_URL, '/'); ?>
+    <div class="card shadow-sm border-0" style="max-width: 880px;">
+        <div class="card-header bg-white d-flex justify-content-between align-items-center">
+            <span class="fw-semibold"><i class="bi bi-robot me-1 text-primary"></i> Konfigurasi Bot WhatsApp (Hermes) — <?= e($row['name']) ?></span>
+            <span class="badge bg-primary-subtle text-primary border border-primary-subtle font-monospace">1 Bot = 1 Perusahaan (<?= e($row['code']) ?>)</span>
+        </div>
+        <div class="card-body">
+            <div class="alert alert-info py-2 small mb-3">
+                <i class="bi bi-shield-lock me-1"></i>
+                <strong>Isolasi Ketat Per Perusahaan:</strong> Secret Key di bawah ini khusus milik Bot Hermes <strong><?= e($row['name']) ?> (<?= e($row['code']) ?>)</strong>.
+                Setiap request yang menggunakan Secret Key ini otomatis terkunci ke perusahaan <code><?= e($row['code']) ?></code> tanpa perlu mengirim parameter <code>company</code>, dan ditolak (<code>403 FORBIDDEN_COMPANY_MISMATCH</code>) bila mencoba mengakses perusahaan lain.
+            </div>
+
+            <div class="row g-3 mb-4">
+                <div class="col-md-4">
+                    <label class="form-label fw-semibold">Kode Perusahaan Terkunci</label>
+                    <input class="form-control font-monospace fw-bold bg-light" readonly value="<?= e($row['code']) ?>">
+                </div>
+                <div class="col-md-8">
+                    <label class="form-label fw-semibold">Hermes Bot Secret Key (Khusus <?= e($row['code']) ?>)</label>
+                    <div class="input-group">
+                        <input class="form-control font-monospace" type="password" id="hermesSecretInput" readonly value="<?= e((string) ($row['bot_secret'] ?? '')) ?>">
+                        <button class="btn btn-outline-secondary" type="button" onclick="const el=document.getElementById('hermesSecretInput'); el.type = el.type === 'password' ? 'text' : 'password';">
+                            <i class="bi bi-eye"></i>
+                        </button>
+                        <button class="btn btn-outline-primary" type="button" onclick="navigator.clipboard.writeText(document.getElementById('hermesSecretInput').value)">
+                            <i class="bi bi-clipboard me-1"></i> Salin Key
+                        </button>
+                    </div>
+                    <small class="text-muted">Gunakan sebagai header <code>Authorization: Bearer &lt;secret_key&gt;</code> atau query <code>?secret=&lt;secret_key&gt;</code> pada instance Hermes <?= e($row['code']) ?>.</small>
+                </div>
+
+                <div class="col-12">
+                    <form method="post" action="?id=<?= $id ?>&tab=hermes" class="card card-body bg-light border p-3">
+                        <?= csrf_field() ?>
+                        <input type="hidden" name="id" value="<?= $id ?>">
+                        <input type="hidden" name="_section" value="hermes">
+                        <input type="hidden" name="_action" value="save_phone">
+                        <div class="row g-2 align-items-end">
+                            <div class="col-md-6">
+                                <label class="form-label fw-semibold small mb-1">Nomor WhatsApp Resmi Bot Perusahaan</label>
+                                <input class="form-control font-monospace" name="bot_phone" placeholder="0812xxxxxxxx atau 62812xxxxxxxx" value="<?= e((string) ($row['bot_phone'] ?? '')) ?>">
+                                <small class="text-muted">Nomor WhatsApp tempat pelanggan menghubungi bot ini (format: 628xxxxxxxxxx).</small>
+                            </div>
+                            <div class="col-md-3">
+                                <button class="btn btn-primary w-100" type="submit"><i class="bi bi-check-lg me-1"></i> Simpan Nomor Bot</button>
+                            </div>
+                        </div>
+                    </form>
+                </div>
+            </div>
+
+            <form method="post" action="?id=<?= $id ?>&tab=hermes" class="mb-4" onsubmit="return confirm('Buat ulang Secret Key Bot Hermes untuk <?= e($row['name']) ?>? Instance Hermes perusahaan ini harus diperbarui dengan key baru.');">
+                <?= csrf_field() ?>
+                <input type="hidden" name="id" value="<?= $id ?>">
+                <input type="hidden" name="_section" value="hermes">
+                <input type="hidden" name="_action" value="regenerate">
+                <button class="btn btn-outline-warning btn-sm" type="submit">
+                    <i class="bi bi-arrow-repeat me-1"></i> Buat Ulang Secret Key Bot <?= e($row['code']) ?>
+                </button>
+            </form>
+
+            <hr>
+            <h6 class="fw-bold mb-2">Contoh Pemanggilan API dari Instance Hermes <?= e($row['code']) ?></h6>
+            <p class="small text-muted mb-2">Karena Secret Key sudah terikat langsung ke <code><?= e($row['code']) ?></code>, bot tidak perlu mengirim <code>?company=<?= e($row['code']) ?></code>:</p>
+            <pre class="bg-dark text-light p-3 rounded small mb-0"><code># 1. Cek Profil &amp; Rute Aktif <?= e($row['code']) ?>
+
+curl -s "<?= e($baseUrl) ?>/api/bot/routes.php?phone=6281234567890" \
+  -H "Authorization: Bearer <?= e((string) ($row['bot_secret'] ?? '')) ?>"
+
+# 2. Tarik Antrean Outbox WA Khusus <?= e($row['code']) ?>
+
+curl -s "<?= e($baseUrl) ?>/api/bot/outbox.php?phone=6281234567890" \
+  -H "Authorization: Bearer <?= e((string) ($row['bot_secret'] ?? '')) ?>"</code></pre>
         </div>
     </div>
     <?php endif; ?>

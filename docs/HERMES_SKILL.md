@@ -30,28 +30,33 @@ Tugas utamamu:
 2. **Jangan Mengarang Angka atau Rute**:
    - Selalu gunakan nilai `formatted` (contoh `Rp 150.234`) yang dikembalikan oleh API.
    - Saat memberikan instruksi pembayaran QRIS, **WAJIB** tekankan bahwa pelanggan harus membayar **persis sesuai `total.formatted`** (termasuk kode unik 3 digit) agar pembayaran terverifikasi otomatis.
-3. **Multi-Tenant (`COMPANY`)**:
-   - Selalu sertakan kode perusahaan (`MTM`, `GTM`, `NTM`, `TTM`, atau `LIZ`) pada parameter `company=` atau header `X-Bot-Company`.
+3. **Arsitektur 1 Bot Hermes = 1 Perusahaan (`bot_secret` Terkunci Per Perusahaan)**:
+   - Setiap perusahaan memiliki **instance Bot Hermes dan Secret Key (`companies.bot_secret`) tersendiri** yang dikelola dari menu **Pengaturan Perusahaan → Tab Bot WhatsApp (Hermes)**:
+     - `MTM` → `mtm_hermes_secret_key_...`
+     - `NTM` → `ntm_hermes_secret_key_...`
+     - `GTM` → `gtm_hermes_secret_key_...`
+     - `TTM` → `ttm_hermes_secret_key_...`
+     - `LIZ` → `liz_hermes_secret_key_...`
+   - Saat Hermes mengirimkan `Authorization: Bearer <bot_secret_perusahaan>`, sistem **otomatis mengunci dan mengenali perusahaan tersebut** tanpa perlu mengirim parameter `?company=` atau header `X-Bot-Company`.
+   - Jika key milik `MTM` mencoba mengakses data perusahaan lain (mis. mengirim `company=LIZ`), sistem langsung menolak dengan `403 FORBIDDEN_COMPANY_MISMATCH`.
 
 ---
 
 ## 3. Cara Memanggil Endpoint API VSudoTrans
 
-Gunakan **Mode Sederhana** (Header `Authorization: Bearer` atau query `?secret=`):
+Gunakan **Secret Key Khusus Perusahaan** (Header `Authorization: Bearer` atau query `?secret=`):
 
 ```bash
 BASE="https://panel.domain-internal.com"
-SECRET="mj52qt4B68sJzw8mw8NLM6GG5H6CfFnJJrOoX3-e72w"
-COMPANY="MTM"       # MTM | GTM | NTM | TTM | LIZ
+SECRET="mtm_hermes_secret_key_9f8e7d6c5b4a321098765432" # Secret key khusus bot perusahaan (misal MTM)
 PHONE="6281234567890" # Nomor WA pengirim dari metadata sesi
 ```
 
-Atau menggunakan header:
+Atau menggunakan header (tanpa perlu mengirim `X-Bot-Company` karena otomatis terkunci dari `$SECRET`):
 ```bash
 curl -sS "$BASE/api/bot/me.php" \
   -H "Authorization: Bearer $SECRET" \
-  -H "X-Bot-Phone: $PHONE" \
-  -H "X-Bot-Company: $COMPANY"
+  -H "X-Bot-Phone: $PHONE"
 ```
 
 ---
@@ -61,19 +66,19 @@ curl -sS "$BASE/api/bot/me.php" \
 ### 4.1 `GET /api/bot/me.php` — Cek Identitas Pengirim
 Panggil di awal percakapan untuk mengetahui nama pelanggan, jumlah booking aktif, atau apakah pengirim adalah Admin/Staff (`is_staff`).
 ```bash
-curl -sS "$BASE/api/bot/me.php?secret=$SECRET&phone=$PHONE&company=$COMPANY"
+curl -sS "$BASE/api/bot/me.php?secret=$SECRET&phone=$PHONE"
 ```
 
 ### 4.2 `GET /api/bot/routes.php` — Daftar Rute Travel, Jadwal, & Armada
 Panggil saat pelanggan bertanya rute, harga, jam keberangkatan, atau sebelum membuat pesanan baru.
 ```bash
-curl -sS "$BASE/api/bot/routes.php?secret=$SECRET&phone=$PHONE&company=$COMPANY"
+curl -sS "$BASE/api/bot/routes.php?secret=$SECRET&phone=$PHONE"
 ```
 
 ### 4.3 `GET /api/bot/bookings.php` — Cek Pesanan Aktif & Riwayat berdasarkan Nomor WA
 Menampilkan semua pesanan aktif/belum lunas (`active`) dan riwayat perjalanan/pembayaran (`history`) milik nomor WA pengirim, lengkap dengan `tiket_url` dan `pending_qris`.
 ```bash
-curl -sS "$BASE/api/bot/bookings.php?secret=$SECRET&phone=$PHONE&company=$COMPANY&history=10"
+curl -sS "$BASE/api/bot/bookings.php?secret=$SECRET&phone=$PHONE&history=10"
 ```
 
 ### 4.4 `POST /api/bot/booking_create.php` — Auto-Order Tiket Travel / Rental dari Chat
@@ -85,7 +90,7 @@ Pastikan kamu sudah mendapatkan konfirmasi dari pelanggan mengenai:
 - **Alamat Jemput & Antar** (`pickup_address`, `delivery_address`)
 
 ```bash
-curl -sS -X POST "$BASE/api/bot/booking_create.php?secret=$SECRET&phone=$PHONE&company=$COMPANY" \
+curl -sS -X POST "$BASE/api/bot/booking_create.php?secret=$SECRET&phone=$PHONE" \
   -H "Content-Type: application/json" \
   -d '{
     "booking_type": "travel",
@@ -104,7 +109,7 @@ Respons akan langsung menyertakan `document_number` (mis. `TRV-8K4M9P2X`), `invo
 ### 4.5 `POST /api/bot/qris_create.php` — Buat / Ambil QRIS Dinamis untuk Tiket Belum Lunas
 Jika pelanggan ingin membayar tiket yang sudah dipesan sebelumnya (`document_number` atau `invoice_id`):
 ```bash
-curl -sS -X POST "$BASE/api/bot/qris_create.php?secret=$SECRET&phone=$PHONE&company=$COMPANY" \
+curl -sS -X POST "$BASE/api/bot/qris_create.php?secret=$SECRET&phone=$PHONE" \
   -H "Content-Type: application/json" \
   -d '{"document_number": "TRV-8K4M9P2X"}'
 ```
@@ -113,18 +118,18 @@ curl -sS -X POST "$BASE/api/bot/qris_create.php?secret=$SECRET&phone=$PHONE&comp
 ### 4.6 `GET /api/bot/qris_status.php` — Cek Status Pembayaran QRIS & Konfirmasi Lunas
 Panggil saat pelanggan berkata *"Sudah saya bayar"* atau *"Cek status pembayaran saya"*:
 ```bash
-curl -sS "$BASE/api/bot/qris_status.php?secret=$SECRET&phone=$PHONE&company=$COMPANY&document_number=TRV-8K4M9P2X"
+curl -sS "$BASE/api/bot/qris_status.php?secret=$SECRET&phone=$PHONE&document_number=TRV-8K4M9P2X"
 ```
 - Jika `data.status == "PAID"`, sistem VSudoTrans **otomatis** mencatat pembayaran ke invoice, mengubah status booking menjadi `confirmed`, dan mengembalikan `tiket_url`. Kirimkan ucapan terima kasih beserta tautan E-Tiket (`tiket_url`) kepada pelanggan!
 
 ### 4.7 `GET /api/bot/staff_summary.php` — Rekapitulasi Operasional (Khusus Pengurus/Admin)
 Hanya boleh dipanggil bila `me.php` menunjukkan `is_staff: true`.
 ```bash
-curl -sS "$BASE/api/bot/staff_summary.php?secret=$SECRET&phone=$PHONE&company=$COMPANY"
+curl -sS "$BASE/api/bot/staff_summary.php?secret=$SECRET&phone=$PHONE"
 ```
 
 ### 4.8 `GET` & `POST /api/bot/outbox.php` — Antrean Notifikasi WhatsApp Otomatis
-Digunakan worker Hermes untuk menarik notifikasi bukti bayar/booking (`GET /api/bot/outbox.php?secret=$SECRET&phone=628000000000&company=$COMPANY`) dan menandai terkirim (`POST` dengan `{"event_id":"...","status":"sent"}`).
+Digunakan worker Hermes untuk menarik notifikasi bukti bayar/booking (`GET /api/bot/outbox.php?secret=$SECRET&phone=628000000000`) dan menandai terkirim (`POST` dengan `{"event_id":"...","status":"sent"}`).
 
 ### 4.9 `GET` & `POST /api/bot/dispatch_queue.php` — Penugasan Driver (Scheduler & Interaktif)
 Menghubungkan penugasan driver di VSudoTrans dengan WhatsApp tanpa gateway pihak ketiga.

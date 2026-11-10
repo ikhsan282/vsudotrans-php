@@ -46,21 +46,36 @@ function bot_phone_variants(string $canonical): array
     return [$canonical, '0' . $tail, '+' . $canonical, $tail];
 }
 
-/** Ambil daftar key `[key_id => ['secret' => ..., 'company' => ...]]`. */
+/** Ambil daftar key `[key_id => ['secret' => ..., 'company' => ...]]` murni dari tabel `companies.bot_secret`. */
 function bot_api_keys_normalized(): array
 {
-    $raw = defined('BOT_API_KEYS') && is_array(BOT_API_KEYS) ? BOT_API_KEYS : [];
+    if (isset($GLOBALS['BOT_KEYS_CACHE']) && is_array($GLOBALS['BOT_KEYS_CACHE'])) {
+        return $GLOBALS['BOT_KEYS_CACHE'];
+    }
     $out = [];
-    foreach ($raw as $kid => $val) {
-        if (is_string($val)) {
-            $out[(string) $kid] = ['secret' => $val, 'company' => null];
-        } elseif (is_array($val) && !empty($val['secret'])) {
-            $out[(string) $kid] = [
-                'secret'  => (string) $val['secret'],
-                'company' => !empty($val['company']) ? strtoupper(trim((string) $val['company'])) : null,
-            ];
+
+    // Muat secret key bot milik masing-masing perusahaan langsung dari tabel `companies`
+    if (function_exists('db')) {
+        try {
+            $res = db()->query("SELECT code, bot_secret FROM companies WHERE is_active = 1 AND bot_secret IS NOT NULL AND bot_secret <> ''");
+            if ($res) {
+                while ($row = $res->fetch_assoc()) {
+                    $code = strtoupper(trim((string) $row['code']));
+                    $sec  = trim((string) $row['bot_secret']);
+                    if ($code !== '' && strlen($sec) >= 24) {
+                        $out['company-' . strtolower($code)] = [
+                            'secret'  => $sec,
+                            'company' => $code,
+                        ];
+                    }
+                }
+            }
+        } catch (Throwable $e) {
+            // Abaikan bila database belum siap
         }
     }
+
+    $GLOBALS['BOT_KEYS_CACHE'] = $out;
     return $out;
 }
 
@@ -78,11 +93,21 @@ function bot_verify_simple(array $server, array $keys): ?array
 
     $matchedKey = null;
     $matchedMeta = null;
+    // Prioritaskan key yang terikat langsung ke perusahaan (1 Bot Hermes = 1 Perusahaan)
     foreach ($keys as $kid => $meta) {
-        if (strlen($meta['secret']) >= 24 && hash_equals($meta['secret'], $token)) {
+        if ($meta['company'] !== null && strlen($meta['secret']) >= 24 && hash_equals($meta['secret'], $token)) {
             $matchedKey = (string) $kid;
             $matchedMeta = $meta;
             break;
+        }
+    }
+    if ($matchedKey === null) {
+        foreach ($keys as $kid => $meta) {
+            if (strlen($meta['secret']) >= 24 && hash_equals($meta['secret'], $token)) {
+                $matchedKey = (string) $kid;
+                $matchedMeta = $meta;
+                break;
+            }
         }
     }
     if ($matchedKey === null) {
@@ -95,18 +120,30 @@ function bot_verify_simple(array $server, array $keys): ?array
         return ['ok' => false, 'status' => 400, 'code' => 'INVALID_PHONE', 'reason' => 'missing or invalid phone parameter/header'];
     }
 
-    $compCode = strtoupper(trim((string) (
-        $server['HTTP_X_BOT_COMPANY']
-        ?? $_GET['company']
-        ?? $matchedMeta['company']
-        ?? (defined('BOT_DEFAULT_COMPANY') ? BOT_DEFAULT_COMPANY : 'MTM')
-    )));
+    $boundCompany = $matchedMeta['company'] ?? null;
+    $explicitComp = trim((string) ($server['HTTP_X_BOT_COMPANY'] ?? ($_GET['company'] ?? '')));
+    if ($boundCompany !== null) {
+        if ($explicitComp !== '' && strtoupper($explicitComp) !== $boundCompany) {
+            return [
+                'ok'     => false,
+                'status' => 403,
+                'code'   => 'FORBIDDEN_COMPANY_MISMATCH',
+                'reason' => "Secret key bot ini khusus untuk perusahaan {$boundCompany} dan tidak dapat mengakses {$explicitComp}",
+            ];
+        }
+        $compCode = $boundCompany;
+        $locked   = true;
+    } else {
+        $compCode = strtoupper($explicitComp !== '' ? $explicitComp : (defined('BOT_DEFAULT_COMPANY') ? BOT_DEFAULT_COMPANY : 'MTM'));
+        $locked   = false;
+    }
 
     return [
-        'ok'           => true,
-        'key_id'       => $matchedKey,
-        'phone'        => $phone,
-        'company_code' => $compCode,
+        'ok'             => true,
+        'key_id'         => $matchedKey,
+        'phone'          => $phone,
+        'company_code'   => $compCode,
+        'company_locked' => $locked,
     ];
 }
 
@@ -115,7 +152,7 @@ function bot_verify_request(array $server, string $rawBody): array
 {
     $keys = bot_api_keys_normalized();
     if (!$keys) {
-        return ['ok' => false, 'status' => 503, 'code' => 'BOT_NOT_CONFIGURED', 'reason' => 'BOT_API_KEYS is empty'];
+        return ['ok' => false, 'status' => 503, 'code' => 'BOT_NOT_CONFIGURED', 'reason' => 'Tidak ada bot_secret perusahaan yang aktif di database'];
     }
 
     $simple = bot_verify_simple($server, $keys);
@@ -155,18 +192,30 @@ function bot_verify_request(array $server, string $rawBody): array
         return ['ok' => false, 'status' => 401, 'code' => 'BAD_SIGNATURE', 'reason' => 'HMAC signature mismatch'];
     }
 
-    $compCode = strtoupper(trim((string) (
-        $server['HTTP_X_BOT_COMPANY']
-        ?? $_GET['company']
-        ?? $keys[$keyId]['company']
-        ?? (defined('BOT_DEFAULT_COMPANY') ? BOT_DEFAULT_COMPANY : 'MTM')
-    )));
+    $boundCompany = $keys[$keyId]['company'] ?? null;
+    $explicitComp = trim((string) ($server['HTTP_X_BOT_COMPANY'] ?? ($_GET['company'] ?? '')));
+    if ($boundCompany !== null) {
+        if ($explicitComp !== '' && strtoupper($explicitComp) !== $boundCompany) {
+            return [
+                'ok'     => false,
+                'status' => 403,
+                'code'   => 'FORBIDDEN_COMPANY_MISMATCH',
+                'reason' => "Key '{$keyId}' khusus untuk perusahaan {$boundCompany} dan tidak dapat mengakses {$explicitComp}",
+            ];
+        }
+        $compCode = $boundCompany;
+        $locked   = true;
+    } else {
+        $compCode = strtoupper($explicitComp !== '' ? $explicitComp : (defined('BOT_DEFAULT_COMPANY') ? BOT_DEFAULT_COMPANY : 'MTM'));
+        $locked   = false;
+    }
 
     return [
-        'ok'           => true,
-        'key_id'       => $keyId,
-        'phone'        => $normPhone,
-        'company_code' => $compCode,
+        'ok'             => true,
+        'key_id'         => $keyId,
+        'phone'          => $normPhone,
+        'company_code'   => $compCode,
+        'company_locked' => $locked,
     ];
 }
 
@@ -174,7 +223,7 @@ function bot_verify_request(array $server, string $rawBody): array
 function bot_resolve_company(mysqli $db, string $companyCode): ?array
 {
     $code = strtoupper(trim($companyCode));
-    $st = $db->prepare('SELECT id, group_id, code, name, phone_number, email, website, address, city, logo, stamp FROM companies WHERE code = ? AND is_active = 1 LIMIT 1');
+    $st = $db->prepare('SELECT id, group_id, code, name, phone_number, website, email, address, city, logo, stamp, bot_phone FROM companies WHERE code = ? AND is_active = 1 LIMIT 1');
     $st->bind_param('s', $code);
     $st->execute();
     $row = $st->get_result()->fetch_assoc() ?: null;

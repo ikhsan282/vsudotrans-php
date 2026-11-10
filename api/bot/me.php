@@ -47,13 +47,14 @@ $primaryName = $actor['passengers'][0]['name']
 
 bot_reply(200, [
     'company' => [
-        'id'      => $cid,
-        'code'    => $company['code'],
-        'name'    => $company['name'],
-        'phone'   => $company['phone_number'],
-        'email'   => $company['email'],
-        'website' => $company['website'],
-        'city'    => $company['city'],
+        'id'        => $cid,
+        'code'      => $company['code'],
+        'name'      => $company['name'],
+        'phone'     => $company['phone_number'],
+        'bot_phone' => $company['bot_phone'] ?? null,
+        'email'     => $company['email'],
+        'website'   => $company['website'],
+        'city'      => $company['city'],
     ],
     'phone'                 => $ctx['phone'],
     'registered'            => $actor['registered'],

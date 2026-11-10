@@ -16,7 +16,6 @@
  */
 
 require_once __DIR__ . '/../config/config.php';
-require_once __DIR__ . '/../config/bot_secrets.php';
 require_once __DIR__ . '/../includes/bot_auth.php';
 require_once __DIR__ . '/../includes/payment_gateway.php';
 
@@ -70,7 +69,7 @@ echo "=== Test Tahap 2: Hermes WhatsApp Chatbot API ===\n";
 check_bot(bot_normalize_phone('0812-3456-7890') === '6281234567890', 'bot_normalize_phone converts 0812-3456-7890 to 6281234567890');
 check_bot(bot_normalize_phone('6281234567890@s.whatsapp.net') === '6281234567890', 'bot_normalize_phone strips WhatsApp JID suffix');
 
-$secret = 'mj52qt4B68sJzw8mw8NLM6GG5H6CfFnJJrOoX3-e72w';
+$secret = 'mtm_hermes_secret_key_9f8e7d6c5b4a321098765432'; // Dedicated secret key MTM dari database
 $testPhone = '6281377778888';
 $otherPhone = '6281399990000';
 $adminPhone = '081200000002'; // seeded admin for company 1
@@ -190,6 +189,31 @@ check_bot(($staffDeny['ok'] ?? true) === false && ($staffDeny['error']['code'] ?
 
 $staffOk = call_bot_endpoint('staff_summary.php', 'GET', ['secret' => $secret, 'phone' => $adminPhone, 'company' => 'MTM']);
 check_bot(($staffOk['ok'] ?? false) === true && isset($staffOk['data']['today_bookings_amount']), 'GET /api/bot/staff_summary.php succeeds for staff phone');
+
+// 10. Test 1-Bot-Per-Company Dedicated Secret Key (auto-lock company & block cross-company)
+$mtmKey = 'mtm_hermes_secret_key_9f8e7d6c5b4a321098765432';
+$lizKey = 'liz_hermes_secret_key_4d5e6f7a8b9c012345678901';
+
+$mtmAuto = call_bot_endpoint('me.php', 'GET', ['secret' => $mtmKey, 'phone' => $testPhone]);
+check_bot(
+    ($mtmAuto['ok'] ?? false) === true && ($mtmAuto['data']['company']['code'] ?? '') === 'MTM',
+    'Dedicated MTM bot_secret auto-resolves to MTM without passing ?company=',
+    json_encode($mtmAuto)
+);
+
+$lizAuto = call_bot_endpoint('me.php', 'GET', ['secret' => $lizKey, 'phone' => $testPhone]);
+check_bot(
+    ($lizAuto['ok'] ?? false) === true && ($lizAuto['data']['company']['code'] ?? '') === 'LIZ',
+    'Dedicated LIZ bot_secret auto-resolves to LIZ without passing ?company=',
+    json_encode($lizAuto)
+);
+
+$crossMismatch = call_bot_endpoint('me.php', 'GET', ['secret' => $mtmKey, 'phone' => $testPhone, 'company' => 'LIZ']);
+check_bot(
+    ($crossMismatch['ok'] ?? true) === false && ($crossMismatch['error']['code'] ?? '') === 'FORBIDDEN_COMPANY_MISMATCH',
+    'Dedicated MTM bot_secret rejects ?company=LIZ with 403 FORBIDDEN_COMPANY_MISMATCH',
+    json_encode($crossMismatch)
+);
 
 // Cleanup test rows
 $db->query("DELETE FROM wa_outbox WHERE event_id = '{$eventId}'");

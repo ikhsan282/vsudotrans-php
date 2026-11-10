@@ -10,9 +10,6 @@ if (realpath($_SERVER['SCRIPT_FILENAME'] ?? '') === __FILE__) {
 }
 
 require_once __DIR__ . '/../../config/config.php';
-if (!defined('BOT_API_KEYS') && is_file(__DIR__ . '/../../config/bot_secrets.php')) {
-    require_once __DIR__ . '/../../config/bot_secrets.php';
-}
 require_once __DIR__ . '/../../includes/bot_auth.php';
 
 header('Content-Type: application/json; charset=utf-8');
@@ -64,7 +61,8 @@ function bot_log_request(int $status): void
         $st->bind_param('isssis', $cid, $kid, $phone, $ep, $status, $ip);
         $st->execute();
         $st->close();
-        if (random_int(1, 200) === 1) {
+        // Auto-purge log request bot > 30 hari & outbox terkirim > 90 hari (probabilitas 1:20 request)
+        if (random_int(1, 20) === 1) {
             db()->query('DELETE FROM bot_request_logs WHERE created_at < NOW() - INTERVAL 30 DAY');
             db()->query("DELETE FROM wa_outbox WHERE status IN ('sent', 'skipped') AND created_date < NOW() - INTERVAL 90 DAY");
         }
@@ -104,10 +102,20 @@ function bot_boot(array $methods, bool $resolveActor = true): array
         }
     }
 
-    // Izinkan override kode perusahaan dari body JSON bila dikirim
-    $companyCode = !empty($body['company']) && is_string($body['company'])
-        ? strtoupper(trim($body['company']))
-        : $auth['company_code'];
+    // Jika secret key terikat pada 1 perusahaan (1 Bot Hermes = 1 Perusahaan), kunci rapat ke perusahaan tersebut
+    $bodyComp = !empty($body['company']) && is_string($body['company']) ? strtoupper(trim($body['company'])) : '';
+    if (!empty($auth['company_locked'])) {
+        if ($bodyComp !== '' && $bodyComp !== $auth['company_code']) {
+            bot_error(
+                403,
+                'FORBIDDEN_COMPANY_MISMATCH',
+                "Secret key bot ini khusus untuk perusahaan {$auth['company_code']} dan tidak dapat mengakses {$bodyComp}."
+            );
+        }
+        $companyCode = $auth['company_code'];
+    } else {
+        $companyCode = $bodyComp !== '' ? $bodyComp : $auth['company_code'];
+    }
 
     $db = db();
     $company = bot_resolve_company($db, $companyCode);
