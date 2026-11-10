@@ -66,9 +66,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     // SECTION 1: PROFIL & IDENTITAS PERUSAHAAN
     // ==========================================
     if ($section === 'profile') {
+        $existing_code = (string) ($row['code'] ?? '');
         $row = [
             'group_id'     => (string) (int) ($_POST['group_id'] ?? 0),
-            'code'         => strtoupper($in('code', 15)),
+            'code'         => $id > 0 ? $existing_code : strtoupper($in('code', 15)),
             'name'         => $in('name', 255),
             'note'         => $in('note', 2000),
             'country_code' => $in('country_code', 10) ?: '+62',
@@ -378,8 +379,14 @@ require __DIR__ . '/../../includes/header.php';
                 <input type="hidden" name="_section" value="profile">
                 <div class="row g-3">
                     <div class="col-md-4">
-                        <label class="form-label" for="code">Kode Perusahaan <span class="text-danger">*</span></label>
-                        <input class="form-control text-uppercase" id="code" name="code" maxlength="15" required value="<?= e($row['code']) ?>" placeholder="mis. MTM, GTM">
+                        <label class="form-label" for="code">
+                            Kode Perusahaan <span class="text-danger">*</span>
+                            <?php if ($id > 0): ?><i class="bi bi-lock-fill text-muted ms-1" title="Kode perusahaan bersifat permanen"></i><?php endif; ?>
+                        </label>
+                        <input class="form-control text-uppercase font-monospace <?= $id > 0 ? 'bg-light text-secondary' : '' ?>" id="code" name="code" maxlength="15" required value="<?= e($row['code']) ?>" placeholder="mis. MTM, GTM" <?= $id > 0 ? 'readonly tabindex="-1"' : '' ?>>
+                        <?php if ($id > 0): ?>
+                            <div class="form-text small">Permanen (acuan folder Azure Blob &amp; nomor dokumen).</div>
+                        <?php endif; ?>
                     </div>
                     <div class="col-md-8">
                         <label class="form-label" for="name">Nama Resmi Perusahaan <span class="text-danger">*</span></label>
