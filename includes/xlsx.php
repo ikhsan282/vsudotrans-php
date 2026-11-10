@@ -187,3 +187,155 @@ function xlsx_num($n): string
     $s = rtrim(rtrim(sprintf('%.10F', (float) $n), '0'), '.');
     return $s === '' || $s === '-' ? '0' : $s;
 }
+
+/**
+ * Streaming XLSX Builder (O(1) RAM) — aman untuk 100.000+ baris data.
+ * Menulis worksheet menggunakan inlineStr ke php://temp dan menghitung CRC32
+ * secara bertahap (incremental hash), lalu mengalirkan arsip ZIP langsung ke output.
+ *
+ * @param iterable $rows       Array atau Generator baris data
+ * @param string   $sheet_name Nama sheet (maks. 31 karakter)
+ * @return int Jumlah baris yang ditulis (termasuk header)
+ */
+function xlsx_stream(iterable $rows, string $sheet_name = 'Laporan'): int
+{
+    $fp = fopen('php://temp/maxmemory:2097152', 'w+b');
+    $crc_ctx = hash_init('crc32b');
+    $sheet_len = 0;
+
+    $write_buf = '';
+    $flush = static function () use (&$write_buf, $fp, $crc_ctx, &$sheet_len): void {
+        if ($write_buf === '') {
+            return;
+        }
+        fwrite($fp, $write_buf);
+        hash_update($crc_ctx, $write_buf);
+        $sheet_len += strlen($write_buf);
+        $write_buf = '';
+    };
+
+    $write_buf .= '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>' . "\n"
+        . '<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><sheetData>';
+
+    $row_num = 0;
+    foreach ($rows as $row) {
+        $row_num++;
+        $write_buf .= '<row r="' . $row_num . '">';
+        $c = 0;
+        foreach ($row as $v) {
+            if ($v !== null && $v !== '') {
+                $ref = xlsx_col($c) . $row_num;
+                if (is_int($v) || is_float($v)) {
+                    $write_buf .= '<c r="' . $ref . '"><v>' . xlsx_num($v) . '</v></c>';
+                } else {
+                    $write_buf .= '<c r="' . $ref . '" t="inlineStr"><is><t xml:space="preserve">'
+                        . xlsx_xml((string) $v) . '</t></is></c>';
+                }
+            }
+            $c++;
+        }
+        $write_buf .= '</row>';
+        if (strlen($write_buf) >= 65536) {
+            $flush();
+        }
+    }
+
+    $write_buf .= '</sheetData></worksheet>';
+    $flush();
+
+    $sheet_crc = pack('V', hexdec(hash_final($crc_ctx)));
+    rewind($fp);
+
+    $content_types = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>' . "\n"
+        . '<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">'
+        . '<Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>'
+        . '<Default Extension="xml" ContentType="application/xml"/>'
+        . '<Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/>'
+        . '<Override PartName="/xl/worksheets/sheet1.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>'
+        . '</Types>';
+
+    $rels = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>' . "\n"
+        . '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">'
+        . '<Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/>'
+        . '</Relationships>';
+
+    $workbook = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>' . "\n"
+        . '<workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"'
+        . ' xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">'
+        . '<sheets><sheet name="' . xlsx_xml($sheet_name) . '" sheetId="1" r:id="rId1"/></sheets>'
+        . '</workbook>';
+
+    $workbook_rels = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>' . "\n"
+        . '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">'
+        . '<Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet1.xml"/>'
+        . '</Relationships>';
+
+    $small_files = [
+        '[Content_Types].xml'        => $content_types,
+        '_rels/.rels'                => $rels,
+        'xl/workbook.xml'            => $workbook,
+        'xl/_rels/workbook.xml.rels' => $workbook_rels,
+    ];
+
+    $offset = 0;
+    $central = '';
+    foreach ($small_files as $name => $data) {
+        $central .= xlsx_central_entry($name, $data, $offset);
+        $local = xlsx_local_header($name, $data);
+        echo $local;
+        $offset += strlen($local);
+    }
+
+    // Stream xl/worksheets/sheet1.xml
+    $sheet_entry_name = 'xl/worksheets/sheet1.xml';
+    $sheet_local_hdr = "PK\x03\x04"
+        . pack('v', 20)
+        . pack('v', 0x0800)
+        . pack('v', 0)
+        . pack('v', 0) . pack('v', 0)
+        . $sheet_crc
+        . pack('V', $sheet_len)
+        . pack('V', $sheet_len)
+        . pack('v', strlen($sheet_entry_name))
+        . pack('v', 0)
+        . $sheet_entry_name;
+
+    $central .= "PK\x01\x02"
+        . pack('v', 20) . pack('v', 20)
+        . pack('v', 0x0800)
+        . pack('v', 0)
+        . pack('v', 0) . pack('v', 0)
+        . $sheet_crc
+        . pack('V', $sheet_len)
+        . pack('V', $sheet_len)
+        . pack('v', strlen($sheet_entry_name))
+        . pack('v', 0) . pack('v', 0) . pack('v', 0) . pack('v', 0)
+        . pack('V', 0)
+        . pack('V', $offset)
+        . $sheet_entry_name;
+
+    echo $sheet_local_hdr;
+    $offset += strlen($sheet_local_hdr);
+
+    while (!feof($fp)) {
+        $chunk = fread($fp, 65536);
+        if ($chunk === false || $chunk === '') {
+            break;
+        }
+        echo $chunk;
+        $offset += strlen($chunk);
+    }
+    fclose($fp);
+
+    $count = count($small_files) + 1;
+    $eocd = "PK\x05\x06"
+        . pack('v', 0) . pack('v', 0)
+        . pack('v', $count) . pack('v', $count)
+        . pack('V', strlen($central))
+        . pack('V', $offset)
+        . pack('v', 0);
+
+    echo $central . $eocd;
+    return $row_num;
+}
+

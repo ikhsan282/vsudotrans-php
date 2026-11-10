@@ -43,23 +43,28 @@ function ui_export_actions(?array $extra_query = null): array
     ];
 }
 
+define('GRID_PDF_MAX_ROWS', 2000);
+
 /**
  * Kirim unduhan hasil export grid dalam format XLSX atau PDF, lalu exit.
+ * Mendukung $rows berupa array biasa maupun Generator/Traversable (streaming O(1) RAM).
  *
- * @param string $title    Judul laporan/daftar (mis. "Daftar Perusahaan")
- * @param array  $headers  Daftar nama kolom header (tanpa kolom No, karena No ditambahkan otomatis)
- * @param array  $rows     Array 2D baris data (urutan elemen sesuai $headers)
- * @param string $format   'xlsx' atau 'pdf'
- * @param string $orient   'portrait' atau 'landscape' (untuk PDF)
- * @param string $subtitle Subjudul opsional (mis. filter aktif)
+ * @param string   $title      Judul laporan/daftar (mis. "Daftar Perusahaan")
+ * @param array    $headers    Daftar nama kolom header (tanpa kolom No, karena No ditambahkan otomatis)
+ * @param iterable $rows       Array 2D atau Generator baris data (urutan elemen sesuai $headers)
+ * @param string   $format     'xlsx' atau 'pdf'
+ * @param string   $orient     'portrait' atau 'landscape' (untuk PDF)
+ * @param string   $subtitle   Subjudul opsional (mis. filter aktif)
+ * @param ?int     $total_rows Total baris keseluruhan di DB (opsional, untuk info apabila PDF dibatasi)
  */
 function grid_export_send(
     string $title,
     array $headers,
-    array $rows,
+    iterable $rows,
     string $format = 'xlsx',
     string $orient = 'portrait',
-    string $subtitle = ''
+    string $subtitle = '',
+    ?int $total_rows = null
 ): void {
     $format = strtolower(trim($format));
     $date_str = date('Y-m-d');
@@ -77,8 +82,31 @@ function grid_export_send(
     }
 
     if ($format === 'pdf') {
-        $sub = $subtitle !== '' ? $subtitle . ' · ' : '';
-        $sub .= 'Total: ' . count($rows) . ' data · Dicetak ' . date('d/m/Y H:i');
+        $pdf_rows = [];
+        $truncated = false;
+        foreach ($rows as $r) {
+            if (count($pdf_rows) >= GRID_PDF_MAX_ROWS) {
+                $truncated = true;
+                break;
+            }
+            $pdf_rows[] = $r;
+        }
+        if ($total_rows !== null && $total_rows > count($pdf_rows)) {
+            $truncated = true;
+        }
+
+        $sub_parts = [];
+        if ($subtitle !== '') {
+            $sub_parts[] = $subtitle;
+        }
+        if ($truncated) {
+            $total_label = $total_rows !== null ? number_format($total_rows, 0, ',', '.') : '>' . GRID_PDF_MAX_ROWS;
+            $sub_parts[] = 'Menampilkan ' . number_format(count($pdf_rows), 0, ',', '.') . ' dari ' . $total_label . ' data (gunakan filter atau Export Excel untuk data penuh)';
+        } else {
+            $sub_parts[] = 'Total: ' . number_format(count($pdf_rows), 0, ',', '.') . ' data';
+        }
+        $sub_parts[] = 'Dicetak ' . date('d/m/Y H:i');
+        $sub = implode(' · ', $sub_parts);
 
         $css = pdf_base_css('#0d3b66') . '
             tr:nth-child(even) td { background: #f8f9fa; }
@@ -92,11 +120,11 @@ function grid_export_send(
         $thead .= '</tr></thead>';
 
         $tbody = '<tbody>';
-        if (!$rows) {
+        if (!$pdf_rows) {
             $colspan = count($headers) + 1;
             $tbody .= '<tr><td colspan="' . $colspan . '" class="center muted">Tidak ada data.</td></tr>';
         } else {
-            foreach ($rows as $idx => $r) {
+            foreach ($pdf_rows as $idx => $r) {
                 $tbody .= '<tr><td class="no-col">' . ($idx + 1) . '</td>';
                 foreach (array_values($r) as $cell) {
                     $is_num = is_int($cell) || is_float($cell);
@@ -117,17 +145,11 @@ function grid_export_send(
             . pdf_footer($company)
             . '</body></html>';
 
-        audit('grid.export.pdf', $title . ' (' . count($rows) . ' baris)');
+        audit('grid.export.pdf', $title . ' (' . count($pdf_rows) . ' baris)');
         pdf_send_or_html($html, $base_name, 'A4', $orient);
     }
 
-    // Default: XLSX
-    $sheet_rows = [];
-    $sheet_rows[] = array_merge(['No'], array_values($headers));
-    foreach ($rows as $idx => $r) {
-        $sheet_rows[] = array_merge([$idx + 1], array_values($r));
-    }
-
+    // Default: XLSX (Streaming O(1) RAM via Generator + php://temp)
     $ascii = preg_replace('/[^\x20-\x7E]/', '_', $base_name);
     $ascii = str_replace('"', '', (string) $ascii);
     $utf8  = rawurlencode($base_name . '.xlsx');
@@ -136,9 +158,21 @@ function grid_export_send(
     header('Content-Disposition: attachment; filename="' . $ascii . '.xlsx"; filename*=UTF-8\'\'' . $utf8);
     header('Cache-Control: no-store');
 
-    audit('grid.export.xlsx', $title . ' (' . count($rows) . ' baris)');
     $sheet_title = mb_substr(preg_replace('/[\\\\\\/?*\\[\\]:]/', '', $title), 0, 31) ?: 'Data';
-    echo xlsx_build($sheet_rows, $sheet_title);
+    $written_data_rows = 0;
+
+    $row_generator = (static function () use ($headers, $rows, &$written_data_rows): Generator {
+        yield array_merge(['No'], array_values($headers));
+        $no = 0;
+        foreach ($rows as $r) {
+            $no++;
+            $written_data_rows++;
+            yield array_merge([$no], array_values($r));
+        }
+    })();
+
+    xlsx_stream($row_generator, $sheet_title);
+    audit('grid.export.xlsx', $title . ' (' . $written_data_rows . ' baris)');
     exit;
 }
 
