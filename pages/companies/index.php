@@ -4,6 +4,41 @@ require_permission('companies.view');
 
 [$where, $types, $params] = company_scope('c.id');
 
+$export_format = strtolower(trim((string) ($_GET['export'] ?? '')));
+if (in_array($export_format, ['xlsx', 'pdf'], true)) {
+    $st = db()->prepare("SELECT c.code, c.name, g.name AS group_name, c.country_code, c.phone_number, c.email, c.city, c.is_active
+                         FROM companies c JOIN groups g ON g.id = c.group_id
+                         WHERE {$where} ORDER BY c.name");
+    if ($types !== '') {
+        $st->bind_param($types, ...$params);
+    }
+    $st->execute();
+    $all_rows = $st->get_result()->fetch_all(MYSQLI_ASSOC);
+    $st->close();
+
+    $export_rows = [];
+    foreach ($all_rows as $r) {
+        $phone = trim(($r['country_code'] ?? '') . ' ' . ($r['phone_number'] ?? ''));
+        $export_rows[] = [
+            $r['code'],
+            $r['name'],
+            $r['group_name'],
+            $phone !== '' ? $phone : '-',
+            ($r['email'] ?? '') !== '' ? $r['email'] : '-',
+            ($r['city'] ?? '') !== '' ? $r['city'] : '-',
+            $r['is_active'] ? 'Aktif' : 'Nonaktif',
+        ];
+    }
+
+    grid_export_send(
+        'Daftar Perusahaan',
+        ['Kode', 'Nama Perusahaan', 'Grup', 'Telepon', 'Email', 'Kota', 'Status'],
+        $export_rows,
+        $export_format,
+        'landscape'
+    );
+}
+
 $st = db()->prepare("SELECT COUNT(*) FROM companies c WHERE {$where}");
 if ($types !== '') {
     $st->bind_param($types, ...$params);
@@ -21,6 +56,11 @@ $st->execute();
 $rows = $st->get_result()->fetch_all(MYSQLI_ASSOC);
 $st->close();
 
+$header_actions = ui_export_actions();
+if (is_super_admin() && can('companies.manage')) {
+    $header_actions[] = ['label' => 'Tambah', 'icon' => 'plus-lg', 'href' => 'pages/companies/form.php', 'class' => 'btn btn-primary btn-sm'];
+}
+
 $active = 'companies';
 $title  = 'Perusahaan';
 require __DIR__ . '/../../includes/header.php';
@@ -29,10 +69,8 @@ require __DIR__ . '/../../includes/header.php';
     <?= ui_page_header(
         'Perusahaan',
         ['Dashboard' => 'pages/dashboard/index.php', 'Perusahaan' => null],
-        [],
-        is_super_admin() && can('companies.manage') ? [
-            ['label' => 'Tambah', 'icon' => 'plus-lg', 'href' => 'pages/companies/form.php', 'class' => 'btn btn-primary btn-sm'],
-        ] : []
+        [['text' => $total . ' Perusahaan', 'class' => 'bg-light text-secondary border']],
+        $header_actions
     ) ?>
     <div class="card shadow-sm border-0">
         <div class="table-responsive">

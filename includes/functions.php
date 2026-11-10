@@ -203,7 +203,9 @@ function ui_page_header(string $title, array $breadcrumb = [], array $badges = [
         $html .= '<div class="d-flex align-items-center gap-2">';
         foreach ($actions as $act) {
             $cls = $act['class'] ?? 'btn btn-sm btn-outline-secondary';
-            $href = str_starts_with($act['href'], 'http') ? $act['href'] : APP_URL . '/' . ltrim($act['href'], '/');
+            $href = (str_starts_with($act['href'], 'http') || str_starts_with($act['href'], '?'))
+                ? $act['href']
+                : APP_URL . '/' . ltrim($act['href'], '/');
             $icon = !empty($act['icon']) ? '<i class="bi bi-' . e($act['icon']) . ' me-1"></i>' : '';
             $html .= '<a class="' . e($cls) . '" href="' . e($href) . '">' . $icon . e($act['label']) . '</a>';
         }
@@ -213,4 +215,7 @@ function ui_page_header(string $title, array $breadcrumb = [], array $badges = [
 
     return $html;
 }
+
+require_once __DIR__ . '/grid_export.php';
+
 
