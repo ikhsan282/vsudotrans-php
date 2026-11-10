@@ -22,16 +22,23 @@ function ui_export_actions(?array $extra_query = null): array
 
     return [
         [
-            'label' => 'Excel',
-            'icon'  => 'file-earmark-excel',
-            'href'  => $xlsx_url,
-            'class' => 'btn btn-outline-success btn-sm',
-        ],
-        [
-            'label' => 'PDF',
-            'icon'  => 'file-earmark-pdf',
-            'href'  => $pdf_url,
-            'class' => 'btn btn-outline-danger btn-sm',
+            'label' => 'Export',
+            'icon'  => 'download',
+            'class' => 'btn btn-outline-secondary btn-sm dropdown-toggle',
+            'items' => [
+                [
+                    'label'      => 'Excel (.xlsx)',
+                    'icon'       => 'file-earmark-excel',
+                    'icon_class' => 'text-success',
+                    'href'       => $xlsx_url,
+                ],
+                [
+                    'label'      => 'PDF (.pdf)',
+                    'icon'       => 'file-earmark-pdf',
+                    'icon_class' => 'text-danger',
+                    'href'       => $pdf_url,
+                ],
+            ],
         ],
     ];
 }

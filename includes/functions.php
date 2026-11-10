@@ -202,6 +202,22 @@ function ui_page_header(string $title, array $breadcrumb = [], array $badges = [
     if (!empty($actions)) {
         $html .= '<div class="d-flex align-items-center gap-2">';
         foreach ($actions as $act) {
+            if (!empty($act['items']) && is_array($act['items'])) {
+                $cls = $act['class'] ?? 'btn btn-sm btn-outline-secondary dropdown-toggle';
+                $icon = !empty($act['icon']) ? '<i class="bi bi-' . e($act['icon']) . ' me-1"></i>' : '';
+                $html .= '<div class="dropdown">';
+                $html .= '<button class="' . e($cls) . '" type="button" data-bs-toggle="dropdown" aria-expanded="false">' . $icon . e($act['label']) . '</button>';
+                $html .= '<ul class="dropdown-menu dropdown-menu-end shadow-sm">';
+                foreach ($act['items'] as $item) {
+                    $ihref = (str_starts_with($item['href'], 'http') || str_starts_with($item['href'], '?'))
+                        ? $item['href']
+                        : APP_URL . '/' . ltrim($item['href'], '/');
+                    $iicon = !empty($item['icon']) ? '<i class="bi bi-' . e($item['icon']) . ' me-2 ' . e($item['icon_class'] ?? '') . '"></i>' : '';
+                    $html .= '<li><a class="dropdown-item small d-flex align-items-center py-1" href="' . e($ihref) . '">' . $iicon . e($item['label']) . '</a></li>';
+                }
+                $html .= '</ul></div>';
+                continue;
+            }
             $cls = $act['class'] ?? 'btn btn-sm btn-outline-secondary';
             $href = (str_starts_with($act['href'], 'http') || str_starts_with($act['href'], '?'))
                 ? $act['href']
