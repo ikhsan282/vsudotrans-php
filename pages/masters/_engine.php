@@ -535,11 +535,33 @@ function master_list(string $key): void
     $rows = $st->get_result()->fetch_all(MYSQLI_ASSOC);
     $st->close();
 
-    // Peta relasi untuk kolom select.
+    // Peta relasi untuk kolom select — hanya ambil ID yang tampil pada halaman aktif
+    // agar hemat memori (O(1) RAM) dan tidak memuat ribuan baris parent tabel (mis. 7.285 kecamatan).
     $maps = [];
     foreach ($spec['fields'] as $f) {
         if (($f['type'] ?? '') === 'select' && !isset($maps[$f['source']])) {
-            $maps[$f['source']] = master_lookup($f['source'], $cid);
+            $col_name = $f['col'];
+            $page_ids = [];
+            foreach ($rows as $r) {
+                if (!empty($r[$col_name])) {
+                    $page_ids[(int) $r[$col_name]] = true;
+                }
+            }
+            if ($page_ids) {
+                $id_list = array_keys($page_ids);
+                $in_clause = implode(',', array_fill(0, count($id_list), '?'));
+                $st_map = db()->prepare("SELECT id, name FROM `{$f['source']}` WHERE id IN ({$in_clause})");
+                $st_map->bind_param(str_repeat('i', count($id_list)), ...$id_list);
+                $st_map->execute();
+                $res_map = $st_map->get_result();
+                $maps[$f['source']] = [];
+                while ($mr = $res_map->fetch_assoc()) {
+                    $maps[$f['source']][(int) $mr['id']] = $mr['name'];
+                }
+                $st_map->close();
+            } else {
+                $maps[$f['source']] = [];
+            }
         }
     }
 
