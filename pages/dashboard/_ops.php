@@ -18,6 +18,35 @@ function dash_bookings(string $from, string $to): array
     return ['n' => (int) $r['n'], 'total' => (float) $r['total']];
 }
 
+/**
+ * Hitung Booking Hari Ini & Minggu Ini sekaligus dalam 1x query UNION ALL.
+ *
+ * @return array{today: array{n: int, total: float}, week: array{n: int, total: float}}
+ */
+function dash_bookings_summary(string $today, string $week_start, string $week_end): array
+{
+    require_once __DIR__ . '/../reports/_query.php';
+    $from = min($today, $week_start);
+    $to   = max($today, $week_end);
+    $src  = report_source(['from' => $from, 'to' => $to, 'booking_type' => 'all']);
+    $sql  = 'SELECT
+                COALESCE(SUM(CASE WHEN x.date = ? THEN 1 ELSE 0 END), 0) AS today_n,
+                COALESCE(SUM(CASE WHEN x.date = ? THEN x.total_price ELSE 0 END), 0) AS today_total,
+                COALESCE(SUM(CASE WHEN x.date BETWEEN ? AND ? THEN 1 ELSE 0 END), 0) AS week_n,
+                COALESCE(SUM(CASE WHEN x.date BETWEEN ? AND ? THEN x.total_price ELSE 0 END), 0) AS week_total
+             FROM ' . $src['sql'];
+    $rows = report_run(
+        $sql,
+        'ssssss' . $src['types'],
+        array_merge([$today, $today, $week_start, $week_end, $week_start, $week_end], $src['params'])
+    );
+    $r = $rows[0] ?? [];
+    return [
+        'today' => ['n' => (int) ($r['today_n'] ?? 0), 'total' => (float) ($r['today_total'] ?? 0)],
+        'week'  => ['n' => (int) ($r['week_n'] ?? 0),  'total' => (float) ($r['week_total'] ?? 0)],
+    ];
+}
+
 /** Driver yang sedang bertugas (assignment aktif: ended_at IS NULL). */
 function dash_active_drivers(): array
 {
@@ -104,68 +133,80 @@ function dash_expiring_documents(int $days = 30, int $limit = 10): array
     [$v_where, $v_types, $v_params] = company_scope('v.company_id');
     [$e_where, $e_types, $e_params] = company_scope('e.company_id');
 
-    // 1. STNK
-    $sql_stnk = "SELECT 'vehicle' AS ref_type, v.id AS ref_id, v.vehicle_number AS title,
-                        'STNK Kendaraan' AS doc_type, v.stnk_due AS due_date,
-                        DATEDIFF(v.stnk_due, CURDATE()) AS days_left,
-                        'pages/vehicles/detail.php?id=' AS url_prefix
-                 FROM vehicles v
-                 WHERE v.is_active = 1 AND v.stnk_due IS NOT NULL
-                   AND v.stnk_due <= DATE_ADD(CURDATE(), INTERVAL ? DAY)
-                   AND {$v_where}";
+    $cutoff = date('Y-m-d', strtotime("+{$days} days"));
+    $today_ts = strtotime(date('Y-m-d'));
+    $items = [];
 
-    // 2. KIR
-    $sql_kir = "SELECT 'vehicle' AS ref_type, v.id AS ref_id, v.vehicle_number AS title,
-                       'KIR Kendaraan' AS doc_type, v.kir_due AS due_date,
-                       DATEDIFF(v.kir_due, CURDATE()) AS days_left,
-                       'pages/vehicles/detail.php?id=' AS url_prefix
-                FROM vehicles v
-                WHERE v.is_active = 1 AND v.kir_due IS NOT NULL
-                  AND v.kir_due <= DATE_ADD(CURDATE(), INTERVAL ? DAY)
-                  AND {$v_where}";
+    // 1x Pass untuk Vehicles (STNK, KIR, Pajak Kendaraan sekaligus)
+    $sql_v = "SELECT v.id, v.vehicle_number, v.stnk_due, v.kir_due, v.tax_due
+              FROM vehicles v
+              WHERE v.is_active = 1
+                AND (
+                    (v.stnk_due IS NOT NULL AND v.stnk_due <= ?)
+                    OR (v.kir_due IS NOT NULL AND v.kir_due <= ?)
+                    OR (v.tax_due IS NOT NULL AND v.tax_due <= ?)
+                )
+                AND {$v_where}";
+    $st_v = db()->prepare($sql_v);
+    $st_v->bind_param('sss' . $v_types, ...array_merge([$cutoff, $cutoff, $cutoff], $v_params));
+    $st_v->execute();
+    $v_rows = $st_v->get_result()->fetch_all(MYSQLI_ASSOC);
+    $st_v->close();
 
-    // 3. Pajak Kendaraan
-    $sql_tax = "SELECT 'vehicle' AS ref_type, v.id AS ref_id, v.vehicle_number AS title,
-                       'Pajak Kendaraan' AS doc_type, v.tax_due AS due_date,
-                       DATEDIFF(v.tax_due, CURDATE()) AS days_left,
-                       'pages/vehicles/detail.php?id=' AS url_prefix
-                FROM vehicles v
-                WHERE v.is_active = 1 AND v.tax_due IS NOT NULL
-                  AND v.tax_due <= DATE_ADD(CURDATE(), INTERVAL ? DAY)
-                  AND {$v_where}";
+    $doc_cols = [
+        'stnk_due' => 'STNK Kendaraan',
+        'kir_due'  => 'KIR Kendaraan',
+        'tax_due'  => 'Pajak Kendaraan',
+    ];
+    foreach ($v_rows as $vr) {
+        foreach ($doc_cols as $col => $label) {
+            if (!empty($vr[$col]) && $vr[$col] <= $cutoff) {
+                $days_left = (int) round((strtotime($vr[$col]) - $today_ts) / 86400);
+                $items[] = [
+                    'ref_type'   => 'vehicle',
+                    'ref_id'     => (int) $vr['id'],
+                    'title'      => $vr['vehicle_number'],
+                    'doc_type'   => $label,
+                    'due_date'   => $vr[$col],
+                    'days_left'  => $days_left,
+                    'url_prefix' => 'pages/vehicles/detail.php?id=',
+                ];
+            }
+        }
+    }
 
-    // 4. SIM Driver
-    $sql_sim = "SELECT 'employee' AS ref_type, e.id AS ref_id, e.name AS title,
-                       'SIM Driver' AS doc_type, e.sim_due AS due_date,
-                       DATEDIFF(e.sim_due, CURDATE()) AS days_left,
-                       'pages/employees/detail.php?id=' AS url_prefix
-                FROM employees e
-                WHERE e.status = 'aktif' AND e.sim_due IS NOT NULL
-                  AND e.sim_due <= DATE_ADD(CURDATE(), INTERVAL ? DAY)
-                  AND {$e_where}";
+    // 1x Pass untuk SIM Driver / Karyawan
+    $sql_e = "SELECT e.id, e.name, e.sim_due
+              FROM employees e
+              WHERE e.status = 'aktif'
+                AND e.sim_due IS NOT NULL
+                AND e.sim_due <= ?
+                AND {$e_where}";
+    $st_e = db()->prepare($sql_e);
+    $st_e->bind_param('s' . $e_types, ...array_merge([$cutoff], $e_params));
+    $st_e->execute();
+    $e_rows = $st_e->get_result()->fetch_all(MYSQLI_ASSOC);
+    $st_e->close();
 
-    $union_sql = "SELECT * FROM (
-        {$sql_stnk} UNION ALL {$sql_kir} UNION ALL {$sql_tax} UNION ALL {$sql_sim}
-    ) u ORDER BY u.days_left ASC, u.due_date ASC LIMIT ?";
+    foreach ($e_rows as $er) {
+        $days_left = (int) round((strtotime($er['sim_due']) - $today_ts) / 86400);
+        $items[] = [
+            'ref_type'   => 'employee',
+            'ref_id'     => (int) $er['id'],
+            'title'      => $er['name'],
+            'doc_type'   => 'SIM Driver',
+            'due_date'   => $er['sim_due'],
+            'days_left'  => $days_left,
+            'url_prefix' => 'pages/employees/detail.php?id=',
+        ];
+    }
 
-    $types = 'i' . $v_types . 'i' . $v_types . 'i' . $v_types . 'i' . $e_types . 'i';
-    $params = array_merge(
-        [$days], $v_params,
-        [$days], $v_params,
-        [$days], $v_params,
-        [$days], $e_params,
-        [$limit]
-    );
-
-    $st = db()->prepare($union_sql);
-    $st->bind_param($types, ...$params);
-    $st->execute();
-    $rows = $st->get_result()->fetch_all(MYSQLI_ASSOC);
-    $st->close();
+    usort($items, static fn(array $a, array $b): int => ($a['days_left'] <=> $b['days_left']) ?: strcmp($a['due_date'], $b['due_date']));
+    $items = array_slice($items, 0, $limit);
 
     $expired_count = 0;
     $warning_count = 0;
-    foreach ($rows as $r) {
+    foreach ($items as $r) {
         if ((int) $r['days_left'] < 0) {
             $expired_count++;
         } else {
@@ -174,9 +215,9 @@ function dash_expiring_documents(int $days = 30, int $limit = 10): array
     }
 
     return [
-        'items' => $rows,
+        'items' => $items,
         'total_expired' => $expired_count,
         'total_warning' => $warning_count,
-        'total' => count($rows),
+        'total' => count($items),
     ];
 }

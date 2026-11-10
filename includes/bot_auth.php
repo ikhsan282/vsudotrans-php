@@ -188,39 +188,73 @@ function bot_resolve_company(mysqli $db, string $companyCode): ?array
  * - `staff`     : akun `users` (Admin Perusahaan / Super Admin / Staff) bila nomor cocok
  * - `driver`    : data `employees` bila nomor cocok sebagai karyawan/driver perusahaan ini
  */
-function bot_resolve_actor(mysqli $db, int $companyId, string $canonicalPhone): array
+function bot_resolve_actor(mysqli $db, int $companyId, string $canonicalPhone, bool $forceRefresh = false): array
 {
+    $cacheKey = $companyId . ':' . $canonicalPhone;
+    if (!$forceRefresh && isset($GLOBALS['BOT_ACTOR_CACHE'][$cacheKey])) {
+        return $GLOBALS['BOT_ACTOR_CACHE'][$cacheKey];
+    }
+
     $variants = bot_phone_variants($canonicalPhone);
     $tail9    = substr($canonicalPhone, -9); // fallback pencocokan akhiran nomor
+    $likeTail = '%' . $tail9;
 
-    // 1. Cari di tabel passengers milik company_id ini
+    // 1. Cari di tabel passengers milik company_id ini (utamakan Index Lookup ix_passengers_company_phone)
     $st = $db->prepare(
         "SELECT id, code, name, phone_number, email
            FROM passengers
-          WHERE company_id = ?
-            AND (phone_number IN (?,?,?,?) OR REPLACE(REPLACE(REPLACE(phone_number, '-', ''), ' ', ''), '+', '') LIKE ?)
+          WHERE company_id = ? AND phone_number IN (?,?,?,?)
           ORDER BY id DESC"
     );
-    $likeTail = '%' . $tail9;
-    $st->bind_param('isssss', $companyId, $variants[0], $variants[1], $variants[2], $variants[3], $likeTail);
+    $st->bind_param('issss', $companyId, $variants[0], $variants[1], $variants[2], $variants[3]);
     $st->execute();
     $passengers = $st->get_result()->fetch_all(MYSQLI_ASSOC);
     $st->close();
 
-    // 2. Cari di tabel users (pengurus/admin/staff yang punya akses ke company_id ini atau Super Admin)
+    if (!$passengers) {
+        $st = $db->prepare(
+            "SELECT id, code, name, phone_number, email
+               FROM passengers
+              WHERE company_id = ?
+                AND REPLACE(REPLACE(REPLACE(phone_number, '-', ''), ' ', ''), '+', '') LIKE ?
+              ORDER BY id DESC"
+        );
+        $st->bind_param('is', $companyId, $likeTail);
+        $st->execute();
+        $passengers = $st->get_result()->fetch_all(MYSQLI_ASSOC);
+        $st->close();
+    }
+
+    // 2. Cari di tabel users (utamakan Index Lookup ix_users_phone)
     $st = $db->prepare(
         "SELECT u.id, u.username, u.full_name, u.role_id, r.name AS role_name
            FROM users u
            JOIN roles r ON r.id = u.role_id
           WHERE u.is_active = 1
-            AND (u.phone_number IN (?,?,?,?) OR REPLACE(REPLACE(REPLACE(u.phone_number, '-', ''), ' ', ''), '+', '') LIKE ?)
+            AND u.phone_number IN (?,?,?,?)
             AND (u.role_id = 1 OR u.company_id = ? OR EXISTS (SELECT 1 FROM user_companies uc WHERE uc.user_id = u.id AND uc.company_id = ?))
           ORDER BY u.role_id ASC LIMIT 1"
     );
-    $st->bind_param('sssssii', $variants[0], $variants[1], $variants[2], $variants[3], $likeTail, $companyId, $companyId);
+    $st->bind_param('ssssii', $variants[0], $variants[1], $variants[2], $variants[3], $companyId, $companyId);
     $st->execute();
     $u = $st->get_result()->fetch_assoc();
     $st->close();
+
+    if (!$u) {
+        $st = $db->prepare(
+            "SELECT u.id, u.username, u.full_name, u.role_id, r.name AS role_name
+               FROM users u
+               JOIN roles r ON r.id = u.role_id
+              WHERE u.is_active = 1
+                AND REPLACE(REPLACE(REPLACE(u.phone_number, '-', ''), ' ', ''), '+', '') LIKE ?
+                AND (u.role_id = 1 OR u.company_id = ? OR EXISTS (SELECT 1 FROM user_companies uc WHERE uc.user_id = u.id AND uc.company_id = ?))
+              ORDER BY u.role_id ASC LIMIT 1"
+        );
+        $st->bind_param('sii', $likeTail, $companyId, $companyId);
+        $st->execute();
+        $u = $st->get_result()->fetch_assoc();
+        $st->close();
+    }
 
     $staff = null;
     if ($u) {
@@ -233,20 +267,34 @@ function bot_resolve_actor(mysqli $db, int $companyId, string $canonicalPhone): 
         ];
     }
 
-    // 3. Cari di tabel employees (driver/staf operasional perusahaan ini)
+    // 3. Cari di tabel employees (utamakan Index Lookup ix_employees_company_phone)
     $st = $db->prepare(
         "SELECT id, code, name, job_title, job_position
            FROM employees
           WHERE company_id = ? AND status = 'aktif'
-            AND (phone_number IN (?,?,?,?) OR REPLACE(REPLACE(REPLACE(phone_number, '-', ''), ' ', ''), '+', '') LIKE ?)
+            AND phone_number IN (?,?,?,?)
           LIMIT 1"
     );
-    $st->bind_param('isssss', $companyId, $variants[0], $variants[1], $variants[2], $variants[3], $likeTail);
+    $st->bind_param('issss', $companyId, $variants[0], $variants[1], $variants[2], $variants[3]);
     $st->execute();
     $emp = $st->get_result()->fetch_assoc() ?: null;
     $st->close();
 
-    return [
+    if (!$emp) {
+        $st = $db->prepare(
+            "SELECT id, code, name, job_title, job_position
+               FROM employees
+              WHERE company_id = ? AND status = 'aktif'
+                AND REPLACE(REPLACE(REPLACE(phone_number, '-', ''), ' ', ''), '+', '') LIKE ?
+              LIMIT 1"
+        );
+        $st->bind_param('is', $companyId, $likeTail);
+        $st->execute();
+        $emp = $st->get_result()->fetch_assoc() ?: null;
+        $st->close();
+    }
+
+    $actor = [
         'phone'      => $canonicalPhone,
         'registered' => !empty($passengers) || $staff !== null || $emp !== null,
         'passengers' => $passengers,
@@ -255,6 +303,8 @@ function bot_resolve_actor(mysqli $db, int $companyId, string $canonicalPhone): 
         'is_driver'  => $emp !== null,
         'employee'   => $emp,
     ];
+    $GLOBALS['BOT_ACTOR_CACHE'][$cacheKey] = $actor;
+    return $actor;
 }
 
 /**
@@ -275,6 +325,7 @@ function bot_ensure_passenger(mysqli $db, int $companyId, string $canonicalPhone
             $u->execute();
             $u->close();
             $primary['name'] = $cleanName;
+            unset($GLOBALS['BOT_ACTOR_CACHE'][$companyId . ':' . $canonicalPhone]);
         }
         return $primary;
     }
@@ -298,6 +349,7 @@ function bot_ensure_passenger(mysqli $db, int $companyId, string $canonicalPhone
             $ins->execute();
             $id = (int) $ins->insert_id;
             $ins->close();
+            unset($GLOBALS['BOT_ACTOR_CACHE'][$companyId . ':' . $canonicalPhone]);
             return [
                 'id'           => $id,
                 'code'         => $code,

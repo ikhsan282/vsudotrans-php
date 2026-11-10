@@ -30,37 +30,37 @@ $st->execute();
 [$rntCnt, $rntSum] = $st->get_result()->fetch_row();
 $st->close();
 
-// 2. Pembayaran Masuk Hari Ini (dari booking_cost_lines cost_type='payment')
+// 2. Pembayaran Masuk Hari Ini (dari booking_cost_lines cost_type='payment', menggunakan ix_bcl_company_type_date)
 $st = $db->prepare(
     "SELECT COUNT(*), COALESCE(SUM(amount),0)
        FROM booking_cost_lines
-      WHERE company_id = ? AND cost_type = 'payment' AND DATE(created_date) = CURDATE()"
+      WHERE company_id = ? AND cost_type = 'payment'
+        AND created_date >= CURDATE() AND created_date < DATE_ADD(CURDATE(), INTERVAL 1 DAY)"
 );
 $st->bind_param('i', $cid);
 $st->execute();
 [$payCnt, $paySum] = $st->get_result()->fetch_row();
 $st->close();
 
-// 3. Invoice Belum Lunas
+// 3. Invoice Belum Lunas (1x Query Agregasi SQL menggunakan ix_bcl_cost_desc)
 $st = $db->prepare(
-    "SELECT i.id, i.total,
-            COALESCE((SELECT SUM(bcl.amount) FROM booking_cost_lines bcl
-                       WHERE bcl.cost_type = 'payment' AND bcl.description = CONCAT('INV#', i.id)), 0) AS paid
+    "SELECT COUNT(*), COALESCE(SUM(i.total - COALESCE(bcl.paid, 0)), 0)
        FROM invoices i
-      WHERE i.company_id = ? AND i.status = 'issued'"
+       LEFT JOIN (
+           SELECT description, SUM(amount) AS paid
+             FROM booking_cost_lines
+            WHERE cost_type = 'payment'
+            GROUP BY description
+       ) bcl ON bcl.description = CONCAT('INV#', i.id)
+      WHERE i.company_id = ? AND i.status = 'issued'
+        AND (i.total - COALESCE(bcl.paid, 0)) > 0.01"
 );
 $st->bind_param('i', $cid);
 $st->execute();
-$unpaidInvCnt = 0;
-$unpaidInvSum = 0.0;
-foreach ($st->get_result()->fetch_all(MYSQLI_ASSOC) as $invRow) {
-    $rem = max(0.0, (float) $invRow['total'] - (float) $invRow['paid']);
-    if ($rem > 0.01) {
-        $unpaidInvCnt++;
-        $unpaidInvSum += $rem;
-    }
-}
+[$unpaidInvCnt, $unpaidInvSum] = $st->get_result()->fetch_row();
 $st->close();
+$unpaidInvCnt = (int) $unpaidInvCnt;
+$unpaidInvSum = (float) $unpaidInvSum;
 
 // 4. Penugasan Driver Aktif
 $st = $db->prepare('SELECT COUNT(*) FROM trip_assignments WHERE company_id = ? AND ended_at IS NULL');

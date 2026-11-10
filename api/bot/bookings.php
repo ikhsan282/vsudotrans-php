@@ -39,7 +39,12 @@ foreach (['travel' => 'travel_ticket_bookings', 'rental' => 'rental_car_bookings
                    c1.name AS origin_city, c2.name AS destination_city,
                    d1.name AS origin_district, d2.name AS destination_district,
                    p.name AS passenger_name, p.phone_number AS passenger_phone,
-                   i.id AS invoice_id, i.invoice_no, i.total AS invoice_total, i.status AS invoice_status
+                   i.id AS invoice_id, i.invoice_no, i.total AS invoice_total, i.status AS invoice_status,
+                   COALESCE((SELECT h.to_status FROM booking_status_history h
+                              WHERE h.booking_type = '{$bType}' AND h.booking_id = b.id
+                              ORDER BY h.id DESC LIMIT 1), 'draft') AS booking_status,
+                   COALESCE((SELECT SUM(bcl.amount) FROM booking_cost_lines bcl
+                              WHERE bcl.cost_type = 'payment' AND bcl.description = CONCAT('INV#', i.id)), 0) AS invoice_paid
               FROM {$tbl} b
               LEFT JOIN cities c1 ON c1.id = b.pickup_point_city_id
               LEFT JOIN cities c2 ON c2.id = b.delivery_point_city_id
@@ -51,7 +56,8 @@ foreach (['travel' => 'travel_ticket_bookings', 'rental' => 'rental_car_bookings
                AND (b.passenger_id IN ({$in})
                     OR EXISTS (SELECT 1 FROM booking_passengers bp
                                 WHERE bp.booking_type = '{$bType}' AND bp.booking_id = b.id AND bp.passenger_id IN ({$in})))
-             ORDER BY b.date DESC, b.id DESC";
+             ORDER BY b.date DESC, b.id DESC
+             LIMIT 50";
     $st = $db->prepare($sql);
     $st->bind_param($types, ...$params);
     $st->execute();
@@ -75,9 +81,9 @@ foreach ($allRows as $r) {
     $invId = (int) ($r['invoice_id'] ?? 0);
     $docNo = (string) $r['document_number'];
 
-    $bStatus = booking_current_status($bType, $bId);
+    $bStatus  = (string) ($r['booking_status'] ?: 'draft');
     $invTotal = (float) ($r['invoice_total'] ?? $r['total_price']);
-    $paid     = $invId > 0 ? invoice_paid_total($invId) : (float) $r['total_payment'];
+    $paid     = $invId > 0 ? (float) ($r['invoice_paid'] ?? 0) : (float) $r['total_payment'];
     $rem      = max(0.0, round($invTotal - $paid, 2));
     $payStatus = ($r['invoice_status'] ?? 'issued') === 'cancelled' || $bStatus === 'cancelled'
         ? 'cancelled'

@@ -41,25 +41,34 @@ function report_filter(?array $in = null): array
  */
 function report_source(array $f): array
 {
+    [$w, $wt, $wp] = company_scope('b.company_id');
+    $inner_where = ($w !== '' ? $w . ' AND ' : '') . 'b.date BETWEEN ? AND ?';
+    $branch_types = $wt . 'ss';
+    $branch_params = array_merge($wp, [$f['from'], $f['to']]);
+
     $cols = static fn(string $table, string $type) => "SELECT '{$type}' AS booking_type, b.id, b.company_id,
             b.branch_id, b.date, b.time, b.total_price, b.total_payment, b.document_number,
-            (SELECT p.name FROM passengers p WHERE p.id = b.passenger_id) AS passenger_name,
-            b.vehicle_id, b.pickup_point_city_id AS origin_city_id,
+            b.passenger_id, b.vehicle_id, b.pickup_point_city_id AS origin_city_id,
             b.delivery_point_city_id AS dest_city_id
-        FROM {$table} b";
+        FROM {$table} b
+        WHERE {$inner_where}";
+
     $parts = [];
+    $types = '';
+    $params = [];
     if ($f['booking_type'] !== 'rental') {
         $parts[] = $cols('travel_ticket_bookings', 'travel');
+        $types .= $branch_types;
+        $params = array_merge($params, $branch_params);
     }
     if ($f['booking_type'] !== 'travel') {
         $parts[] = $cols('rental_car_bookings', 'rental');
+        $types .= $branch_types;
+        $params = array_merge($params, $branch_params);
     }
-    // company_scope() mengembalikan '' untuk Super Admin → klausa dilewati.
-    // Scope ditegakkan di kolom company_id tabel asal (bukan hasil UNION).
-    [$w, $wt, $wp] = company_scope('company_id');
-    $sql = '(' . implode(' UNION ALL ', $parts) . ') x WHERE '
-        . ($w !== '' ? $w . ' AND ' : '') . 'x.date BETWEEN ? AND ?';
-    return ['sql' => $sql, 'types' => $wt . 'ss', 'params' => array_merge($wp, [$f['from'], $f['to']])];
+
+    $sql = '(' . implode(' UNION ALL ', $parts) . ') x';
+    return ['sql' => $sql, 'types' => $types, 'params' => $params];
 }
 
 /** Jalankan prepared query; kembalikan semua baris assoc. */

@@ -27,11 +27,17 @@ $tab   = ($_GET['tab'] ?? 'aktif') === 'riwayat' ? 'riwayat' : 'aktif';
 $from  = (string) ($_GET['from'] ?? '');
 $to    = (string) ($_GET['to'] ?? '');
 
-$rows = $tab === 'riwayat'
-    ? dispatch_history($cid, $from ?: null, $to ?: null)
-    : dispatch_active($cid);
-
-$aktif_count = count(dispatch_active($cid));
+if ($tab === 'riwayat') {
+    $rows = dispatch_history($cid, $from ?: null, $to ?: null);
+    $st_cnt = db()->prepare('SELECT COUNT(*) FROM trip_assignments WHERE company_id = ? AND ended_at IS NULL');
+    $st_cnt->bind_param('i', $cid);
+    $st_cnt->execute();
+    $aktif_count = (int) $st_cnt->get_result()->fetch_row()[0];
+    $st_cnt->close();
+} else {
+    $rows = dispatch_active($cid);
+    $aktif_count = count($rows);
+}
 
 $active = 'dispatch';
 $title  = 'Penjadwalan';

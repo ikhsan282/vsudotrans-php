@@ -71,7 +71,12 @@ $sql = "SELECT b.id, b.company_id, b.document_number, b.date, b.time, {$extraCol
                c.website AS company_website, c.logo AS company_logo, c.stamp AS company_stamp,
                i.id AS invoice_id, i.invoice_no, i.status AS invoice_status, i.total AS invoice_total,
                cp1.name AS city_from, cp2.name AS city_to,
-               d1.name AS district_from, d2.name AS district_to
+               d1.name AS district_from, d2.name AS district_to,
+               COALESCE((SELECT h.to_status FROM booking_status_history h
+                          WHERE h.booking_type = '{$type}' AND h.booking_id = b.id
+                          ORDER BY h.id DESC LIMIT 1), 'draft') AS booking_status,
+               COALESCE((SELECT SUM(bcl.amount) FROM booking_cost_lines bcl
+                          WHERE bcl.cost_type = 'payment' AND bcl.description = CONCAT('INV#', i.id)), 0) AS invoice_paid
           FROM {$table} b
           JOIN companies c ON c.id = b.company_id
           LEFT JOIN invoices i ON i.document_number = b.document_number
@@ -107,9 +112,9 @@ if (!$row) {
 $cid      = (int) $row['company_id'];
 $bId      = (int) $row['id'];
 $invId    = (int) ($row['invoice_id'] ?? 0);
-$bStatus  = booking_current_status($type, $bId);
+$bStatus  = (string) ($row['booking_status'] ?: 'draft');
 $invTotal = (float) ($row['invoice_total'] ?? $row['total_price']);
-$paid     = $invId > 0 ? invoice_paid_total($invId) : (float) $row['total_payment'];
+$paid     = $invId > 0 ? (float) ($row['invoice_paid'] ?? 0) : (float) $row['total_payment'];
 $rem      = max(0.0, round($invTotal - $paid, 2));
 
 $isCancelled = strtolower((string) ($row['invoice_status'] ?? '')) === 'cancelled' || $bStatus === 'cancelled';

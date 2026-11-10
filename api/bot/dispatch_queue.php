@@ -12,7 +12,7 @@
  */
 require __DIR__ . '/_bootstrap.php';
 
-$ctx     = bot_boot(['GET', 'POST']);
+$ctx     = bot_boot(['GET', 'POST'], false);
 $db      = $ctx['db'];
 $company = $ctx['company'];
 $cid     = (int) $company['id'];
@@ -30,17 +30,32 @@ if ($method === 'GET') {
             bot_error(400, 'PHONE_REQUIRED', 'Nomor telepon driver diperlukan.');
         }
 
-        // Cari karyawan driver
-        $cleanPhone = preg_replace('/[^0-9]/', '', $driverPhone);
-        $st = $db->prepare('SELECT id, code, name, phone_number, job_position, status
-            FROM employees
-            WHERE company_id = ? AND status = \'aktif\' AND REPLACE(REPLACE(phone_number, \'-\', \'\'), \' \', \'\') LIKE ?
-            LIMIT 1');
-        $likePhone = '%' . substr($cleanPhone, -8);
-        $st->bind_param('is', $cid, $likePhone);
-        $st->execute();
-        $driver = $st->get_result()->fetch_assoc();
-        $st->close();
+        // Cari karyawan driver (utamakan Index Lookup ix_employees_company_phone)
+        $driver = null;
+        $normDrv = bot_normalize_phone($driverPhone);
+        if ($normDrv !== null) {
+            $drvVars = bot_phone_variants($normDrv);
+            $st = $db->prepare('SELECT id, code, name, phone_number, job_position, status
+                FROM employees
+                WHERE company_id = ? AND status = \'aktif\' AND phone_number IN (?,?,?,?)
+                LIMIT 1');
+            $st->bind_param('issss', $cid, $drvVars[0], $drvVars[1], $drvVars[2], $drvVars[3]);
+            $st->execute();
+            $driver = $st->get_result()->fetch_assoc();
+            $st->close();
+        }
+        if (!$driver) {
+            $cleanPhone = preg_replace('/[^0-9]/', '', $driverPhone);
+            $st = $db->prepare('SELECT id, code, name, phone_number, job_position, status
+                FROM employees
+                WHERE company_id = ? AND status = \'aktif\' AND REPLACE(REPLACE(phone_number, \'-\', \'\'), \' \', \'\') LIKE ?
+                LIMIT 1');
+            $likePhone = '%' . substr($cleanPhone, -8);
+            $st->bind_param('is', $cid, $likePhone);
+            $st->execute();
+            $driver = $st->get_result()->fetch_assoc();
+            $st->close();
+        }
 
         if (!$driver) {
             bot_reply(200, [

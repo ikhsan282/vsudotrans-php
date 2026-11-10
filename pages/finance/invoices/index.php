@@ -13,52 +13,66 @@ $scope_types = $types;
 $scope_params = $params;
 
 if ($q !== '') {
-    $scope .= ' AND (i.invoice_number LIKE ? OR i.customer_name LIKE ?)';
-    $scope_types .= 'ss';
+    $scope .= ' AND (i.invoice_no LIKE ? OR i.document_number LIKE ? OR COALESCE(tp.name, rp.name, \'\') LIKE ?)';
+    $scope_types .= 'sss';
     $q_like = '%' . $q . '%';
-    array_push($scope_params, $q_like, $q_like);
+    array_push($scope_params, $q_like, $q_like, $q_like);
 }
 
-$having = '';
+$pay_status_expr = "CASE
+    WHEN i.status = 'cancelled' THEN 'cancelled'
+    WHEN COALESCE(bcl.paid_total, 0) <= 0 THEN 'unpaid'
+    WHEN COALESCE(bcl.paid_total, 0) + 0.001 >= i.total THEN 'paid'
+    ELSE 'partial'
+END";
+
+$joins_sql = "FROM invoices i
+    LEFT JOIN travel_ticket_bookings tb ON i.booking_type = 'travel' AND tb.id = i.booking_id
+    LEFT JOIN passengers tp ON tp.id = tb.passenger_id
+    LEFT JOIN rental_car_bookings rb ON i.booking_type = 'rental' AND rb.id = i.booking_id
+    LEFT JOIN passengers rp ON rp.id = rb.passenger_id
+    LEFT JOIN (
+        SELECT description, SUM(amount) AS paid_total
+        FROM booking_cost_lines
+        WHERE cost_type = 'payment'
+        GROUP BY description
+    ) bcl ON bcl.description = CONCAT('INV#', i.id)";
+
+$where_full = $scope;
+$types_full = $scope_types;
+$params_full = $scope_params;
 if (in_array($filter, ['unpaid', 'partial', 'paid'], true)) {
-    $having = ' HAVING pay_status = ?';
+    $where_full .= " AND ({$pay_status_expr}) = ?";
+    $types_full .= 's';
+    $params_full[] = $filter;
 }
 
-$sql_count = "SELECT COUNT(*) FROM invoices i WHERE {$scope}";
+$sql_count = "SELECT COUNT(*) {$joins_sql} WHERE {$where_full}";
 $st = db()->prepare($sql_count);
-if ($scope_types !== '') { $st->bind_param($scope_types, ...$scope_params); }
+if ($types_full !== '') { $st->bind_param($types_full, ...$params_full); }
 $st->execute();
 $total = (int) $st->get_result()->fetch_row()[0];
 $st->close();
 
 $export_format = strtolower(trim((string) ($_GET['export'] ?? '')));
 if (in_array($export_format, ['xlsx', 'pdf'], true)) {
-    $sql_export = "SELECT i.invoice_number, i.issued_at, i.due_date, i.customer_name, i.total,
-                   (SELECT COALESCE(SUM(amount),0) FROM booking_cost_lines
-                    WHERE cost_type='payment' AND description = CONCAT('INV#', i.id)) AS paid_total,
-                   CASE
-                     WHEN i.status='cancelled' THEN 'cancelled'
-                     WHEN (SELECT COALESCE(SUM(amount),0) FROM booking_cost_lines WHERE cost_type='payment' AND description = CONCAT('INV#', i.id)) <= 0 THEN 'unpaid'
-                     WHEN (SELECT COALESCE(SUM(amount),0) FROM booking_cost_lines WHERE cost_type='payment' AND description = CONCAT('INV#', i.id)) + 0.001 >= i.total THEN 'paid'
-                     ELSE 'partial'
-                   END AS pay_status
-                   FROM invoices i WHERE {$scope}{$having}
+    $sql_export = "SELECT i.invoice_no AS invoice_number, i.document_number, i.issued_at,
+                          COALESCE(tb.date, rb.start_date) AS due_date,
+                          COALESCE(tp.name, rp.name, '-') AS customer_name,
+                          i.total,
+                          COALESCE(bcl.paid_total, 0) AS paid_total,
+                          {$pay_status_expr} AS pay_status
+                   {$joins_sql}
+                   WHERE {$where_full}
                    ORDER BY i.issued_at DESC, i.id DESC";
-
-    $types_exp = $scope_types;
-    $params_exp = $scope_params;
-    if ($having !== '') {
-        $types_exp .= 's';
-        $params_exp[] = $filter;
-    }
 
     $max_export_rows = $export_format === 'pdf' ? GRID_PDF_MAX_ROWS : null;
     $row_stream = grid_query_stream(
         $sql_export,
-        $types_exp,
-        $params_exp,
+        $types_full,
+        $params_full,
         static fn (array $r): array => [
-            $r['invoice_number'],
+            $r['invoice_number'] ?: $r['document_number'],
             $r['issued_at'] ? date('d/m/Y', strtotime($r['issued_at'])) : '-',
             $r['due_date'] ? date('d/m/Y', strtotime($r['due_date'])) : '-',
             $r['customer_name'] ?: '-',
@@ -92,23 +106,17 @@ if (in_array($export_format, ['xlsx', 'pdf'], true)) {
 $p = paginate($total, (int) ($_GET['page'] ?? 1));
 
 $sql = "SELECT i.*,
-        (SELECT COALESCE(SUM(amount),0) FROM booking_cost_lines
-         WHERE cost_type='payment' AND description = CONCAT('INV#', i.id)) AS paid_total,
-        CASE
-          WHEN i.status='cancelled' THEN 'cancelled'
-          WHEN (SELECT COALESCE(SUM(amount),0) FROM booking_cost_lines WHERE cost_type='payment' AND description = CONCAT('INV#', i.id)) <= 0 THEN 'unpaid'
-          WHEN (SELECT COALESCE(SUM(amount),0) FROM booking_cost_lines WHERE cost_type='payment' AND description = CONCAT('INV#', i.id)) + 0.001 >= i.total THEN 'paid'
-          ELSE 'partial'
-        END AS pay_status
-        FROM invoices i WHERE {$scope}{$having}
+        i.invoice_no AS invoice_number,
+        COALESCE(tb.date, rb.start_date) AS due_date,
+        COALESCE(tp.name, rp.name, '-') AS customer_name,
+        COALESCE(bcl.paid_total, 0) AS paid_total,
+        {$pay_status_expr} AS pay_status
+        {$joins_sql}
+        WHERE {$where_full}
         ORDER BY i.issued_at DESC, i.id DESC LIMIT ? OFFSET ?";
 $st = db()->prepare($sql);
-$types2 = $scope_types;
-$params2 = $scope_params;
-if ($having !== '') { $types2 .= 's'; $params2[] = $filter; }
-$types2 .= 'ii';
-$params2[] = $p['per_page'];
-$params2[] = $p['offset'];
+$types2 = $types_full . 'ii';
+$params2 = array_merge($params_full, [$p['per_page'], $p['offset']]);
 $st->bind_param($types2, ...$params2);
 $st->execute();
 $rows = $st->get_result()->fetch_all(MYSQLI_ASSOC);
@@ -166,9 +174,9 @@ require __DIR__ . '/../../../includes/header.php';
                 <?php foreach ($rows as $idx => $r): ?>
                     <tr>
                         <td class="text-center text-muted small"><?= number_format($p['offset'] + $idx + 1, 0, ',', '.') ?></td>
-                        <td><a class="fw-semibold text-decoration-none" href="<?= e(APP_URL) ?>/pages/finance/invoices/detail.php?id=<?= (int) $r['id'] ?>"><?= e($r['invoice_number']) ?></a></td>
-                        <td><?= e(date('d/m/Y', strtotime($r['issued_at']))) ?></td>
-                        <td><?= e(date('d/m/Y', strtotime($r['due_date']))) ?></td>
+                        <td><a class="fw-semibold text-decoration-none" href="<?= e(APP_URL) ?>/pages/finance/invoices/detail.php?id=<?= (int) $r['id'] ?>"><?= e($r['invoice_number'] ?: $r['document_number']) ?></a></td>
+                        <td><?= e($r['issued_at'] ? date('d/m/Y', strtotime($r['issued_at'])) : '-') ?></td>
+                        <td><?= e($r['due_date'] ? date('d/m/Y', strtotime($r['due_date'])) : '-') ?></td>
                         <td><?= e($r['customer_name']) ?></td>
                         <td class="text-end fw-semibold"><?= e(rupiah((float) $r['total'])) ?></td>
                         <td class="text-end"><?= e(rupiah((float) $r['paid_total'])) ?></td>

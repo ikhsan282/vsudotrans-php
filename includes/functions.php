@@ -136,16 +136,124 @@ function pagination_html(array $p, string $query_base): string
     return $html;
 }
 
-/** Catat aktivitas ke audit_trails. */
-function audit(string $action, string $description = ''): void
+/**
+ * Kelola partisi bulanan tabel audit_trails secara otomatis (PARTITION BY RANGE COLUMNS(created_date)):
+ *  1. Membuat partisi bulan berjalan & bulan depan (REORGANIZE PARTITION p_max) jika belum ada.
+ *  2. Menghapus instan (DROP PARTITION) partisi bulanan yang umurnya > $retention_months bulan.
+ *
+ * @return array{partitions: array<int, string>, added: array<int, string>, dropped: array<int, string>}
+ */
+function audit_maintain_partitions(int $retention_months = 12): array
 {
+    $result = ['partitions' => [], 'added' => [], 'dropped' => []];
+    try {
+        $db = db();
+        $res = $db->query("SELECT PARTITION_NAME
+                           FROM information_schema.PARTITIONS
+                           WHERE TABLE_SCHEMA = DATABASE()
+                             AND TABLE_NAME = 'audit_trails'
+                             AND PARTITION_NAME IS NOT NULL
+                           ORDER BY PARTITION_ORDINAL_POSITION");
+        if (!$res) {
+            return $result;
+        }
+
+        $monthly = [];
+        $has_pmax = false;
+        while ($row = $res->fetch_assoc()) {
+            $pname = (string) $row['PARTITION_NAME'];
+            if ($pname === 'p_max') {
+                $has_pmax = true;
+            } elseif (preg_match('/^p_(\d{6})$/', $pname, $m)) {
+                $monthly[] = $m[1];
+            }
+        }
+        $res->free();
+
+        if (!$has_pmax && !$monthly) {
+            return $result;
+        }
+
+        $now = new DateTimeImmutable('first day of this month 00:00:00');
+        $target = $now->modify('+1 month');
+
+        // 1. Pastikan partisi sampai bulan depan sudah tersedia (pecah dari p_max)
+        if ($has_pmax) {
+            $start = $now;
+            if ($monthly) {
+                $max_ym = max($monthly);
+                $max_dt = DateTimeImmutable::createFromFormat('!Ym', $max_ym);
+                if ($max_dt instanceof DateTimeImmutable) {
+                    $start = $max_dt->modify('+1 month');
+                }
+            }
+
+            $defs = [];
+            $cursor = $start;
+            while ($cursor <= $target) {
+                $ym = $cursor->format('Ym');
+                if (!in_array($ym, $monthly, true)) {
+                    $less_than = $cursor->modify('+1 month')->format('Y-m-01 00:00:00');
+                    $defs[] = "PARTITION `p_{$ym}` VALUES LESS THAN ('{$less_than}')";
+                    $monthly[] = $ym;
+                    $result['added'][] = 'p_' . $ym;
+                }
+                $cursor = $cursor->modify('+1 month');
+            }
+
+            if ($defs) {
+                $defs[] = 'PARTITION `p_max` VALUES LESS THAN (MAXVALUE)';
+                $db->query('ALTER TABLE `audit_trails` REORGANIZE PARTITION `p_max` INTO (' . implode(', ', $defs) . ')');
+            }
+        }
+
+        // 2. DROP PARTITION untuk partisi yang usianya > $retention_months bulan
+        if ($retention_months > 0 && count($monthly) > 1) {
+            $cutoff_ym = $now->modify("-{$retention_months} months")->format('Ym');
+            $to_drop = [];
+            foreach ($monthly as $ym) {
+                if ($ym < $cutoff_ym) {
+                    $to_drop[] = $ym;
+                }
+            }
+            // Sisakan minimal 1 partisi bulanan selain p_max
+            if ($to_drop && count($to_drop) < count($monthly)) {
+                $drop_sql = array_map(static fn(string $ym): string => "`p_{$ym}`", $to_drop);
+                $db->query('ALTER TABLE `audit_trails` DROP PARTITION ' . implode(', ', $drop_sql));
+                foreach ($to_drop as $ym) {
+                    $result['dropped'][] = 'p_' . $ym;
+                }
+                $monthly = array_values(array_diff($monthly, $to_drop));
+            }
+        }
+
+        sort($monthly);
+        $result['partitions'] = array_map(static fn(string $ym): string => 'p_' . $ym, $monthly);
+    } catch (Throwable $e) {
+        // Jangan gagalkan transaksi utama bila sedang ada DDL konkuren
+    }
+
+    return $result;
+}
+
+/** Catat aktivitas ke audit_trails (otomatis terpartisi per bulan & per company). */
+function audit(string $action, string $description = '', ?int $company_id = null): void
+{
+    $cur_ym = date('Ym');
+    if (($_SESSION['_audit_part_checked'] ?? '') !== $cur_ym) {
+        audit_maintain_partitions(12);
+        if (session_status() === PHP_SESSION_ACTIVE) {
+            $_SESSION['_audit_part_checked'] = $cur_ym;
+        }
+    }
+
     $uid = $_SESSION['user_id'] ?? null;
     $username = $_SESSION['username'] ?? null;
-    $company_id = active_company_id();
+    $cid = $company_id ?? active_company_id();
     $ip = $_SERVER['REMOTE_ADDR'] ?? null;
 
     $stmt = db()->prepare('INSERT INTO audit_trails (user_id, username, company_id, action, description, ip_address) VALUES (?, ?, ?, ?, ?, ?)');
-    $stmt->bind_param('isisss', $uid, $username, $company_id, $action, $description, $ip);
+    $stmt->bind_param('isisss', $uid, $username, $cid, $action, $description, $ip);
     $stmt->execute();
     $stmt->close();
 }

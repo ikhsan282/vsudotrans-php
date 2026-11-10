@@ -66,6 +66,7 @@ function bot_log_request(int $status): void
         $st->close();
         if (random_int(1, 200) === 1) {
             db()->query('DELETE FROM bot_request_logs WHERE created_at < NOW() - INTERVAL 30 DAY');
+            db()->query("DELETE FROM wa_outbox WHERE status IN ('sent', 'skipped') AND created_date < NOW() - INTERVAL 90 DAY");
         }
     } catch (Throwable $e) {
         error_log('bot_log_request: ' . $e->getMessage());
@@ -76,7 +77,7 @@ function bot_log_request(int $status): void
  * Validasi method, autentikasi secret/HMAC, rate-limit, resolusi perusahaan, dan resolusi aktor WA.
  * @param string[] $methods
  */
-function bot_boot(array $methods): array
+function bot_boot(array $methods, bool $resolveActor = true): array
 {
     $method = $_SERVER['REQUEST_METHOD'] ?? 'GET';
     if (!in_array($method, $methods, true)) {
@@ -129,7 +130,7 @@ function bot_boot(array $methods): array
         bot_error(429, 'RATE_LIMITED', 'Terlalu banyak permintaan. Silakan coba lagi dalam 1 menit.');
     }
 
-    $actor = bot_resolve_actor($db, $companyId, $auth['phone']);
+    $actor = $resolveActor ? bot_resolve_actor($db, $companyId, $auth['phone']) : null;
 
     return [
         'db'      => $db,

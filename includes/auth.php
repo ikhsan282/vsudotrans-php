@@ -178,19 +178,30 @@ function switch_company(int $company_id): bool
     return $ok;
 }
 
-/** Perusahaan yang boleh dipilih user (untuk dropdown switcher). */
-function accessible_companies(): array
+/** Perusahaan yang boleh dipilih user (untuk dropdown switcher), di-cache per request/sesi. */
+function accessible_companies(bool $force_refresh = false): array
 {
-    if (is_super_admin()) {
-        return db()->query('SELECT id, code, name FROM companies WHERE is_active = 1 ORDER BY name')->fetch_all(MYSQLI_ASSOC);
+    static $req_cache = [];
+    $uid = (int) ($_SESSION['user_id'] ?? 0);
+    $is_sa = is_super_admin() ? 1 : 0;
+    $cache_key = "{$is_sa}:{$uid}";
+
+    if (!$force_refresh && isset($req_cache[$cache_key])) {
+        return $req_cache[$cache_key];
     }
-    $stmt = db()->prepare('SELECT c.id, c.code, c.name FROM companies c
-        JOIN user_companies uc ON uc.company_id = c.id WHERE uc.user_id = ? AND c.is_active = 1 ORDER BY c.name');
-    $uid = (int) $_SESSION['user_id'];
-    $stmt->bind_param('i', $uid);
-    $stmt->execute();
-    $rows = $stmt->get_result()->fetch_all(MYSQLI_ASSOC);
-    $stmt->close();
+
+    if ($is_sa) {
+        $rows = db()->query('SELECT id, code, name FROM companies WHERE is_active = 1 ORDER BY name')->fetch_all(MYSQLI_ASSOC);
+    } else {
+        $stmt = db()->prepare('SELECT c.id, c.code, c.name FROM companies c
+            JOIN user_companies uc ON uc.company_id = c.id WHERE uc.user_id = ? AND c.is_active = 1 ORDER BY c.name');
+        $stmt->bind_param('i', $uid);
+        $stmt->execute();
+        $rows = $stmt->get_result()->fetch_all(MYSQLI_ASSOC);
+        $stmt->close();
+    }
+
+    $req_cache[$cache_key] = $rows;
     return $rows;
 }
 
@@ -220,9 +231,9 @@ function record_login_attempt(string $ip, string $username, bool $success): void
     $stmt->bind_param('ssi', $ip, $username, $flag);
     $stmt->execute();
     $stmt->close();
-    // Pembersihan probabilistik: tidak perlu query cleanup di setiap request.
-    if (random_int(1, 100) === 1) {
-        db()->query('DELETE FROM login_attempts WHERE attempted_at < DATE_SUB(NOW(), INTERVAL 1 DAY)');
+    // Auto-purge riwayat login_attempts > 7 hari (menggunakan index ix_attempt_cleanup)
+    if (!$success || random_int(1, 10) === 1) {
+        db()->query('DELETE FROM login_attempts WHERE attempted_at < DATE_SUB(NOW(), INTERVAL 7 DAY)');
     }
 }
 

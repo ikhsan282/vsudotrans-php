@@ -6,7 +6,7 @@
  */
 require __DIR__ . '/_bootstrap.php';
 
-$ctx     = bot_boot(['GET', 'POST']);
+$ctx     = bot_boot(['GET', 'POST'], false);
 $db      = $ctx['db'];
 $company = $ctx['company'];
 $cid     = (int) $company['id'];

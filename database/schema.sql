@@ -171,6 +171,7 @@ CREATE TABLE `users` (
   UNIQUE KEY `uq_users_username` (`username`),
   UNIQUE KEY `uq_users_email` (`email`),
   KEY `ix_users_company` (`company_id`),
+  KEY `ix_users_phone` (`phone_number`),
   CONSTRAINT `fk_users_role` FOREIGN KEY (`role_id`) REFERENCES `roles` (`id`),
   CONSTRAINT `fk_users_company` FOREIGN KEY (`company_id`) REFERENCES `companies` (`id`) ON DELETE SET NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
@@ -236,6 +237,7 @@ CREATE TABLE `employees` (
   UNIQUE KEY `uq_employees_company_code` (`company_id`, `code`),
   KEY `ix_employees_branch` (`branch_id`),
   KEY `ix_employees_status` (`status`),
+  KEY `ix_employees_company_phone` (`company_id`, `phone_number`),
   CONSTRAINT `fk_employees_company` FOREIGN KEY (`company_id`) REFERENCES `companies` (`id`) ON DELETE RESTRICT,
   CONSTRAINT `fk_employees_branch` FOREIGN KEY (`branch_id`) REFERENCES `branches` (`id`) ON DELETE SET NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
@@ -252,10 +254,28 @@ CREATE TABLE `audit_trails` (
   `description` VARCHAR(1000) DEFAULT NULL,
   `ip_address` VARCHAR(45) DEFAULT NULL,
   `created_date` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-  PRIMARY KEY (`id`),
-  KEY `ix_audit_created` (`created_date`),
-  KEY `ix_audit_user` (`user_id`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+  PRIMARY KEY (`id`, `created_date`),
+  KEY `ix_audit_created` (`created_date`, `id`),
+  KEY `ix_audit_user` (`user_id`),
+  KEY `ix_audit_company_created` (`company_id`, `created_date`, `id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+PARTITION BY RANGE COLUMNS(`created_date`) (
+  PARTITION `p_202511` VALUES LESS THAN ('2025-12-01 00:00:00'),
+  PARTITION `p_202512` VALUES LESS THAN ('2026-01-01 00:00:00'),
+  PARTITION `p_202601` VALUES LESS THAN ('2026-02-01 00:00:00'),
+  PARTITION `p_202602` VALUES LESS THAN ('2026-03-01 00:00:00'),
+  PARTITION `p_202603` VALUES LESS THAN ('2026-04-01 00:00:00'),
+  PARTITION `p_202604` VALUES LESS THAN ('2026-05-01 00:00:00'),
+  PARTITION `p_202605` VALUES LESS THAN ('2026-06-01 00:00:00'),
+  PARTITION `p_202606` VALUES LESS THAN ('2026-07-01 00:00:00'),
+  PARTITION `p_202607` VALUES LESS THAN ('2026-08-01 00:00:00'),
+  PARTITION `p_202608` VALUES LESS THAN ('2026-09-01 00:00:00'),
+  PARTITION `p_202609` VALUES LESS THAN ('2026-10-01 00:00:00'),
+  PARTITION `p_202610` VALUES LESS THAN ('2026-11-01 00:00:00'),
+  PARTITION `p_202611` VALUES LESS THAN ('2026-12-01 00:00:00'),
+  PARTITION `p_202612` VALUES LESS THAN ('2027-01-01 00:00:00'),
+  PARTITION `p_max` VALUES LESS THAN (MAXVALUE)
+);
 
 CREATE TABLE `login_attempts` (
   `id` INT(11) NOT NULL AUTO_INCREMENT,
@@ -637,6 +657,7 @@ CREATE TABLE `passengers` (
   PRIMARY KEY (`id`),
   UNIQUE KEY `uq_passengers_code` (`company_id`, `code`),
   KEY `ix_passengers_company` (`company_id`),
+  KEY `ix_passengers_company_phone` (`company_id`, `phone_number`),
   CONSTRAINT `fk_passengers_company` FOREIGN KEY (`company_id`) REFERENCES `companies` (`id`) ON DELETE RESTRICT
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
@@ -703,8 +724,10 @@ CREATE TABLE `travel_ticket_bookings` (
   `modified_date` DATETIME DEFAULT NULL,
   PRIMARY KEY (`id`),
   UNIQUE KEY `uq_travel_bookings_doc` (`company_id`, `document_number`),
+  KEY `ix_travel_doc` (`document_number`),
   KEY `ix_travel_bookings_company` (`company_id`),
   KEY `ix_travel_bookings_date` (`date`),
+  KEY `ix_travel_company_date` (`company_id`, `date`, `id`),
   KEY `ix_travel_bookings_branch` (`branch_id`),
   KEY `ix_travel_bookings_passenger` (`passenger_id`),
   CONSTRAINT `fk_travel_bookings_company` FOREIGN KEY (`company_id`) REFERENCES `companies` (`id`) ON DELETE RESTRICT,
@@ -747,8 +770,12 @@ CREATE TABLE `rental_car_bookings` (
   `modified_date` DATETIME DEFAULT NULL,
   PRIMARY KEY (`id`),
   UNIQUE KEY `uq_rental_bookings_doc` (`company_id`, `document_number`),
+  KEY `ix_rental_doc` (`document_number`),
   KEY `ix_rental_bookings_company` (`company_id`),
   KEY `ix_rental_bookings_date` (`date`),
+  KEY `ix_rental_company_date` (`company_id`, `date`, `id`),
+  KEY `ix_rental_company_start` (`company_id`, `start_date`, `id`),
+  KEY `ix_rental_vehicle_schedule` (`company_id`, `vehicle_id`, `start_date`, `end_date`),
   KEY `ix_rental_bookings_branch` (`branch_id`),
   KEY `ix_rental_bookings_passenger` (`passenger_id`),
   CONSTRAINT `fk_rental_bookings_company` FOREIGN KEY (`company_id`) REFERENCES `companies` (`id`) ON DELETE RESTRICT,
@@ -817,7 +844,7 @@ CREATE TABLE `booking_status_history` (
   `changed_by` VARCHAR(255) DEFAULT NULL,
   `changed_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
   PRIMARY KEY (`id`),
-  KEY `ix_bsh_booking` (`booking_type`, `booking_id`),
+  KEY `ix_bsh_booking` (`booking_type`, `booking_id`, `id`, `to_status`),
   KEY `ix_bsh_company` (`company_id`),
   CONSTRAINT `fk_bsh_company` FOREIGN KEY (`company_id`) REFERENCES `companies` (`id`) ON DELETE RESTRICT
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
@@ -841,6 +868,7 @@ CREATE TABLE `trip_assignments` (
   KEY `ix_ta_booking` (`booking_type`, `booking_id`),
   KEY `ix_ta_employee` (`employee_id`),
   KEY `ix_ta_company` (`company_id`),
+  KEY `ix_ta_active_queue` (`company_id`, `ended_at`, `notified_at`),
   CONSTRAINT `fk_ta_company` FOREIGN KEY (`company_id`) REFERENCES `companies` (`id`) ON DELETE RESTRICT,
   CONSTRAINT `fk_ta_employee` FOREIGN KEY (`employee_id`) REFERENCES `employees` (`id`) ON DELETE RESTRICT,
   CONSTRAINT `fk_ta_vehicle` FOREIGN KEY (`vehicle_id`) REFERENCES `vehicles` (`id`) ON DELETE SET NULL
@@ -887,6 +915,8 @@ CREATE TABLE `booking_cost_lines` (
   `modified_date` DATETIME DEFAULT NULL,
   PRIMARY KEY (`id`),
   KEY `ix_bcl_booking` (`booking_type`, `booking_id`),
+  KEY `ix_bcl_cost_desc` (`cost_type`, `description`, `amount`),
+  KEY `ix_bcl_company_type_date` (`company_id`, `cost_type`, `created_date`, `amount`),
   KEY `ix_bcl_employee` (`employee_id`),
   KEY `ix_bcl_company` (`company_id`),
   KEY `ix_bcl_payment_method` (`payment_method_id`),
@@ -935,7 +965,8 @@ CREATE TABLE `wa_outbox` (
   UNIQUE KEY `uq_waout_event_id` (`event_id`),
   KEY `ix_waout_company` (`company_id`),
   KEY `ix_waout_booking` (`booking_type`, `booking_id`),
-  KEY `ix_waout_status_next` (`status`, `next_try_at`)
+  KEY `ix_waout_status_next` (`status`, `next_try_at`),
+  KEY `ix_waout_status_created` (`status`, `created_date`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 -- Tanpa FOREIGN KEY: sengaja, lihat alasan di tabel booking_cost_lines (log historis
 -- harus tetap ada walau booking/perusahaan dihapus).
@@ -1007,6 +1038,7 @@ CREATE TABLE `bot_request_logs` (
   `created_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
   PRIMARY KEY (`id`),
   KEY `ix_brl_phone_created` (`phone`, `created_at`),
+  KEY `ix_brl_created` (`created_at`),
   KEY `ix_brl_company` (`company_id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
@@ -1118,6 +1150,7 @@ CREATE TABLE `invoices` (
   UNIQUE KEY `uq_invoices_document_number` (`document_number`),
   KEY `ix_invoices_booking` (`booking_type`, `booking_id`),
   KEY `ix_invoices_company` (`company_id`),
+  KEY `ix_invoices_company_issued` (`company_id`, `issued_at`, `id`),
   KEY `ix_invoices_status` (`status`),
   CONSTRAINT `fk_invoices_company` FOREIGN KEY (`company_id`) REFERENCES `companies` (`id`) ON DELETE RESTRICT,
   CONSTRAINT `fk_invoices_payment_method` FOREIGN KEY (`payment_method_id`) REFERENCES `payment_methods` (`id`) ON DELETE SET NULL
