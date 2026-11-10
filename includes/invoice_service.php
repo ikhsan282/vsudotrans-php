@@ -71,7 +71,7 @@ function invoice_find(int $id): ?array
  *
  * @return array{invoice_id:int, amount:float, paid_total:float, status:string}
  */
-function invoice_add_payment(int $invoice_id, int $company_id, float $amount, ?int $method_id, ?string $note, ?string $user, bool $allow_over = false): array
+function invoice_add_payment(int $invoice_id, int $company_id, float $amount, ?int $method_id, ?string $note, ?string $user, bool $allow_over = false, ?string $proof_blob_path = null): array
 {
     if ($amount <= 0) {
         throw new InvalidArgumentException('Nominal pembayaran harus lebih dari 0.');
@@ -105,12 +105,12 @@ function invoice_add_payment(int $invoice_id, int $company_id, float $amount, ?i
         $desc = 'INV#' . $invoice_id;
         $label = $note !== null && $note !== '' ? $note : 'Pembayaran';
         $st = $db->prepare("INSERT INTO booking_cost_lines
-            (company_id, booking_type, booking_id, cost_type, description, amount, payment_method_id, note, created_user)
-            VALUES (?, ?, ?, 'payment', ?, ?, ?, ?, ?)");
+            (company_id, booking_type, booking_id, cost_type, description, amount, payment_method_id, note, proof_blob_path, created_user)
+            VALUES (?, ?, ?, 'payment', ?, ?, ?, ?, ?, ?)");
         $bt = $inv['booking_type'];
         $bid = (int) $inv['booking_id'];
         $mid = $method_id ?? 0;
-        $st->bind_param('isisdiss', $company_id, $bt, $bid, $desc, $amount, $mid, $label, $user);
+        $st->bind_param('isisdisss', $company_id, $bt, $bid, $desc, $amount, $mid, $label, $proof_blob_path, $user);
         $st->execute();
         $st->close();
 
@@ -146,7 +146,7 @@ function invoice_add_payment(int $invoice_id, int $company_id, float $amount, ?i
 function invoice_payments(int $invoice_id): array
 {
     $desc = 'INV#' . $invoice_id;
-    $st = db()->prepare("SELECT id, amount, description, note, created_user, created_date
+    $st = db()->prepare("SELECT id, amount, description, note, proof_blob_path, created_user, created_date
         FROM booking_cost_lines WHERE cost_type = 'payment' AND description = ?
         ORDER BY id DESC");
     $st->bind_param('s', $desc);

@@ -27,8 +27,20 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $amount = (float) str_replace(['.', ','], ['', '.'], (string) ($_POST['amount'] ?? '0'));
             $method = (int) ($_POST['payment_method_id'] ?? 0);
             $note   = trim((string) ($_POST['note'] ?? ''));
+            $proof_path = null;
+            if (!empty($_FILES['proof_file']['tmp_name'])) {
+                $proof_path = azure_blob_handle_upload(
+                    'proof_file',
+                    (int) $inv['company_id'],
+                    'finance/payment-proofs',
+                    date('Y/m'),
+                    'inv-' . $id,
+                    true,
+                    5
+                );
+            }
             $res = invoice_add_payment($id, (int) $inv['company_id'], $amount, $method > 0 ? $method : null,
-                $note === '' ? null : $note, $user);
+                $note === '' ? null : $note, $user, false, $proof_path);
             audit('invoice.pay', "Invoice #{$id} " . rupiah($amount) . " -> {$res['status']}");
             flash('success', 'Pembayaran ' . rupiah($amount) . ' dicatat. Status: ' . $res['status'] . '.');
         } elseif ($act === 'cancel') {
@@ -111,11 +123,11 @@ require __DIR__ . '/../../../includes/header.php';
     <?php if (can('invoices.manage') && $inv['status'] !== 'cancelled'): ?>
     <div class="card shadow-sm border-0 mb-3"><div class="card-body">
         <h6 class="fw-bold">Catat Pembayaran</h6>
-        <form method="post" action="" class="row g-2 align-items-end">
+        <form method="post" action="" class="row g-2 align-items-end" enctype="multipart/form-data">
             <?= csrf_field() ?>
             <input type="hidden" name="id" value="<?= $id ?>">
             <input type="hidden" name="act" value="pay">
-            <div class="col-md-3">
+            <div class="col-md-2">
                 <label class="form-label small mb-1">Nominal</label>
                 <input class="form-control form-control-sm" name="amount" inputmode="numeric" required
                        value="<?= $remaining > 0 ? e(number_format($remaining, 0, ',', '.')) : '' ?>" placeholder="0">
@@ -129,9 +141,13 @@ require __DIR__ . '/../../../includes/header.php';
                     <?php endforeach; ?>
                 </select>
             </div>
-            <div class="col-md-4">
+            <div class="col-md-3">
                 <label class="form-label small mb-1">Catatan</label>
                 <input class="form-control form-control-sm" name="note" maxlength="2000" placeholder="mis. transfer BCA 12:30">
+            </div>
+            <div class="col-md-2">
+                <label class="form-label small mb-1">Bukti Bayar (Blob)</label>
+                <input type="file" class="form-control form-control-sm" name="proof_file" accept="image/*,application/pdf">
             </div>
             <div class="col-md-2">
                 <button class="btn btn-sm btn-success w-100" type="submit"><i class="bi bi-check-lg" aria-hidden="true"></i> Simpan</button>
@@ -145,18 +161,25 @@ require __DIR__ . '/../../../includes/header.php';
         <div class="card-header bg-white fw-semibold">Riwayat Pembayaran</div>
         <div class="table-responsive">
             <table class="table mb-0 align-middle text-nowrap">
-                <thead><tr><th>Waktu</th><th class="text-end">Nominal</th><th>Catatan</th><th>Oleh</th></tr></thead>
+                <thead><tr><th>Waktu</th><th class="text-end">Nominal</th><th>Catatan</th><th>Bukti</th><th>Oleh</th></tr></thead>
                 <tbody>
                 <?php foreach ($payments as $pay): ?>
                     <tr>
                         <td><?= e((string) $pay['created_date']) ?></td>
                         <td class="text-end fw-semibold text-success"><?= e(rupiah((float) $pay['amount'])) ?></td>
                         <td><?= e((string) ($pay['note'] ?: $pay['description'])) ?></td>
+                        <td>
+                            <?php if (!empty($pay['proof_blob_path'])): ?>
+                                <a href="<?= e(resolve_asset_url($pay['proof_blob_path'])) ?>" target="_blank" class="btn btn-sm btn-outline-primary py-0 px-2"><i class="bi bi-file-earmark-check me-1"></i>Lihat Bukti</a>
+                            <?php else: ?>
+                                <span class="text-muted small">—</span>
+                            <?php endif; ?>
+                        </td>
                         <td><?= e((string) $pay['created_user']) ?></td>
                     </tr>
                 <?php endforeach; ?>
                 <?php if (!$payments): ?>
-                    <tr><td colspan="4" class="text-center text-muted py-3">Belum ada pembayaran.</td></tr>
+                    <tr><td colspan="5" class="text-center text-muted py-3">Belum ada pembayaran.</td></tr>
                 <?php endif; ?>
                 </tbody>
             </table>

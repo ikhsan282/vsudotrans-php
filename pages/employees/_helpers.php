@@ -198,6 +198,9 @@ function employee_map_input(array $post): array
         'religion'         => $str('religion'),
         'marital_status'   => $str('marital_status'),
         'address'          => $str('address'),
+        'photo'            => $str('photo'),
+        'ktp_doc_path'     => $str('ktp_doc_path'),
+        'sim_doc_path'     => $str('sim_doc_path'),
         'status'           => in_array($post['status'] ?? '', ['aktif', 'resign'], true) ? $post['status'] : 'aktif',
     ];
     $types = ['branch_id' => 'i'];
@@ -265,7 +268,7 @@ function employee_save(int $id, array $mapped): int
         'branch_id', 'code', 'name', 'email', 'phone_number', 'join_date', 'resignation_date',
         'job_title', 'job_position', 'job_grade', 'bank_name', 'account_number', 'account_name',
         'id_number', 'family_number', 'tax_number', 'birth_date', 'birth_place', 'gender',
-        'religion', 'marital_status', 'address', 'status',
+        'religion', 'marital_status', 'address', 'photo', 'ktp_doc_path', 'sim_doc_path', 'status',
     ];
     $data = $mapped['data'];
     $colTypes = $mapped['types'];

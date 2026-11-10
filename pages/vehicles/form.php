@@ -10,7 +10,8 @@ $cid = active_company_id();
 $row = ['brand_id' => 0, 'model_unit_id' => 0, 'type_engine_id' => 0, 'category_vehicle_id' => 0,
         'frame_number' => '', 'machine_number' => '', 'seat' => 0, 'production_year' => (int) date('Y'),
         'vehicle_color' => '', 'vehicle_number' => '', 'bpkb_number' => '', 'tax_due' => null,
-        'stnk_due' => null, 'kir_due' => null, 'ownership' => 'Internal', 'note' => '', 'is_active' => 1];
+        'stnk_due' => null, 'kir_due' => null, 'ownership' => 'Internal', 'note' => '',
+        'photo_path' => '', 'stnk_doc_path' => '', 'kir_doc_path' => '', 'is_active' => 1];
 
 if ($id > 0) {
     $st = $db->prepare('SELECT * FROM vehicles WHERE id = ?');
@@ -51,11 +52,40 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         'kir_due'            => vehicle_date($_POST, 'kir_due'),
         'ownership'          => $in('ownership', 30),
         'note'               => $in('note', 2000),
+        'photo_path'         => $in('photo_path', 255),
+        'stnk_doc_path'      => $in('stnk_doc_path', 255),
+        'kir_doc_path'       => $in('kir_doc_path', 255),
         'is_active'          => isset($_POST['is_active']) ? 1 : 0,
     ];
     $errors = vehicle_validate($row);
     if (!$errors) {
         $errors = vehicle_check_refs($db, $cid, $row);
+    }
+
+    if (!$errors) {
+        try {
+            $nopol_slug = strtolower(preg_replace('/[^a-zA-Z0-9]+/', '-', $row['vehicle_number'])) ?: 'unit';
+            if (!empty($_FILES['photo_file']['tmp_name'])) {
+                $up_photo = azure_blob_handle_upload('photo_file', $cid, 'vehicles', $nopol_slug, 'photo', false, 5);
+                if ($up_photo !== null) {
+                    $row['photo_path'] = $up_photo;
+                }
+            }
+            if (!empty($_FILES['stnk_file']['tmp_name'])) {
+                $up_stnk = azure_blob_handle_upload('stnk_file', $cid, 'vehicles', $nopol_slug, 'stnk', true, 5);
+                if ($up_stnk !== null) {
+                    $row['stnk_doc_path'] = $up_stnk;
+                }
+            }
+            if (!empty($_FILES['kir_file']['tmp_name'])) {
+                $up_kir = azure_blob_handle_upload('kir_file', $cid, 'vehicles', $nopol_slug, 'kir', true, 5);
+                if ($up_kir !== null) {
+                    $row['kir_doc_path'] = $up_kir;
+                }
+            }
+        } catch (InvalidArgumentException $e) {
+            $errors[] = $e->getMessage();
+        }
     }
 
     if (!$errors) {
@@ -65,13 +95,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             if ($id > 0) {
                 $st = $db->prepare('UPDATE vehicles SET brand_id = ?, model_unit_id = ?, type_engine_id = ?, category_vehicle_id = ?,
                     frame_number = ?, machine_number = ?, seat = ?, production_year = ?, vehicle_color = ?, vehicle_number = ?,
-                    bpkb_number = ?, tax_due = ?, stnk_due = ?, kir_due = ?, ownership = ?, note = ?, is_active = ?,
+                    bpkb_number = ?, tax_due = ?, stnk_due = ?, kir_due = ?, ownership = ?, note = ?,
+                    photo_path = ?, stnk_doc_path = ?, kir_doc_path = ?, is_active = ?,
                     modified_user = ?, modified_date = NOW() WHERE id = ? AND company_id = ?');
-                $st->bind_param('iiii' . 'ss' . 'ii' . 'sss' . 'sss' . 'ss' . 'i' . 's' . 'ii',
+                $st->bind_param('iiii' . 'ss' . 'ii' . 'sss' . 'sss' . 'ss' . 'sss' . 'i' . 's' . 'ii',
                     $row['brand_id'], $row['model_unit_id'], $row['type_engine_id'], $row['category_vehicle_id'],
                     $row['frame_number'], $row['machine_number'], $row['seat'], $row['production_year'],
                     $row['vehicle_color'], $row['vehicle_number'], $nul($row['bpkb_number']),
                     $row['tax_due'], $row['stnk_due'], $row['kir_due'], $row['ownership'], $nul($row['note']),
+                    $nul($row['photo_path']), $nul($row['stnk_doc_path']), $nul($row['kir_doc_path']),
                     $row['is_active'], $user, $id, $cid);
                 $st->execute();
                 $st->close();
@@ -80,14 +112,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             } else {
                 $st = $db->prepare('INSERT INTO vehicles (company_id, brand_id, model_unit_id, type_engine_id, category_vehicle_id,
                     frame_number, machine_number, seat, production_year, vehicle_color, vehicle_number, bpkb_number,
-                    tax_due, stnk_due, kir_due, ownership, note, is_active, created_user)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)');
-                // 19 placeholder: company_id, 4 FK, frame, machine, seat, year, color, nomor polisi, bpkb, 3 tanggal, ownership, note, is_active, created_user
-                $st->bind_param('iiiii' . 'ss' . 'ii' . 'ss' . 'ssssss' . 'i' . 's',
+                    tax_due, stnk_due, kir_due, ownership, note, photo_path, stnk_doc_path, kir_doc_path, is_active, created_user)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)');
+                $st->bind_param('iiiii' . 'ss' . 'ii' . 'ss' . 'ssssss' . 'sss' . 'i' . 's',
                     $cid, $row['brand_id'], $row['model_unit_id'], $row['type_engine_id'], $row['category_vehicle_id'],
                     $row['frame_number'], $row['machine_number'], $row['seat'], $row['production_year'],
                     $row['vehicle_color'], $row['vehicle_number'], $nul($row['bpkb_number']),
                     $row['tax_due'], $row['stnk_due'], $row['kir_due'], $row['ownership'], $nul($row['note']),
+                    $nul($row['photo_path']), $nul($row['stnk_doc_path']), $nul($row['kir_doc_path']),
                     $row['is_active'], $user);
                 $st->execute();
                 $new = $db->insert_id;
@@ -123,9 +155,9 @@ require __DIR__ . '/../../includes/header.php';
 <main class="col-12 col-md-9 col-lg-10 p-3 p-lg-4">
     <?= ui_page_header(
         $title,
-        ['Dashboard' => 'pages/dashboard/index.php', 'Kendaraan' => 'pages/vehicles/index.php', ($id > 0 ? $row['police_number'] : 'Tambah Baru') => null],
+        ['Dashboard' => 'pages/dashboard/index.php', 'Kendaraan' => 'pages/vehicles/index.php', ($id > 0 ? $row['vehicle_number'] : 'Tambah Baru') => null],
         $id > 0 ? array_values(array_filter([
-            !empty($row['police_number']) ? ['text' => $row['police_number'], 'class' => 'bg-primary-subtle text-primary border border-primary-subtle font-monospace'] : null,
+            !empty($row['vehicle_number']) ? ['text' => $row['vehicle_number'], 'class' => 'bg-primary-subtle text-primary border border-primary-subtle font-monospace'] : null,
             ['text' => 'ID #' . $id, 'class' => 'bg-light text-secondary border'],
             isset($row['is_active']) ? ['text' => !empty($row['is_active']) ? 'Aktif' : 'Nonaktif', 'class' => 'bg-' . (!empty($row['is_active']) ? 'success' : 'secondary') . '-subtle text-' . (!empty($row['is_active']) ? 'success' : 'secondary') . ' border'] : null,
         ])) : [],
@@ -136,7 +168,7 @@ require __DIR__ . '/../../includes/header.php';
     <?php endif; ?>
     <div class="card shadow-sm border-0" style="max-width: 860px;">
         <div class="card-body">
-            <form method="post" action="<?= e(APP_URL) ?>/pages/vehicles/form.php<?= $id > 0 ? '?id=' . $id : '' ?>">
+            <form method="post" action="<?= e(APP_URL) ?>/pages/vehicles/form.php<?= $id > 0 ? '?id=' . $id : '' ?>" enctype="multipart/form-data">
                 <?= csrf_field() ?>
                 <input type="hidden" name="id" value="<?= $id ?>">
                 <div class="row g-3">
@@ -229,6 +261,30 @@ require __DIR__ . '/../../includes/header.php';
                     <div class="col-md-4">
                         <label class="form-label" for="kir_due">Jatuh Tempo KIR</label>
                         <input class="form-control" type="date" id="kir_due" name="kir_due" value="<?= e((string) $row['kir_due']) ?>">
+                    </div>
+                    <div class="col-md-4">
+                        <label class="form-label" for="photo_file">Foto Unit Kendaraan (Azure Blob)</label>
+                        <input class="form-control mb-1" type="file" id="photo_file" name="photo_file" accept="image/*">
+                        <input type="hidden" name="photo_path" value="<?= e((string) ($row['photo_path'] ?? '')) ?>">
+                        <?php if (!empty($row['photo_path'])): ?>
+                            <a href="<?= e(resolve_asset_url($row['photo_path'])) ?>" target="_blank" class="small text-decoration-none"><i class="bi bi-image"></i> Lihat Foto Unit</a>
+                        <?php endif; ?>
+                    </div>
+                    <div class="col-md-4">
+                        <label class="form-label" for="stnk_file">Dokumen STNK (Gambar/PDF)</label>
+                        <input class="form-control mb-1" type="file" id="stnk_file" name="stnk_file" accept="image/*,application/pdf">
+                        <input type="hidden" name="stnk_doc_path" value="<?= e((string) ($row['stnk_doc_path'] ?? '')) ?>">
+                        <?php if (!empty($row['stnk_doc_path'])): ?>
+                            <a href="<?= e(resolve_asset_url($row['stnk_doc_path'])) ?>" target="_blank" class="small text-decoration-none"><i class="bi bi-file-earmark-check"></i> Lihat Berkas STNK</a>
+                        <?php endif; ?>
+                    </div>
+                    <div class="col-md-4">
+                        <label class="form-label" for="kir_file">Dokumen KIR (Gambar/PDF)</label>
+                        <input class="form-control mb-1" type="file" id="kir_file" name="kir_file" accept="image/*,application/pdf">
+                        <input type="hidden" name="kir_doc_path" value="<?= e((string) ($row['kir_doc_path'] ?? '')) ?>">
+                        <?php if (!empty($row['kir_doc_path'])): ?>
+                            <a href="<?= e(resolve_asset_url($row['kir_doc_path'])) ?>" target="_blank" class="small text-decoration-none"><i class="bi bi-file-earmark-check"></i> Lihat Berkas KIR</a>
+                        <?php endif; ?>
                     </div>
                     <div class="col-12">
                         <label class="form-label" for="note">Catatan</label>

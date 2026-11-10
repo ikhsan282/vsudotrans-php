@@ -43,6 +43,30 @@ require __DIR__ . '/../../includes/header.php';
             <dt class="col-sm-3">Kota</dt><dd class="col-sm-9"><?= e($company['city']) ?></dd>
             <dt class="col-sm-3">Alamat</dt><dd class="col-sm-9"><?= nl2br(e($company['address'])) ?></dd>
             <dt class="col-sm-3">Catatan</dt><dd class="col-sm-9"><?= nl2br(e($company['note'])) ?></dd>
+            <dt class="col-sm-3">Logo &amp; Stempel</dt>
+            <dd class="col-sm-9">
+                <div class="d-flex flex-wrap gap-3 align-items-center">
+                    <?php if (!empty($company['logo'])): ?>
+                        <div>
+                            <div class="small text-muted mb-1">Logo:</div>
+                            <a href="<?= e(resolve_asset_url($company['logo'])) ?>" target="_blank">
+                                <img src="<?= e(resolve_asset_url($company['logo'])) ?>" alt="Logo" style="max-height: 48px;" class="border rounded p-1 bg-light">
+                            </a>
+                        </div>
+                    <?php endif; ?>
+                    <?php if (!empty($company['stamp'])): ?>
+                        <div>
+                            <div class="small text-muted mb-1">Stempel:</div>
+                            <a href="<?= e(resolve_asset_url($company['stamp'])) ?>" target="_blank">
+                                <img src="<?= e(resolve_asset_url($company['stamp'])) ?>" alt="Stempel" style="max-height: 48px;" class="border rounded p-1 bg-light">
+                            </a>
+                        </div>
+                    <?php endif; ?>
+                    <?php if (empty($company['logo']) && empty($company['stamp'])): ?>
+                        <span class="text-muted">—</span>
+                    <?php endif; ?>
+                </div>
+            </dd>
             <dt class="col-sm-3">Status</dt><dd class="col-sm-9"><?= $company['is_active'] ? 'Aktif' : 'Nonaktif' ?></dd>
         </dl>
     </div>

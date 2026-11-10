@@ -4,6 +4,27 @@
  * Semua konstanta aplikasi ada di sini (satu sumber kebenaran).
  */
 
+// --- Muat file .env lokal bila ada (di-ignore Git) -------------------
+$__env_file = dirname(__DIR__) . '/.env';
+if (is_file($__env_file) && is_readable($__env_file)) {
+    foreach (file($__env_file, FILE_IGNORE_NEW_LINES | FILE_SKIP_EMPTY_LINES) ?: [] as $__line) {
+        $__line = trim($__line);
+        if ($__line === '' || str_starts_with($__line, '#') || !str_contains($__line, '=')) {
+            continue;
+        }
+        [$__k, $__v] = explode('=', $__line, 2);
+        $__k = trim($__k);
+        $__v = trim($__v);
+        if ((str_starts_with($__v, '"') && str_ends_with($__v, '"')) || (str_starts_with($__v, "'") && str_ends_with($__v, "'"))) {
+            $__v = substr($__v, 1, -1);
+        }
+        if ($__k !== '' && getenv($__k) === false) {
+            putenv("{$__k}={$__v}");
+            $_ENV[$__k] = $__v;
+        }
+    }
+}
+
 // --- Basis URL -------------------------------------------------------
 // Otomatis mengikuti alamat yang dipakai browser (XAMPP, dev server, cPanel).
 // Override bila perlu: set env VSUDO_APP_URL, atau isi langsung di sini.
@@ -42,6 +63,10 @@ defined('AI_BASE_URL') || define('AI_BASE_URL', getenv('VSUDO_AI_BASE_URL') ?: '
 defined('AI_API_KEY')  || define('AI_API_KEY', getenv('VSUDO_AI_API_KEY') ?: (getenv('HERMES_CUSTOM_9ROUTER_API_KEY') ?: ''));
 defined('AI_MODEL')    || define('AI_MODEL', getenv('VSUDO_AI_MODEL') ?: 'ikhsan-reason');
 
+// --- Azure Blob Storage ----------------------------------------------
+defined('BLOB_STORAGE_CONNECTION_STRING') || define('BLOB_STORAGE_CONNECTION_STRING', getenv('BLOB_STORAGE_CONNECTION_STRING') ?: '');
+defined('BLOB_STORAGE_CONTAINER')         || define('BLOB_STORAGE_CONTAINER', getenv('BLOB_STORAGE_CONTAINER') ?: 'vsudotrans');
+
 // --- Identitas perusahaan (untuk cetakan) ---------------------------
 defined('COMPANY_NAME')    || define('COMPANY_NAME', 'VSudo Trans');
 defined('COMPANY_ADDRESS') || define('COMPANY_ADDRESS', 'Jl. Contoh No. 1, Jakarta');
@@ -65,3 +90,4 @@ if (session_status() === PHP_SESSION_NONE) {
 require_once __DIR__ . '/database.php';
 require_once __DIR__ . '/../includes/auth.php';
 require_once __DIR__ . '/../includes/functions.php';
+require_once __DIR__ . '/../includes/azure_blob.php';

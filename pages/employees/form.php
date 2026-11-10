@@ -30,6 +30,33 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $input = $_POST;
 
     if (!$errors) {
+        try {
+            $emp_cid = (int) $mapped['company_id'];
+            $code_slug = strtolower(preg_replace('/[^a-zA-Z0-9]+/', '-', (string) $mapped['data']['code'])) ?: 'emp';
+            if (!empty($_FILES['photo_file']['tmp_name'])) {
+                $up_photo = azure_blob_handle_upload('photo_file', $emp_cid, 'employees', $code_slug, 'photo', false, 5);
+                if ($up_photo !== null) {
+                    $mapped['data']['photo'] = $up_photo;
+                }
+            }
+            if (!empty($_FILES['ktp_file']['tmp_name'])) {
+                $up_ktp = azure_blob_handle_upload('ktp_file', $emp_cid, 'employees', $code_slug, 'ktp', true, 5);
+                if ($up_ktp !== null) {
+                    $mapped['data']['ktp_doc_path'] = $up_ktp;
+                }
+            }
+            if (!empty($_FILES['sim_file']['tmp_name'])) {
+                $up_sim = azure_blob_handle_upload('sim_file', $emp_cid, 'employees', $code_slug, 'sim', true, 5);
+                if ($up_sim !== null) {
+                    $mapped['data']['sim_doc_path'] = $up_sim;
+                }
+            }
+        } catch (InvalidArgumentException $e) {
+            $errors[] = $e->getMessage();
+        }
+    }
+
+    if (!$errors) {
         $saved_id = employee_save($id, $mapped);
         if ($id === 0) {
             audit('employee.create', "Tambah karyawan {$mapped['data']['code']} — {$mapped['data']['name']} (id {$saved_id})");
@@ -68,7 +95,7 @@ require __DIR__ . '/../../includes/header.php';
     </div>
 <?php endif; ?>
 
-<form method="post" class="card shadow-sm">
+<form method="post" class="card shadow-sm" enctype="multipart/form-data">
     <div class="card-body">
         <?= csrf_field() ?>
         <input type="hidden" name="id" value="<?= $id ?>">
@@ -213,6 +240,32 @@ require __DIR__ . '/../../includes/header.php';
             <div class="col-12">
                 <label class="form-label">Alamat</label>
                 <textarea name="address" class="form-control" rows="2" maxlength="500"><?= e($v('address')) ?></textarea>
+            </div>
+
+            <h6 class="fw-bold text-muted mt-3 mb-0">Berkas &amp; Foto (Azure Blob Storage)</h6>
+            <div class="col-md-4">
+                <label class="form-label" for="photo_file">Pas Foto Karyawan</label>
+                <input type="file" id="photo_file" name="photo_file" class="form-control mb-1" accept="image/*">
+                <input type="hidden" name="photo" value="<?= e($v('photo')) ?>">
+                <?php if ($v('photo') !== ''): ?>
+                    <a href="<?= e(resolve_asset_url($v('photo'))) ?>" target="_blank" class="small text-decoration-none"><i class="bi bi-image"></i> Lihat Pas Foto</a>
+                <?php endif; ?>
+            </div>
+            <div class="col-md-4">
+                <label class="form-label" for="ktp_file">Dokumen KTP (Gambar/PDF)</label>
+                <input type="file" id="ktp_file" name="ktp_file" class="form-control mb-1" accept="image/*,application/pdf">
+                <input type="hidden" name="ktp_doc_path" value="<?= e($v('ktp_doc_path')) ?>">
+                <?php if ($v('ktp_doc_path') !== ''): ?>
+                    <a href="<?= e(resolve_asset_url($v('ktp_doc_path'))) ?>" target="_blank" class="small text-decoration-none"><i class="bi bi-file-earmark-person"></i> Lihat Berkas KTP</a>
+                <?php endif; ?>
+            </div>
+            <div class="col-md-4">
+                <label class="form-label" for="sim_file">Dokumen SIM Driver (Gambar/PDF)</label>
+                <input type="file" id="sim_file" name="sim_file" class="form-control mb-1" accept="image/*,application/pdf">
+                <input type="hidden" name="sim_doc_path" value="<?= e($v('sim_doc_path')) ?>">
+                <?php if ($v('sim_doc_path') !== ''): ?>
+                    <a href="<?= e(resolve_asset_url($v('sim_doc_path'))) ?>" target="_blank" class="small text-decoration-none"><i class="bi bi-card-heading"></i> Lihat Berkas SIM</a>
+                <?php endif; ?>
             </div>
         </div>
     </div>

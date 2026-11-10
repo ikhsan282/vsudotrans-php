@@ -246,6 +246,7 @@ function master_tables(): array
                 mf_bytes('qr_image', 'Gambar QR (opsional)', ['mime_col' => 'qr_mime']),
                 ['col' => 'instructions', 'label' => 'Instruksi Pembayaran', 'type' => 'textarea', 'max' => 2000, 'required' => false, 'nullable' => true],
                 ['col' => 'qr_mime', 'label' => 'Jenis QR', 'type' => 'hidden'],
+                ['col' => 'qr_blob_path', 'label' => 'Path Azure Blob QR', 'type' => 'hidden'],
                 ['col' => 'sort_order', 'label' => 'Urutan', 'type' => 'number', 'int' => true, 'required' => false],
                 mf_active(),
                 mf_note(),
@@ -781,8 +782,13 @@ function master_form(string $key): void
                             <div class="mb-3">
                                 <label class="form-label" for="<?= e($col) ?>"><?= e($f['label']) ?></label>
                                 <input class="form-control" type="file" id="<?= e($col) ?>" name="<?= e($col) ?>" accept="image/*">
-                                <?php if ($id > 0 && !empty($row[$col])): ?>
-                                    <div class="form-text">Berkas tersimpan. Unggah ulang untuk mengganti.</div>
+                                <?php if ($id > 0 && (!empty($row['qr_blob_path']) || !empty($row[$col]))): ?>
+                                    <div class="form-text d-flex align-items-center gap-2 mt-1">
+                                        <span>Berkas tersimpan<?= !empty($row['qr_blob_path']) ? ' di Azure Blob (<code>' . e($row['qr_blob_path']) . '</code>)' : '' ?>. Unggah ulang untuk mengganti.</span>
+                                        <?php if (!empty($row['qr_blob_path'])): ?>
+                                            <a href="<?= e(azure_blob_url($row['qr_blob_path'])) ?>" target="_blank" class="btn btn-xs btn-outline-primary py-0 px-2">Lihat QR</a>
+                                        <?php endif; ?>
+                                    </div>
                                 <?php endif; ?>
                             </div>
                             <?php continue; ?>
@@ -888,6 +894,13 @@ function master_upload_binary(string $col, ?string $mime_col = null): ?string
     }
     if ($mime_col !== null && column_exists('payment_methods', $mime_col)) {
         $_POST[$mime_col] = (string) ($info['mime'] ?? 'application/octet-stream');
+    }
+    if (function_exists('azure_blob_handle_upload') && column_exists('payment_methods', 'qr_blob_path')) {
+        $slug = strtolower(trim((string) ($_POST['code'] ?? 'qr')));
+        $blob_path = azure_blob_handle_upload($col, active_company_id(), 'finance', 'qris', $slug ?: 'qr', false, 2);
+        if ($blob_path !== null) {
+            $_POST['qr_blob_path'] = $blob_path;
+        }
     }
     return $data;
 }

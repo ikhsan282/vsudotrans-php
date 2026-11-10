@@ -1,4 +1,5 @@
 *.log
+.env
 uploads/*
 !uploads/.gitkeep
 database/seeds/data/

@@ -111,6 +111,28 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         }
 
         if (!$errors) {
+            try {
+                // Gunakan kode perusahaan dari input untuk prefix folder di Azure Blob
+                $comp_code_slug = strtolower(preg_replace('/[^a-zA-Z0-9\-]/', '', $row['code'])) ?: 'company';
+                if (!empty($_FILES['logo_file']['tmp_name'])) {
+                    $ext = pathinfo((string) $_FILES['logo_file']['name'], PATHINFO_EXTENSION) ?: 'png';
+                    $up_logo = azure_blob_handle_upload('logo_file', $id > 0 ? $id : null, 'company', '', 'logo-' . $comp_code_slug, false, 3);
+                    if ($up_logo !== null) {
+                        $row['logo'] = $up_logo;
+                    }
+                }
+                if (!empty($_FILES['stamp_file']['tmp_name'])) {
+                    $up_stamp = azure_blob_handle_upload('stamp_file', $id > 0 ? $id : null, 'company', '', 'stamp-' . $comp_code_slug, false, 3);
+                    if ($up_stamp !== null) {
+                        $row['stamp'] = $up_stamp;
+                    }
+                }
+            } catch (InvalidArgumentException $e) {
+                $errors[] = $e->getMessage();
+            }
+        }
+
+        if (!$errors) {
             $nul = fn (string $v): ?string => $v === '' ? null : $v;
             $vals = [$group_id, $row['code'], $row['name'], $nul($row['note']), $row['country_code'],
                      $nul($row['phone_number']), $nul($row['website']), $nul($row['email']),
@@ -350,7 +372,7 @@ require __DIR__ . '/../../includes/header.php';
     <div class="card shadow-sm border-0" style="max-width: 880px;">
         <div class="card-header bg-white fw-semibold">Informasi Profil &amp; Legalitas Perusahaan</div>
         <div class="card-body">
-            <form method="post" action="?id=<?= $id ?>&tab=profile">
+            <form method="post" action="?id=<?= $id ?>&tab=profile" enctype="multipart/form-data">
                 <?= csrf_field() ?>
                 <input type="hidden" name="id" value="<?= $id ?>">
                 <input type="hidden" name="_section" value="profile">
@@ -398,14 +420,30 @@ require __DIR__ . '/../../includes/header.php';
                     </div>
 
                     <div class="col-md-6">
-                        <label class="form-label" for="logo">Path Logo E-Tiket</label>
-                        <input class="form-control" id="logo" name="logo" maxlength="255" placeholder="mis. assets/brand/logo-transmandiri.png" value="<?= e((string) ($row['logo'] ?? '')) ?>">
-                        <small class="text-muted">Logo resmi perusahaan di header tiket.</small>
+                        <label class="form-label" for="logo_file">Logo Perusahaan (Azure Blob)</label>
+                        <input class="form-control mb-1" type="file" id="logo_file" name="logo_file" accept="image/*">
+                        <input type="hidden" name="logo" value="<?= e((string) ($row['logo'] ?? '')) ?>">
+                        <?php if (!empty($row['logo'])): ?>
+                            <div class="d-flex align-items-center gap-2 mt-1">
+                                <img src="<?= e(resolve_asset_url($row['logo'])) ?>" alt="Logo" style="max-height: 36px; max-width: 120px;" class="border rounded p-1 bg-light">
+                                <a href="<?= e(resolve_asset_url($row['logo'])) ?>" target="_blank" class="small text-decoration-none"><i class="bi bi-box-arrow-up-right"></i> Lihat (<code><?= e($row['logo']) ?></code>)</a>
+                            </div>
+                        <?php else: ?>
+                            <small class="text-muted">Unggah logo resmi perusahaan (JPG/PNG/WEBP, maks. 3 MB).</small>
+                        <?php endif; ?>
                     </div>
                     <div class="col-md-6">
-                        <label class="form-label" for="stamp">Path Stempel E-Tiket</label>
-                        <input class="form-control" id="stamp" name="stamp" maxlength="255" placeholder="mis. assets/brand/stamp-mtm.png" value="<?= e((string) ($row['stamp'] ?? '')) ?>">
-                        <small class="text-muted">Cap basah resmi perusahaan di pojok tanda tangan tiket.</small>
+                        <label class="form-label" for="stamp_file">Stempel / Cap Perusahaan (Azure Blob)</label>
+                        <input class="form-control mb-1" type="file" id="stamp_file" name="stamp_file" accept="image/*">
+                        <input type="hidden" name="stamp" value="<?= e((string) ($row['stamp'] ?? '')) ?>">
+                        <?php if (!empty($row['stamp'])): ?>
+                            <div class="d-flex align-items-center gap-2 mt-1">
+                                <img src="<?= e(resolve_asset_url($row['stamp'])) ?>" alt="Stempel" style="max-height: 36px; max-width: 120px;" class="border rounded p-1 bg-light">
+                                <a href="<?= e(resolve_asset_url($row['stamp'])) ?>" target="_blank" class="small text-decoration-none"><i class="bi bi-box-arrow-up-right"></i> Lihat (<code><?= e($row['stamp']) ?></code>)</a>
+                            </div>
+                        <?php else: ?>
+                            <small class="text-muted">Unggah cap basah resmi perusahaan (JPG/PNG/WEBP, maks. 3 MB).</small>
+                        <?php endif; ?>
                     </div>
 
                     <div class="col-12">

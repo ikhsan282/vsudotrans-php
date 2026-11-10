@@ -60,6 +60,23 @@ require __DIR__ . '/../../includes/header.php';
                 <dt class="col-sm-3 text-muted fw-normal"><?= e($label) ?></dt>
                 <dd class="col-sm-9"><?= $value !== null && $value !== '' ? e((string) $value) : '<span class="text-muted">—</span>' ?></dd>
             <?php endforeach; ?>
+            <dt class="col-sm-3 text-muted fw-normal">Berkas &amp; Foto (Azure Blob)</dt>
+            <dd class="col-sm-9">
+                <div class="d-flex flex-wrap gap-2 align-items-center">
+                    <?php if (!empty($row['photo'])): ?>
+                        <a href="<?= e(resolve_asset_url($row['photo'])) ?>" target="_blank" class="btn btn-sm btn-outline-primary"><i class="bi bi-image me-1"></i>Pas Foto</a>
+                    <?php endif; ?>
+                    <?php if (!empty($row['ktp_doc_path'])): ?>
+                        <a href="<?= e(resolve_asset_url($row['ktp_doc_path'])) ?>" target="_blank" class="btn btn-sm btn-outline-primary"><i class="bi bi-file-earmark-person me-1"></i>Dokumen KTP</a>
+                    <?php endif; ?>
+                    <?php if (!empty($row['sim_doc_path'])): ?>
+                        <a href="<?= e(resolve_asset_url($row['sim_doc_path'])) ?>" target="_blank" class="btn btn-sm btn-outline-primary"><i class="bi bi-card-heading me-1"></i>Dokumen SIM</a>
+                    <?php endif; ?>
+                    <?php if (empty($row['photo']) && empty($row['ktp_doc_path']) && empty($row['sim_doc_path'])): ?>
+                        <span class="text-muted">—</span>
+                    <?php endif; ?>
+                </div>
+            </dd>
         </dl>
     </div>
     <div class="card-footer bg-white d-flex gap-2">
