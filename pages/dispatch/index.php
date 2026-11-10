@@ -101,6 +101,7 @@ require __DIR__ . '/../../includes/header.php';
                             <?php elseif ($is_active): ?>
                             <span class="badge bg-warning text-dark">sedang jalan</span>
                             <?php endif; ?>
+                            <a class="btn btn-sm btn-outline-primary" target="_blank" href="<?= e(APP_URL) ?>/pages/dispatch/manifest.php?id=<?= (int) $r['id'] ?>" title="Cetak Surat Jalan"><i class="bi bi-printer"></i> Surat Jalan</a>
                             <a class="btn btn-sm btn-outline-secondary" href="<?= e(APP_URL) ?>/pages/dispatch/detail.php?type=<?= e((string) $r['booking_type']) ?>&amp;id=<?= (int) $r['booking_id'] ?>">Detail</a>
                         </td>
                     </tr>

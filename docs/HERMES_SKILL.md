@@ -126,3 +126,31 @@ curl -sS "$BASE/api/bot/staff_summary.php?secret=$SECRET&phone=$PHONE&company=$C
 ### 4.8 `GET` & `POST /api/bot/outbox.php` — Antrean Notifikasi WhatsApp Otomatis
 Digunakan worker Hermes untuk menarik notifikasi bukti bayar/booking (`GET /api/bot/outbox.php?secret=$SECRET&phone=628000000000&company=$COMPANY`) dan menandai terkirim (`POST` dengan `{"event_id":"...","status":"sent"}`).
 
+### 4.9 `GET` & `POST /api/bot/dispatch_queue.php` — Penugasan Driver (Scheduler & Interaktif)
+Menghubungkan penugasan driver di VSudoTrans dengan WhatsApp tanpa gateway pihak ketiga.
+
+#### A. Mode Scheduler (Polling Tugas Baru ke Driver)
+Jalankan scheduler berkala (misal tiap 5-10 menit):
+1. **Ambil Antrean Tugas Baru (`notified_at IS NULL`):**
+   ```bash
+   curl -sS "$BASE/api/bot/dispatch_queue.php?secret=$SECRET&company=$COMPANY"
+   ```
+2. **Kirim Pesan WhatsApp ke Nomor Driver (`driver.phone_number`):**
+   Kirimkan format penugasan ramah:
+   > *"Halo Mas {driver.name}, Anda ditugaskan untuk perjalanan {trip.route_label} pada {trip.date} jam {trip.time}. Armada: {vehicle.label}. Jumlah penumpang: {passenger_count} orang. Mohon bersiap ya!"*
+3. **Konfirmasi Terkirim (ACK):**
+   ```bash
+   curl -sS -X POST "$BASE/api/bot/dispatch_queue.php?secret=$SECRET&company=$COMPANY" \
+     -H "Content-Type: application/json" \
+     -d '{"assignment_id": 12, "status": "sent"}'
+   ```
+   Sistem menandai `notified_at = NOW()` sehingga pesan tidak terkirim ganda.
+
+#### B. Mode Interaktif (Driver Chat ke Hermes)
+Bila Driver mengirim pesan ke Hermes (*"Cek jadwal jalan saya hari ini"* atau *"Ada tugas apa?"*):
+```bash
+curl -sS "$BASE/api/bot/dispatch_queue.php?secret=$SECRET&company=$COMPANY&mode=driver&phone=$PHONE"
+```
+Hermes membaca data `assignments` aktif milik driver tersebut dan membalas dengan ringkasan rute, armada, dan titik penjemputan.
+
+

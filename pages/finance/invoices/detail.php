@@ -39,10 +39,20 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     5
                 );
             }
-            $res = invoice_add_payment($id, (int) $inv['company_id'], $amount, $method > 0 ? $method : null,
-                $note === '' ? null : $note, $user, false, $proof_path);
+            $cash_account_id = (int) ($_POST['cash_account_id'] ?? 0);
+            $res = invoice_add_payment(
+                $id,
+                (int) $inv['company_id'],
+                $amount,
+                $method > 0 ? $method : null,
+                $note === '' ? null : $note,
+                $user,
+                false,
+                $proof_path,
+                $cash_account_id > 0 ? $cash_account_id : null
+            );
             audit('invoice.pay', "Invoice #{$id} " . rupiah($amount) . " -> {$res['status']}");
-            flash('success', 'Pembayaran ' . rupiah($amount) . ' dicatat. Status: ' . $res['status'] . '.');
+            flash('success', 'Pembayaran ' . rupiah($amount) . ' dicatat' . ($cash_account_id > 0 ? ' & kas disinkronkan' : '') . '. Status: ' . $res['status'] . '.');
         } elseif ($act === 'cancel') {
             $reason = trim((string) ($_POST['reason'] ?? ''));
             $db = db();
@@ -68,6 +78,13 @@ $mst->bind_param('i', $inv['company_id']);
 $mst->execute();
 $methods = $mst->get_result()->fetch_all(MYSQLI_ASSOC);
 $mst->close();
+
+$cash_accounts = [];
+$cst = db()->prepare('SELECT id, name, account_number FROM cash_accounts WHERE is_active = 1 AND company_id = ? ORDER BY name');
+$cst->bind_param('i', $inv['company_id']);
+$cst->execute();
+$cash_accounts = $cst->get_result()->fetch_all(MYSQLI_ASSOC);
+$cst->close();
 
 $remaining = max(0, round((float) $inv['total'] - (float) $inv['paid_total'], 2));
 $qrisChannels = $remaining > 0 ? gateway_active_channels((int) $inv['company_id']) : [];
@@ -127,27 +144,36 @@ require __DIR__ . '/../../../includes/header.php';
             <?= csrf_field() ?>
             <input type="hidden" name="id" value="<?= $id ?>">
             <input type="hidden" name="act" value="pay">
-            <div class="col-md-2">
+            <div class="col-md-3">
                 <label class="form-label small mb-1">Nominal</label>
                 <input class="form-control form-control-sm" name="amount" inputmode="numeric" required
                        value="<?= $remaining > 0 ? e(number_format($remaining, 0, ',', '.')) : '' ?>" placeholder="0">
             </div>
             <div class="col-md-3">
-                <label class="form-label small mb-1">Metode</label>
+                <label class="form-label small mb-1">Metode Pembayaran</label>
                 <select class="form-select form-select-sm" name="payment_method_id">
-                    <option value="">— pilih —</option>
+                    <option value="">— pilih metode —</option>
                     <?php foreach ($methods as $m): ?>
                         <option value="<?= (int) $m['id'] ?>"><?= e($m['name']) ?><?= $m['account_number'] ? ' · ' . e($m['account_number']) : '' ?></option>
                     <?php endforeach; ?>
                 </select>
             </div>
             <div class="col-md-3">
-                <label class="form-label small mb-1">Catatan</label>
-                <input class="form-control form-control-sm" name="note" maxlength="2000" placeholder="mis. transfer BCA 12:30">
+                <label class="form-label small mb-1">Masuk ke Buku Kas/Bank</label>
+                <select class="form-select form-select-sm" name="cash_account_id">
+                    <option value="">— Jangan catat ke Kas/Bank —</option>
+                    <?php foreach ($cash_accounts as $ca): ?>
+                        <option value="<?= (int) $ca['id'] ?>"><?= e($ca['name']) ?><?= $ca['account_number'] ? ' (' . e($ca['account_number']) . ')' : '' ?></option>
+                    <?php endforeach; ?>
+                </select>
             </div>
-            <div class="col-md-2">
+            <div class="col-md-3">
                 <label class="form-label small mb-1">Bukti Bayar (Blob)</label>
                 <input type="file" class="form-control form-control-sm" name="proof_file" accept="image/*,application/pdf">
+            </div>
+            <div class="col-md-10">
+                <label class="form-label small mb-1">Catatan</label>
+                <input class="form-control form-control-sm" name="note" maxlength="2000" placeholder="mis. transfer BCA 12:30">
             </div>
             <div class="col-md-2">
                 <button class="btn btn-sm btn-success w-100" type="submit"><i class="bi bi-check-lg" aria-hidden="true"></i> Simpan</button>

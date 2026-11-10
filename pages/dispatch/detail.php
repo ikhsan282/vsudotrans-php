@@ -60,6 +60,9 @@ require __DIR__ . '/../../includes/header.php';
     <div class="d-flex justify-content-between align-items-center mb-3">
         <h4 class="fw-bold mb-0"><?= e((string) $booking['document_number']) ?> <?= status_badge($status) ?></h4>
         <div>
+            <?php if ($aktif): ?>
+                <a class="btn btn-primary btn-sm" target="_blank" href="<?= e(APP_URL) ?>/pages/dispatch/manifest.php?id=<?= (int) $aktif['id'] ?>"><i class="bi bi-printer me-1"></i> Cetak Surat Jalan</a>
+            <?php endif; ?>
             <a class="btn btn-outline-secondary btn-sm" href="<?= e(APP_URL) ?>/<?= e($booking_link) ?>?id=<?= $id ?>">Lihat Booking</a>
             <a class="btn btn-outline-secondary btn-sm" href="<?= e(APP_URL) ?>/pages/dispatch/index.php">Kembali</a>
         </div>
@@ -100,8 +103,9 @@ require __DIR__ . '/../../includes/header.php';
                         <td><?= e((string) $r['reason']) ?></td>
                         <td><?= e((string) $r['created_user']) ?></td>
                         <td class="text-end">
+                            <a class="btn btn-sm btn-outline-secondary py-0 px-2" target="_blank" href="<?= e(APP_URL) ?>/pages/dispatch/manifest.php?id=<?= (int) $r['id'] ?>" title="Cetak Surat Jalan"><i class="bi bi-printer"></i></a>
                             <?php if ($is_active && can('dispatch.manage')): ?>
-                            <form method="post" action="<?= e($post_url) ?>" class="d-flex gap-1 justify-content-end">
+                            <form method="post" action="<?= e($post_url) ?>" class="d-inline-flex gap-1 justify-content-end">
                                 <?= csrf_field() ?>
                                 <input type="hidden" name="type" value="<?= e($type) ?>">
                                 <input type="hidden" name="id" value="<?= $id ?>">

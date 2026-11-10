@@ -46,9 +46,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             flash('success', $res['updated'] . ' item gaji diperbarui dari Absensi.');
         } elseif ($act === 'final' || $act === 'pay') {
             $next = $act === 'final' ? 'final' : 'paid';
-            payroll_period_set_status($id, $cid, $next, $user);
+            $cash_account_id = (int) ($_POST['cash_account_id'] ?? 0);
+            payroll_period_set_status($id, $cid, $next, $user, $cash_account_id > 0 ? $cash_account_id : null);
             audit('payroll.' . $act, "Periode #{$id} -> {$next}");
-            flash('success', $act === 'final' ? 'Periode difinalkan.' : 'Periode ditandai sudah dibayar.');
+            flash('success', $act === 'final' ? 'Periode difinalkan.' : 'Periode ditandai sudah dibayar' . ($cash_account_id > 0 ? ' & pengeluaran kas dicatat.' : '.'));
         }
         redirect('pages/payroll/periods/detail.php?id=' . $id);
     } catch (Throwable $ex) {
@@ -65,6 +66,15 @@ foreach ($items as $i) {
 $can_manage = can('payroll.manage');
 $editable = $can_manage && $period['status'] !== 'paid';
 $cols = $editable ? 8 : 7;
+
+$cash_accounts = [];
+if ($can_manage && $period['status'] === 'final') {
+    $cst = db()->prepare('SELECT id, name, account_number FROM cash_accounts WHERE is_active = 1 AND company_id = ? ORDER BY name');
+    $cst->bind_param('i', $cid);
+    $cst->execute();
+    $cash_accounts = $cst->get_result()->fetch_all(MYSQLI_ASSOC);
+    $cst->close();
+}
 
 $active = 'payroll';
 $title  = 'Detail Payroll — ' . payroll_period_label($period);
@@ -120,10 +130,19 @@ require __DIR__ . '/../../../includes/header.php';
             </form>
         <?php endif; ?>
         <?php if ($period['status'] === 'final'): ?>
-            <form method="post" action="" onsubmit="return confirm('Tandai periode ini SUDAH DIBAYAR? Setelah ini data tidak bisa diubah lagi.')">
+            <form method="post" action="" class="d-inline-flex align-items-center gap-2 flex-wrap" onsubmit="return confirm('Tandai periode ini SUDAH DIBAYAR? Data payroll akan dikunci.')">
                 <?= csrf_field() ?>
                 <input type="hidden" name="id" value="<?= $id ?>">
                 <input type="hidden" name="act" value="pay">
+                <div class="input-group input-group-sm" style="max-width: 320px;">
+                    <span class="input-group-text bg-light text-muted"><i class="bi bi-wallet2"></i></span>
+                    <select class="form-select form-select-sm" name="cash_account_id" title="Pilih akun Kas/Bank untuk mencatat pengeluaran otomatis">
+                        <option value="">— Jangan potong Kas/Bank —</option>
+                        <?php foreach ($cash_accounts as $ca): ?>
+                            <option value="<?= (int) $ca['id'] ?>"><?= e($ca['name']) ?><?= $ca['account_number'] ? ' (' . e($ca['account_number']) . ')' : '' ?></option>
+                        <?php endforeach; ?>
+                    </select>
+                </div>
                 <button class="btn btn-sm btn-success" type="submit"><i class="bi bi-cash-coin"></i> Tandai Dibayar</button>
             </form>
         <?php endif; ?>

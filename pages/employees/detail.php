@@ -32,6 +32,7 @@ $fields = [
     'Jenis Kelamin' => $row['gender'] === 'L' ? 'Laki-laki' : ($row['gender'] === 'P' ? 'Perempuan' : null),
     'Agama' => $row['religion'], 'Status Perkawinan' => $row['marital_status'],
     'Alamat' => $row['address'], 'Status' => $row['status'],
+    'Jatuh Tempo SIM' => $row['sim_due'],
 ];
 
 $active = 'employees';

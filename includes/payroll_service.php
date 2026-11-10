@@ -304,7 +304,7 @@ function payroll_pull_attendance(int $period_id, int $company_id, ?string $user)
  * Transisi status periode: draft -> final -> paid. Tidak ada transisi mundur,
  * dan status 'paid' bersifat final.
  */
-function payroll_period_set_status(int $period_id, int $company_id, string $status, ?string $user): void
+function payroll_period_set_status(int $period_id, int $company_id, string $status, ?string $user, ?int $cash_account_id = null): void
 {
     $allowed = ['draft' => 'final', 'final' => 'paid'];
     $db = db();
@@ -319,6 +319,40 @@ function payroll_period_set_status(int $period_id, int $company_id, string $stat
         $st->bind_param('ssii', $status, $user, $period_id, $company_id);
         $st->execute();
         $st->close();
+
+        // Jika status diubah menjadi 'paid' dan akun kas/bank dipilih, catat pengeluaran kas otomatis
+        if ($status === 'paid' && $cash_account_id !== null && $cash_account_id > 0) {
+            $c_st = $db->prepare('SELECT id FROM cash_accounts WHERE id = ? AND company_id = ? AND is_active = 1');
+            $c_st->bind_param('ii', $cash_account_id, $company_id);
+            $c_st->execute();
+            $c_acc = $c_st->get_result()->fetch_assoc();
+            $c_st->close();
+            if ($c_acc) {
+                // Hitung total gaji bersih periode ini
+                $n_st = $db->prepare('SELECT COALESCE(SUM(net_salary), 0) AS total_net, COUNT(*) AS total_items FROM payroll_items WHERE payroll_period_id = ? AND company_id = ?');
+                $n_st->bind_param('ii', $period_id, $company_id);
+                $n_st->execute();
+                $p_totals = $n_st->get_result()->fetch_assoc();
+                $n_st->close();
+
+                $total_paid = (float) ($p_totals['total_net'] ?? 0);
+                if ($total_paid > 0) {
+                    $c_date = date('Y-m-d');
+                    $c_dir  = 'out';
+                    $c_cat  = 'Gaji Karyawan';
+                    $period_lbl = payroll_period_label($period);
+                    $c_desc = 'Payroll Periode ' . $period_lbl . ' (' . (int) ($p_totals['total_items'] ?? 0) . ' karyawan)';
+                    $null_method = null;
+                    $t_st = $db->prepare('INSERT INTO cash_transactions
+                        (company_id, cash_account_id, date, direction, amount, category, description, payment_method_id, created_user, created_date)
+                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, NOW())');
+                    $t_st->bind_param('iissdssis', $company_id, $cash_account_id, $c_date, $c_dir, $total_paid, $c_cat, $c_desc, $null_method, $user);
+                    $t_st->execute();
+                    $t_st->close();
+                }
+            }
+        }
+
         $db->commit();
     } catch (Throwable $ex) {
         $db->rollback();

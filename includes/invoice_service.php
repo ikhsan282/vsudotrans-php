@@ -71,7 +71,7 @@ function invoice_find(int $id): ?array
  *
  * @return array{invoice_id:int, amount:float, paid_total:float, status:string}
  */
-function invoice_add_payment(int $invoice_id, int $company_id, float $amount, ?int $method_id, ?string $note, ?string $user, bool $allow_over = false, ?string $proof_blob_path = null): array
+function invoice_add_payment(int $invoice_id, int $company_id, float $amount, ?int $method_id, ?string $note, ?string $user, bool $allow_over = false, ?string $proof_blob_path = null, ?int $cash_account_id = null): array
 {
     if ($amount <= 0) {
         throw new InvalidArgumentException('Nominal pembayaran harus lebih dari 0.');
@@ -80,7 +80,7 @@ function invoice_add_payment(int $invoice_id, int $company_id, float $amount, ?i
     $db->begin_transaction();
     try {
         // Kunci invoice + cek tenant.
-        $st = $db->prepare('SELECT id, booking_type, booking_id, company_id, total, status FROM invoices WHERE id = ? FOR UPDATE');
+        $st = $db->prepare('SELECT id, invoice_no, booking_type, booking_id, company_id, total, status FROM invoices WHERE id = ? FOR UPDATE');
         $st->bind_param('i', $invoice_id);
         $st->execute();
         $inv = $st->get_result()->fetch_assoc();
@@ -113,6 +113,28 @@ function invoice_add_payment(int $invoice_id, int $company_id, float $amount, ?i
         $st->bind_param('isisdisss', $company_id, $bt, $bid, $desc, $amount, $mid, $label, $proof_blob_path, $user);
         $st->execute();
         $st->close();
+
+        // Jika akun kas/bank dipilih, catat otomatis ke cash_transactions (transaksi masuk)
+        if ($cash_account_id !== null && $cash_account_id > 0) {
+            $c_st = $db->prepare('SELECT id FROM cash_accounts WHERE id = ? AND company_id = ? AND is_active = 1');
+            $c_st->bind_param('ii', $cash_account_id, $company_id);
+            $c_st->execute();
+            $c_acc = $c_st->get_result()->fetch_assoc();
+            $c_st->close();
+            if ($c_acc) {
+                $c_date = date('Y-m-d');
+                $c_dir  = 'in';
+                $c_cat  = 'Pendapatan Invoice';
+                $c_desc = 'Pembayaran Invoice ' . ($inv['invoice_no'] ?? ('#' . $invoice_id)) . ($note !== null && $note !== '' ? ' - ' . $note : '');
+                $c_meth = $method_id > 0 ? $method_id : null;
+                $t_st = $db->prepare('INSERT INTO cash_transactions
+                    (company_id, cash_account_id, date, direction, amount, category, description, payment_method_id, created_user, created_date)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, NOW())');
+                $t_st->bind_param('iissdssis', $company_id, $cash_account_id, $c_date, $c_dir, $amount, $c_cat, $c_desc, $c_meth, $user);
+                $t_st->execute();
+                $t_st->close();
+            }
+        }
 
         $new_paid = round($paid + $amount, 2);
         $st = $db->prepare('UPDATE invoices SET modified_user = ?, modified_date = NOW() WHERE id = ?');

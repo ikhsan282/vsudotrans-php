@@ -48,6 +48,7 @@ $today_book = dash_bookings($today, $today);
 $week_book  = dash_bookings($week_start, $week_end);
 $drivers    = dash_active_drivers();
 $overdue    = dash_overdue_receivables(0, 8);
+$expiring_docs = dash_expiring_documents(30, 8);
 
 $active = 'dashboard';
 $title  = 'Dashboard';
@@ -179,6 +180,78 @@ require __DIR__ . '/../../includes/header.php';
                                 <tr><td colspan="4" class="text-center text-muted py-4">
                                     <i class="bi bi-check-circle text-success me-1"></i>Tidak ada piutang jatuh tempo.
                                 </td></tr>
+                            <?php endif; ?>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Peringatan Jatuh Tempo Dokumen & SIM Driver (H-30) -->
+    <div class="row g-3 mb-3">
+        <div class="col-12">
+            <div class="card shadow-sm border-0">
+                <div class="card-header bg-white fw-semibold d-flex flex-wrap justify-content-between align-items-center gap-2">
+                    <div>
+                        <i class="bi bi-shield-exclamation me-1 <?= $expiring_docs['total_expired'] > 0 ? 'text-danger' : 'text-warning' ?>"></i>
+                        <span>Peringatan Dokumen &amp; Legalitas (STNK, KIR, Pajak &amp; SIM Driver)</span>
+                        <?php if ($expiring_docs['total_expired'] > 0): ?>
+                            <span class="badge bg-danger ms-2"><?= $expiring_docs['total_expired'] ?> Kedaluwarsa</span>
+                        <?php endif; ?>
+                        <?php if ($expiring_docs['total_warning'] > 0): ?>
+                            <span class="badge bg-warning text-dark ms-1"><?= $expiring_docs['total_warning'] ?> Segera Habis (&le; 30 Hari)</span>
+                        <?php endif; ?>
+                    </div>
+                    <div class="small text-muted">Pantauan berkas operasional</div>
+                </div>
+                <div class="card-body p-0">
+                    <div class="table-responsive">
+                        <table class="table table-sm table-hover mb-0 align-middle">
+                            <thead class="table-light">
+                                <tr>
+                                    <th>Tipe Dokumen</th>
+                                    <th>Unit / Karyawan</th>
+                                    <th>Jatuh Tempo</th>
+                                    <th>Sisa Waktu</th>
+                                    <th class="text-end">Aksi</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                            <?php foreach ($expiring_docs['items'] as $doc): ?>
+                                <?php
+                                    $dl = (int) $doc['days_left'];
+                                    if ($dl < 0) {
+                                        $badge_class = 'bg-danger';
+                                        $status_text = 'Lewat ' . abs($dl) . ' hari';
+                                    } elseif ($dl === 0) {
+                                        $badge_class = 'bg-danger';
+                                        $status_text = 'Hari Ini';
+                                    } else {
+                                        $badge_class = 'bg-warning text-dark';
+                                        $status_text = 'Sisa ' . $dl . ' hari';
+                                    }
+                                ?>
+                                <tr>
+                                    <td class="small fw-semibold"><?= e($doc['doc_type']) ?></td>
+                                    <td class="small">
+                                        <span class="badge bg-secondary-subtle text-dark border me-1"><?= $doc['ref_type'] === 'vehicle' ? 'Armada' : 'Driver' ?></span>
+                                        <?= e($doc['title']) ?>
+                                    </td>
+                                    <td class="small text-muted"><?= e(date('d/m/Y', strtotime($doc['due_date']))) ?></td>
+                                    <td class="small"><span class="badge <?= $badge_class ?>"><?= e($status_text) ?></span></td>
+                                    <td class="small text-end">
+                                        <a href="<?= e(APP_URL) ?>/<?= e($doc['url_prefix']) ?><?= (int) $doc['ref_id'] ?>" class="btn btn-sm btn-outline-primary py-0 px-2">Lihat Detail →</a>
+                                    </td>
+                                </tr>
+                            <?php endforeach; ?>
+                            <?php if (!$expiring_docs['items']): ?>
+                                <tr>
+                                    <td colspan="5" class="text-center text-muted py-3">
+                                        <i class="bi bi-check-circle text-success me-1"></i>Semua STNK, KIR, Pajak Kendaraan, dan SIM Driver dalam kondisi aman (tidak ada yang kedaluwarsa dalam 30 hari ke depan).
+                                    </td>
+                                </tr>
                             <?php endif; ?>
                             </tbody>
                         </table>

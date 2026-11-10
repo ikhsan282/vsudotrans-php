@@ -180,14 +180,83 @@ $showForm = $adding || $editId > 0 || $errors;
 $isModel = $key === 'model';
 $brands = $isModel ? vehicle_options($db, 'brand_vehicles', $cid, (int) $form['brand_id']) : [];
 
+$q = mb_substr(trim((string) ($_GET['q'] ?? '')), 0, 50);
+
 $where = company_scope('x.company_id');
-$st = $db->prepare("SELECT COUNT(*) FROM {$t} x WHERE {$where[0]}");
+if ($q !== '') {
+    $like = '%' . addcslashes($q, '%_\\') . '%';
+    if ($isModel) {
+        $where[0] .= ' AND (x.code LIKE ? OR x.name LIKE ? OR b.name LIKE ?)';
+        $where[1] .= 'sss';
+        $where[2] = array_merge($where[2], [$like, $like, $like]);
+    } else {
+        $where[0] .= ' AND (x.code LIKE ? OR x.name LIKE ?)';
+        $where[1] .= 'ss';
+        $where[2] = array_merge($where[2], [$like, $like]);
+    }
+}
+
+$count_from = $isModel
+    ? "FROM {$t} x JOIN brand_vehicles b ON b.id = x.brand_id"
+    : "FROM {$t} x";
+
+$st = $db->prepare("SELECT COUNT(*) {$count_from} WHERE {$where[0]}");
 if ($where[1] !== '') {
     $st->bind_param($where[1], ...$where[2]);
 }
 $st->execute();
 $total = (int) $st->get_result()->fetch_row()[0];
 $st->close();
+
+// Export XLSX / PDF
+$export_format = strtolower(trim((string) ($_GET['export'] ?? '')));
+if (in_array($export_format, ['xlsx', 'pdf'], true)) {
+    $max_export_rows = $export_format === 'pdf' ? GRID_PDF_MAX_ROWS : null;
+    if ($isModel) {
+        $sql_export = "SELECT x.code, x.name, b.name AS brand_name, x.note, x.is_active
+                       FROM model_units x
+                       JOIN brand_vehicles b ON b.id = x.brand_id
+                       WHERE {$where[0]} ORDER BY x.name";
+        $row_stream = grid_query_stream(
+            $sql_export,
+            $where[1],
+            $where[2],
+            static fn (array $r): array => [
+                $r['code'],
+                $r['name'],
+                $r['brand_name'] ?: '-',
+                $r['note'] ?: '-',
+                $r['is_active'] ? 'Aktif' : 'Nonaktif',
+            ],
+            $max_export_rows
+        );
+        $headers = ['Kode', 'Nama Model', 'Merek', 'Catatan', 'Status'];
+    } else {
+        $sql_export = "SELECT x.code, x.name, x.note, x.is_active FROM {$t} x WHERE {$where[0]} ORDER BY x.name";
+        $row_stream = grid_query_stream(
+            $sql_export,
+            $where[1],
+            $where[2],
+            static fn (array $r): array => [
+                $r['code'],
+                $r['name'],
+                $r['note'] ?: '-',
+                $r['is_active'] ? 'Aktif' : 'Nonaktif',
+            ],
+            $max_export_rows
+        );
+        $headers = ['Kode', 'Nama ' . $m['label'], 'Catatan', 'Status'];
+    }
+
+    $sub = $q !== '' ? 'Pencarian: "' . $q . '"' : 'Semua Data';
+    grid_export_send(
+        'Master ' . $m['label'],
+        $headers,
+        $row_stream,
+        $export_format,
+        $sub
+    );
+}
 
 $p = paginate($total, (int) ($_GET['page'] ?? 1));
 $sel = $isModel
@@ -201,20 +270,45 @@ $st->close();
 
 $active = 'vehicles';
 $title  = 'Master ' . $m['label'];
+
+$export_params = ['t' => $key];
+if ($q !== '') {
+    $export_params['q'] = $q;
+}
+$header_actions = ui_export_actions($export_params);
+if (can('vehicles.manage')) {
+    $header_actions[] = ['label' => 'Tambah ' . $m['label'], 'icon' => 'plus-lg', 'href' => 'pages/vehicles/master.php?t=' . $key . '&new=1', 'class' => 'btn btn-primary btn-sm'];
+}
+$header_actions[] = ['label' => 'Kembali ke Kendaraan', 'icon' => 'arrow-left', 'href' => 'pages/vehicles/index.php', 'class' => 'btn btn-outline-secondary btn-sm'];
+
 require __DIR__ . '/../../includes/header.php';
 ?>
 <main class="col-12 col-md-9 col-lg-10 p-3 p-lg-4">
     <?= ui_page_header(
         'Master ' . $m['label'],
         ['Dashboard' => 'pages/dashboard/index.php', 'Kendaraan' => 'pages/vehicles/index.php', 'Master Kendaraan' => null],
-        [],
-        [['label' => 'Kembali ke Kendaraan', 'icon' => 'arrow-left', 'href' => 'pages/vehicles/index.php']]
+        [['text' => number_format($total, 0, ',', '.') . ' ' . $m['label'], 'class' => 'bg-light text-secondary border']],
+        $header_actions
     ) ?>
     <ul class="nav nav-pills mb-3">
         <?php foreach ($MASTERS as $k => $def): ?>
             <li class="nav-item"><a class="nav-link<?= $k === $key ? ' active' : '' ?>" href="?t=<?= e($k) ?>"><?= e($def['label']) ?></a></li>
         <?php endforeach; ?>
     </ul>
+
+    <form method="get" class="card shadow-sm border-0 mb-3">
+        <input type="hidden" name="t" value="<?= e($key) ?>">
+        <div class="card-body p-2 d-flex flex-wrap gap-2 align-items-center">
+            <div class="input-group input-group-sm" style="max-width: 320px;">
+                <span class="input-group-text bg-light"><i class="bi bi-search"></i></span>
+                <input type="text" name="q" class="form-control" placeholder="Cari kode atau nama..." value="<?= e($q) ?>">
+            </div>
+            <button class="btn btn-sm btn-primary" type="submit">Cari</button>
+            <?php if ($q !== ''): ?>
+                <a class="btn btn-sm btn-outline-secondary" href="?t=<?= e($key) ?>">Reset</a>
+            <?php endif; ?>
+        </div>
+    </form>
 
     <?php if ($errors): ?>
         <div class="alert alert-danger py-2"><?php foreach ($errors as $err): ?><div><?= e($err) ?></div><?php endforeach; ?></div>
@@ -295,7 +389,7 @@ require __DIR__ . '/../../includes/header.php';
                 </tbody>
             </table>
         </div>
-        <div class="card-footer bg-white"><?= pagination_html($p, 't=' . $key) ?></div>
+        <div class="card-footer bg-white"><?= pagination_html($p, 't=' . urlencode($key) . ($q !== '' ? '&q=' . urlencode($q) : '')) ?></div>
     </div>
 </main>
 <?php require __DIR__ . '/../../includes/footer.php'; ?>

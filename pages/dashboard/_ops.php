@@ -92,3 +92,91 @@ function dash_overdue_receivables(int $grace_days = 0, int $limit = 8): array
     foreach ($rows as $r) $total += (float) $r['sisa'];
     return ['rows' => $rows, 'total' => $total];
 }
+
+/**
+ * Dokumen & legalitas yang mendekati jatuh tempo (H-30) atau sudah kedaluwarsa.
+ * Mencakup: STNK Kendaraan, KIR Kendaraan, Pajak Kendaraan, dan SIM Driver/Karyawan.
+ *
+ * @return array{items: array, total_expired: int, total_warning: int, total: int}
+ */
+function dash_expiring_documents(int $days = 30, int $limit = 10): array
+{
+    [$v_where, $v_types, $v_params] = company_scope('v.company_id');
+    [$e_where, $e_types, $e_params] = company_scope('e.company_id');
+
+    // 1. STNK
+    $sql_stnk = "SELECT 'vehicle' AS ref_type, v.id AS ref_id, v.vehicle_number AS title,
+                        'STNK Kendaraan' AS doc_type, v.stnk_due AS due_date,
+                        DATEDIFF(v.stnk_due, CURDATE()) AS days_left,
+                        'pages/vehicles/detail.php?id=' AS url_prefix
+                 FROM vehicles v
+                 WHERE v.is_active = 1 AND v.stnk_due IS NOT NULL
+                   AND v.stnk_due <= DATE_ADD(CURDATE(), INTERVAL ? DAY)
+                   AND {$v_where}";
+
+    // 2. KIR
+    $sql_kir = "SELECT 'vehicle' AS ref_type, v.id AS ref_id, v.vehicle_number AS title,
+                       'KIR Kendaraan' AS doc_type, v.kir_due AS due_date,
+                       DATEDIFF(v.kir_due, CURDATE()) AS days_left,
+                       'pages/vehicles/detail.php?id=' AS url_prefix
+                FROM vehicles v
+                WHERE v.is_active = 1 AND v.kir_due IS NOT NULL
+                  AND v.kir_due <= DATE_ADD(CURDATE(), INTERVAL ? DAY)
+                  AND {$v_where}";
+
+    // 3. Pajak Kendaraan
+    $sql_tax = "SELECT 'vehicle' AS ref_type, v.id AS ref_id, v.vehicle_number AS title,
+                       'Pajak Kendaraan' AS doc_type, v.tax_due AS due_date,
+                       DATEDIFF(v.tax_due, CURDATE()) AS days_left,
+                       'pages/vehicles/detail.php?id=' AS url_prefix
+                FROM vehicles v
+                WHERE v.is_active = 1 AND v.tax_due IS NOT NULL
+                  AND v.tax_due <= DATE_ADD(CURDATE(), INTERVAL ? DAY)
+                  AND {$v_where}";
+
+    // 4. SIM Driver
+    $sql_sim = "SELECT 'employee' AS ref_type, e.id AS ref_id, e.name AS title,
+                       'SIM Driver' AS doc_type, e.sim_due AS due_date,
+                       DATEDIFF(e.sim_due, CURDATE()) AS days_left,
+                       'pages/employees/detail.php?id=' AS url_prefix
+                FROM employees e
+                WHERE e.status = 'aktif' AND e.sim_due IS NOT NULL
+                  AND e.sim_due <= DATE_ADD(CURDATE(), INTERVAL ? DAY)
+                  AND {$e_where}";
+
+    $union_sql = "SELECT * FROM (
+        {$sql_stnk} UNION ALL {$sql_kir} UNION ALL {$sql_tax} UNION ALL {$sql_sim}
+    ) u ORDER BY u.days_left ASC, u.due_date ASC LIMIT ?";
+
+    $types = 'i' . $v_types . 'i' . $v_types . 'i' . $v_types . 'i' . $e_types . 'i';
+    $params = array_merge(
+        [$days], $v_params,
+        [$days], $v_params,
+        [$days], $v_params,
+        [$days], $e_params,
+        [$limit]
+    );
+
+    $st = db()->prepare($union_sql);
+    $st->bind_param($types, ...$params);
+    $st->execute();
+    $rows = $st->get_result()->fetch_all(MYSQLI_ASSOC);
+    $st->close();
+
+    $expired_count = 0;
+    $warning_count = 0;
+    foreach ($rows as $r) {
+        if ((int) $r['days_left'] < 0) {
+            $expired_count++;
+        } else {
+            $warning_count++;
+        }
+    }
+
+    return [
+        'items' => $rows,
+        'total_expired' => $expired_count,
+        'total_warning' => $warning_count,
+        'total' => count($rows),
+    ];
+}

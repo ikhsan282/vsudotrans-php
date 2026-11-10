@@ -283,6 +283,11 @@ require __DIR__ . '/../../includes/header.php';
                     <a href="<?= e(resolve_asset_url($v('sim_doc_path'))) ?>" target="_blank" class="small text-decoration-none"><i class="bi bi-card-heading"></i> Lihat Berkas SIM</a>
                 <?php endif; ?>
             </div>
+            <div class="col-md-4">
+                <label class="form-label" for="sim_due">Jatuh Tempo SIM Driver</label>
+                <input type="date" id="sim_due" name="sim_due" class="form-control" value="<?= e($v('sim_due')) ?>">
+                <div class="form-text small">Wajib dipantau untuk pengemudi / driver.</div>
+            </div>
         </div>
     </div>
     <div class="card-footer bg-white d-flex justify-content-end gap-2">

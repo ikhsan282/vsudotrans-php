@@ -171,6 +171,7 @@ function employee_map_input(array $post): array
         'join_date'        => employee_parse_date($post, 'join_date'),
         'resignation_date' => employee_parse_date($post, 'resignation_date'),
         'birth_date'       => employee_parse_date($post, 'birth_date'),
+        'sim_due'          => employee_parse_date($post, 'sim_due'),
     ];
     $branch_raw = trim((string) ($post['branch_id'] ?? ''));
     $branch = ($branch_raw === '' || $branch_raw === '0') ? null : (string) (int) $branch_raw;
@@ -201,6 +202,7 @@ function employee_map_input(array $post): array
         'photo'            => $str('photo'),
         'ktp_doc_path'     => $str('ktp_doc_path'),
         'sim_doc_path'     => $str('sim_doc_path'),
+        'sim_due'          => $dates['sim_due'] === '' || $dates['sim_due'] === false ? null : $dates['sim_due'],
         'status'           => in_array($post['status'] ?? '', ['aktif', 'resign'], true) ? $post['status'] : 'aktif',
     ];
     $types = ['branch_id' => 'i'];
@@ -241,6 +243,9 @@ function employee_validate(array $mapped): array
     if ($mapped['dates']['birth_date'] === false) {
         $errors[] = 'Tanggal lahir tidak valid.';
     }
+    if ($mapped['dates']['sim_due'] === false) {
+        $errors[] = 'Tanggal jatuh tempo SIM tidak valid.';
+    }
     if ($mapped['data']['resignation_date'] !== null && $mapped['data']['join_date'] !== ''
         && $mapped['data']['resignation_date'] < $mapped['data']['join_date']) {
         $errors[] = 'Tanggal resign tidak boleh lebih awal dari tanggal masuk.';
@@ -268,7 +273,7 @@ function employee_save(int $id, array $mapped): int
         'branch_id', 'code', 'name', 'email', 'phone_number', 'join_date', 'resignation_date',
         'job_title', 'job_position', 'job_grade', 'bank_name', 'account_number', 'account_name',
         'id_number', 'family_number', 'tax_number', 'birth_date', 'birth_place', 'gender',
-        'religion', 'marital_status', 'address', 'photo', 'ktp_doc_path', 'sim_doc_path', 'status',
+        'religion', 'marital_status', 'address', 'photo', 'ktp_doc_path', 'sim_doc_path', 'sim_due', 'status',
     ];
     $data = $mapped['data'];
     $colTypes = $mapped['types'];
