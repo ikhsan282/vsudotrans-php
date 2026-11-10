@@ -46,6 +46,62 @@ function ui_export_actions(?array $extra_query = null): array
 define('GRID_PDF_MAX_ROWS', 2000);
 
 /**
+ * Generator penarik data SQL secara bertahap (chunked batching) agar MySQLi
+ * tidak pernah memuat ratusan ribu baris sekaligus ke dalam RAM.
+ *
+ * @param string   $base_sql   Query SELECT ... WHERE ... ORDER BY ... (tanpa LIMIT)
+ * @param string   $types      Tipe bind_param (mis. 'ssi')
+ * @param array    $params     Parameter bind_param
+ * @param callable $row_mapper Fungsi (array $assoc_row): array yang mengubah 1 baris DB menjadi array kolom export
+ * @param ?int     $max_rows   Batas maksimal baris yang diambil (null = semua baris)
+ * @param int      $batch_size Ukuran chunk per query (default 2000 baris)
+ */
+function grid_query_stream(
+    string $base_sql,
+    string $types,
+    array $params,
+    callable $row_mapper,
+    ?int $max_rows = null,
+    int $batch_size = 2000
+): Generator {
+    $offset = 0;
+    $yielded = 0;
+    $db = db();
+
+    while (true) {
+        $take = $batch_size;
+        if ($max_rows !== null) {
+            $remaining = $max_rows - $yielded;
+            if ($remaining <= 0) {
+                break;
+            }
+            $take = min($batch_size, $remaining);
+        }
+
+        $sql = $base_sql . ' LIMIT ? OFFSET ?';
+        $st = $db->prepare($sql);
+        $b_types = $types . 'ii';
+        $b_params = [...$params, $take, $offset];
+        $st->bind_param($b_types, ...$b_params);
+        $st->execute();
+        $res = $st->get_result();
+
+        $count = 0;
+        while ($r = $res->fetch_assoc()) {
+            $count++;
+            $yielded++;
+            yield $row_mapper($r);
+        }
+        $st->close();
+
+        if ($count < $take) {
+            break;
+        }
+        $offset += $take;
+    }
+}
+
+/**
  * Kirim unduhan hasil export grid dalam format XLSX atau PDF, lalu exit.
  * Mendukung $rows berupa array biasa maupun Generator/Traversable (streaming O(1) RAM).
  *
@@ -150,6 +206,7 @@ function grid_export_send(
     }
 
     // Default: XLSX (Streaming O(1) RAM via Generator + php://temp)
+    @set_time_limit(300);
     $ascii = preg_replace('/[^\x20-\x7E]/', '_', $base_name);
     $ascii = str_replace('"', '', (string) $ascii);
     $utf8  = rawurlencode($base_name . '.xlsx');

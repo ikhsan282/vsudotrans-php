@@ -60,23 +60,18 @@ if (in_array($export_format, ['xlsx', 'pdf'], true)) {
     }
     $subtitle = $filter_notes ? implode(' | ', $filter_notes) : 'Semua Data';
 
-    // Untuk PDF: batasi query di level SQL (GRID_PDF_MAX_ROWS) agar hemat RAM
-    $limit_sql = $export_format === 'pdf' ? ' LIMIT ' . (int) GRID_PDF_MAX_ROWS : '';
     $sql_export = "SELECT c.code, c.name, g.name AS group_name, c.country_code, c.phone_number, c.email, c.city, c.is_active
                    FROM companies c JOIN groups g ON g.id = c.group_id
-                   WHERE {$where} ORDER BY c.name{$limit_sql}";
+                   WHERE {$where} ORDER BY c.name";
 
-    $st = db()->prepare($sql_export);
-    if ($types !== '') {
-        $st->bind_param($types, ...$params);
-    }
-    $st->execute();
-    $res = $st->get_result();
-
-    $row_stream = (static function () use ($res, $st): Generator {
-        while ($r = $res->fetch_assoc()) {
+    $max_export_rows = $export_format === 'pdf' ? GRID_PDF_MAX_ROWS : null;
+    $row_stream = grid_query_stream(
+        $sql_export,
+        $types,
+        $params,
+        static function (array $r): array {
             $phone = trim(($r['country_code'] ?? '') . ' ' . ($r['phone_number'] ?? ''));
-            yield [
+            return [
                 $r['code'],
                 $r['name'],
                 $r['group_name'],
@@ -85,9 +80,9 @@ if (in_array($export_format, ['xlsx', 'pdf'], true)) {
                 ($r['city'] ?? '') !== '' ? $r['city'] : '-',
                 $r['is_active'] ? 'Aktif' : 'Nonaktif',
             ];
-        }
-        $st->close();
-    })();
+        },
+        $max_export_rows
+    );
 
     grid_export_send(
         'Daftar Perusahaan',
