@@ -4,6 +4,7 @@ require_permission('rental.view');
 require_once __DIR__ . '/../../travel/_helpers.php';
 require_once __DIR__ . '/../../../includes/booking_service.php';
 require_once __DIR__ . '/../../../includes/dispatch_service.php';
+require_once __DIR__ . '/../../../includes/invoice_service.php';
 
 $cid = require_active_company();
 $id  = (int) ($_GET['id'] ?? $_POST['id'] ?? 0);
@@ -14,15 +15,209 @@ if (!$b) {
 }
 assert_company_access((int) $b['company_id']);
 
-$user     = $_SESSION['username'] ?? null;
-$bid_type = 'rental';
+$user      = $_SESSION['username'] ?? null;
+$bid_type  = 'rental';
+$canManage = can('rental.manage');
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     verify_csrf();
+    if (!$canManage) {
+        flash('error', 'Anda tidak memiliki izin mengelola booking rental.');
+        redirect('pages/rental/bookings/detail.php?id=' . $id);
+    }
     $act  = (string) ($_POST['act'] ?? '');
     $note = trim((string) ($_POST['reason'] ?? ''));
     try {
-        if ($act === 'status') {
+        if ($act === 'update_detail') {
+            $start_date   = trim((string) ($_POST['start_date'] ?? $b['start_date']));
+            $end_date     = trim((string) ($_POST['end_date'] ?? $b['end_date']));
+            $time         = trim((string) ($_POST['time'] ?? substr((string) $b['time'], 0, 5)));
+            $branch_id    = (int) ($_POST['branch_id'] ?? $b['branch_id']);
+            $passenger_id = (int) ($_POST['passenger_id'] ?? $b['passenger_id']);
+            $cat_id       = (int) ($_POST['category_vehicle_id'] ?? 0) ?: null;
+            $veh_id       = (int) ($_POST['vehicle_id'] ?? 0) ?: null;
+            $total_price  = parse_rupiah_input($_POST['total_price'] ?? $b['total_price']);
+            $trip         = (float) ($_POST['trip'] ?? $b['trip']);
+            $bbm          = parse_rupiah_input($_POST['bbm'] ?? $b['bbm']);
+            $c_types      = (array) ($_POST['crew_type'] ?? []);
+            $c_emps       = (array) ($_POST['crew_employee_id'] ?? []);
+            $c_amts       = (array) ($_POST['crew_amount'] ?? []);
+            $in_crew      = [];
+            foreach ($c_types as $idx => $ct) {
+                $empId = (int) ($c_emps[$idx] ?? 0);
+                $amt   = parse_rupiah_input($c_amts[$idx] ?? 0);
+                if ($empId > 0 || $amt > 0) {
+                    $in_crew[] = [
+                        'type'        => trim((string) $ct) ?: 'Sopir',
+                        'employee_id' => $empId,
+                        'amount'      => $amt,
+                    ];
+                }
+            }
+            $p_ids     = (array) ($_POST['pay_id'] ?? []);
+            $p_types   = (array) ($_POST['pay_type'] ?? []);
+            $p_methods = (array) ($_POST['pay_method'] ?? []);
+            $p_dates   = (array) ($_POST['pay_date'] ?? []);
+            $p_amts    = (array) ($_POST['pay_amount'] ?? []);
+            $in_payments = [];
+            foreach ($p_types as $idx => $pt) {
+                $pAmt = parse_rupiah_input($p_amts[$idx] ?? 0);
+                if ($pAmt > 0) {
+                    $in_payments[] = [
+                        '_file_idx'  => (int) $idx,
+                        'id'         => (int) ($p_ids[$idx] ?? 0),
+                        'pay_type'   => trim((string) $pt) ?: 'Down Payment (DP)',
+                        'pay_method' => trim((string) ($p_methods[$idx] ?? 'Transfer')) ?: 'Transfer',
+                        'pay_date'   => trim((string) ($p_dates[$idx] ?? date('Y-m-d'))) ?: date('Y-m-d'),
+                        'amount'     => $pAmt,
+                    ];
+                }
+            }
+            $p_prov       = (int) ($_POST['pickup_point_province_id'] ?? 0) ?: null;
+            $p_city       = (int) ($_POST['pickup_point_city_id'] ?? 0) ?: null;
+            $p_dist       = (int) ($_POST['pickup_point_district_id'] ?? $b['pickup_point_district_id']);
+            $p_addr       = trim((string) ($_POST['pickup_address'] ?? $b['pickup_address']));
+            $d_prov       = (int) ($_POST['delivery_point_province_id'] ?? 0) ?: null;
+            $d_city       = (int) ($_POST['delivery_point_city_id'] ?? 0) ?: null;
+            $d_dist       = (int) ($_POST['delivery_point_district_id'] ?? $b['delivery_point_district_id']);
+            $d_addr       = trim((string) ($_POST['delivery_address'] ?? $b['delivery_address']));
+            $b_note       = trim((string) ($_POST['note'] ?? $b['note']));
+
+            if (!preg_match('/^\d{4}-\d{2}-\d{2}$/', $start_date) || !preg_match('/^\d{4}-\d{2}-\d{2}$/', $end_date)) {
+                throw new InvalidArgumentException('Tanggal keberangkatan (mulai & selesai sewa) wajib diisi.');
+            }
+            if ($end_date < $start_date) {
+                throw new InvalidArgumentException('Tanggal selesai sewa tidak boleh sebelum tanggal mulai.');
+            }
+            if (!preg_match('/^([01]\d|2[0-3]):[0-5]\d$/', $time)) {
+                throw new InvalidArgumentException('Format jam keberangkatan tidak valid.');
+            }
+            if ($branch_id <= 0 || $passenger_id <= 0 || $p_dist <= 0 || $d_dist <= 0) {
+                throw new InvalidArgumentException('Cabang, pelanggan, serta kecamatan penjemputan & pengantaran wajib dipilih.');
+            }
+
+            // Cek bentrok armada (kecualikan booking ini sendiri: b.id != $id)
+            if ($veh_id !== null && $veh_id > 0) {
+                $chk_st = db()->prepare("SELECT b.id, b.document_number, b.start_date, b.end_date, p.name AS passenger_name, v.vehicle_number,
+                                                (SELECT to_status FROM booking_status_history WHERE booking_type = 'rental' AND booking_id = b.id ORDER BY id DESC LIMIT 1) AS cur_status
+                                         FROM rental_car_bookings b
+                                         LEFT JOIN passengers p ON p.id = b.passenger_id
+                                         LEFT JOIN vehicles v ON v.id = b.vehicle_id
+                                         WHERE b.company_id = ?
+                                           AND b.vehicle_id = ?
+                                           AND b.id <> ?
+                                           AND b.start_date <= ?
+                                           AND b.end_date >= ?
+                                         HAVING cur_status != 'cancelled' OR cur_status IS NULL
+                                         LIMIT 1");
+                $chk_st->bind_param('iiiss', $cid, $veh_id, $id, $end_date, $start_date);
+                $chk_st->execute();
+                $conflict = $chk_st->get_result()->fetch_assoc();
+                $chk_st->close();
+                if ($conflict) {
+                    throw new RuntimeException('Armada ' . ($conflict['vehicle_number'] ?: '') . ' sudah ter-booking pada tanggal tersebut (' . $conflict['document_number'] . ').');
+                }
+            }
+
+            // Resolusi city/province dari district bila kosong
+            $stLoc = db()->prepare('SELECT city_id, province_id FROM districts WHERE id = ?');
+            $stLoc->bind_param('i', $p_dist);
+            $stLoc->execute();
+            $p_loc = $stLoc->get_result()->fetch_assoc() ?: [];
+            $stLoc->bind_param('i', $d_dist);
+            $stLoc->execute();
+            $d_loc = $stLoc->get_result()->fetch_assoc() ?: [];
+            $stLoc->close();
+
+            $p_prov = $p_prov ?: ($p_loc['province_id'] ?? null);
+            $p_city = $p_city ?: ($p_loc['city_id'] ?? null);
+            $d_prov = $d_prov ?: ($d_loc['province_id'] ?? null);
+            $d_city = $d_city ?: ($d_loc['city_id'] ?? null);
+            $time_sql = $time . ':00';
+
+            $db = db();
+            $db->begin_transaction();
+            try {
+                $up = $db->prepare('UPDATE rental_car_bookings
+                    SET branch_id = ?, date = ?, time = ?, start_date = ?, end_date = ?, trip = ?, bbm = ?,
+                        pickup_address = ?, pickup_point_province_id = ?, pickup_point_city_id = ?, pickup_point_district_id = ?,
+                        delivery_address = ?, delivery_point_province_id = ?, delivery_point_city_id = ?, delivery_point_district_id = ?,
+                        total_price = ?, category_vehicle_id = ?, vehicle_id = ?, passenger_id = ?, note = ?,
+                        modified_user = ?, modified_date = NOW()
+                    WHERE id = ? AND company_id = ?');
+                $up->bind_param(
+                    'issssddsiisiiisdiiissii',
+                    $branch_id, $start_date, $time_sql, $start_date, $end_date, $trip, $bbm,
+                    $p_addr, $p_prov, $p_city, $p_dist,
+                    $d_addr, $d_prov, $d_city, $d_dist,
+                    $total_price, $cat_id, $veh_id, $passenger_id, $b_note,
+                    $user, $id, $cid
+                );
+                $up->execute();
+                $up->close();
+
+                // Sinkronkan invoice subtotal & total bila harga berubah
+                if (abs($total_price - (float) $b['total_price']) > 0.01) {
+                    $stInv = $db->prepare("SELECT id, tax_percent FROM invoices WHERE booking_type = 'rental' AND booking_id = ? AND company_id = ? LIMIT 1");
+                    $stInv->bind_param('ii', $id, $cid);
+                    $stInv->execute();
+                    $invRow = $stInv->get_result()->fetch_assoc();
+                    $stInv->close();
+                    if ($invRow) {
+                        $taxPct = (float) $invRow['tax_percent'];
+                        $taxAmt = round($total_price * $taxPct / 100, 2);
+                        $newTot = $total_price + $taxAmt;
+                        $upInv = $db->prepare('UPDATE invoices SET branch_id = ?, subtotal = ?, tax_amount = ?, total = ?, modified_user = ?, modified_date = NOW() WHERE id = ?');
+                        $upInv->bind_param('idddsi', $branch_id, $total_price, $taxAmt, $newTot, $user, $invRow['id']);
+                        $upInv->execute();
+                        $upInv->close();
+                    }
+                }
+
+                // Sinkronkan penumpang utama
+                $extra_pids = array_values(array_unique(array_filter(
+                    array_map('intval', (array) ($_POST['passenger_ids'] ?? [])),
+                    static fn($v) => $v > 0 && $v !== $passenger_id
+                )));
+                booking_passengers_set('rental', $id, $cid, array_merge([$passenger_id], $extra_pids), $passenger_id, $user);
+
+                // Sinkronkan rincian kru/premi (Sopir, Kernet, Montir, Agen) + BBM + Total Biaya Operasional
+                booking_rental_crew_sync($id, $cid, $bbm, $in_crew, $veh_id, $user);
+
+                // Sinkronkan rincian Pembayaran Sewa (DP / Pelunasan / Transfer / lampiran bukti)
+                $stInvP = $db->prepare("SELECT id FROM invoices WHERE booking_type = 'rental' AND booking_id = ? AND company_id = ? LIMIT 1");
+                $stInvP->bind_param('ii', $id, $cid);
+                $stInvP->execute();
+                $invPRow = $stInvP->get_result()->fetch_assoc();
+                $stInvP->close();
+                if ($invPRow && isset($_POST['pay_sync_present'])) {
+                    $invPId = (int) $invPRow['id'];
+                    foreach ($in_payments as &$pr) {
+                        $fIdx = (int) ($pr['_file_idx'] ?? 0);
+                        $uploaded = azure_blob_handle_upload_indexed(
+                            'pay_proof',
+                            $fIdx,
+                            $cid,
+                            'finance/payment-proofs',
+                            date('Y/m'),
+                            'inv-' . $invPId
+                        );
+                        if ($uploaded !== null) {
+                            $pr['proof_blob_path'] = $uploaded;
+                        }
+                    }
+                    unset($pr);
+                    booking_rental_payments_sync($id, $invPId, $cid, $in_payments, $user);
+                }
+
+                $db->commit();
+            } catch (Throwable $e) {
+                $db->rollback();
+                throw $e;
+            }
+            audit('booking.rental.update', "Booking #{$id} {$b['document_number']} diperbarui");
+            flash('success', 'Data booking rental berhasil disimpan.');
+        } elseif ($act === 'status') {
             $to = (string) ($_POST['to_status'] ?? '');
             booking_change_status('rental', $id, $cid, $to, $note === '' ? 'Ubah status' : $note, $user);
             audit('booking.rental.status', "Booking #{$id} -> {$to}");
@@ -45,7 +240,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $veh = (int) ($_POST['vehicle_id'] ?? 0);
             booking_assign_driver('rental', $id, $cid, $emp, $veh > 0 ? $veh : null, $user);
             audit('booking.rental.driver', "Booking #{$id} driver #{$emp}");
-            flash('success', 'Driver ditugaskan.');
+            flash('success', 'Driver berhasil ditugaskan.');
+        } elseif ($act === 'delete') {
+            $doc_no = booking_delete('rental', $id, $cid);
+            audit('booking.rental.delete', "Hapus booking {$doc_no} (#{$id})");
+            flash('success', "Booking rental {$doc_no} berhasil dihapus.");
+            redirect('pages/rental/bookings/index.php');
         }
     } catch (Throwable $ex) {
         flash('error', $ex->getMessage() === '' ? 'Aksi gagal dijalankan.' : $ex->getMessage());
@@ -56,8 +256,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 $status = booking_current_status('rental', $id);
 $next   = BOOKING_TRANSITIONS[$status] ?? [];
 
+$stComp = db()->prepare("SELECT id, CONCAT(code, ' - ', name) AS label FROM companies WHERE id = ? LIMIT 1");
+$stComp->bind_param('i', $b['company_id']);
+$stComp->execute();
+$curCompany = $stComp->get_result()->fetch_assoc() ?: ['id' => $b['company_id'], 'label' => active_company_name()];
+$stComp->close();
+
 $st = db()->prepare('SELECT h.from_status, h.to_status, h.reason, h.changed_by, h.changed_at
-    FROM booking_status_history h WHERE h.booking_type = ? AND h.booking_id = ? ORDER BY h.id DESC LIMIT 20');
+    FROM booking_status_history h WHERE h.booking_type = ? AND h.booking_id = ? ORDER BY h.id DESC LIMIT 30');
 $st->bind_param('si', $bid_type, $id);
 $st->execute();
 $history = $st->get_result()->fetch_all(MYSQLI_ASSOC);
@@ -78,179 +284,1646 @@ $st->execute();
 $assignment = $st->get_result()->fetch_assoc();
 $st->close();
 
-$st = db()->prepare('SELECT name FROM passengers WHERE id = ?');
-$st->bind_param('i', $b['passenger_id']);
-$st->execute();
-$passenger = $st->get_result()->fetch_assoc() ?: ['name' => '-'];
-$st->close();
+// Cari invoice terkait booking ini
+$stInvId = db()->prepare("SELECT id FROM invoices WHERE booking_type = 'rental' AND booking_id = ? LIMIT 1");
+$stInvId->bind_param('i', $id);
+$stInvId->execute();
+$invRowId = $stInvId->get_result()->fetch_assoc();
+$stInvId->close();
+$invoice = $invRowId ? invoice_find((int) $invRowId['id']) : null;
+$payment_rows = $invoice ? invoice_payments((int) $invoice['id']) : [];
 
-// Riwayat penugasan driver (modul Penjadwalan) untuk booking ini.
 $assignments = dispatch_by_booking('rental', $id);
+$crew_rows   = booking_rental_crew_list($id);
+if (!$crew_rows) {
+    $crew_rows = [
+        [
+            'cost_type'   => 'Sopir',
+            'employee_id' => $assignment['employee_id'] ?? '',
+            'amount'      => 0,
+        ],
+        [
+            'cost_type'   => 'Kernet',
+            'employee_id' => '',
+            'amount'      => 0,
+        ],
+    ];
+}
+$bp_list     = booking_passengers_list('rental', $id, (int) $b['passenger_id']);
+$extra_passenger_ids = [];
+foreach ($bp_list as $bp) {
+    if ((int) $bp['passenger_id'] !== (int) $b['passenger_id']) {
+        $extra_passenger_ids[] = (int) $bp['passenger_id'];
+    }
+}
 
-$canManage = can('rental.manage');
-$employees = $canManage ? opts_employees($cid) : [];
-$vehicles  = $canManage ? opts_vehicles($cid) : [];
+$branches   = opts_branches((int) $b['company_id']);
+$passengers = opts_passengers((int) $b['company_id']);
+$cats       = opts_categories((int) $b['company_id']);
+$vehicles   = opts_vehicles((int) $b['company_id']);
+$employees  = opts_employees((int) $b['company_id']);
+$provinces  = opts_provinces();
+$cities     = opts_cities();
+
+// Resolusi province_id dari city_id bila pada record lama pickup_point_province_id masih NULL
+$p_prov_id = (int) ($b['pickup_point_province_id'] ?? 0);
+$d_prov_id = (int) ($b['delivery_point_province_id'] ?? 0);
+if ($p_prov_id <= 0 && !empty($b['pickup_point_city_id'])) {
+    foreach ($cities as $c) {
+        if ((int) $c['id'] === (int) $b['pickup_point_city_id']) {
+            $p_prov_id = (int) $c['province_id'];
+            break;
+        }
+    }
+}
+if ($d_prov_id <= 0 && !empty($b['delivery_point_city_id'])) {
+    foreach ($cities as $c) {
+        if ((int) $c['id'] === (int) $b['delivery_point_city_id']) {
+            $d_prov_id = (int) $c['province_id'];
+            break;
+        }
+    }
+}
+
+$pickup_districts = !empty($b['pickup_point_city_id'])
+    ? db()->query('SELECT id, name FROM districts WHERE city_id = ' . (int) $b['pickup_point_city_id'] . ' ORDER BY name')->fetch_all(MYSQLI_ASSOC)
+    : (!empty($b['pickup_point_district_id']) ? db()->query('SELECT id, name FROM districts WHERE id = ' . (int) $b['pickup_point_district_id'])->fetch_all(MYSQLI_ASSOC) : []);
+
+$delivery_districts = !empty($b['delivery_point_city_id'])
+    ? db()->query('SELECT id, name FROM districts WHERE city_id = ' . (int) $b['delivery_point_city_id'] . ' ORDER BY name')->fetch_all(MYSQLI_ASSOC)
+    : (!empty($b['delivery_point_district_id']) ? db()->query('SELECT id, name FROM districts WHERE id = ' . (int) $b['delivery_point_district_id'])->fetch_all(MYSQLI_ASSOC) : []);
+
+$d1 = new DateTime((string) $b['start_date']);
+$d2 = new DateTime((string) $b['end_date']);
+$duration_days = max(1, (int) $d1->diff($d2)->days + 1);
 
 $active = 'rental';
-$title  = 'Detail Booking Rental';
+$title  = 'Detail Booking Rental - ' . $b['document_number'];
 require __DIR__ . '/../../../includes/header.php';
 ?>
-<main class="col-12 col-md-9 col-lg-10 p-3 p-md-4">
+<style>
+    /* Styling Nav Tabs */
+    .rnt-tabs {
+        border-bottom: 1px solid #dee2e6;
+        display: flex;
+        flex-wrap: wrap;
+    }
+    .rnt-tabs .nav-link {
+        color: #495057;
+        background: #f8f9fa;
+        border: 1px solid #dee2e6;
+        border-bottom: 1px solid #dee2e6;
+        margin-right: 4px;
+        margin-bottom: -1px;
+        font-size: .875rem;
+        font-weight: 500;
+        padding: .5rem 1rem;
+        border-top-left-radius: .375rem;
+        border-top-right-radius: .375rem;
+    }
+    .rnt-tabs .nav-link.active {
+        color: #0d6efd;
+        background: #fff;
+        font-weight: 600;
+        border-bottom: 2px solid #fff;
+        z-index: 2;
+    }
+    .rnt-panel {
+        border: 1px solid #dee2e6;
+        border-radius: .375rem;
+        background: #fff;
+        margin-bottom: 1rem;
+    }
+    .rnt-panel-header {
+        background: #f8f9fa;
+        border-bottom: 1px solid #dee2e6;
+        padding: .5rem .875rem;
+        font-size: .85rem;
+        font-weight: 600;
+        color: #343a40;
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        border-top-left-radius: .375rem;
+        border-top-right-radius: .375rem;
+    }
+    .rnt-panel-body {
+        padding: .875rem;
+    }
+    .rnt-row {
+        display: flex;
+        align-items: center;
+        margin-bottom: .5rem;
+    }
+    .rnt-row:last-child {
+        margin-bottom: 0;
+    }
+    .rnt-label {
+        width: 165px;
+        flex-shrink: 0;
+        font-size: .84rem;
+        color: #343a40;
+        font-weight: 500;
+        padding-right: .5rem;
+    }
+    .rnt-field {
+        flex: 1 1 auto;
+        min-width: 0;
+    }
+    /* Pastikan input text dan TomSelect di rnt-field seragam dan rapi */
+    .rnt-field .ts-control {
+        min-height: calc(1.5em + 0.5rem + 2px);
+        padding: 0.25rem 0.5rem;
+        font-size: 0.875rem;
+        border-radius: 0.25rem;
+    }
+    @media (max-width: 767.98px) {
+        .rnt-row { flex-direction: column; align-items: stretch; }
+        .rnt-label { width: 100%; margin-bottom: .25rem; }
+    }
+</style>
+
+<main class="p-3 p-md-4">
     <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-3">
-        <h1 class="h4 fw-bold mb-0 text-break"><?= e($b['document_number']) ?> <?= status_badge($status) ?></h1>
+        <div>
+            <h1 class="h4 fw-bold mb-0 text-break d-flex align-items-center gap-2">
+                <span><i class="bi bi-car-front text-primary me-1"></i>Booking Rental: <?= e($b['document_number']) ?></span>
+                <?= status_badge($status) ?>
+            </h1>
+            <div class="small text-muted">Perusahaan: <strong><?= e($curCompany['label']) ?></strong></div>
+        </div>
         <div class="d-flex flex-wrap gap-2">
-            <?php if (can('dispatch.manage')): ?>
-                <a class="btn btn-primary btn-sm" href="<?= e(APP_URL) ?>/pages/dispatch/assign.php"><i class="bi bi-person-badge"></i> Tugaskan Driver</a>
+            <?php if ($canManage): ?>
+                <button type="submit" form="rentalDetailForm" class="btn btn-primary btn-sm px-3">
+                    <i class="bi bi-check2-circle me-1"></i>Simpan Perubahan
+                </button>
             <?php endif; ?>
-            <a class="btn btn-dark btn-sm" target="_blank" href="<?= e(APP_URL) ?>/tiket.php?no=<?= urlencode((string) $b['document_number']) ?>&print=1">Cetak E-Tiket</a>
-            <a class="btn btn-outline-secondary btn-sm" href="<?= e(APP_URL) ?>/pages/rental/bookings/index.php">Kembali</a>
-        </div>
-    </div>
-    <div class="card shadow-sm border-0 mb-3"><div class="card-body">
-        <div class="row g-3 small">
-            <div class="col-md-3"><div class="text-muted">Mulai Sewa</div><div class="fw-semibold"><?= e($b['start_date']) ?> <?= e(substr($b['time'], 0, 5)) ?></div></div>
-            <div class="col-md-3"><div class="text-muted">Selesai Sewa</div><div class="fw-semibold"><?= e($b['end_date']) ?></div></div>
-            <div class="col-md-3"><div class="text-muted">Trip (km)</div><div class="fw-semibold"><?= e((string) $b['trip']) ?></div></div>
-            <div class="col-md-3"><div class="text-muted">BBM</div><div class="fw-semibold"><?= e(rupiah((float) $b['bbm'])) ?></div></div>
-            <div class="col-md-3"><div class="text-muted">Penumpang</div><div class="fw-semibold"><?= e($passenger['name']) ?></div></div>
-            <div class="col-md-3"><div class="text-muted">Total Harga</div><div class="fw-semibold"><?= e(rupiah((float) $b['total_price'])) ?></div></div>
-            <div class="col-md-3"><div class="text-muted">Driver Aktif</div><div class="fw-semibold"><?= e($assignment['employee'] ?? '-') ?></div></div>
-            <div class="col-md-3"><div class="text-muted">Catatan</div><div><?= e((string) $b['note']) ?></div></div>
-            <div class="col-md-6"><div class="text-muted">Alamat Asal</div><div><?= e((string) $b['pickup_address']) ?></div></div>
-            <div class="col-md-6"><div class="text-muted">Alamat Tujuan</div><div><?= e((string) $b['delivery_address']) ?></div></div>
-        </div>
-    </div></div>
-
-    <div class="card shadow-sm border-0 mb-3">
-        <div class="card-header bg-white fw-semibold">Rincian Biaya</div>
-        <div class="table-responsive">
-            <table class="table mb-0 align-middle">
-                <thead><tr><th>Jenis</th><th>Keterangan</th><th class="text-end">Jumlah</th><th>Premi</th><th class="text-end">Premi</th></tr></thead>
-                <tbody>
-                <?php foreach ($costs as $c): ?>
-                    <tr>
-                        <td><?= e($c['cost_type']) ?></td>
-                        <td><?= e((string) $c['description']) ?></td>
-                        <td class="text-end"><?= e(rupiah((float) $c['amount'])) ?></td>
-                        <td><?= e($c['premi_type'] . ' ' . rupiah((float) $c['premi_value'])) ?></td>
-                        <td class="text-end"><?= e(rupiah((float) $c['premi_amount'])) ?></td>
-                    </tr>
-                <?php endforeach; ?>
-                <?php if (!$costs): ?>
-                    <tr><td colspan="5" class="text-center text-muted py-3">Belum ada rincian biaya.</td></tr>
-                <?php endif; ?>
-                </tbody>
-            </table>
-        </div>
-    </div>
-
-    <?php if ($canManage): ?>
-    <div class="row g-3 mb-3">
-        <div class="col-md-6"><div class="card shadow-sm border-0 h-100"><div class="card-body">
-            <h6 class="fw-bold">Ubah Status</h6>
-            <?php if ($next): ?>
-            <form method="post" action="" class="d-flex flex-column flex-sm-row gap-2">
-                <?= csrf_field() ?>
-                <input type="hidden" name="id" value="<?= $id ?>">
-                <input type="hidden" name="act" value="status">
-                <select class="form-select form-select-sm" name="to_status">
-                    <?php foreach ($next as $n): ?><option value="<?= e($n) ?>"><?= e($n) ?></option><?php endforeach; ?>
-                </select>
-                <input class="form-control form-control-sm" name="reason" placeholder="Alasan" maxlength="2000">
-                <button class="btn btn-sm btn-primary" type="submit">Proses</button>
-            </form>
-            <?php else: ?><p class="text-muted mb-0 small">Status akhir — tidak ada transisi lanjutan.</p><?php endif; ?>
-        </div></div></div>
-        <div class="col-md-6"><div class="card shadow-sm border-0 h-100"><div class="card-body">
-            <h6 class="fw-bold">Reschedule</h6>
-            <form method="post" action="" class="d-flex flex-column flex-sm-row gap-2">
-                <?= csrf_field() ?>
-                <input type="hidden" name="id" value="<?= $id ?>">
-                <input type="hidden" name="act" value="reschedule">
-                <input type="date" class="form-control form-control-sm" name="date" required value="<?= e($b['date']) ?>">
-                <input type="time" class="form-control form-control-sm" name="time" required value="<?= e(substr($b['time'], 0, 5)) ?>">
-                <button class="btn btn-sm btn-outline-primary" type="submit">Simpan</button>
-            </form>
-        </div></div></div>
-        <div class="col-md-6"><div class="card shadow-sm border-0 h-100"><div class="card-body">
-            <h6 class="fw-bold">Tugaskan Driver</h6>
-            <form method="post" action="" class="d-flex flex-column flex-sm-row gap-2">
-                <?= csrf_field() ?>
-                <input type="hidden" name="id" value="<?= $id ?>">
-                <input type="hidden" name="act" value="driver">
-                <select class="form-select form-select-sm ts-select" name="employee_id" required>
-                    <option value="">-- Karyawan --</option><?= select_options($employees, $assignment['employee_id'] ?? '') ?>
-                </select>
-                <select class="form-select form-select-sm ts-select" name="vehicle_id">
-                    <option value="">-- Kendaraan --</option><?= select_options($vehicles, $assignment['vehicle_id'] ?? '') ?>
-                </select>
-                <button class="btn btn-sm btn-outline-primary" type="submit">Tugaskan</button>
-            </form>
-        </div></div></div>
-        <div class="col-md-6"><div class="card shadow-sm border-0 h-100"><div class="card-body">
-            <h6 class="fw-bold">Batalkan Booking</h6>
-            <?php if ($status === 'cancelled'): ?>
-                <p class="text-muted mb-0 small">Booking sudah dibatalkan.</p>
-            <?php else: ?>
-            <form method="post" action="" class="d-flex flex-column flex-sm-row gap-2" onsubmit="return confirm('Batalkan booking ini?')">
-                <?= csrf_field() ?>
-                <input type="hidden" name="id" value="<?= $id ?>">
-                <input type="hidden" name="act" value="cancel">
-                <input class="form-control form-control-sm" name="reason" placeholder="Alasan pembatalan" maxlength="2000">
-                <button class="btn btn-sm btn-outline-danger" type="submit">Batalkan</button>
-            </form>
+            <?php if ($invoice): ?>
+                <a class="btn btn-outline-success btn-sm" href="<?= e(APP_URL) ?>/pages/finance/invoices/detail.php?id=<?= (int) $invoice['id'] ?>">
+                    <i class="bi bi-receipt me-1"></i>Invoice
+                </a>
             <?php endif; ?>
-        </div></div></div>
-    </div>
-    <?php endif; ?>
-
-    <div class="card shadow-sm border-0 mb-3">
-        <div class="card-header bg-white fw-semibold d-flex justify-content-between align-items-center">
-            <span>Penugasan Driver</span>
-            <a class="btn btn-sm btn-outline-secondary" href="<?= e(APP_URL) ?>/pages/dispatch/detail.php?type=rental&amp;id=<?= $id ?>">Kelola</a>
-        </div>
-        <div class="table-responsive">
-            <table class="table mb-0 align-middle">
-                <thead><tr><th>Driver</th><th>Kendaraan</th><th>Mulai</th><th>Selesai</th><th>Status</th></tr></thead>
-                <tbody>
-                <?php foreach ($assignments as $a): ?>
-                    <tr>
-                        <td><?= e((string) $a['employee_name']) ?></td>
-                        <td><?= e((string) ($a['vehicle_number'] ?? '-')) ?></td>
-                        <td><?= e((string) $a['started_at']) ?></td>
-                        <td><?= e($a['ended_at'] ? (string) $a['ended_at'] : '—') ?></td>
-                        <td><span class="badge bg-<?= empty($a['ended_at']) ? 'warning text-dark' : 'secondary' ?>"><?= empty($a['ended_at']) ? 'sedang jalan' : 'selesai' ?></span></td>
-                    </tr>
-                <?php endforeach; ?>
-                <?php if (!$assignments): ?>
-                    <tr><td colspan="5" class="text-center text-muted py-3">Belum ada penugasan driver.</td></tr>
-                <?php endif; ?>
-                </tbody>
-            </table>
+            <a class="btn btn-dark btn-sm" target="_blank" href="<?= e(APP_URL) ?>/tiket.php?no=<?= urlencode((string) $b['document_number']) ?>&print=1">
+                <i class="bi bi-printer me-1"></i>Cetak E-Tiket
+            </a>
+            <a class="btn btn-outline-danger btn-sm" target="_blank" href="<?= e(APP_URL) ?>/tiket.php?no=<?= urlencode((string) $b['document_number']) ?>&format=pdf">
+                <i class="bi bi-file-earmark-pdf me-1"></i>Download PDF
+            </a>
+            <?php if ($canManage): ?>
+                <form method="post" action="" class="d-inline" onsubmit="return confirm('Yakin ingin menghapus permanen booking <?= e($b['document_number']) ?> beserta invoice dan riwayat pembayarannya?');">
+                    <?= csrf_field() ?>
+                    <input type="hidden" name="id" value="<?= $id ?>">
+                    <input type="hidden" name="act" value="delete">
+                    <button type="submit" class="btn btn-danger btn-sm" title="Hapus Booking">
+                        <i class="bi bi-trash me-1"></i>Hapus
+                    </button>
+                </form>
+            <?php endif; ?>
+            <a class="btn btn-outline-secondary btn-sm" href="<?= e(APP_URL) ?>/pages/rental/bookings/index.php">
+                <i class="bi bi-arrow-left me-1"></i>Kembali
+            </a>
         </div>
     </div>
 
-    <div class="card shadow-sm border-0">
-        <div class="card-header bg-white fw-semibold">Riwayat Status</div>
-        <div class="table-responsive">
-            <table class="table mb-0 align-middle">
-                <thead><tr><th>Waktu</th><th>Dari</th><th>Ke</th><th>Alasan</th><th>Oleh</th></tr></thead>
-                <tbody>
-                <?php foreach ($history as $h): ?>
-                    <tr>
-                        <td><?= e($h['changed_at']) ?></td>
-                        <td><?= e((string) $h['from_status']) ?></td>
-                        <td><?= status_badge($h['to_status']) ?></td>
-                        <td><?= e((string) $h['reason']) ?></td>
-                        <td><?= e((string) $h['changed_by']) ?></td>
-                    </tr>
-                <?php endforeach; ?>
-                <?php if (!$history): ?>
-                    <tr><td colspan="5" class="text-center text-muted py-3">Belum ada riwayat.</td></tr>
+    <!-- Navigasi 5 Tab sesuai standar UI Rental -->
+    <ul class="nav nav-tabs rnt-tabs border-bottom-0" id="rentalDetailTabs" role="tablist">
+        <li class="nav-item" role="presentation">
+            <button class="nav-link active" id="tab-detail-btn" data-bs-toggle="tab" data-bs-target="#tab-detail" type="button" role="tab">
+                Detail
+            </button>
+        </li>
+        <li class="nav-item" role="presentation">
+            <button class="nav-link" id="tab-crew-btn" data-bs-toggle="tab" data-bs-target="#tab-crew" type="button" role="tab">
+                Sopir/Kernet/Montir
+                <?php if (!empty($assignment['employee'])): ?>
+                    <span class="badge bg-success ms-1"><?= e($assignment['employee']) ?></span>
                 <?php endif; ?>
-                </tbody>
-            </table>
+            </button>
+        </li>
+        <li class="nav-item" role="presentation">
+            <button class="nav-link" id="tab-payment-btn" data-bs-toggle="tab" data-bs-target="#tab-payment" type="button" role="tab">
+                Pembayaran Sewa
+                <?php if ($invoice): ?>
+                    <?= invoice_pay_badge($invoice['pay_status']) ?>
+                <?php endif; ?>
+            </button>
+        </li>
+        <li class="nav-item" role="presentation">
+            <button class="nav-link" id="tab-note-btn" data-bs-toggle="tab" data-bs-target="#tab-note" type="button" role="tab">
+                Keterangan
+            </button>
+        </li>
+        <li class="nav-item" role="presentation">
+            <button class="nav-link" id="tab-audit-btn" data-bs-toggle="tab" data-bs-target="#tab-audit" type="button" role="tab">
+                Audit Trail
+            </button>
+        </li>
+    </ul>
+
+    <div class="card shadow-sm border-top-0 rounded-0 rounded-bottom">
+        <div class="card-body p-3">
+            <!-- Form Utama untuk Update Detail + Kru + Pembayaran + Keterangan -->
+            <form method="post" action="" id="rentalDetailForm" enctype="multipart/form-data">
+                <?= csrf_field() ?>
+                <input type="hidden" name="id" value="<?= $id ?>">
+                <input type="hidden" name="act" value="update_detail">
+                <input type="hidden" name="pay_sync_present" value="1">
+                <input type="hidden" name="trip" id="hiddenTrip" value="<?= e((string) $b['trip']) ?>">
+                <input type="hidden" name="bbm" id="hiddenBbm" value="<?= e((string) $b['bbm']) ?>">
+                <input type="hidden" name="note" id="hiddenNote" value="<?= e((string) $b['note']) ?>">
+            </form>
+
+            <div class="tab-content" id="rentalDetailTabContent">
+                <!-- ================= TAB 1: DETAIL ================= -->
+                <div class="tab-pane fade show active" id="tab-detail" role="tabpanel">
+                    <div class="rnt-panel">
+                        <div class="rnt-panel-body">
+                            <div class="rnt-row">
+                                <div class="rnt-label">Resi</div>
+                                <div class="rnt-field">
+                                    <input type="text" class="form-control form-control-sm fw-bold bg-light" value="<?= e($b['document_number']) ?>" readonly>
+                                </div>
+                            </div>
+                            <div class="rnt-row">
+                                <div class="rnt-label">Perusahaan</div>
+                                <div class="rnt-field">
+                                    <select class="form-select form-select-sm bg-light" disabled>
+                                        <option value="<?= (int) $curCompany['id'] ?>" selected><?= e($curCompany['label']) ?></option>
+                                    </select>
+                                </div>
+                            </div>
+                            <div class="rnt-row">
+                                <div class="rnt-label">Cabang <span class="text-danger">*</span></div>
+                                <div class="rnt-field">
+                                    <select class="form-select form-select-sm ts-select" name="branch_id" form="rentalDetailForm" <?= $canManage ? 'required' : 'disabled' ?>>
+                                        <option value="">-- Pilih Cabang --</option>
+                                        <?= select_options($branches, $b['branch_id']) ?>
+                                    </select>
+                                </div>
+                            </div>
+                            <div class="rnt-row">
+                                <div class="rnt-label">Tanggal Keberangkatan <span class="text-danger">*</span></div>
+                                <div class="rnt-field">
+                                    <div class="row g-2 align-items-center">
+                                        <div class="col-12 col-sm-5">
+                                            <input type="text" class="form-control form-control-sm bg-white flatpickr-date" name="start_date" id="startDateInput" form="rentalDetailForm" required value="<?= e($b['start_date']) ?>" placeholder="dd-MMM-yyyy" <?= $canManage ? '' : 'disabled' ?>>
+                                        </div>
+                                        <div class="col-12 col-sm-5">
+                                            <input type="text" class="form-control form-control-sm bg-white flatpickr-date" name="end_date" id="endDateInput" form="rentalDetailForm" required value="<?= e($b['end_date']) ?>" placeholder="dd-MMM-yyyy" <?= $canManage ? '' : 'disabled' ?>>
+                                        </div>
+                                        <div class="col-12 col-sm-2">
+                                            <div class="input-group input-group-sm">
+                                                <input type="number" min="1" max="365" class="form-control form-control-sm text-end" id="durationDaysInput" value="<?= $duration_days ?>" title="Durasi Sewa (Hari)" <?= $canManage ? '' : 'readonly' ?>>
+                                                <span class="input-group-text">hr</span>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="rnt-row">
+                                <div class="rnt-label">Jam <span class="text-danger">*</span></div>
+                                <div class="rnt-field">
+                                    <div class="input-group input-group-sm" style="max-width: 260px;">
+                                        <input type="time" class="form-control form-control-sm" name="time" id="rentalTimeInput" form="rentalDetailForm" required value="<?= e(substr((string) $b['time'], 0, 5)) ?>" <?= $canManage ? '' : 'readonly' ?>>
+                                        <span class="input-group-text bg-light text-muted fw-semibold" id="rentalTimePeriodBadge"><?= time_period_label((string) $b['time']) ?></span>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="rnt-row">
+                                <div class="rnt-label">Harga <span class="text-danger">*</span></div>
+                                <div class="rnt-field">
+                                    <input type="text" inputmode="numeric" class="form-control form-control-sm fw-semibold" id="totalPriceDisplay" value="<?= e(format_nominal((float) $b['total_price'])) ?>" placeholder="0" <?= $canManage ? 'required' : 'readonly' ?>>
+                                    <input type="hidden" name="total_price" id="totalPriceValue" form="rentalDetailForm" value="<?= e((string) $b['total_price']) ?>">
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Sub-panel Kendaraan -->
+                    <div class="rnt-panel">
+                        <div class="rnt-panel-header">
+                            <span>Kendaraan</span>
+                            <?php if (can('masters.manage')): ?>
+                                <a href="<?= e(APP_URL) ?>/pages/masters/vehicles.php" target="_blank" class="text-primary text-decoration-none fw-normal small">
+                                    Tambah Kendaraan Baru
+                                </a>
+                            <?php endif; ?>
+                        </div>
+                        <div class="rnt-panel-body">
+                            <div class="rnt-row">
+                                <div class="rnt-label">Kategori</div>
+                                <div class="rnt-field">
+                                    <select class="form-select form-select-sm ts-select" name="category_vehicle_id" id="categoryVehicleSelect" form="rentalDetailForm" <?= $canManage ? '' : 'disabled' ?>>
+                                        <option value="">-- Semua Kategori --</option>
+                                        <?= select_options($cats, $b['category_vehicle_id']) ?>
+                                    </select>
+                                </div>
+                            </div>
+                            <div class="rnt-row">
+                                <div class="rnt-label">Kendaraan</div>
+                                <div class="rnt-field">
+                                    <select class="form-select form-select-sm ts-select" name="vehicle_id" id="vehicleSelect" form="rentalDetailForm" <?= $canManage ? '' : 'disabled' ?>>
+                                        <option value="">-- Pilih Kendaraan --</option>
+                                        <?php foreach ($vehicles as $v): ?>
+                                            <option value="<?= (int) $v['id'] ?>"
+                                                    data-category="<?= (int) ($v['category_vehicle_id'] ?? 0) ?>"
+                                                    <?= (string) $v['id'] === (string) $b['vehicle_id'] ? 'selected' : '' ?>>
+                                                <?= e($v['name']) ?>
+                                            </option>
+                                        <?php endforeach; ?>
+                                    </select>
+                                    <div id="vehicleAvailBadge" class="small mt-1" style="display:none;"></div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Sub-panel Pelanggan -->
+                    <div class="rnt-panel">
+                        <div class="rnt-panel-header">
+                            <span>Pelanggan</span>
+                            <?php if ($canManage): ?>
+                                <a href="#" class="text-primary text-decoration-none fw-normal small" data-bs-toggle="modal" data-bs-target="#quickPassengerModal">
+                                    Tambah Pelanggan Baru
+                                </a>
+                            <?php endif; ?>
+                        </div>
+                        <div class="rnt-panel-body">
+                            <div class="rnt-row">
+                                <div class="rnt-label">Pelanggan <span class="text-danger">*</span></div>
+                                <div class="rnt-field">
+                                    <select class="form-select form-select-sm ts-select" name="passenger_id" id="primaryPassengerSelect" form="rentalDetailForm" <?= $canManage ? 'required' : 'disabled' ?>>
+                                        <option value="">-- Pilih Pelanggan --</option>
+                                        <?= select_options($passengers, $b['passenger_id']) ?>
+                                    </select>
+                                </div>
+                            </div>
+                            <div class="rnt-row">
+                                <div class="rnt-label">Penumpang Tambahan</div>
+                                <div class="rnt-field">
+                                    <select class="form-select form-select-sm ts-select" name="passenger_ids[]" id="extraPassengersSelect" form="rentalDetailForm" multiple data-placeholder="Opsional: pilih penumpang pendamping..." <?= $canManage ? '' : 'disabled' ?>>
+                                        <?= select_options($passengers, $extra_passenger_ids) ?>
+                                    </select>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Sub-panel Penjemputan & Pengantaran (Side-by-Side) -->
+                    <div class="row g-3">
+                        <div class="col-12 col-lg-6">
+                            <div class="rnt-panel h-100 mb-0">
+                                <div class="rnt-panel-header">
+                                    <span>Penjemputan</span>
+                                </div>
+                                <div class="rnt-panel-body">
+                                    <div class="rnt-row">
+                                        <div class="rnt-label">Provinsi</div>
+                                        <div class="rnt-field">
+                                            <select class="form-select form-select-sm ts-select" name="pickup_point_province_id" id="pickupProvince" form="rentalDetailForm" <?= $canManage ? '' : 'disabled' ?>>
+                                                <option value="">-- Pilih Provinsi --</option>
+                                                <?= select_options($provinces, $p_prov_id) ?>
+                                            </select>
+                                        </div>
+                                    </div>
+                                    <div class="rnt-row">
+                                        <div class="rnt-label">Kota/Kab <span class="text-danger">*</span></div>
+                                        <div class="rnt-field">
+                                            <select class="form-select form-select-sm ts-select" name="pickup_point_city_id" id="pickupCity" form="rentalDetailForm" <?= $canManage ? '' : 'disabled' ?>>
+                                                <option value="">-- Pilih Kota/Kab --</option>
+                                                <?php foreach ($cities as $c): ?>
+                                                    <option value="<?= (int) $c['id'] ?>"
+                                                            data-province="<?= (int) $c['province_id'] ?>"
+                                                            <?= (string) $c['id'] === (string) $b['pickup_point_city_id'] ? 'selected' : '' ?>>
+                                                        <?= e($c['name']) ?>
+                                                    </option>
+                                                <?php endforeach; ?>
+                                            </select>
+                                        </div>
+                                    </div>
+                                    <div class="rnt-row">
+                                        <div class="rnt-label">Kecamatan <span class="text-danger">*</span></div>
+                                        <div class="rnt-field">
+                                            <select class="form-select form-select-sm ts-select" name="pickup_point_district_id" id="pickupDistrict" form="rentalDetailForm" <?= $canManage ? 'required' : 'disabled' ?>>
+                                                <option value="">-- Pilih Kecamatan --</option>
+                                                <?= select_options($pickup_districts, $b['pickup_point_district_id']) ?>
+                                            </select>
+                                        </div>
+                                    </div>
+                                    <div class="rnt-row align-items-start">
+                                        <div class="rnt-label pt-1">Detail Alamat</div>
+                                        <div class="rnt-field">
+                                            <textarea class="form-control form-control-sm" name="pickup_address" form="rentalDetailForm" rows="5" maxlength="2000" <?= $canManage ? '' : 'readonly' ?>><?= e((string) $b['pickup_address']) ?></textarea>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="col-12 col-lg-6">
+                            <div class="rnt-panel h-100 mb-0">
+                                <div class="rnt-panel-header">
+                                    <span>Pengantaran</span>
+                                </div>
+                                <div class="rnt-panel-body">
+                                    <div class="rnt-row">
+                                        <div class="rnt-label">Provinsi</div>
+                                        <div class="rnt-field">
+                                            <select class="form-select form-select-sm ts-select" name="delivery_point_province_id" id="deliveryProvince" form="rentalDetailForm" <?= $canManage ? '' : 'disabled' ?>>
+                                                <option value="">-- Pilih Provinsi --</option>
+                                                <?= select_options($provinces, $d_prov_id) ?>
+                                            </select>
+                                        </div>
+                                    </div>
+                                    <div class="rnt-row">
+                                        <div class="rnt-label">Kota/Kab <span class="text-danger">*</span></div>
+                                        <div class="rnt-field">
+                                            <select class="form-select form-select-sm ts-select" name="delivery_point_city_id" id="deliveryCity" form="rentalDetailForm" <?= $canManage ? '' : 'disabled' ?>>
+                                                <option value="">-- Pilih Kota/Kab --</option>
+                                                <?php foreach ($cities as $c): ?>
+                                                    <option value="<?= (int) $c['id'] ?>"
+                                                            data-province="<?= (int) $c['province_id'] ?>"
+                                                            <?= (string) $c['id'] === (string) $b['delivery_point_city_id'] ? 'selected' : '' ?>>
+                                                        <?= e($c['name']) ?>
+                                                    </option>
+                                                <?php endforeach; ?>
+                                            </select>
+                                        </div>
+                                    </div>
+                                    <div class="rnt-row">
+                                        <div class="rnt-label">Kecamatan <span class="text-danger">*</span></div>
+                                        <div class="rnt-field">
+                                            <select class="form-select form-select-sm ts-select" name="delivery_point_district_id" id="deliveryDistrict" form="rentalDetailForm" <?= $canManage ? 'required' : 'disabled' ?>>
+                                                <option value="">-- Pilih Kecamatan --</option>
+                                                <?= select_options($delivery_districts, $b['delivery_point_district_id']) ?>
+                                            </select>
+                                        </div>
+                                    </div>
+                                    <div class="rnt-row align-items-start">
+                                        <div class="rnt-label pt-1">Detail Alamat</div>
+                                        <div class="rnt-field">
+                                            <textarea class="form-control form-control-sm" name="delivery_address" form="rentalDetailForm" rows="5" maxlength="2000" <?= $canManage ? '' : 'readonly' ?>><?= e((string) $b['delivery_address']) ?></textarea>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- ================= TAB 2: SOPIR/KERNET/MONTIR ================= -->
+                <div class="tab-pane fade" id="tab-crew" role="tabpanel">
+                    <div class="rnt-panel">
+                        <div class="rnt-panel-body">
+                            <div class="rnt-row">
+                                <div class="rnt-label">Total Biaya Operasional</div>
+                                <div class="rnt-field">
+                                    <input type="text" class="form-control form-control-sm fw-bold bg-light" id="crew_total_op_display" value="<?= format_nominal((float) ($b['total_operational_cost'] ?? 0)) ?>" readonly>
+                                </div>
+                            </div>
+                            <div class="rnt-row">
+                                <div class="rnt-label">Bahan Bakar Minyak (BBM)</div>
+                                <div class="rnt-field">
+                                    <input type="text" inputmode="numeric" class="form-control form-control-sm fw-semibold" id="crew_bbm_display" value="<?= format_nominal((float) $b['bbm']) ?>" placeholder="0" <?= $canManage ? '' : 'readonly' ?>>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Sub-panel Karyawan (Grid Premi / Biaya Kru) -->
+                    <div class="rnt-panel">
+                        <div class="rnt-panel-header">
+                            <span>Karyawan</span>
+                            <?php if ($canManage): ?>
+                            <button type="button" class="btn btn-sm btn-outline-primary py-0 px-2" id="btnAddCrewRow">
+                                <i class="bi bi-plus-lg me-1"></i>Tambah Baris
+                            </button>
+                            <?php endif; ?>
+                        </div>
+                        <div class="table-responsive">
+                            <table class="table table-sm table-bordered mb-0 align-middle" id="crewTable" style="font-size:.84rem;">
+                                <thead class="table-light">
+                                    <tr>
+                                        <th style="width:36px;" class="text-center">#</th>
+                                        <th style="width:160px;">Tipe</th>
+                                        <th style="min-width:240px;">Karyawan</th>
+                                        <th style="width:190px;">Organisasi</th>
+                                        <th style="width:190px;">Posisi</th>
+                                        <th style="width:170px;" class="text-end">Nominal</th>
+                                        <?php if ($canManage): ?><th style="width:42px;" class="text-center">Aksi</th><?php endif; ?>
+                                    </tr>
+                                    <?php if ($canManage): ?>
+                                    <tr class="bg-light text-muted small" style="cursor:pointer;" id="crewQuickAddBanner" title="Klik untuk menambah baris karyawan baru">
+                                        <td class="text-center text-warning"><i class="bi bi-sun-fill"></i></td>
+                                        <td colspan="6" class="text-center fst-italic py-1">Click here to add a new row</td>
+                                    </tr>
+                                    <?php endif; ?>
+                                </thead>
+                                <tbody id="crewTableBody">
+                                    <?php foreach ($crew_rows as $idx => $cr): ?>
+                                    <tr class="crew-row">
+                                        <td class="text-center text-muted crew-row-num"><?= $idx + 1 ?></td>
+                                        <td>
+                                            <select class="form-select form-select-sm crew-type-select" name="crew_type[]" form="rentalDetailForm" <?= $canManage ? '' : 'disabled' ?>>
+                                                <?php
+                                                $curType = (string) ($cr['cost_type'] ?? 'Sopir');
+                                                $typeOpts = ['Sopir', 'Kernet', 'Montir', 'Agen'];
+                                                if (!in_array($curType, $typeOpts, true) && $curType !== '') {
+                                                    $typeOpts[] = $curType;
+                                                }
+                                                foreach ($typeOpts as $tp): ?>
+                                                    <option value="<?= e($tp) ?>" <?= $curType === $tp ? 'selected' : '' ?>><?= e($tp) ?></option>
+                                                <?php endforeach; ?>
+                                            </select>
+                                        </td>
+                                        <td>
+                                            <select class="form-select form-select-sm crew-emp-select" name="crew_employee_id[]" form="rentalDetailForm" <?= $canManage ? '' : 'disabled' ?>>
+                                                <option value="">-- Pilih Karyawan --</option>
+                                                <?php foreach ($employees as $emp): ?>
+                                                    <option value="<?= (int) $emp['id'] ?>"
+                                                            data-org="<?= e($emp['job_title']) ?>"
+                                                            data-pos="<?= e($emp['job_position']) ?>"
+                                                            <?= (string) ($cr['employee_id'] ?? '') === (string) $emp['id'] ? 'selected' : '' ?>>
+                                                        <?= e($emp['name']) ?>
+                                                    </option>
+                                                <?php endforeach; ?>
+                                            </select>
+                                        </td>
+                                        <td><input type="text" class="form-control form-control-sm bg-light crew-org-input" value="<?= e((string) ($cr['job_title'] ?? '')) ?>" readonly placeholder="-"></td>
+                                        <td><input type="text" class="form-control form-control-sm bg-light crew-pos-input" value="<?= e((string) ($cr['job_position'] ?? '')) ?>" readonly placeholder="-"></td>
+                                        <td>
+                                            <?php $rowAmt = (float) ($cr['amount'] ?? $cr['premi_amount'] ?? 0); ?>
+                                            <input type="text" inputmode="numeric" class="form-control form-control-sm text-end fw-semibold crew-amt-display" value="<?= format_nominal($rowAmt) ?>" <?= $canManage ? '' : 'readonly' ?>>
+                                            <input type="hidden" name="crew_amount[]" class="crew-amt-value" form="rentalDetailForm" value="<?= $rowAmt ?>">
+                                        </td>
+                                        <?php if ($canManage): ?>
+                                        <td class="text-center">
+                                            <button type="button" class="btn btn-sm btn-link text-danger p-0 btn-remove-crew" title="Hapus baris"><i class="bi bi-x-lg"></i></button>
+                                        </td>
+                                        <?php endif; ?>
+                                    </tr>
+                                    <?php endforeach; ?>
+                                </tbody>
+                                <tfoot class="table-light">
+                                    <tr>
+                                        <td colspan="5" class="py-2">
+                                            <div class="d-flex align-items-center gap-2 small text-muted">
+                                                <span id="crewRecordCount">Record 1 of <?= count($crew_rows) ?></span>
+                                                <?php if ($canManage): ?>
+                                                <div class="btn-group btn-group-sm ms-2">
+                                                    <button type="button" class="btn btn-outline-secondary py-0 px-2" id="btnFooterAddCrew" title="Tambah Baris">+</button>
+                                                    <button type="button" class="btn btn-outline-secondary py-0 px-2" id="btnFooterDelCrew" title="Hapus Baris Terakhir">&minus;</button>
+                                                </div>
+                                                <?php endif; ?>
+                                            </div>
+                                        </td>
+                                        <td class="py-2">
+                                            <input type="text" class="form-control form-control-sm text-end fw-bold bg-white" id="crew_subtotal_display" value="0" readonly>
+                                        </td>
+                                        <?php if ($canManage): ?><td></td><?php endif; ?>
+                                    </tr>
+                                </tfoot>
+                            </table>
+                        </div>
+                    </div>
+
+                    <div class="rnt-panel mb-0">
+                        <div class="rnt-panel-header">
+                            <span>Riwayat Penugasan Sopir (Modul Penjadwalan)</span>
+                            <a class="btn btn-sm btn-outline-secondary py-0" href="<?= e(APP_URL) ?>/pages/dispatch/detail.php?type=rental&amp;id=<?= $id ?>">
+                                Buka Papan Penjadwalan
+                            </a>
+                        </div>
+                        <div class="table-responsive">
+                            <table class="table table-sm mb-0 align-middle">
+                                <thead class="table-light">
+                                    <tr><th>Sopir</th><th>Kendaraan</th><th>Mulai</th><th>Selesai</th><th>Status</th></tr>
+                                </thead>
+                                <tbody>
+                                <?php foreach ($assignments as $a): ?>
+                                    <tr>
+                                        <td class="fw-semibold"><?= e((string) $a['employee_name']) ?></td>
+                                        <td><?= e((string) ($a['vehicle_number'] ?? '-')) ?></td>
+                                        <td><?= !empty($a['started_at']) ? date('d-M-Y H:i', strtotime($a['started_at'])) : '—' ?></td>
+                                        <td><?= !empty($a['ended_at']) ? date('d-M-Y H:i', strtotime($a['ended_at'])) : '—' ?></td>
+                                        <td><span class="badge bg-<?= empty($a['ended_at']) ? 'warning text-dark' : 'secondary' ?>"><?= empty($a['ended_at']) ? 'Sedang Jalan' : 'Selesai' ?></span></td>
+                                    </tr>
+                                <?php endforeach; ?>
+                                <?php if (!$assignments): ?>
+                                    <tr><td colspan="5" class="text-center text-muted py-3">Belum ada penugasan sopir untuk booking ini.</td></tr>
+                                <?php endif; ?>
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- ================= TAB 3: PEMBAYARAN SEWA ================= -->
+                <div class="tab-pane fade" id="tab-payment" role="tabpanel">
+                    <?php $sisa = $invoice ? max(0, (float) $invoice['total'] - (float) $invoice['paid_total']) : 0; ?>
+                    <div class="rnt-panel">
+                        <div class="rnt-panel-body">
+                            <div class="rnt-row">
+                                <div class="rnt-label">Total Pembayaran</div>
+                                <div class="rnt-field">
+                                    <div class="d-flex flex-wrap align-items-center gap-2">
+                                        <input type="text" class="form-control form-control-sm fw-bold bg-light" id="pay_total_top_display" value="<?= format_nominal((float) ($invoice['paid_total'] ?? $b['total_payment'] ?? 0)) ?>" readonly style="max-width:320px;">
+                                        <?php if ($invoice): ?>
+                                            <?= invoice_pay_badge($invoice['pay_status']) ?>
+                                            <span class="small text-muted" id="invoiceSummaryText" data-inv-total="<?= (float) $invoice['total'] ?>">
+                                                Tagihan: <strong id="invTotalDisplay"><?= e(rupiah((float) $invoice['total'])) ?></strong> ·
+                                                Sisa: <strong id="invSisaDisplay" class="text-<?= $sisa > 0 ? 'danger' : 'success' ?>"><?= e(rupiah($sisa)) ?></strong>
+                                            </span>
+                                            <?php if ($sisa > 0): ?>
+                                                <a class="btn btn-sm btn-primary ms-auto" href="<?= e(APP_URL) ?>/pages/finance/invoices/gateway_pay.php?invoice_id=<?= (int) $invoice['id'] ?>" target="_blank">
+                                                    <i class="bi bi-qr-code-scan me-1"></i>Bayar Otomatis via QRIS
+                                                </a>
+                                            <?php endif; ?>
+                                            <a class="btn btn-sm btn-outline-secondary <?= $sisa > 0 ? '' : 'ms-auto' ?>" href="<?= e(APP_URL) ?>/pages/finance/invoices/detail.php?id=<?= (int) $invoice['id'] ?>">
+                                                <i class="bi bi-receipt me-1"></i>Detail Invoice
+                                            </a>
+                                        <?php endif; ?>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="rnt-panel mb-0">
+                        <div class="rnt-panel-header">
+                            <span>Rincian Pembayaran Sewa (Input Manual &amp; Otomatis QRIS)</span>
+                            <?php if ($canManage): ?>
+                            <button type="button" class="btn btn-sm btn-outline-primary py-0 px-2" id="btnAddPayRow">
+                                <i class="bi bi-plus-lg me-1"></i>Tambah Pembayaran Manual
+                            </button>
+                            <?php endif; ?>
+                        </div>
+                        <div class="table-responsive">
+                            <table class="table table-sm table-bordered mb-0 align-middle" id="payTable" style="font-size:.84rem;">
+                                <thead class="table-light">
+                                    <tr>
+                                        <th style="width:36px;" class="text-center">#</th>
+                                        <th style="width:220px;">Lampiran</th>
+                                        <th style="width:220px;">Tipe Pembayaran</th>
+                                        <th style="width:200px;">Metode Pembayaran</th>
+                                        <th style="width:170px;">Tanggal</th>
+                                        <th style="width:180px;" class="text-end">Nominal</th>
+                                        <?php if ($canManage): ?><th style="width:42px;" class="text-center">Aksi</th><?php endif; ?>
+                                    </tr>
+                                    <?php if ($canManage): ?>
+                                    <tr class="bg-light text-muted small" style="cursor:pointer;" id="payQuickAddBanner" title="Klik untuk menambah baris pembayaran">
+                                        <td class="text-center text-warning"><i class="bi bi-sun-fill"></i></td>
+                                        <td colspan="6" class="text-center fst-italic py-1">Click here to add a new row</td>
+                                    </tr>
+                                    <?php endif; ?>
+                                </thead>
+                                <tbody id="payTableBody">
+                                    <?php foreach ($payment_rows as $idx => $pr): ?>
+                                    <?php $isAutoQris = !empty($pr['is_auto_qris']); ?>
+                                    <tr class="pay-row">
+                                        <td class="text-center text-muted pay-row-num"><?= $idx + 1 ?></td>
+                                        <td>
+                                            <input type="hidden" name="pay_id[]" form="rentalDetailForm" value="<?= (int) ($pr['id'] ?? 0) ?>">
+                                            <div class="d-flex align-items-center gap-2">
+                                                <?php if ($isAutoQris): ?>
+                                                    <span class="badge bg-success-subtle text-success border"><i class="bi bi-qr-code me-1"></i>Verified QRIS</span>
+                                                <?php elseif (!empty($pr['proof_blob_path'])): ?>
+                                                    <a href="<?= e(resolve_asset_url($pr['proof_blob_path'])) ?>" target="_blank" class="btn btn-sm btn-outline-primary py-0 px-2 pay-file-label">
+                                                        <i class="bi bi-image me-1"></i>Lihat Bukti
+                                                    </a>
+                                                <?php else: ?>
+                                                    <span class="text-muted small pay-file-label">No image data</span>
+                                                <?php endif; ?>
+                                                <?php if ($canManage && !$isAutoQris): ?>
+                                                    <label class="btn btn-sm btn-outline-secondary py-0 px-2 ms-auto mb-0" title="Unggah/ganti bukti pembayaran">
+                                                        <i class="bi bi-paperclip"></i>
+                                                        <input type="file" name="pay_proof[]" form="rentalDetailForm" class="d-none pay-file-input" accept="image/*,application/pdf">
+                                                    </label>
+                                                <?php endif; ?>
+                                            </div>
+                                        </td>
+                                        <td>
+                                            <select class="form-select form-select-sm pay-type-select" name="pay_type[]" form="rentalDetailForm" <?= ($canManage && !$isAutoQris) ? '' : 'disabled' ?>>
+                                                <?php
+                                                $curPt = (string) ($pr['pay_type'] ?? 'Down Payment (DP)');
+                                                $ptOpts = ['Down Payment (DP)', 'Pelunasan', 'Pembayaran Penuh (Full)', 'Cicilan / Termin'];
+                                                if (!in_array($curPt, $ptOpts, true) && $curPt !== '') $ptOpts[] = $curPt;
+                                                foreach ($ptOpts as $pt): ?>
+                                                    <option value="<?= e($pt) ?>" <?= $curPt === $pt ? 'selected' : '' ?>><?= e($pt) ?></option>
+                                                <?php endforeach; ?>
+                                            </select>
+                                            <?php if ($isAutoQris): ?>
+                                                <input type="hidden" name="pay_type[]" form="rentalDetailForm" value="<?= e($curPt) ?>">
+                                            <?php endif; ?>
+                                        </td>
+                                        <td>
+                                            <select class="form-select form-select-sm pay-method-select" name="pay_method[]" form="rentalDetailForm" <?= ($canManage && !$isAutoQris) ? '' : 'disabled' ?>>
+                                                <?php
+                                                $curPm = (string) ($pr['pay_method'] ?? 'Transfer');
+                                                $pmOpts = ['Transfer', 'Tunai', 'QRIS', 'EDC / Kartu'];
+                                                if (!in_array($curPm, $pmOpts, true) && $curPm !== '') $pmOpts[] = $curPm;
+                                                foreach ($pmOpts as $pm): ?>
+                                                    <option value="<?= e($pm) ?>" <?= $curPm === $pm ? 'selected' : '' ?>><?= e($pm) ?></option>
+                                                <?php endforeach; ?>
+                                            </select>
+                                            <?php if ($isAutoQris): ?>
+                                                <input type="hidden" name="pay_method[]" form="rentalDetailForm" value="<?= e($curPm) ?>">
+                                            <?php endif; ?>
+                                        </td>
+                                        <td>
+                                            <input type="text" class="form-control form-control-sm bg-white flatpickr-date" name="pay_date[]" form="rentalDetailForm" value="<?= e($pr['pay_date'] ?? date('Y-m-d')) ?>" placeholder="dd-MMM-yyyy" <?= ($canManage && !$isAutoQris) ? '' : 'disabled' ?>>
+                                        </td>
+                                        <td>
+                                            <?php $pRowAmt = (float) ($pr['amount'] ?? 0); ?>
+                                            <input type="text" inputmode="numeric" class="form-control form-control-sm text-end fw-semibold pay-amt-display" value="<?= format_nominal($pRowAmt) ?>" <?= ($canManage && !$isAutoQris) ? '' : 'readonly' ?>>
+                                            <input type="hidden" name="pay_amount[]" class="pay-amt-value" form="rentalDetailForm" value="<?= $pRowAmt ?>">
+                                        </td>
+                                        <?php if ($canManage): ?>
+                                        <td class="text-center">
+                                            <?php if (!$isAutoQris): ?>
+                                                <button type="button" class="btn btn-sm btn-link text-danger p-0 btn-remove-pay" title="Hapus baris"><i class="bi bi-x-lg"></i></button>
+                                            <?php else: ?>
+                                                <i class="bi bi-lock-fill text-muted small" title="Pembayaran terverifikasi otomatis oleh QRIS"></i>
+                                            <?php endif; ?>
+                                        </td>
+                                        <?php endif; ?>
+                                    </tr>
+                                    <?php endforeach; ?>
+                                </tbody>
+                                <tfoot class="table-light">
+                                    <tr>
+                                        <td colspan="5" class="py-2">
+                                            <div class="d-flex align-items-center gap-2 small text-muted">
+                                                <span id="payRecordCount">Record <?= count($payment_rows) ? 1 : 0 ?> of <?= count($payment_rows) ?></span>
+                                                <?php if ($canManage): ?>
+                                                <div class="btn-group btn-group-sm ms-2">
+                                                    <button type="button" class="btn btn-outline-secondary py-0 px-2" id="btnFooterAddPay" title="Tambah Baris">+</button>
+                                                    <button type="button" class="btn btn-outline-secondary py-0 px-2" id="btnFooterDelPay" title="Hapus Baris Terakhir">&minus;</button>
+                                                </div>
+                                                <?php endif; ?>
+                                            </div>
+                                        </td>
+                                        <td class="py-2">
+                                            <input type="text" class="form-control form-control-sm text-end fw-bold bg-white" id="pay_subtotal_display" value="0" readonly>
+                                        </td>
+                                        <?php if ($canManage): ?><td></td><?php endif; ?>
+                                    </tr>
+                                </tfoot>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- ================= TAB 4: KETERANGAN ================= -->
+                <div class="tab-pane fade" id="tab-note" role="tabpanel">
+                    <div class="rnt-panel">
+                        <div class="rnt-panel-header">
+                            <span>Catatan / Keterangan Tambahan</span>
+                        </div>
+                        <div class="rnt-panel-body">
+                            <textarea class="form-control form-control-sm" id="visibleNote" rows="5" maxlength="2000" placeholder="Tuliskan catatan khusus sewa, itinerary singkat, atau instruksi penjemputan..." <?= $canManage ? '' : 'readonly' ?>><?= e((string) $b['note']) ?></textarea>
+                            <?php if ($canManage): ?>
+                                <div class="mt-2 text-end">
+                                    <button type="submit" form="rentalDetailForm" class="btn btn-sm btn-primary">
+                                        <i class="bi bi-check2 me-1"></i>Simpan Catatan
+                                    </button>
+                                </div>
+                            <?php endif; ?>
+                        </div>
+                    </div>
+
+                    <?php if ($canManage): ?>
+                    <div class="row g-3">
+                        <div class="col-md-4">
+                            <div class="rnt-panel h-100 mb-0">
+                                <div class="rnt-panel-header"><span>Ubah Status Booking</span></div>
+                                <div class="rnt-panel-body">
+                                    <?php if ($next): ?>
+                                    <form method="post" action="" class="d-flex flex-column gap-2">
+                                        <?= csrf_field() ?>
+                                        <input type="hidden" name="id" value="<?= $id ?>">
+                                        <input type="hidden" name="act" value="status">
+                                        <select class="form-select form-select-sm" name="to_status">
+                                            <?php foreach ($next as $n): ?><option value="<?= e($n) ?>"><?= e($n) ?></option><?php endforeach; ?>
+                                        </select>
+                                        <input class="form-control form-control-sm" name="reason" placeholder="Catatan perubahan status" maxlength="2000">
+                                        <button class="btn btn-sm btn-primary" type="submit">Proses Status</button>
+                                    </form>
+                                    <?php else: ?>
+                                        <p class="text-muted mb-0 small">Status akhir — tidak ada transisi lanjutan.</p>
+                                    <?php endif; ?>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="col-md-4">
+                            <div class="rnt-panel h-100 mb-0">
+                                <div class="rnt-panel-header"><span>Reschedule Cepat</span></div>
+                                <div class="rnt-panel-body">
+                                    <form method="post" action="" class="d-flex flex-column gap-2">
+                                        <?= csrf_field() ?>
+                                        <input type="hidden" name="id" value="<?= $id ?>">
+                                        <input type="hidden" name="act" value="reschedule">
+                                        <input type="text" class="form-control form-control-sm bg-white flatpickr-date" name="date" required value="<?= e($b['date']) ?>" placeholder="dd-MMM-yyyy">
+                                        <div class="input-group input-group-sm">
+                                            <input type="time" class="form-control form-control-sm" name="time" id="rescheduleTimeInput" required value="<?= e(substr((string) $b['time'], 0, 5)) ?>">
+                                            <span class="input-group-text bg-light text-muted fw-semibold" id="rescheduleTimePeriodBadge"><?= time_period_label((string) $b['time']) ?></span>
+                                        </div>
+                                        <button class="btn btn-sm btn-outline-primary" type="submit">Simpan Reschedule</button>
+                                    </form>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="col-md-4">
+                            <div class="rnt-panel h-100 mb-0">
+                                <div class="rnt-panel-header"><span class="text-danger">Batalkan Booking</span></div>
+                                <div class="rnt-panel-body">
+                                    <?php if ($status === 'cancelled'): ?>
+                                        <p class="text-muted mb-0 small">Booking sudah dibatalkan.</p>
+                                    <?php else: ?>
+                                    <form method="post" action="" class="d-flex flex-column gap-2" onsubmit="return confirm('Batalkan booking rental ini?')">
+                                        <?= csrf_field() ?>
+                                        <input type="hidden" name="id" value="<?= $id ?>">
+                                        <input type="hidden" name="act" value="cancel">
+                                        <input class="form-control form-control-sm" name="reason" placeholder="Alasan pembatalan" maxlength="2000" required>
+                                        <button class="btn btn-sm btn-outline-danger" type="submit">Batalkan Booking</button>
+                                    </form>
+                                    <?php endif; ?>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    <?php endif; ?>
+                </div>
+
+                <!-- ================= TAB 5: AUDIT TRAIL ================= -->
+                <div class="tab-pane fade" id="tab-audit" role="tabpanel">
+                    <div class="rnt-panel">
+                        <div class="rnt-panel-body">
+                            <div class="rnt-row">
+                                <label class="rnt-label">Dibuat Oleh</label>
+                                <div class="rnt-field">
+                                    <input type="text" class="form-control form-control-sm bg-light" value="<?= e((string) ($b['created_user'] ?? '-')) ?>" readonly>
+                                </div>
+                            </div>
+                            <div class="rnt-row">
+                                <label class="rnt-label">Dibuat Tanggal</label>
+                                <div class="rnt-field">
+                                    <div class="input-group input-group-sm">
+                                        <input type="text" class="form-control form-control-sm bg-light" value="<?= !empty($b['created_date']) ? date('d-M-Y H:i', strtotime($b['created_date'])) : '-' ?>" readonly>
+                                        <span class="input-group-text bg-white"><i class="bi bi-chevron-down text-muted"></i></span>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="rnt-row">
+                                <label class="rnt-label">Diubah Oleh</label>
+                                <div class="rnt-field">
+                                    <input type="text" class="form-control form-control-sm bg-light" value="<?= e((string) ($b['modified_user'] ?? '-')) ?>" readonly>
+                                </div>
+                            </div>
+                            <div class="rnt-row">
+                                <label class="rnt-label">Diubah Tanggal</label>
+                                <div class="rnt-field">
+                                    <div class="input-group input-group-sm">
+                                        <input type="text" class="form-control form-control-sm bg-light" value="<?= !empty($b['modified_date']) ? date('d-M-Y H:i', strtotime($b['modified_date'])) : '-' ?>" readonly>
+                                        <span class="input-group-text bg-white"><i class="bi bi-chevron-down text-muted"></i></span>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="rnt-panel mb-0">
+                        <div class="rnt-panel-header">
+                            <span>Riwayat Perubahan Status (Detail Log)</span>
+                        </div>
+                        <div class="table-responsive">
+                            <table class="table table-sm mb-0 align-middle">
+                                <thead class="table-light">
+                                    <tr><th>Waktu</th><th>Dari Status</th><th>Ke Status</th><th>Alasan / Catatan</th><th>Oleh</th></tr>
+                                </thead>
+                                <tbody>
+                                <?php foreach ($history as $h): ?>
+                                    <tr>
+                                        <td><?= !empty($h['changed_at']) ? date('d-M-Y H:i:s', strtotime($h['changed_at'])) : '-' ?></td>
+                                        <td><?= $h['from_status'] ? status_badge((string) $h['from_status']) : '<span class="text-muted">—</span>' ?></td>
+                                        <td><?= status_badge((string) $h['to_status']) ?></td>
+                                        <td><?= e((string) $h['reason']) ?></td>
+                                        <td><span class="badge bg-light text-dark border"><?= e((string) $h['changed_by']) ?></span></td>
+                                    </tr>
+                                <?php endforeach; ?>
+                                <?php if (!$history): ?>
+                                    <tr><td colspan="5" class="text-center text-muted py-3">Belum ada riwayat status.</td></tr>
+                                <?php endif; ?>
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <?php if ($canManage): ?>
+            <div class="d-flex justify-content-end gap-2 mt-3 pt-3 border-top">
+                <button type="submit" form="rentalDetailForm" class="btn btn-primary btn-sm px-4">
+                    <i class="bi bi-check2-circle me-1"></i>Simpan Perubahan Booking
+                </button>
+            </div>
+            <?php endif; ?>
         </div>
     </div>
 </main>
+
+<?php if ($canManage): ?>
+<!-- Modal Tambah Pelanggan Cepat (AJAX) -->
+<div class="modal fade" id="quickPassengerModal" tabindex="-1" aria-labelledby="quickPassengerModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered">
+        <form class="modal-content" id="quickPassengerForm">
+            <div class="modal-header">
+                <h5 class="modal-title fw-bold" id="quickPassengerModalLabel"><i class="bi bi-person-plus text-primary me-1"></i>Tambah Pelanggan Baru</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Tutup"></button>
+            </div>
+            <div class="modal-body">
+                <div class="alert alert-danger d-none py-2 small" id="qpError"></div>
+                <div class="mb-3">
+                    <label class="form-label">Nama Lengkap <span class="text-danger">*</span></label>
+                    <input type="text" class="form-control" name="name" id="qpName" required maxlength="255" placeholder="Contoh: Budi Santoso">
+                </div>
+                <div class="row g-2 mb-3">
+                    <div class="col-7">
+                        <label class="form-label">No. HP / WhatsApp</label>
+                        <input type="text" class="form-control" name="phone_number" id="qpPhone" maxlength="50" placeholder="0812xxxxxxxx">
+                    </div>
+                    <div class="col-5">
+                        <label class="form-label">Gender</label>
+                        <select class="form-select" name="gender" id="qpGender">
+                            <option value="">-- Pilih --</option>
+                            <option value="L">Laki-laki (L)</option>
+                            <option value="P">Perempuan (P)</option>
+                        </select>
+                    </div>
+                </div>
+                <div class="mb-0">
+                    <label class="form-label">Alamat Singkat (Opsional)</label>
+                    <input type="text" class="form-control" name="address" id="qpAddress" maxlength="255" placeholder="Domisili / alamat pelanggan">
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-light" data-bs-dismiss="modal">Batal</button>
+                <button type="submit" class="btn btn-primary" id="qpSubmitBtn"><i class="bi bi-check2 me-1"></i>Simpan & Pilih</button>
+            </div>
+        </form>
+    </div>
+</div>
+<?php endif; ?>
+
+<script>
+document.addEventListener('DOMContentLoaded', () => {
+    const appUrl   = <?= json_encode(APP_URL) ?>;
+    const csrfTok  = <?= json_encode(csrf_token()) ?>;
+
+    // Helper format & parse rupiah standar Indonesia
+    function formatRupiah(val) {
+        if (val === null || val === undefined || val === '') return '';
+        var digits = String(val).replace(/[^0-9]/g, '');
+        if (!digits) return '';
+        var num = parseInt(digits, 10);
+        if (num === 0) return '0';
+        return num.toString().replace(/\B(?=(\d{3})+(?!\d))/g, '.');
+    }
+
+    function parseRupiah(val) {
+        if (val === null || val === undefined || val === '') return 0;
+        var digits = String(val).replace(/[^0-9]/g, '');
+        return digits ? parseInt(digits, 10) : 0;
+    }
+
+    function attachRupiahMask(inputEl, hiddenEl, onChangeCallback) {
+        if (!inputEl) return;
+        inputEl.addEventListener('input', function () {
+            var oldVal = this.value;
+            var caretPos = this.selectionStart || 0;
+            var digitsBeforeCaret = oldVal.slice(0, caretPos).replace(/[^0-9]/g, '').length;
+
+            var clean = oldVal.replace(/[^0-9]/g, '');
+            var num = parseInt(clean || '0', 10);
+            if (hiddenEl) hiddenEl.value = String(num);
+
+            var formatted = clean === '' ? '' : formatRupiah(num);
+            this.value = formatted;
+
+            if (this.setSelectionRange && formatted) {
+                var newCaret = 0;
+                var digitCount = 0;
+                for (var i = 0; i < formatted.length; i++) {
+                    if (/[0-9]/.test(formatted[i])) {
+                        digitCount++;
+                    }
+                    if (digitCount === digitsBeforeCaret) {
+                        newCaret = i + 1;
+                        break;
+                    }
+                }
+                if (digitCount < digitsBeforeCaret) newCaret = formatted.length;
+                try { this.setSelectionRange(newCaret, newCaret); } catch (e) {}
+            }
+
+            if (typeof onChangeCallback === 'function') onChangeCallback(num);
+        });
+
+        inputEl.addEventListener('blur', function () {
+            if (this.value.trim() === '') {
+                this.value = '0';
+                if (hiddenEl) hiddenEl.value = '0';
+                if (typeof onChangeCallback === 'function') onChangeCallback(0);
+            }
+        });
+    }
+
+    // Sinkronisasi input Note, BBM, dan Grid Kru (Sopir/Kernet/Montir/Agen)
+    const hidBbm        = document.getElementById('hiddenBbm');
+    const visNote       = document.getElementById('visibleNote');
+    const hidNote       = document.getElementById('hiddenNote');
+    const bbmDisp       = document.getElementById('crew_bbm_display');
+    const totalOpDisp   = document.getElementById('crew_total_op_display');
+    const subCrewDisp   = document.getElementById('crew_subtotal_display');
+    const crewTbody     = document.getElementById('crewTableBody');
+    const recCountEl    = document.getElementById('crewRecordCount');
+    const empOptionsHtml = `<option value="">-- Pilih Karyawan --</option>` + <?= json_encode(implode('', array_map(static fn($emp) =>
+        '<option value="' . (int) $emp['id'] . '" data-org="' . e($emp['job_title']) . '" data-pos="' . e($emp['job_position']) . '">' . e($emp['name']) . '</option>',
+        $employees
+    ))) ?>;
+
+    if (visNote && hidNote) visNote.addEventListener('input', () => { hidNote.value = visNote.value; });
+
+    function recalcCrewTotals() {
+        const bbmNum = parseRupiah(hidBbm ? hidBbm.value : '0');
+        let crewSum = 0;
+        const rows = crewTbody ? crewTbody.querySelectorAll('tr.crew-row') : [];
+        rows.forEach((tr, idx) => {
+            const numCell = tr.querySelector('.crew-row-num');
+            if (numCell) numCell.textContent = String(idx + 1);
+            const hid = tr.querySelector('.crew-amt-value');
+            crewSum += parseRupiah(hid ? hid.value : '0');
+        });
+        if (subCrewDisp) subCrewDisp.value = formatRupiah(crewSum);
+        if (totalOpDisp) totalOpDisp.value = formatRupiah(bbmNum + crewSum);
+        if (recCountEl)  recCountEl.textContent = 'Record ' + (rows.length ? 1 : 0) + ' of ' + rows.length;
+    }
+
+    function bindCrewRow(tr) {
+        const empSel  = tr.querySelector('.crew-emp-select');
+        const orgInp  = tr.querySelector('.crew-org-input');
+        const posInp  = tr.querySelector('.crew-pos-input');
+        const amtDisp = tr.querySelector('.crew-amt-display');
+        const amtVal  = tr.querySelector('.crew-amt-value');
+        const delBtn  = tr.querySelector('.btn-remove-crew');
+
+        function syncEmpMeta() {
+            if (!empSel) return;
+            const opt = empSel.options[empSel.selectedIndex];
+            if (orgInp) orgInp.value = opt ? (opt.getAttribute('data-org') || '') : '';
+            if (posInp) posInp.value = opt ? (opt.getAttribute('data-pos') || '') : '';
+        }
+        if (empSel) {
+            empSel.addEventListener('change', syncEmpMeta);
+            syncEmpMeta();
+        }
+        if (amtDisp && amtVal) {
+            attachRupiahMask(amtDisp, amtVal, () => {
+                recalcCrewTotals();
+            });
+        }
+        if (delBtn) {
+            delBtn.addEventListener('click', () => {
+                tr.remove();
+                recalcCrewTotals();
+            });
+        }
+    }
+
+    function addCrewRow(defaultType) {
+        if (!crewTbody) return;
+        const tr = document.createElement('tr');
+        tr.className = 'crew-row';
+        const tp = defaultType || 'Sopir';
+        tr.innerHTML = `
+            <td class="text-center text-muted crew-row-num">1</td>
+            <td>
+                <select class="form-select form-select-sm crew-type-select" name="crew_type[]" form="rentalDetailForm">
+                    <option value="Sopir" ${tp === 'Sopir' ? 'selected' : ''}>Sopir</option>
+                    <option value="Kernet" ${tp === 'Kernet' ? 'selected' : ''}>Kernet</option>
+                    <option value="Montir" ${tp === 'Montir' ? 'selected' : ''}>Montir</option>
+                    <option value="Agen" ${tp === 'Agen' ? 'selected' : ''}>Agen</option>
+                </select>
+            </td>
+            <td>
+                <select class="form-select form-select-sm crew-emp-select" name="crew_employee_id[]" form="rentalDetailForm">${empOptionsHtml}</select>
+            </td>
+            <td><input type="text" class="form-control form-control-sm bg-light crew-org-input" value="" readonly placeholder="-"></td>
+            <td><input type="text" class="form-control form-control-sm bg-light crew-pos-input" value="" readonly placeholder="-"></td>
+            <td>
+                <input type="text" inputmode="numeric" class="form-control form-control-sm text-end fw-semibold crew-amt-display" value="0">
+                <input type="hidden" name="crew_amount[]" class="crew-amt-value" form="rentalDetailForm" value="0">
+            </td>
+            <td class="text-center">
+                <button type="button" class="btn btn-sm btn-link text-danger p-0 btn-remove-crew" title="Hapus baris"><i class="bi bi-x-lg"></i></button>
+            </td>
+        `;
+        crewTbody.appendChild(tr);
+        bindCrewRow(tr);
+        recalcCrewTotals();
+    }
+
+    if (bbmDisp && hidBbm) {
+        attachRupiahMask(bbmDisp, hidBbm, () => {
+            recalcCrewTotals();
+        });
+    }
+    if (crewTbody) {
+        crewTbody.querySelectorAll('tr.crew-row').forEach(bindCrewRow);
+    }
+    ['btnAddCrewRow', 'crewQuickAddBanner', 'btnFooterAddCrew'].forEach((id) => {
+        const el = document.getElementById(id);
+        if (el) el.addEventListener('click', () => addCrewRow('Sopir'));
+    });
+    const btnFooterDel = document.getElementById('btnFooterDelCrew');
+    if (btnFooterDel && crewTbody) {
+        btnFooterDel.addEventListener('click', () => {
+            const rows = crewTbody.querySelectorAll('tr.crew-row');
+            if (rows.length > 0) {
+                rows[rows.length - 1].remove();
+                recalcCrewTotals();
+            }
+        });
+    }
+    recalcCrewTotals();
+
+    // Format ribuan untuk Harga
+    const priceDisp = document.getElementById('totalPriceDisplay');
+    const priceVal  = document.getElementById('totalPriceValue');
+    if (priceDisp && priceVal) {
+        attachRupiahMask(priceDisp, priceVal);
+    }
+
+    // Inisialisasi Flatpickr dengan format tampilan 'd-M-Y' (misal: 11-Nov-2026) dan value server 'Y-m-d'
+    const startEl = document.getElementById('startDateInput');
+    const endEl   = document.getElementById('endDateInput');
+    const durEl   = document.getElementById('durationDaysInput');
+
+    function formatDateIso(d) {
+        const yyyy = d.getFullYear();
+        const mm   = String(d.getMonth() + 1).padStart(2, '0');
+        const dd   = String(d.getDate()).padStart(2, '0');
+        return `${yyyy}-${mm}-${dd}`;
+    }
+
+    function parseDateObj(el) {
+        if (!el) return null;
+        if (el._flatpickr && el._flatpickr.selectedDates && el._flatpickr.selectedDates.length > 0) {
+            const d = el._flatpickr.selectedDates[0];
+            return new Date(d.getFullYear(), d.getMonth(), d.getDate());
+        }
+        if (el.value) {
+            const m = String(el.value).match(/^(\d{4})-(\d{2})-(\d{2})$/);
+            if (m) {
+                return new Date(parseInt(m[1], 10), parseInt(m[2], 10) - 1, parseInt(m[3], 10));
+            }
+        }
+        return null;
+    }
+
+    function calcDaysFromDates() {
+        if (!startEl || !endEl || !durEl) return;
+        const s = parseDateObj(startEl);
+        const e = parseDateObj(endEl);
+        if (!s || !e) return;
+
+        let diff = Math.round((e - s) / 86400000) + 1;
+        if (diff < 1) {
+            diff = 1;
+            if (endEl._flatpickr) {
+                endEl._flatpickr.setDate(s, false);
+            } else {
+                endEl.value = formatDateIso(s);
+            }
+        }
+        durEl.value = diff;
+    }
+
+    function calcEndDateFromDays() {
+        if (!startEl || !endEl || !durEl) return;
+        const s = parseDateObj(startEl);
+        if (!s) return;
+
+        let days = parseInt(durEl.value || '1', 10);
+        if (isNaN(days) || days < 1) days = 1;
+        durEl.value = days;
+
+        const target = new Date(s.getFullYear(), s.getMonth(), s.getDate() + (days - 1));
+        if (endEl._flatpickr) {
+            endEl._flatpickr.setDate(target, false);
+        } else {
+            endEl.value = formatDateIso(target);
+        }
+    }
+
+    function initFlatpickr(el, onDateChange) {
+        if (!el || el._flatpickr || typeof flatpickr === 'undefined') return;
+        return flatpickr(el, {
+            altInput: true,
+            altFormat: "d-M-Y",
+            dateFormat: "Y-m-d",
+            altInputClass: "form-control form-control-sm bg-white",
+            allowInput: false,
+            onChange: function(selectedDates, dateStr) {
+                if (typeof onDateChange === 'function') {
+                    onDateChange(selectedDates, dateStr);
+                }
+            }
+        });
+    }
+
+    if (startEl) {
+        initFlatpickr(startEl, function() {
+            calcDaysFromDates();
+        });
+    }
+    if (endEl) {
+        initFlatpickr(endEl, function() {
+            calcDaysFromDates();
+        });
+    }
+    document.querySelectorAll('.flatpickr-date').forEach(el => {
+        if (el !== startEl && el !== endEl) {
+            initFlatpickr(el);
+        }
+    });
+
+    if (durEl) {
+        durEl.addEventListener('input', calcEndDateFromDays);
+        durEl.addEventListener('change', calcEndDateFromDays);
+    }
+    calcDaysFromDates();
+
+    // Label AM/PM Bahasa Indonesia Dinamis untuk Jam
+    function getTimePeriodLabel(timeVal) {
+        if (!timeVal) return '';
+        const parts = String(timeVal).split(':');
+        const h = parseInt(parts[0], 10);
+        if (isNaN(h)) return '';
+        if (h >= 0 && h < 5) return 'Dini Hari (AM)';
+        if (h >= 5 && h < 11) return 'Pagi (AM)';
+        if (h >= 11 && h < 15) return 'Siang (PM)';
+        if (h >= 15 && h < 18) return 'Sore (PM)';
+        return 'Malam (PM)';
+    }
+
+    function bindTimeBadge(inpId, badgeId) {
+        const inp = document.getElementById(inpId);
+        const badge = document.getElementById(badgeId);
+        if (!inp || !badge) return;
+        const update = () => { badge.textContent = getTimePeriodLabel(inp.value); };
+        inp.addEventListener('input', update);
+        inp.addEventListener('change', update);
+        update();
+    }
+    bindTimeBadge('rentalTimeInput', 'rentalTimePeriodBadge');
+    bindTimeBadge('rescheduleTimeInput', 'rescheduleTimePeriodBadge');
+
+    // Filter Kendaraan berdasarkan Kategori Kendaraan
+    const catSelect = document.getElementById('categoryVehicleSelect');
+    const vehSelect = document.getElementById('vehicleSelect');
+    const allVehicles = <?= json_encode(array_map(static fn($v) => [
+        'id'       => (string) $v['id'],
+        'name'     => (string) $v['name'],
+        'category' => (string) ($v['category_vehicle_id'] ?? ''),
+    ], $vehicles)) ?>;
+
+    if (catSelect && vehSelect) {
+        catSelect.addEventListener('change', () => {
+            const catId = String(catSelect.value || '');
+            const curVal = String(vehSelect.value || '');
+            const filtered = allVehicles.filter(v => !catId || v.category === catId);
+
+            if (vehSelect.tomselect) {
+                const ts = vehSelect.tomselect;
+                ts.clear(true);
+                ts.clearOptions();
+                ts.addOption({ value: '', text: '-- Pilih Kendaraan --' });
+                filtered.forEach(v => ts.addOption({ value: v.id, text: v.name }));
+                ts.refreshOptions(false);
+                if (filtered.some(v => v.id === curVal)) {
+                    ts.setValue(curVal, true);
+                }
+            } else {
+                vehSelect.innerHTML = '<option value="">-- Pilih Kendaraan --</option>';
+                filtered.forEach(v => {
+                    const opt = document.createElement('option');
+                    opt.value = v.id;
+                    opt.textContent = v.name;
+                    if (v.id === curVal) opt.selected = true;
+                    vehSelect.appendChild(opt);
+                });
+            }
+        });
+    }
+
+    // Cascading Provinsi -> Kota/Kab -> Kecamatan
+    const allCities = <?= json_encode(array_map(static fn($c) => [
+        'id'       => (string) $c['id'],
+        'name'     => (string) $c['name'],
+        'province' => (string) ($c['province_id'] ?? ''),
+    ], $cities)) ?>;
+
+    function updateSelectOptions(el, items, selectedVal, placeholder) {
+        if (!el) return;
+        const ph = placeholder || '-- Pilih --';
+        let html = '<option value="">' + ph + '</option>';
+        (items || []).forEach(it => {
+            const id = String(it.id != null ? it.id : (it.value != null ? it.value : ''));
+            const txt = String(it.name != null ? it.name : (it.text != null ? it.text : ''));
+            const isSel = (id && String(selectedVal || '') === id);
+            html += `<option value="${id}"${isSel ? ' selected' : ''}>${txt}</option>`;
+        });
+        el.innerHTML = html;
+
+        if (el.tomselect) {
+            const ts = el.tomselect;
+            ts.clear(true);
+            ts.clearOptions();
+            ts.addOption({ value: '', text: ph });
+            (items || []).forEach(it => {
+                const id = String(it.id != null ? it.id : (it.value != null ? it.value : ''));
+                const txt = String(it.name != null ? it.name : (it.text != null ? it.text : ''));
+                ts.addOption({ value: id, text: txt });
+            });
+            ts.refreshOptions(false);
+            if (selectedVal) {
+                ts.setValue(String(selectedVal), true);
+            }
+        }
+    }
+
+    function onSelectChange(el, callback) {
+        if (!el) return;
+        el.addEventListener('change', function () {
+            callback(this.value);
+        });
+        if (el.tomselect) {
+            el.tomselect.on('change', function (val) {
+                callback(val);
+            });
+        } else {
+            const timer = setInterval(() => {
+                if (el.tomselect) {
+                    clearInterval(timer);
+                    el.tomselect.on('change', function (val) {
+                        callback(val);
+                    });
+                }
+            }, 100);
+            setTimeout(() => clearInterval(timer), 3000);
+        }
+    }
+
+    async function reloadCityOptions(provVal, cityEl, distEl, currentCityVal) {
+        if (!cityEl) return;
+        if (distEl) updateSelectOptions(distEl, [], '', '-- Pilih Kecamatan --');
+        if (!provVal) {
+            updateSelectOptions(cityEl, [], '', '-- Pilih Kota/Kab --');
+            return;
+        }
+        try {
+            const res = await fetch(`${appUrl}/pages/masters/cities/options.php?province_id=${encodeURIComponent(provVal)}`);
+            const data = await res.json();
+            updateSelectOptions(cityEl, data, currentCityVal || '', '-- Pilih Kota/Kab --');
+        } catch (e) {
+            console.error('Gagal memuat kota:', e);
+        }
+    }
+
+    async function reloadDistrictOptions(cityVal, distEl, currentDistVal) {
+        if (!distEl) return;
+        if (!cityVal) {
+            updateSelectOptions(distEl, [], '', '-- Pilih Kecamatan --');
+            return;
+        }
+        try {
+            const res = await fetch(`${appUrl}/pages/masters/districts/options.php?city_id=${encodeURIComponent(cityVal)}`);
+            const data = await res.json();
+            updateSelectOptions(distEl, data, currentDistVal || '', '-- Pilih Kecamatan --');
+        } catch (e) {
+            console.error('Gagal memuat kecamatan:', e);
+        }
+    }
+
+    function bindProvinceCityDistrict(provId, cityId, distId) {
+        const pSel = document.getElementById(provId);
+        const cSel = document.getElementById(cityId);
+        const dSel = document.getElementById(distId);
+        if (!pSel || !cSel || !dSel) return;
+
+        onSelectChange(pSel, function (val) {
+            reloadCityOptions(val, cSel, dSel, '');
+        });
+
+        onSelectChange(cSel, function (val) {
+            reloadDistrictOptions(val, dSel, '');
+        });
+    }
+
+    bindProvinceCityDistrict('pickupProvince', 'pickupCity', 'pickupDistrict');
+    bindProvinceCityDistrict('deliveryProvince', 'deliveryCity', 'deliveryDistrict');
+
+    // Quick Add Pelanggan via Modal
+    const qpForm  = document.getElementById('quickPassengerForm');
+    const qpError = document.getElementById('qpError');
+    const qpBtn   = document.getElementById('qpSubmitBtn');
+
+    if (qpForm) {
+        qpForm.addEventListener('submit', async (ev) => {
+            ev.preventDefault();
+            qpError.classList.add('d-none');
+            qpBtn.disabled = true;
+
+            try {
+                const fd = new FormData();
+                fd.append('csrf_token', csrfTok);
+                fd.append('name', document.getElementById('qpName').value.trim());
+                fd.append('phone_number', document.getElementById('qpPhone').value.trim());
+
+                const res = await fetch(`${appUrl}/pages/travel/passengers/quick_create.php`, {
+                    method: 'POST',
+                    body: fd
+                });
+                const json = await res.json();
+                if (!res.ok || !json.ok) {
+                    throw new Error((json.error && json.error.message) || json.error || 'Gagal menyimpan pelanggan.');
+                }
+
+                const p = json.data;
+                const label = p.phone_number ? `${p.name} - ${p.phone_number}` : p.name;
+                const primarySel = document.getElementById('primaryPassengerSelect');
+                const extraSel   = document.getElementById('extraPassengersSelect');
+
+                [primarySel, extraSel].forEach((sel, idx) => {
+                    if (!sel) return;
+                    if (sel.tomselect) {
+                        sel.tomselect.addOption({ value: String(p.id), text: label });
+                        if (idx === 0) {
+                            sel.tomselect.setValue(String(p.id));
+                        }
+                    } else {
+                        const opt = new Option(label, String(p.id), idx === 0, idx === 0);
+                        sel.add(opt);
+                    }
+                });
+
+                qpForm.reset();
+                const modalEl = document.getElementById('quickPassengerModal');
+                const modal = bootstrap.Modal.getInstance(modalEl);
+                if (modal) modal.hide();
+            } catch (err) {
+                qpError.textContent = err.message;
+                qpError.classList.remove('d-none');
+            } finally {
+                qpBtn.disabled = false;
+            }
+        });
+    }
+
+    // Grid Pembayaran Sewa (Lampiran | Tipe Pembayaran | Metode Pembayaran | Tanggal | Nominal)
+    const payTopDisp = document.getElementById('pay_total_top_display');
+    const paySubDisp = document.getElementById('pay_subtotal_display');
+    const payTbody   = document.getElementById('payTableBody');
+    const payCountEl = document.getElementById('payRecordCount');
+    const todayIso   = <?= json_encode(date('Y-m-d')) ?>;
+
+    function updateDynamicInvoiceSisa(currentPaySum) {
+        const invSumText  = document.getElementById('invoiceSummaryText');
+        const invSisaDisp = document.getElementById('invSisaDisplay');
+        if (!invSumText || !invSisaDisp) return;
+        const invTotal = parseFloat(invSumText.getAttribute('data-inv-total') || '0');
+        const paid     = currentPaySum !== undefined ? currentPaySum : parseRupiah(payTopDisp ? payTopDisp.value : '0');
+        const sisa     = Math.max(0, Math.round(invTotal - paid));
+        invSisaDisp.textContent = 'Rp ' + formatRupiah(sisa);
+        invSisaDisp.className   = sisa > 0 ? 'text-danger' : 'text-success';
+    }
+
+    function recalcPayTotals() {
+        let paySum = 0;
+        const rows = payTbody ? payTbody.querySelectorAll('tr.pay-row') : [];
+        rows.forEach((tr, idx) => {
+            const numCell = tr.querySelector('.pay-row-num');
+            if (numCell) numCell.textContent = String(idx + 1);
+            const hid = tr.querySelector('.pay-amt-value');
+            paySum += parseRupiah(hid ? hid.value : '0');
+        });
+        if (payTopDisp) payTopDisp.value = formatRupiah(paySum);
+        if (paySubDisp) paySubDisp.value = formatRupiah(paySum);
+        if (payCountEl) payCountEl.textContent = 'Record ' + (rows.length ? 1 : 0) + ' of ' + rows.length;
+        updateDynamicInvoiceSisa(paySum);
+    }
+
+    function bindPayRow(tr) {
+        const fileInp = tr.querySelector('.pay-file-input');
+        const fileLbl = tr.querySelector('.pay-file-label');
+        const amtDisp = tr.querySelector('.pay-amt-display');
+        const amtVal  = tr.querySelector('.pay-amt-value');
+        const delBtn  = tr.querySelector('.btn-remove-pay');
+
+        if (fileInp && fileLbl) {
+            fileInp.addEventListener('change', function () {
+                if (this.files && this.files.length > 0) {
+                    fileLbl.textContent = this.files[0].name;
+                    fileLbl.classList.remove('text-muted');
+                    fileLbl.classList.add('text-primary', 'fw-semibold');
+                }
+            });
+        }
+        if (amtDisp && amtVal) {
+            attachRupiahMask(amtDisp, amtVal, () => {
+                recalcPayTotals();
+            });
+        }
+        if (delBtn) {
+            delBtn.addEventListener('click', () => {
+                tr.remove();
+                recalcPayTotals();
+            });
+        }
+    }
+
+    function addPayRow() {
+        if (!payTbody) return;
+        const tr = document.createElement('tr');
+        tr.className = 'pay-row';
+        tr.innerHTML = `
+            <td class="text-center text-muted pay-row-num">1</td>
+            <td>
+                <input type="hidden" name="pay_id[]" form="rentalDetailForm" value="0">
+                <div class="d-flex align-items-center gap-2">
+                    <span class="text-muted small pay-file-label">No image data</span>
+                    <label class="btn btn-sm btn-outline-secondary py-0 px-2 ms-auto mb-0" title="Pilih bukti pembayaran">
+                        <i class="bi bi-paperclip"></i>
+                        <input type="file" name="pay_proof[]" form="rentalDetailForm" class="d-none pay-file-input" accept="image/*,application/pdf">
+                    </label>
+                </div>
+            </td>
+            <td>
+                <select class="form-select form-select-sm pay-type-select" name="pay_type[]" form="rentalDetailForm">
+                    <option value="Down Payment (DP)">Down Payment (DP)</option>
+                    <option value="Pelunasan">Pelunasan</option>
+                    <option value="Pembayaran Penuh (Full)">Pembayaran Penuh (Full)</option>
+                    <option value="Cicilan / Termin">Cicilan / Termin</option>
+                </select>
+            </td>
+            <td>
+                <select class="form-select form-select-sm pay-method-select" name="pay_method[]" form="rentalDetailForm">
+                    <option value="Transfer">Transfer</option>
+                    <option value="Tunai">Tunai</option>
+                    <option value="QRIS">QRIS</option>
+                    <option value="EDC / Kartu">EDC / Kartu</option>
+                </select>
+            </td>
+            <td>
+                <input type="text" class="form-control form-control-sm bg-white flatpickr-dynamic" name="pay_date[]" form="rentalDetailForm" value="${todayIso}" placeholder="dd-MMM-yyyy">
+            </td>
+            <td>
+                <input type="text" inputmode="numeric" class="form-control form-control-sm text-end fw-semibold pay-amt-display" value="0">
+                <input type="hidden" name="pay_amount[]" class="pay-amt-value" form="rentalDetailForm" value="0">
+            </td>
+            <td class="text-center">
+                <button type="button" class="btn btn-sm btn-link text-danger p-0 btn-remove-pay" title="Hapus baris"><i class="bi bi-x-lg"></i></button>
+            </td>
+        `;
+        payTbody.appendChild(tr);
+        const newDateInp = tr.querySelector('.flatpickr-dynamic');
+        if (newDateInp) initFlatpickr(newDateInp);
+        bindPayRow(tr);
+        recalcPayTotals();
+    }
+
+    if (payTbody) {
+        payTbody.querySelectorAll('tr.pay-row').forEach(bindPayRow);
+    }
+    ['btnAddPayRow', 'payQuickAddBanner', 'btnFooterAddPay'].forEach((id) => {
+        const el = document.getElementById(id);
+        if (el) el.addEventListener('click', addPayRow);
+    });
+    const btnFooterDelPay = document.getElementById('btnFooterDelPay');
+    if (btnFooterDelPay && payTbody) {
+        btnFooterDelPay.addEventListener('click', () => {
+            const rows = payTbody.querySelectorAll('tr.pay-row');
+            if (rows.length > 0) {
+                const last = rows[rows.length - 1];
+                if (!last.querySelector('.bi-lock-fill')) {
+                    last.remove();
+                    recalcPayTotals();
+                }
+            }
+        });
+    }
+    recalcPayTotals();
+});
+</script>
 <?php require __DIR__ . '/../../../includes/footer.php'; ?>

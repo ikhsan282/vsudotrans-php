@@ -19,6 +19,73 @@ function rupiah(float $n): string
     return 'Rp ' . number_format(round($n, 2), 0, ',', '.');
 }
 
+/** Format angka nominal/rupiah tanpa prefix 'Rp ' dengan pemisah ribuan titik (contoh: 2.000.000). */
+function format_nominal(float $n): string
+{
+    return number_format(round($n, 2), 0, ',', '.');
+}
+
+/**
+ * Normalisasi dan parse input uang/rupiah dari pengguna Indonesia ke float murni.
+ * Menangani aman format integer maupun ribuan berformat:
+ * - 2000000 (angka murni)
+ * - 2.000.000 / 150.000 / 50.000 (titik pemisah ribuan standar ID)
+ * - 2,000,000 / 150,000 (koma pemisah ribuan)
+ * - Rp 2.000.000 / Rp. 150.000,00
+ */
+function parse_rupiah_input(mixed $val): float
+{
+    if (is_int($val) || is_float($val)) {
+        return (float) $val;
+    }
+    $str = trim((string) $val);
+    if ($str === '') {
+        return 0.0;
+    }
+
+    // Bersihkan prefix Rp, rp, spasi, dan karakter selain digit, titik, koma
+    $str = preg_replace('/[^\d.,]/', '', $str) ?? '';
+    if ($str === '') {
+        return 0.0;
+    }
+
+    // Jika mengandung titik dan koma (misal: "2.000.000,00" atau "2,000,000.00")
+    if (str_contains($str, '.') && str_contains($str, ',')) {
+        if (strrpos($str, ',') > strrpos($str, '.')) {
+            // Titik ribuan, koma desimal
+            $str = str_replace('.', '', $str);
+            $str = str_replace(',', '.', $str);
+        } else {
+            // Koma ribuan, titik desimal
+            $str = str_replace(',', '', $str);
+        }
+        return (float) $str;
+    }
+
+    // Jika hanya mengandung titik (misal: "2.000.000", "150.000", "50.000", "5.000")
+    if (str_contains($str, '.')) {
+        // Cek jika diakhiri desimal .00 atau .0
+        if (preg_match('/^\d+\.(0|00)$/', $str)) {
+            return (float) preg_replace('/\.(0|00)$/', '', $str);
+        }
+        // Dalam konteks rupiah ID, titik adalah pemisah ribuan
+        return (float) str_replace('.', '', $str);
+    }
+
+    // Jika hanya mengandung koma (misal: "2,000,000" atau "150,000" atau "150000,00")
+    if (str_contains($str, ',')) {
+        if (preg_match('/^\d+\,(0|00)$/', $str)) {
+            return (float) preg_replace('/\,(0|00)$/', '', $str);
+        }
+        if (preg_match('/,\d{3}/', $str)) {
+            return (float) str_replace(',', '', $str);
+        }
+        return (float) str_replace(',', '.', $str);
+    }
+
+    return (float) (preg_replace('/[^\d]/', '', $str) ?: '0');
+}
+
 /** Tanggal Indonesia: 2026-10-31 -> "31 Oktober 2026". */
 function tanggal_indo(?string $date): string
 {

@@ -121,11 +121,15 @@ if (isset($candidate['end_date'])) {
 if (isset($candidate['time'])) {
     $candidate['time'] = preg_match('/^([01]\d|2[0-3]):[0-5]\d$/', (string) $candidate['time']) ? $candidate['time'] : '';
 }
-foreach (['total_price', 'trip', 'bbm'] as $num_field) {
+foreach (['total_price', 'bbm'] as $num_field) {
     if (isset($candidate[$num_field])) {
-        $candidate[$num_field] = is_numeric((string) $candidate[$num_field]) && (float) $candidate[$num_field] >= 0
-            ? (float) $candidate[$num_field] : '';
+        $parsed = parse_rupiah_input($candidate[$num_field]);
+        $candidate[$num_field] = $parsed > 0 ? $parsed : '';
     }
+}
+if (isset($candidate['trip'])) {
+    $candidate['trip'] = is_numeric((string) $candidate['trip']) && (float) $candidate['trip'] >= 0
+        ? (float) $candidate['trip'] : '';
 }
 
 echo json_encode([

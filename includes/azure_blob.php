@@ -567,3 +567,57 @@ function azure_blob_handle_upload(
 
     return $blob_path;
 }
+
+/**
+ * Unggah satu elemen dari input file berbentuk array (mis. name="pay_proof[]") pada indeks $idx.
+ */
+function azure_blob_handle_upload_indexed(
+    string $field_name,
+    int $idx,
+    ?int $company_id,
+    string $module,
+    string $sub_folder = '',
+    string $slug = 'file',
+    bool $allow_pdf = true,
+    int $max_mb = 5
+): ?string {
+    if (empty($_FILES[$field_name]['tmp_name'][$idx])) {
+        return null;
+    }
+    $err_code = (int) ($_FILES[$field_name]['error'][$idx] ?? UPLOAD_ERR_NO_FILE);
+    if ($err_code === UPLOAD_ERR_NO_FILE) {
+        return null;
+    }
+    if ($err_code !== UPLOAD_ERR_OK) {
+        throw new InvalidArgumentException('Gagal mengunggah lampiran (kode: ' . $err_code . ').');
+    }
+    $tmp  = (string) $_FILES[$field_name]['tmp_name'][$idx];
+    $size = (int) ($_FILES[$field_name]['size'][$idx] ?? 0);
+    if ($size <= 0 || $size > $max_mb * 1024 * 1024) {
+        throw new InvalidArgumentException('Ukuran lampiran maksimal ' . $max_mb . ' MB.');
+    }
+    $mime_map = [
+        'image/jpeg' => 'jpg',
+        'image/png'  => 'png',
+        'image/webp' => 'webp',
+        'image/gif'  => 'gif',
+    ];
+    if ($allow_pdf) {
+        $mime_map['application/pdf'] = 'pdf';
+    }
+    $finfo = new finfo(FILEINFO_MIME_TYPE);
+    $mime  = (string) $finfo->file($tmp);
+    if (!isset($mime_map[$mime])) {
+        throw new InvalidArgumentException('Format lampiran harus berupa JPG, PNG, WEBP, atau PDF.');
+    }
+    $data = file_get_contents($tmp);
+    if ($data === false) {
+        return null;
+    }
+    $ext = $mime_map[$mime];
+    $blob_path = azure_blob_build_path($company_id, $module, $sub_folder, $slug . '-' . ($idx + 1), $ext);
+    if (!azure_blob_put($blob_path, $data, $mime)) {
+        throw new InvalidArgumentException('Gagal mengunggah lampiran ke Azure Blob Storage.');
+    }
+    return $blob_path;
+}

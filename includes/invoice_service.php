@@ -168,12 +168,111 @@ function invoice_add_payment(int $invoice_id, int $company_id, float $amount, ?i
 function invoice_payments(int $invoice_id): array
 {
     $desc = 'INV#' . $invoice_id;
-    $st = db()->prepare("SELECT id, amount, description, note, proof_blob_path, created_user, created_date
-        FROM booking_cost_lines WHERE cost_type = 'payment' AND description = ?
-        ORDER BY id DESC");
+    $st = db()->prepare("SELECT bcl.id, bcl.amount, bcl.description, bcl.payment_method_id,
+            pm.name AS pm_name, pm.code AS pm_code, bcl.note, bcl.proof_blob_path,
+            bcl.created_user, bcl.created_date
+        FROM booking_cost_lines bcl
+        LEFT JOIN payment_methods pm ON pm.id = bcl.payment_method_id
+        WHERE bcl.cost_type = 'payment' AND bcl.description = ?
+        ORDER BY bcl.id ASC");
     $st->bind_param('s', $desc);
     $st->execute();
     $rows = $st->get_result()->fetch_all(MYSQLI_ASSOC);
     $st->close();
+
+    foreach ($rows as &$r) {
+        $note = trim((string) ($r['note'] ?? ''));
+        $payType   = 'Down Payment (DP)';
+        $payMethod = 'Transfer';
+        if (strpos($note, '|') !== false) {
+            [$pt, $pm] = array_map('trim', explode('|', $note, 2));
+            if ($pt !== '') $payType = $pt;
+            if ($pm !== '') $payMethod = $pm;
+        } elseif (stripos($note, 'QRIS') !== false || ($r['pm_code'] ?? '') === 'QRIS-AUTO') {
+            $payType   = 'Pelunasan';
+            $payMethod = 'QRIS';
+        } elseif ($note !== '') {
+            $payType = $note;
+            if (!empty($r['pm_name'])) {
+                $payMethod = (string) $r['pm_name'];
+            }
+        }
+        $r['pay_type']     = $payType;
+        $r['pay_method']   = $payMethod;
+        $r['pay_date']     = substr((string) ($r['created_date'] ?? date('Y-m-d')), 0, 10);
+        $r['is_auto_qris'] = (($r['pm_code'] ?? '') === 'QRIS-AUTO' || stripos((string) ($r['created_user'] ?? ''), 'qris') !== false);
+    }
+    unset($r);
     return $rows;
+}
+
+/**
+ * Sinkronisasi baris-baris pembayaran sewa pada Tab Pembayaran Sewa (Rental):
+ * - Mempertahankan baris pembayaran otomatis QRIS (is_auto_qris)
+ * - Menyimpan baris pembayaran manual (beserta upload bukti lampiran bila ada)
+ * - Menghitung ulang total_payment pada rental_car_bookings & invoices
+ *
+ * @param array<int, array{id?:int, pay_type:string, pay_method:string, pay_date:string, amount:float, proof_blob_path?:?string}> $pay_rows
+ */
+function booking_rental_payments_sync(int $booking_id, int $invoice_id, int $company_id, array $pay_rows, ?string $user): float
+{
+    $db   = db();
+    $desc = 'INV#' . $invoice_id;
+
+    // Ambil baris eksisting agar proof_blob_path lama & baris QRIS otomatis tidak hilang
+    $existing = [];
+    foreach (invoice_payments($invoice_id) as $ex) {
+        $existing[(int) $ex['id']] = $ex;
+    }
+
+    // Hapus baris manual lama (pertahankan baris yang berasal dari webhook QRIS otomatis)
+    $del = $db->prepare("DELETE FROM booking_cost_lines
+        WHERE booking_type = 'rental' AND booking_id = ? AND company_id = ?
+          AND cost_type = 'payment' AND description = ?
+          AND (created_user IS NULL OR created_user NOT LIKE '%qris%')");
+    $del->bind_param('iis', $booking_id, $company_id, $desc);
+    $del->execute();
+    $del->close();
+
+    $ins = $db->prepare("INSERT INTO booking_cost_lines
+        (company_id, booking_type, booking_id, cost_type, description, amount, note, proof_blob_path, created_user, created_date)
+        VALUES (?, 'rental', ?, 'payment', ?, ?, ?, ?, ?, ?)");
+
+    foreach ($pay_rows as $r) {
+        $rowId = (int) ($r['id'] ?? 0);
+        if ($rowId > 0 && !empty($existing[$rowId]['is_auto_qris'])) {
+            // Baris QRIS otomatis sudah dipertahankan di DB
+            continue;
+        }
+        $amt = max(0.0, (float) ($r['amount'] ?? 0));
+        if ($amt <= 0) {
+            continue;
+        }
+        $pType   = trim((string) ($r['pay_type'] ?? 'Down Payment (DP)')) ?: 'Down Payment (DP)';
+        $pMethod = trim((string) ($r['pay_method'] ?? 'Transfer')) ?: 'Transfer';
+        $pDate   = trim((string) ($r['pay_date'] ?? date('Y-m-d')));
+        if (!preg_match('/^\d{4}-\d{2}-\d{2}$/', $pDate)) {
+            $pDate = date('Y-m-d');
+        }
+        $createdDate = $pDate . ' ' . date('H:i:s');
+        $noteStr     = $pType . ' | ' . $pMethod;
+        $proofPath   = $r['proof_blob_path'] ?? ($rowId > 0 ? ($existing[$rowId]['proof_blob_path'] ?? null) : null);
+
+        $ins->bind_param('iisdssss', $company_id, $booking_id, $desc, $amt, $noteStr, $proofPath, $user, $createdDate);
+        $ins->execute();
+    }
+    $ins->close();
+
+    $total_paid = invoice_paid_total($invoice_id);
+    $upB = $db->prepare('UPDATE rental_car_bookings SET total_payment = ?, modified_user = ?, modified_date = NOW() WHERE id = ? AND company_id = ?');
+    $upB->bind_param('dsii', $total_paid, $user, $booking_id, $company_id);
+    $upB->execute();
+    $upB->close();
+
+    $upI = $db->prepare('UPDATE invoices SET modified_user = ?, modified_date = NOW() WHERE id = ? AND company_id = ?');
+    $upI->bind_param('sii', $user, $invoice_id, $company_id);
+    $upI->execute();
+    $upI->close();
+
+    return $total_paid;
 }

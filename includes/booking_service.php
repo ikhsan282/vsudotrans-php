@@ -165,17 +165,19 @@ function booking_create(string $type, array $data): array
             }
             $st = $db->prepare("INSERT INTO rental_car_bookings
                 (company_id, branch_id, document_number, date, time, start_date, end_date, trip,
-                 pickup_address, pickup_point_city_id, pickup_point_district_id,
-                 delivery_address, delivery_point_city_id, delivery_point_district_id,
+                 pickup_address, pickup_point_province_id, pickup_point_city_id, pickup_point_district_id,
+                 delivery_address, delivery_point_province_id, delivery_point_city_id, delivery_point_district_id,
                  bbm, total_price, category_vehicle_id, vehicle_id, passenger_id, note, created_user)
-                VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)");
-            $trip = (float) ($data['trip'] ?? 0);
-            $bbm = (float) ($data['bbm'] ?? 0);
-            $st->bind_param('iisssssdsiisiiddiiiss',
+                VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)");
+            $trip  = (float) ($data['trip'] ?? 0);
+            $bbm   = (float) ($data['bbm'] ?? 0);
+            $pProv = !empty($data['pickup_point_province_id']) ? (int) $data['pickup_point_province_id'] : null;
+            $dProv = !empty($data['delivery_point_province_id']) ? (int) $data['delivery_point_province_id'] : null;
+            $st->bind_param('iisssssdsiiisiiiddiiiss',
                 $company_id, $data['branch_id'], $doc, $data['date'], $data['time'],
                 $data['start_date'], $data['end_date'], $trip,
-                $data['pickup_address'], $data['pickup_point_city_id'], $data['pickup_point_district_id'],
-                $data['delivery_address'], $data['delivery_point_city_id'], $data['delivery_point_district_id'],
+                $data['pickup_address'], $pProv, $data['pickup_point_city_id'], $data['pickup_point_district_id'],
+                $data['delivery_address'], $dProv, $data['delivery_point_city_id'], $data['delivery_point_district_id'],
                 $bbm, $data['total_price'], $data['category_vehicle_id'], $data['vehicle_id'],
                 $data['passenger_id'], $data['note'], $data['created_user']);
         } else {
@@ -410,4 +412,184 @@ function booking_passengers_set(string $type, int $booking_id, int $company_id, 
         $ins->execute();
     }
     $ins->close();
+}
+
+/**
+ * Ambil daftar kru & premi operasional rental (Sopir, Kernet, Montir, Agen, dll.)
+ * dari booking_cost_lines (selain cost_type = 'payment').
+ */
+function booking_rental_crew_list(int $booking_id): array
+{
+    $st = db()->prepare("SELECT bcl.id, bcl.cost_type, bcl.description, bcl.employee_id,
+            bcl.amount, bcl.premi_value, bcl.premi_amount,
+            e.code AS emp_code, e.name AS emp_name,
+            COALESCE(e.job_title, '') AS job_title,
+            COALESCE(e.job_position, '') AS job_position
+        FROM booking_cost_lines bcl
+        LEFT JOIN employees e ON e.id = bcl.employee_id
+        WHERE bcl.booking_type = 'rental'
+          AND bcl.booking_id = ?
+          AND bcl.cost_type <> 'payment'
+        ORDER BY bcl.id ASC");
+    $st->bind_param('i', $booking_id);
+    $st->execute();
+    $rows = $st->get_result()->fetch_all(MYSQLI_ASSOC);
+    $st->close();
+    return $rows;
+}
+
+/**
+ * Simpan rincian biaya operasional rental:
+ * - Baris kru/premi karyawan (Sopir, Kernet, Montir, Agen) ke booking_cost_lines
+ * - BBM & Total Biaya Operasional (BBM + Subtotal Nominal Karyawan) ke rental_car_bookings
+ * - Sinkronisasi sopir utama (baris pertama bertipe 'Sopir') ke trip_assignments
+ *
+ * @param array<int, array{type:string, employee_id:int, amount:float}> $crew_rows
+ */
+function booking_rental_crew_sync(int $booking_id, int $company_id, float $bbm, array $crew_rows, ?int $vehicle_id, ?string $user): void
+{
+    $db = db();
+    // Hapus baris biaya kru/non-payment lama pada booking rental ini
+    $del = $db->prepare("DELETE FROM booking_cost_lines WHERE booking_type = 'rental' AND booking_id = ? AND company_id = ? AND cost_type <> 'payment'");
+    $del->bind_param('ii', $booking_id, $company_id);
+    $del->execute();
+    $del->close();
+
+    $ins = $db->prepare("INSERT INTO booking_cost_lines
+        (company_id, booking_type, booking_id, cost_type, description, amount, employee_id, premi_type, premi_value, premi_amount, created_user)
+        VALUES (?, 'rental', ?, ?, ?, ?, ?, 'nominal', ?, ?, ?)");
+
+    $crew_total = 0.0;
+    $primary_driver_id = 0;
+
+    foreach ($crew_rows as $r) {
+        $ctype = trim((string) ($r['type'] ?? 'Sopir'));
+        if ($ctype === '') {
+            $ctype = 'Sopir';
+        }
+        $emp_id = (int) ($r['employee_id'] ?? 0);
+        $amt    = max(0.0, (float) ($r['amount'] ?? 0));
+        if ($emp_id <= 0 && $amt <= 0) {
+            continue;
+        }
+        $emp_null = $emp_id > 0 ? $emp_id : null;
+        $desc     = $ctype;
+        $ins->bind_param('iissdidds', $company_id, $booking_id, $ctype, $desc, $amt, $emp_null, $amt, $amt, $user);
+        $ins->execute();
+        $crew_total += $amt;
+
+        if ($primary_driver_id === 0 && strcasecmp($ctype, 'Sopir') === 0 && $emp_id > 0) {
+            $primary_driver_id = $emp_id;
+        }
+    }
+    $ins->close();
+
+    $total_op = round(max(0.0, $bbm) + $crew_total, 2);
+    $up = $db->prepare('UPDATE rental_car_bookings SET bbm = ?, total_operational_cost = ?, modified_user = ?, modified_date = NOW() WHERE id = ? AND company_id = ?');
+    $up->bind_param('ddsii', $bbm, $total_op, $user, $booking_id, $company_id);
+    $up->execute();
+    $up->close();
+
+    // Sinkronkan sopir utama ke trip_assignments bila berubah
+    if ($primary_driver_id > 0) {
+        $chk = $db->prepare("SELECT employee_id FROM trip_assignments WHERE booking_type = 'rental' AND booking_id = ? AND ended_at IS NULL LIMIT 1");
+        $chk->bind_param('i', $booking_id);
+        $chk->execute();
+        $cur = $chk->get_result()->fetch_assoc();
+        $chk->close();
+
+        if (!$cur || (int) $cur['employee_id'] !== $primary_driver_id) {
+            $endSt = $db->prepare("UPDATE trip_assignments SET ended_at = NOW(), modified_user = ?, modified_date = NOW()
+                WHERE booking_type = 'rental' AND booking_id = ? AND company_id = ? AND ended_at IS NULL");
+            $endSt->bind_param('sii', $user, $booking_id, $company_id);
+            $endSt->execute();
+            $endSt->close();
+
+            $addSt = $db->prepare("INSERT INTO trip_assignments
+                (company_id, booking_type, booking_id, employee_id, vehicle_id, started_at, created_user)
+                VALUES (?, 'rental', ?, ?, ?, NOW(), ?)");
+            $addSt->bind_param('iiiis', $company_id, $booking_id, $primary_driver_id, $vehicle_id, $user);
+            $addSt->execute();
+            $addSt->close();
+        }
+    }
+}
+
+/**
+ * Hapus permanen data booking beserta relasinya (invoice, cost lines, penumpang, status history, trip assignments)
+ * di dalam 1 transaksi atomik. Mengembalikan document_number booking yang dihapus.
+ */
+function booking_delete(string $type, int $booking_id, int $company_id): string
+{
+    $table = booking_table($type);
+    $db    = db();
+
+    if ($company_id > 0) {
+        $chk = $db->prepare("SELECT id, company_id, document_number FROM {$table} WHERE id = ? AND company_id = ? LIMIT 1");
+        $chk->bind_param('ii', $booking_id, $company_id);
+    } else {
+        $chk = $db->prepare("SELECT id, company_id, document_number FROM {$table} WHERE id = ? LIMIT 1");
+        $chk->bind_param('i', $booking_id);
+    }
+    $chk->execute();
+    $row = $chk->get_result()->fetch_assoc();
+    $chk->close();
+
+    if (!$row) {
+        throw new RuntimeException('Data booking tidak ditemukan atau Anda tidak memiliki akses.');
+    }
+
+    $real_cid = (int) $row['company_id'];
+    $doc_no   = (string) ($row['document_number'] ?? ('#' . $booking_id));
+
+    $db->begin_transaction();
+    try {
+        // 1. Hapus order payment gateway terkait
+        $st = $db->prepare('DELETE FROM payment_gateway_orders WHERE booking_type = ? AND booking_id = ? AND company_id = ?');
+        $st->bind_param('sii', $type, $booking_id, $real_cid);
+        $st->execute();
+        $st->close();
+
+        // 2. Hapus invoice (invoice_revisions otomatis terhapus via ON DELETE CASCADE)
+        $st = $db->prepare('DELETE FROM invoices WHERE booking_type = ? AND booking_id = ? AND company_id = ?');
+        $st->bind_param('sii', $type, $booking_id, $real_cid);
+        $st->execute();
+        $st->close();
+
+        // 3. Hapus rincian biaya operasional & pembayaran (booking_cost_lines)
+        $st = $db->prepare('DELETE FROM booking_cost_lines WHERE booking_type = ? AND booking_id = ? AND company_id = ?');
+        $st->bind_param('sii', $type, $booking_id, $real_cid);
+        $st->execute();
+        $st->close();
+
+        // 4. Hapus relasi penumpang
+        $st = $db->prepare('DELETE FROM booking_passengers WHERE booking_type = ? AND booking_id = ?');
+        $st->bind_param('si', $type, $booking_id);
+        $st->execute();
+        $st->close();
+
+        // 5. Hapus riwayat status
+        $st = $db->prepare('DELETE FROM booking_status_history WHERE booking_type = ? AND booking_id = ? AND company_id = ?');
+        $st->bind_param('sii', $type, $booking_id, $real_cid);
+        $st->execute();
+        $st->close();
+
+        // 6. Hapus penugasan perjalanan (trip_assignments)
+        $st = $db->prepare('DELETE FROM trip_assignments WHERE booking_type = ? AND booking_id = ? AND company_id = ?');
+        $st->bind_param('sii', $type, $booking_id, $real_cid);
+        $st->execute();
+        $st->close();
+
+        // 7. Hapus data utama booking
+        $st = $db->prepare("DELETE FROM {$table} WHERE id = ? AND company_id = ?");
+        $st->bind_param('ii', $booking_id, $real_cid);
+        $st->execute();
+        $st->close();
+
+        $db->commit();
+        return $doc_no;
+    } catch (Throwable $ex) {
+        $db->rollback();
+        throw $ex;
+    }
 }

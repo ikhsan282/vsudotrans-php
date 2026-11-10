@@ -47,6 +47,32 @@ document.querySelectorAll('.sidebar [data-bs-toggle="collapse"]').forEach(toggle
   target.addEventListener('hidden.bs.collapse', () => toggle.setAttribute('aria-expanded', 'false'));
 });
 
+// ── Pertahankan posisi scroll sidebar saat navigasi halaman ────────────────
+const navScroll = document.querySelector('.sidebar .nav-scroll');
+if (navScroll) {
+  const SCROLL_KEY = 'vst_sidebar_scroll';
+  const savedPos = sessionStorage.getItem(SCROLL_KEY);
+  if (savedPos !== null) {
+    navScroll.scrollTop = parseInt(savedPos, 10);
+  } else {
+    // Jika posisi belum tersimpan, otomatis scroll ke menu aktif yang sedang terbuka
+    const activeItem = navScroll.querySelector('.nav-link.active, .sidebar-sub.active');
+    if (activeItem) {
+      activeItem.scrollIntoView({ block: 'nearest', inline: 'nearest' });
+    }
+  }
+
+  // Simpan posisi scroll saat di-scroll
+  navScroll.addEventListener('scroll', () => {
+    sessionStorage.setItem(SCROLL_KEY, String(navScroll.scrollTop));
+  }, { passive: true });
+
+  // Simpan juga sebelum pengguna meninggalkan halaman / klik link
+  window.addEventListener('beforeunload', () => {
+    sessionStorage.setItem(SCROLL_KEY, String(navScroll.scrollTop));
+  });
+}
+
 // Use a visible focus ring for keyboard users without changing pointer styling.
 document.addEventListener('keydown', e => { if (e.key === 'Tab') document.body.classList.add('using-keyboard'); });
 document.addEventListener('pointerdown', () => document.body.classList.remove('using-keyboard'));
@@ -109,13 +135,63 @@ document.addEventListener('click', e => {
   applyTheme(next);
 });
 
-// ── Rupiah input formatter ─────────────────────────────────────────────────
-// SENGAJA TIDAK DIPAKAI: input harga di VSudoTrans bertipe type="number" dan
-// server membaca nilainya dengan (float) langsung. Format "1.000.000" akan
-// dibaca PHP sebagai 1. Kalau nanti ingin formatter, ubah dulu input ke
-// type="text" + inputmode="numeric" DAN parse server dengan
-// str_replace(['.',','],['','.'], $v) seperti pola Arya Green IPL.
-// ponytail: dilewati sampai kedua syarat itu dipenuhi.
+// ── Rupiah input formatter & helpers ─────────────────────────────────────────
+window.formatRupiah = function (val) {
+  if (val === null || val === undefined || val === '') return '';
+  var digits = String(val).replace(/[^0-9]/g, '');
+  if (!digits) return '';
+  var num = parseInt(digits, 10);
+  if (num === 0) return '0';
+  return num.toString().replace(/\B(?=(\d{3})+(?!\d))/g, '.');
+};
+
+window.parseRupiah = function (val) {
+  if (val === null || val === undefined || val === '') return 0;
+  var digits = String(val).replace(/[^0-9]/g, '');
+  return digits ? parseInt(digits, 10) : 0;
+};
+
+window.attachRupiahInput = function (inputEl, hiddenEl, onChangeCallback) {
+  if (!inputEl) return;
+  inputEl.addEventListener('input', function () {
+    var oldVal = this.value;
+    var caretPos = this.selectionStart || 0;
+    var digitsBeforeCaret = oldVal.slice(0, caretPos).replace(/[^0-9]/g, '').length;
+
+    var clean = oldVal.replace(/[^0-9]/g, '');
+    var num = parseInt(clean || '0', 10);
+    if (hiddenEl) hiddenEl.value = String(num);
+
+    var formatted = clean === '' ? '' : window.formatRupiah(num);
+    this.value = formatted;
+
+    if (this.setSelectionRange && formatted) {
+      var newCaret = 0;
+      var digitCount = 0;
+      for (var i = 0; i < formatted.length; i++) {
+        if (/[0-9]/.test(formatted[i])) {
+          digitCount++;
+        }
+        if (digitCount === digitsBeforeCaret) {
+          newCaret = i + 1;
+          break;
+        }
+      }
+      if (digitCount < digitsBeforeCaret) newCaret = formatted.length;
+      try { this.setSelectionRange(newCaret, newCaret); } catch (e) {}
+    }
+
+    if (typeof onChangeCallback === 'function') onChangeCallback(num);
+  });
+
+  inputEl.addEventListener('blur', function () {
+    if (this.value.trim() === '') {
+      this.value = '0';
+      if (hiddenEl) hiddenEl.value = '0';
+      if (typeof onChangeCallback === 'function') onChangeCallback(0);
+    }
+  });
+};
 
 // ── Tom Select: aktifkan otomatis ke <select class="ts-select"> ────────────
 if (window.TomSelect) {

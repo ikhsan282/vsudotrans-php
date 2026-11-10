@@ -101,7 +101,26 @@ if (!$ai_enabled || $ai_endpoint === '') {
         var f = apply.__fields || {};
         Object.keys(f).forEach(function (k) {
             var el = document.querySelector('[name="' + k + '"]');
-            if (el && f[k] !== '' && f[k] != null) el.value = f[k];
+            if (el && f[k] !== '' && f[k] != null) {
+                el.value = f[k];
+                if (el._flatpickr) {
+                    el._flatpickr.setDate(String(f[k]), true);
+                } else if (el.tomselect) {
+                    el.tomselect.setValue(String(f[k]));
+                }
+                if (k === 'total_price') {
+                    var pDisp = document.getElementById('rental_price_display') || document.getElementById('totalPriceDisplay');
+                    if (pDisp) pDisp.value = window.formatRupiah ? window.formatRupiah(f[k]) : f[k];
+                }
+                if (k === 'bbm') {
+                    var bDisp = document.getElementById('crew_bbm_display');
+                    if (bDisp) {
+                        bDisp.value = window.formatRupiah ? window.formatRupiah(f[k]) : f[k];
+                        bDisp.dispatchEvent(new Event('input', { bubbles: true }));
+                    }
+                }
+                el.dispatchEvent(new Event('change', { bubbles: true }));
+            }
         });
         prev.classList.add('d-none');
         st.textContent = 'Form terisi — periksa lalu klik Simpan.';
