@@ -139,7 +139,24 @@ require __DIR__ . '/../../../includes/header.php';
                 <div class="row g-3">
                     <div class="col-md-6 mb-3">
                         <label class="form-label" for="bank_name">Nama Bank</label>
-                        <input class="form-control" id="bank_name" name="bank_name" maxlength="255" value="<?= e($form['bank_name']) ?>">
+                        <?php
+                        $bank_list = master_bank_options();
+                        $cur_bank = (string) ($form['bank_name'] ?? '');
+                        $matched_bank = false;
+                        ?>
+                        <select class="form-select ts-select" id="bank_name" name="bank_name">
+                            <option value="">— Pilih Bank (Khusus Akun Bank) —</option>
+                            <?php foreach ($bank_list as $bk):
+                                $is_sel = ($cur_bank === $bk['name'] || $cur_bank === $bk['code'] || $cur_bank === ($bk['code'] . ' — ' . $bk['name']));
+                                if ($is_sel) $matched_bank = true;
+                            ?>
+                                <option value="<?= e($bk['name']) ?>" <?= $is_sel ? 'selected' : '' ?>><?= e($bk['code'] . ' — ' . $bk['name']) ?></option>
+                            <?php endforeach; ?>
+                            <?php if ($cur_bank !== '' && !$matched_bank): ?>
+                                <option value="<?= e($cur_bank) ?>" selected><?= e($cur_bank) ?> (Bank Lain)</option>
+                            <?php endif; ?>
+                        </select>
+                        <div class="form-text small">Pilih bank jika tipe akun adalah Bank.</div>
                     </div>
                     <div class="col-md-6 mb-3">
                         <label class="form-label" for="account_number">Nomor Rekening</label>

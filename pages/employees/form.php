@@ -189,7 +189,23 @@ require __DIR__ . '/../../includes/header.php';
             <h6 class="fw-bold text-muted mt-3 mb-0">Rekening Bank</h6>
             <div class="col-md-4">
                 <label class="form-label">Nama Bank</label>
-                <input name="bank_name" class="form-control" maxlength="100" value="<?= e($v('bank_name')) ?>">
+                <?php
+                $bank_list = master_bank_options();
+                $cur_bank = (string) $v('bank_name');
+                $matched_bank = false;
+                ?>
+                <select name="bank_name" class="form-select ts-select">
+                    <option value="">— Pilih Bank —</option>
+                    <?php foreach ($bank_list as $bk):
+                        $is_sel = ($cur_bank === $bk['name'] || $cur_bank === $bk['code'] || $cur_bank === ($bk['code'] . ' — ' . $bk['name']));
+                        if ($is_sel) $matched_bank = true;
+                    ?>
+                        <option value="<?= e($bk['name']) ?>" <?= $is_sel ? 'selected' : '' ?>><?= e($bk['code'] . ' — ' . $bk['name']) ?></option>
+                    <?php endforeach; ?>
+                    <?php if ($cur_bank !== '' && !$matched_bank): ?>
+                        <option value="<?= e($cur_bank) ?>" selected><?= e($cur_bank) ?> (Bank Lain)</option>
+                    <?php endif; ?>
+                </select>
             </div>
             <div class="col-md-4">
                 <label class="form-label">No. Rekening</label>

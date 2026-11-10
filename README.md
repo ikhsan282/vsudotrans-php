@@ -29,13 +29,20 @@ mysql -u root -p < database/schema.sql
 
 ### 2. Konfigurasi
 
-`config/config.php` tidak ikut Git (berisi kredensial). Salin dari contoh:
+`config/config.php` dan `.env` tidak ikut Git (berisi kredensial). Salin dari contoh:
 
 ```bash
 cp config/config.php.sample config/config.php
+cp .env.example .env
 ```
 
-Lalu sesuaikan:
+Lalu sesuaikan `.env` untuk Azure Blob Storage:
+```ini
+BLOB_STORAGE_CONNECTION_STRING="DefaultEndpointsProtocol=https;AccountName=vsudotransstorage;AccountKey=YOUR_KEY;EndpointSuffix=core.windows.net"
+BLOB_STORAGE_CONTAINER="vsudotrans"
+```
+
+Dan `config/config.php` untuk database & URL:
 ```php
 define('APP_URL', 'http://localhost:8080/vsudotrans'); // tanpa trailing slash
 define('DB_HOST', 'localhost');
@@ -69,8 +76,9 @@ Password semua user: `P@ssw0rd`. **Wajib diganti sebelum production.**
 - Upload semua file ke `public_html/vsudotrans/` (**sertakan `.htaccess`** — lihat catatan keamanan di bawah)
 - Import `database/schema.sql` via phpMyAdmin
 - Sesuaikan `APP_URL` dan kredensial DB di `config/config.php`
-- Permission: folder `755`, file `644`; folder `uploads/` harus writable
-- **Ekstensi PHP**: pastikan `mysqli`, `dom`, `mbstring`, dan `zip` aktif (cPanel → *Select PHP Version* → *Extensions*). `dom`+`mbstring` untuk PDF; bila tidak aktif, tombol ekspor otomatis beralih ke HTML siap-cetak (tidak error).
+- Permission: folder `755`, file `644`
+- **Azure Blob Storage**: Berkas unggahan (logo, stempel, QRIS, foto armada, STNK, KIR, foto karyawan, KTP, SIM, dan bukti bayar) tersimpan langsung di Azure Blob Storage private container dengan Service SAS Token URL. Pastikan kredensial Azure diisi di file `.env`.
+- **Ekstensi PHP**: pastikan `mysqli`, `curl`, `dom`, `mbstring`, dan `zip` aktif (cPanel → *Select PHP Version* → *Extensions*). `curl` untuk Azure Storage REST API; `dom`+`mbstring` untuk PDF; bila tidak aktif, tombol ekspor otomatis beralih ke HTML siap-cetak (tidak error).
 
 `.htaccess` memblokir akses web ke `config/`, `includes/`, `tests/`, `database/` dan file `.sql`/`.md`, plus menambah security headers. Tanpa file ini, `database/schema.sql` dan source dapat diunduh siapa saja.
 
@@ -84,15 +92,16 @@ Password semua user: `P@ssw0rd`. **Wajib diganti sebelum production.**
 | Karyawan | ✅ | ✅ | |
 | Pengguna, Role & Hak Akses | ✅ | ✅ | Batas level role (H1/H2/M1) |
 | Audit Trail | ✅ | ✅ | Read-only |
-| Referensi umum (bank, wilayah, satuan) | ✅ | ✅ | Wilayah: negara→provinsi→kota→kecamatan→desa |
-| Kendaraan (merek, kategori, model, kendaraan) | ✅ | ✅ | |
+| Referensi umum (bank, wilayah, satuan) | ✅ | ✅ | Wilayah: negara→provinsi→kota→kecamatan→desa; Bank: 22 bank seeded + TomSelect |
+| Kendaraan (merek, kategori, model, kendaraan) | ✅ | ✅ | Foto unit, STNK, KIR terintegrasi Azure Blob |
 | Master HR (grade, jabatan, posisi, struktur, penghargaan) | ✅ | ✅ | |
-| Travel: rute, jadwal, penumpang, booking | ✅ | ✅ | |
+| Travel: rute, jadwal, booking | ✅ | ✅ | |
+| Penumpang | ✅ | ✅ | Shared master data untuk Travel & Rental |
 | Rental: booking + aturan premi/biaya karyawan | ✅ | ✅ | |
 | Booking service: status, reschedule, assign driver, cancel | ✅ | ✅ | Invoice otomatis ikut status |
-| Tiket publik `tiket.php?no=...` | ✅ | ✅ | Tanpa login, tanpa data internal |
-| Metode Pembayaran (bank/QR) | ✅ | ✅ | Master `payment_methods`: CRUD + upload QR (LONGBLOB) |
-| **Invoice** | ✅ | ✅ | Otomatis saat booking; list + filter status; detail + catat pembayaran; cetak + **unduh PDF** |
+| Tiket publik `tiket.php?no=...` | ✅ | ✅ | Tanpa login, logo & stempel dari Azure SAS |
+| Metode Pembayaran (bank/QR) | ✅ | ✅ | Master `payment_methods`: CRUD + QRIS Azure Blob SAS |
+| **Invoice** | ✅ | ✅ | Otomatis saat booking; list + filter status; detail + catat pembayaran (bukti transfer di Azure Blob); cetak + **unduh PDF** |
 | **Pembayaran** | ✅ | ✅ | Bayar sebagian/lunas, tolak overpay; `booking_cost_lines` cost_type `payment`; sinkron `total_payment` |
 | **Penjadwalan Driver** | ✅ | ✅ | Papan aktif + riwayat, tugaskan/selesaikan tugas, riwayat per booking; `trip_assignments` |
 | **Laporan Booking** | ✅ | ✅ | Rekap per periode, wilayah asal→tujuan, kendaraan, driver; export CSV & XLSX, PDF, cetak |
@@ -107,32 +116,28 @@ Password semua user: `P@ssw0rd`. **Wajib diganti sebelum production.**
 
 ✅ selesai · ⏳ belum
 
-## Menu & Fitur (isi UI)
+## Menu & Fitur (Struktur Sidebar ERP)
 
-Menu sidebar, dan apa yang bisa dilakukan di dalamnya:
+Menu sidebar dikelompokkan dalam 7 kategori terstruktur:
 
-| Menu | Fitur |
-|------|-------|
-| **Dashboard** | **Operasional:** booking hari ini & minggu ini (jumlah + nilai), driver sedang bertugas (nama, kendaraan, nomor booking, jam mulai), piutang jatuh tempo (invoice belum lunas lewat tanggal booking, urut sisa terbesar). **Grafik:** booking & pendapatan 6 bulan terakhir. **Statistik:** jumlah karyawan, cabang, perusahaan (sesuai hak akses) |
-| **Perusahaan** | CRUD perusahaan + detail; switch perusahaan aktif (multi-tenant) |
-| **Cabang** | CRUD cabang per perusahaan |
-| **Karyawan** | CRUD karyawan + detail; filter per cabang/jabatan |
-| **Travel** ▾ | **Booking**: buat booking travel, resi acak, invoice otomatis, detail + riwayat status, transisi status (draft→confirmed→scheduled→on_trip→done), reschedule, assign driver, cancel · **Jadwal**: jadwal per rute + armada · **Rute**: rute + harga (min/max/kapasitas) · **Penumpang**: data penumpang |
-| **Rental** | Booking rental: periode (start/end date), lama trip, BBM, premi & biaya per karyawan, invoice otomatis, status/reschedule/driver/cancel |
-| **Kendaraan** | CRUD merek, kategori, model, tipe mesin, unit kendaraan |
-| **Pengguna** | CRUD user, mapping user↔perusahaan, reset password |
-| **Role & Hak Akses** | CRUD role, editor permission per role, batas level (aktor hanya boleh mengelola role di bawah levelnya) |
-| **Referensi Umum** ▾ | Bank, Satuan, dan Wilayah berjenjang: Negara → Provinsi → Kota/Kab. → Kecamatan → Desa |
-| **Master HR** ▾ | Grade jabatan, Jabatan, Posisi (bertingkat), Struktur Organisasi, Penghargaan karyawan — semua punya **Import CSV** |
-| **Import CSV** (semua master) | Setiap master data (12 master: bank, wilayah 5 level, satuan, + 5 master HR) punya tombol **Import CSV**: unduh template, unggah, mode upsert — all-or-nothing (satu baris salah → tidak ada yang tersimpan), `company_id` selalu dari sesi, kolom file/gambar dilewati |
-| **Penjadwalan** ▾ | **Papan & Riwayat**: assignment aktif ("sedang jalan") + tombol Selesaikan Tugas, tab Riwayat dengan filter rentang tanggal · **Tugaskan Driver**: pilih booking travel/rental yang belum punya penugasan aktif (50 terbaru per tipe), driver (`job_position` = "Driver"), kendaraan opsional, catatan |
-| **Audit Trail** | Read-only: waktu, user, aksi, IP, keterangan (login, logout, switch perusahaan, create/update/delete semua modul, aksi booking) |
-| **Payroll** | Daftar periode per tahun + generate periode bulanan (satu item per karyawan aktif, nilai dari grade jabatan); detail: ubah hari hadir/potongan per baris lalu gaji bersih dihitung ulang; alur status draft→final→dibayar (tidak bisa mundur, edit diblokir setelah dibayar); halaman cetak daftar gaji; **export CSV, Excel (XLSX), PDF** per periode |
-| **Tiket publik** (tanpa login) | `tiket.php?no=<resi>` — cek tiket travel/rental: nomor, tanggal, jam, alamat, total |
-| **Keuangan** ▾ | **Buku Kas & Bank**: buku besar transaksi + saldo, export CSV/XLSX/PDF/cetak · **Akun Kas/Bank**: CRUD akun · **Invoice**: daftar + filter status, detail, catat pembayaran (sebagian/lunas), cetak + **unduh PDF** · **Metode Pembayaran**: CRUD bank/QRIS/e-wallet per perusahaan (atau global), upload gambar QR, aktif/nonaktif, urutan tampil (naik/turun) |
-| **Laporan** ▾ | **Laporan Booking**: filter rentang tanggal + jenis (travel/rental/semua), kartu ringkasan (total booking, nilai, terbayar, sisa piutang), 4 tabel dimensi (periode, wilayah asal→tujuan, kendaraan, driver) dengan total di footer · **Laporan Keuangan**: kartu laba kotor/pendapatan/biaya/piutang, **3 grafik** (tren pendapatan vs terbayar vs biaya per bulan, donat pendapatan travel vs rental, batang biaya per `cost_type`), pendapatan per jenis, biaya operasional per `cost_type`, daftar tagihan belum lunas urut sisa terbesar · **Laporan Operasional**: utilisasi kendaraan (tugas, hari, selesai/berjalan), aktivitas driver, tingkat penyelesaian tugas (%), booking per status · **Laporan Driver**: beban kerja driver + detail penugasan. Semua laporan export **CSV, Excel (XLSX), PDF**, dan **Cetak** (HTML siap cetak) |
-| **Absensi** ▾ | **Absensi Harian**: input/daftar kehadiran per tanggal · **Rekap Absensi**: rekap hari hadir/izin/sakit/cuti/alpa per karyawan pada rentang tanggal (default bulan berjalan), sumber data Payroll, **export CSV, Excel (XLSX), PDF, cetak** |
-| **Sistem** ▾ | **Backup & Restore** (khusus Super Admin): unduh dump `.sql` seluruh database, restore dari file unggahan (aman: DDL/`USE`/`CREATE DATABASE` dari dump diabaikan, transaksional) |
+| Kategori | Menu | Fitur |
+|----------|------|-------|
+| **1. UTAMA** | **Dashboard** | **Operasional:** booking hari ini & minggu ini (jumlah + nilai), driver sedang bertugas (nama, kendaraan, nomor booking, jam mulai), piutang jatuh tempo (invoice belum lunas lewat tanggal booking, urut sisa terbesar). **Grafik:** booking & pendapatan 6 bulan terakhir. **Statistik:** jumlah karyawan, cabang, perusahaan (sesuai hak akses) |
+| **2. OPERASIONAL & ARMADA** | **Travel** ▾ | **Booking**: buat booking travel, resi acak, invoice otomatis, detail + riwayat status, transisi status (draft→confirmed→scheduled→on_trip→done), reschedule, assign driver, cancel · **Jadwal**: jadwal per rute + armada · **Rute**: rute + harga (min/max/kapasitas) |
+| | **Rental Mobil** | Booking rental: periode (start/end date), lama trip, BBM, premi & biaya per karyawan, invoice otomatis, status/reschedule/driver/cancel |
+| | **Penumpang** | Master data pelanggan/penumpang bersama untuk Travel & Rental: pencarian cepat, riwayat, CRUD |
+| | **Penjadwalan** ▾ | **Kalender Operasional**: agenda bulanan/mingguan/harian armada & driver · **Papan & Riwayat**: assignment aktif ("sedang jalan") + tombol Selesaikan Tugas, tab Riwayat dengan filter rentang tanggal · **Tugaskan Driver**: pilih booking travel/rental yang belum punya penugasan aktif (50 terbaru per tipe), driver (`job_position` = "Driver"), kendaraan opsional, catatan |
+| | **Kendaraan** | CRUD armada unit kendaraan, foto unit, dokumen STNK & KIR (Azure Blob), serta master merek, kategori, model, tipe mesin |
+| **3. KEUANGAN & AKUNTANSI** | **Keuangan** ▾ | **Invoice**: daftar + filter status, detail, catat pembayaran (bukti bayar ke Azure Blob), cetak + **unduh PDF** · **Buku Kas & Bank**: buku besar transaksi + saldo, export CSV/XLSX/PDF/cetak · **Akun Kas/Bank**: CRUD akun kas & bank (terintegrasi master Bank) · **Metode Pembayaran**: CRUD bank/QRIS/e-wallet per perusahaan (atau global), upload gambar QRIS ke Azure Blob, aktif/nonaktif, urutan tampil (naik/turun) |
+| **4. SDM & PAYROLL** | **Karyawan** | CRUD karyawan + detail, rekening payroll (terintegrasi master Bank), foto profil, berkas KTP & SIM (Azure Blob), filter per cabang/jabatan |
+| | **Absensi** ▾ | **Absensi Harian**: input/daftar kehadiran per tanggal · **Rekap Absensi**: rekap hari hadir/izin/sakit/cuti/alpa per karyawan pada rentang tanggal (default bulan berjalan), sumber data Payroll, **export CSV, Excel (XLSX), PDF, cetak** |
+| | **Payroll** | Daftar periode per tahun + generate periode bulanan (satu item per karyawan aktif, nilai dari grade jabatan); detail: ubah hari hadir/potongan per baris lalu gaji bersih dihitung ulang; alur status draft→final→dibayar (tidak bisa mundur, edit diblokir setelah dibayar); halaman cetak daftar gaji; **export CSV, Excel (XLSX), PDF** per periode |
+| | **Master HR** ▾ | Grade jabatan, Jabatan, Posisi (bertingkat), Struktur Organisasi, Penghargaan karyawan — semua punya **Import CSV** |
+| **5. LAPORAN** | **Laporan** ▾ | **Laporan Booking**: filter rentang tanggal + jenis (travel/rental/semua), kartu ringkasan, 4 tabel dimensi (periode, wilayah asal→tujuan, kendaraan, driver) · **Laporan Keuangan**: kartu laba kotor/pendapatan/biaya/piutang, 3 grafik visual, rincian biaya operasional · **Laporan Operasional**: utilisasi armada, aktivitas driver, tingkat penyelesaian tugas (%) · **Laporan Driver**: beban kerja driver + detail penugasan. Semua laporan export **CSV, Excel (XLSX), PDF**, dan **Cetak** (HTML siap cetak) |
+| **6. MASTER DATA & ORGANISASI** | **Organisasi** ▾ | **Grup Perusahaan**, **Perusahaan** (logo & stempel di Azure Blob, kode terkunci permanen setelah dibuat), **Cabang** |
+| | **Referensi Umum** ▾ | **Bank** (22 bank resmi di Indonesia), **Satuan**, dan **Wilayah** berjenjang (Negara → Provinsi → Kota/Kab. → Kecamatan → Desa). Setiap master data dilengkapi **Streaming Grid Export** ($O(1)$ RAM) dan **Import CSV** |
+| **7. ADMINISTRASI SISTEM** | **Pengguna & Akses** ▾ | **Pengguna**: CRUD user, mapping user↔perusahaan, reset password · **Role & Hak Akses**: CRUD role, editor permission per role, batas level role · **Audit Trail**: Read-only log aktivitas sistem |
+| | **Sistem** ▾ | **Backup & Restore** (khusus Super Admin): unduh dump `.sql` seluruh database, restore dari file unggahan (aman: DDL/`USE`/`CREATE DATABASE` dari dump diabaikan, transaksional) |
 
 **Tanpa halaman (logika saja):** rate limit login, tenant scoping, CSRF, level rule role.
 

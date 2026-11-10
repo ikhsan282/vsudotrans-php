@@ -232,6 +232,27 @@ function ui_page_header(string $title, array $breadcrumb = [], array $badges = [
     return $html;
 }
 
+/**
+ * Daftar bank aktif dari tabel master banks: [['code' => '...', 'name' => '...'], ...]
+ */
+function master_bank_options(): array
+{
+    static $banks = null;
+    if ($banks !== null) {
+        return $banks;
+    }
+    if (!function_exists('db')) {
+        return [];
+    }
+    try {
+        $res = db()->query("SELECT code, name FROM banks ORDER BY name ASC");
+        $banks = $res ? $res->fetch_all(MYSQLI_ASSOC) : [];
+    } catch (Throwable $e) {
+        $banks = [];
+    }
+    return $banks;
+}
+
 require_once __DIR__ . '/grid_export.php';
 
 

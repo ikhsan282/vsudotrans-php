@@ -330,6 +330,30 @@ CREATE TABLE `banks` (
   UNIQUE KEY `uq_banks_code` (`code`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
+INSERT INTO `banks` (`id`, `code`, `name`, `note`) VALUES
+(1, 'BCA', 'Bank Central Asia', 'Bank swasta nasional'),
+(2, 'MANDIRI', 'Bank Mandiri', 'Bank BUMN'),
+(3, 'BNI', 'Bank Negara Indonesia', 'Bank BUMN'),
+(4, 'BRI', 'Bank Rakyat Indonesia', 'Bank BUMN'),
+(5, 'BSI', 'Bank Syariah Indonesia', 'Bank syariah BUMN'),
+(6, 'CIMB', 'Bank CIMB Niaga', 'Bank swasta nasional'),
+(7, 'PERMATA', 'Bank Permata', 'Bank swasta nasional'),
+(8, 'DANAMON', 'Bank Danamon', 'Bank swasta nasional'),
+(9, 'BTN', 'Bank Tabungan Negara', 'Bank BUMN'),
+(10, 'BTPN', 'Bank BTPN / Jenius', 'Bank swasta nasional'),
+(11, 'PANIN', 'Bank Panin', 'Bank swasta nasional'),
+(12, 'MEGA', 'Bank Mega', 'Bank swasta nasional'),
+(13, 'OCBC', 'Bank OCBC NISP', 'Bank swasta nasional'),
+(14, 'MAYBANK', 'Bank Maybank Indonesia', 'Bank swasta nasional'),
+(15, 'BJB', 'Bank BJB', 'Bank daerah Jawa Barat'),
+(16, 'JATENG', 'Bank Jateng', 'Bank daerah Jawa Tengah'),
+(17, 'JATIM', 'Bank Jatim', 'Bank daerah Jawa Timur'),
+(18, 'DKI', 'Bank DKI', 'Bank daerah DKI Jakarta'),
+(19, 'SEABANK', 'SeaBank Indonesia', 'Bank digital'),
+(20, 'JAGO', 'Bank Jago', 'Bank digital'),
+(21, 'BLU', 'BCA Digital (blu)', 'Bank digital'),
+(22, 'NEO', 'Bank Neo Commerce', 'Bank digital');
+
 CREATE TABLE `countries` (
   `id` INT(11) NOT NULL AUTO_INCREMENT,
   `code` VARCHAR(15) NOT NULL,
