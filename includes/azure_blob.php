@@ -436,6 +436,66 @@ function resolve_asset_url(?string $path, int $ttl_minutes = 120): string
 }
 
 /**
+ * Konversi berkas lokal / Azure Blob menjadi Data URI (base64) untuk disematkan ke PDF (Dompdf).
+ * Dompdf memblokir request HTTP eksternal (isRemoteEnabled = false) demi keamanan (anti-SSRF),
+ * sehingga gambar di PDF wajib berupa Data URI (data:image/png;base64,...).
+ */
+function resolve_asset_data_uri(?string $path): string
+{
+    $path = trim((string) $path);
+    if ($path === '') return '';
+
+    // 1. Cek bila path adalah berkas lokal di web root
+    $localFile = dirname(__DIR__) . '/' . ltrim(str_replace('\\', '/', $path), '/');
+    if (is_file($localFile) && is_readable($localFile)) {
+        $ext = strtolower(pathinfo($localFile, PATHINFO_EXTENSION));
+        $mime = match ($ext) {
+            'png' => 'image/png',
+            'jpg', 'jpeg' => 'image/jpeg',
+            'gif' => 'image/gif',
+            'svg' => 'image/svg+xml',
+            default => 'application/octet-stream',
+        };
+        $raw = file_get_contents($localFile);
+        return 'data:' . $mime . ';base64,' . base64_encode($raw);
+    }
+
+    // 2. Cek aset default di folder assets/brand/ (misal fallback logo/stempel MTM)
+    if (str_contains($path, 'stamp_mtm') || str_contains($path, 'stamp-mtm')) {
+        $brandStamp = dirname(__DIR__) . '/assets/brand/stamp-mtm.png';
+        if (is_file($brandStamp)) {
+            return 'data:image/png;base64,' . base64_encode(file_get_contents($brandStamp));
+        }
+    }
+    if (str_contains($path, 'logo_mtm') || str_contains($path, 'logo-mtm')) {
+        $brandLogo = dirname(__DIR__) . '/assets/brand/logo-mtm.png';
+        if (is_file($brandLogo)) {
+            return 'data:image/png;base64,' . base64_encode(file_get_contents($brandLogo));
+        }
+    }
+
+    // 3. Unduh dari Azure Blob Storage jika berupa path blob
+    $blob = azure_blob_get($path);
+    if ($blob && !empty($blob['data'])) {
+        return 'data:' . ($blob['mime'] ?? 'image/png') . ';base64,' . base64_encode($blob['data']);
+    }
+
+    // 4. Fallback: coba unduh via SAS URL jika azure_blob_get belum terkonfigurasi
+    $url = resolve_asset_url($path);
+    if ($url !== '' && filter_var($url, FILTER_VALIDATE_URL)) {
+        $raw = @file_get_contents($url);
+        if ($raw !== false && $raw !== '') {
+            $finfo = finfo_open(FILEINFO_MIME_TYPE);
+            $mime = finfo_buffer($finfo, $raw) ?: 'image/png';
+            finfo_close($finfo);
+            return 'data:' . $mime . ';base64,' . base64_encode($raw);
+        }
+    }
+
+    return '';
+}
+
+/**
  * Validasi & unggah file dari $_FILES[$field_name] ke Azure Blob Storage.
  *
  * @param string   $field_name   Nama input file di $_FILES

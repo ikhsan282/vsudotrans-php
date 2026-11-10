@@ -299,12 +299,12 @@ INSERT INTO `groups` (`id`, `code`, `name`, `note`) VALUES
 (2, 'LIZ', 'LIZ', 'LIZ Wisata Alam Indah');
 
 -- logo & stamp = path Azure Blob (container `vsudotrans`, prefix {company_code}/company/...)
-INSERT INTO `companies` (`id`, `group_id`, `code`, `name`, `country_code`, `phone_number`, `email`, `address`, `city`, `logo`, `stamp`, `bot_secret`) VALUES
-(1, 1, 'MTM', 'Maura Trans Mandiri', '+62', '021-0000000', 'info@mauratransmandiri.com', 'Jl. Contoh No. 1', 'Tangerang', 'mtm/company/logo_mtm.png', 'mtm/company/stamp_mtm.png', 'mtm_hermes_secret_key_9f8e7d6c5b4a321098765432'),
-(2, 1, 'NTM', 'Nugi Trans Mandiri', '+62', '021-0000000', 'info@nugitransmandiri.com', 'Jl. Contoh No. 2', 'Tangerang', 'ntm/company/logo_ntm.png', NULL, 'ntm_hermes_secret_key_2b3c4d5e6f7a890123456789'),
-(3, 1, 'GTM', 'Gibran Trans Mandiri', '+62', '021-0000000', 'info@gibrantransmandiri.com', 'Jl. Contoh No. 3', 'Tangerang', 'gtm/company/logo_gtm.png', NULL, 'gtm_hermes_secret_key_1a2b3c4d5e6f789012345678'),
-(4, 1, 'TTM', 'Trisula Trans Mandiri', '+62', '021-0000000', 'info@trisulatransmandiri.com', 'Jl. Contoh No. 4', 'Tangerang', 'ttm/company/logo_ttm.png', NULL, 'ttm_hermes_secret_key_3c4d5e6f7a8b901234567890'),
-(5, 2, 'LIZ', 'LIZ Wisata Alam Indah', '+62', '021-0000000', 'info@lizwisata.com', 'Jl. Contoh No. 5', 'Tangerang', 'liz/company/logo_liz.png', NULL, 'liz_hermes_secret_key_4d5e6f7a8b9c012345678901');
+INSERT INTO `companies` (`id`, `group_id`, `code`, `name`, `country_code`, `phone_number`, `website`, `email`, `address`, `city`, `logo`, `stamp`, `bot_secret`, `bot_phone`) VALUES
+(1, 1, 'MTM', 'Maura Trans Mandiri', '+62', '021-0000000', 'https://mauratransmandiri.com', 'info@mauratransmandiri.com', 'Jl. Contoh No. 1', 'Tangerang', 'mtm/company/logo_mtm.png', 'mtm/company/stamp_mtm.png', 'mtm_hermes_secret_key_9f8e7d6c5b4a321098765432', '6281398461650'),
+(2, 1, 'NTM', 'Nugi Trans Mandiri', '+62', '021-0000000', 'https://nugitransmandiri.com', 'info@nugitransmandiri.com', 'Jl. Contoh No. 2', 'Tangerang', 'ntm/company/logo_ntm.png', NULL, 'ntm_hermes_secret_key_2b3c4d5e6f7a890123456789', NULL),
+(3, 1, 'GTM', 'Gibran Trans Mandiri', '+62', '021-0000000', 'https://gibrantransmandiri.com', 'info@gibrantransmandiri.com', 'Jl. Contoh No. 3', 'Tangerang', 'gtm/company/logo_gtm.png', NULL, 'gtm_hermes_secret_key_1a2b3c4d5e6f789012345678', NULL),
+(4, 1, 'TTM', 'Trisula Trans Mandiri', '+62', '021-0000000', 'https://trisulatransmandiri.com', 'info@trisulatransmandiri.com', 'Jl. Contoh No. 4', 'Tangerang', 'ttm/company/logo_ttm.png', NULL, 'ttm_hermes_secret_key_3c4d5e6f7a8b901234567890', NULL),
+(5, 2, 'LIZ', 'LIZ Wisata Alam Indah', '+62', '021-0000000', 'https://lizwisataalamindah.com', 'info@lizwisata.com', 'Jl. Contoh No. 5', 'Tangerang', 'liz/company/logo_liz.png', NULL, 'liz_hermes_secret_key_4d5e6f7a8b9c012345678901', '6281299990001');
 
 INSERT INTO `branches` (`id`, `company_id`, `code`, `name`, `country_code`, `phone_number`) VALUES
 (1, 1, 'PST', 'Kantor Pusat', '+62', '021-0000001'),

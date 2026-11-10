@@ -7,8 +7,13 @@ Setiap klien **VSudoTrans Multi-Tenant** memiliki website landing page WordPress
 - **Trisula Trans Mandiri** (`trisulatransmandiri.com`) → Kode: `TTM`
 - **LIZ Wisata Alam Indah** (`lizwisataalamindah.com`) → Kode: `LIZ`
 
-Halaman Cek Tiket pada masing-masing WordPress cukup memanggil endpoint publik:
+Halaman Cek & Verifikasi Tiket pada masing-masing website WordPress cukup memanggil endpoint publik:
 `GET /api/ticket.php?no=<NOMOR_TIKET>&company=<KODE_PERUSAHAAN>`
+
+Panduan ini mencakup:
+1. Spesifikasi API Cek & Verifikasi Tiket.
+2. Shortcode Form Cek Tiket untuk pengunjung website.
+3. Halaman Auto-Verifikasi Tiket (`/verifikasi?no=...`) untuk QR Code / tautan resmi pada PDF e-tiket.
 
 ---
 
@@ -150,10 +155,33 @@ add_shortcode('vsudo_cek_tiket', function ($atts) {
                 box.innerHTML = '<div style="padding:14px;background:#fef2f2;color:#991b1b;border-radius:8px;">Gagal menghubungi server tiket. Silakan coba lagi.</div>';
             }
         });
+
+        // Auto-check jika URL browser memiliki parameter ?no= (contoh dari QR Code / tautan verifikasi di e-tiket PDF)
+        const urlParams = new URLSearchParams(window.location.search);
+        const queryNo = urlParams.get('no') || urlParams.get('ticket');
+        if (queryNo) {
+            input.value = queryNo.trim().toUpperCase();
+            form.dispatchEvent(new Event('submit'));
+        }
     })();
     </script>
     <?php
     return ob_get_clean();
 });
+
+---
+
+## 3. Fitur Auto-Verifikasi dari Link E-Tiket PDF (`/verifikasi?no=...`)
+
+Pada E-Tiket PDF, tautan keaslian tiket yang dicetak adalah:
+`https://mauratransmandiri.com/verifikasi?no=TRV-DEMO8888`
+
+Agar saat link tersebut diklik atau QR Code-nya di-scan langsung menampilkan hasil validasi secara otomatis tanpa pengunjung harus mengetik nomor tiket lagi:
+
+1. Buat **Halaman Baru** di WordPress: **Pages -> Add New**.
+2. Beri judul halaman: **Verifikasi Tiket** (pastikan slug URL-nya: `/verifikasi`).
+3. Tambahkan blok shortcode: `[vsudo_cek_tiket company="MTM" api_url="https://panel.domain-vsudotrans.com"]` (sesuaikan kode PT dan URL panel).
+4. Di skrip shortcode, tambahkan auto-submit jika terdapat parameter `?no=` di URL browser. (Skrip di atas sudah mendukung pembacaan otomatis saat dibuka).
+
 ```
 

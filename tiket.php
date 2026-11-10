@@ -14,6 +14,7 @@ require_once __DIR__ . '/includes/payment_gateway.php';
 $no = strtoupper(trim((string) ($_GET['no'] ?? '')));
 $companyCode = strtoupper(trim((string) ($_GET['company'] ?? '')));
 $print = isset($_GET['print']);
+$pdf   = ($_GET['format'] ?? '') === 'pdf';
 $row = null;
 $passengers = [];
 $canPayQris = false;
@@ -23,7 +24,7 @@ if (preg_match('/^(TRV|RNT)-[A-Z2-9]{8}$/', $no)) {
     // Rute dicetak dari nama kota asal -> tujuan (booking tidak menyimpan nama rute).
     $sql = "SELECT b.id, b.company_id, b.document_number, b.date, b.time, b.pickup_address, b.delivery_address,
             b.total_price, b.total_payment, b.created_user, b.passenger_id,
-            c.code AS company_code, c.name AS company_name, c.address, c.phone_number, c.email, c.logo, c.stamp,
+            c.code AS company_code, c.name AS company_name, c.address, c.phone_number, c.email, c.website, c.logo, c.stamp,
             i.id AS invoice_id, i.status AS invoice_status, i.total AS invoice_total, i.invoice_no,
             cp1.name AS city_from, cp2.name AS city_to,
             p.name AS passenger_name, p.phone_number AS passenger_phone
@@ -59,9 +60,18 @@ if (preg_match('/^(TRV|RNT)-[A-Z2-9]{8}$/', $no)) {
 
 $scheme = (($_SERVER['HTTPS'] ?? '') === 'on') ? 'https' : 'http';
 $self_link = $scheme . '://' . ($_SERVER['HTTP_HOST'] ?? 'localhost') . APP_URL_PATH . '/tiket.php?no=' . urlencode($no);
-// Link verifikasi dibagikan (tanpa data pribadi).
-$ver_link = $scheme . '://' . ($_SERVER['HTTP_HOST'] ?? 'localhost') . APP_URL_PATH . '/verifikasi.php?no=' . urlencode($no);
+
+// Tautan resmi verifikasi tiket publik: prioritaskan domain website resmi PT (contoh: https://mauratransmandiri.com/verifikasi?no=...)
+$compWeb = trim((string) ($row['website'] ?? ''));
+if ($compWeb !== '') {
+    $ver_link = rtrim($compWeb, '/') . '/verifikasi?no=' . urlencode($no);
+} else {
+    $ver_link = $scheme . '://' . ($_SERVER['HTTP_HOST'] ?? 'localhost') . APP_URL_PATH . '/verifikasi.php?no=' . urlencode($no);
+}
 $title = 'Tiket' . ($row ? ' ' . $row['document_number'] : '');
+if ($pdf) {
+    ob_start();
+}
 ?><!DOCTYPE html>
 <html lang="id">
 <head>
@@ -98,6 +108,11 @@ $title = 'Tiket' . ($row ? ' ' . $row['document_number'] : '');
         .table-bordered td, .table-bordered th { border: 1px solid #d9d9d9; }
         .text-break { word-break: break-all; }
         .tk-stamp { width: 152px; }
+        /* Box Syarat & Ketentuan Perjalanan (Travel & Rental) */
+        .tk-terms { background: #fafafa; border: 1px solid #e0e0e0; border-radius: 4px; padding: 8px 12px; font-size: 8pt; line-height: 11.5pt; color: #444; }
+        .tk-terms-title { font-weight: 700; font-size: 8.5pt; margin-bottom: 4px; color: #222; text-transform: uppercase; letter-spacing: .3px; }
+        .tk-terms ul { margin: 0; padding-left: 15px; }
+        .tk-terms li { margin-bottom: 2px; }
         /* Logo & gambar dibatasi agar tidak melebar menekan kolom kanan keluar halaman. */
         .tk-logo { height: 46px; width: auto; max-width: 220px; }
         .tk-head { margin-bottom: 6px; }
@@ -118,6 +133,11 @@ $title = 'Tiket' . ($row ? ' ' . $row['document_number'] : '');
     <?php if ($canPayQris && $row): ?>
         <a class="btn btn-primary btn-sm" href="<?= e(APP_URL . '/pages/finance/invoices/gateway_pay.php?no=' . urlencode($row['document_number'])) ?>">Bayar via QRIS</a>
     <?php endif; ?>
+    <?php if ($row): ?>
+        <a class="btn btn-danger btn-sm" href="?no=<?= urlencode($no) ?><?= $companyCode !== '' ? '&company=' . urlencode($companyCode) : '' ?>&format=pdf">
+            <i class="bi bi-file-earmark-pdf"></i> Unduh PDF
+        </a>
+    <?php endif; ?>
     <button class="btn btn-dark btn-sm" onclick="window.print()">Cetak / Simpan PDF</button>
     <a class="btn btn-outline-secondary btn-sm" href="<?= e(APP_URL) ?>/index.php">Beranda</a>
 </div>
@@ -129,7 +149,10 @@ $title = 'Tiket' . ($row ? ' ' . $row['document_number'] : '');
         <div class="card-body">
             <table class="tk-lay tk-head w-100"><tr>
                 <td class="align-top" style="width:340px">
-                    <?php $logoSrc = resolve_asset_url((string) ($row['logo'] ?? '')); ?>
+                    <?php
+                    $logoPath = (string) ($row['logo'] ?? '');
+                    $logoSrc  = $pdf ? resolve_asset_data_uri($logoPath) : resolve_asset_url($logoPath);
+                    ?>
                     <?php if ($logoSrc !== ''): ?>
                         <img src="<?= e($logoSrc) ?>" alt="<?= e($row['company_name']) ?>" class="tk-logo">
                     <?php else: ?>
@@ -146,6 +169,9 @@ $title = 'Tiket' . ($row ? ' ' . $row['document_number'] : '');
                     <div class="tk-sub"><?= e($row['company_name']) ?></div>
                     <div class="tk-body text-muted"><?= e((string) $row['address']) ?></div>
                     <div class="tk-body text-muted"><?= e((string) $row['phone_number']) ?> &middot; <?= e((string) $row['email']) ?></div>
+                    <?php if (!empty($row['website'])): ?>
+                        <div class="tk-body text-muted"><?= e((string) $row['website']) ?></div>
+                    <?php endif; ?>
                 </td>
                 <td style="width:58%">
                     <table class="tk-lay w-100">
@@ -192,13 +218,36 @@ $title = 'Tiket' . ($row ? ' ' . $row['document_number'] : '');
                 <div class="tk-addr"><?= e((string) ($row['delivery_address'] ?: '—')) ?></div>
             </div>
 
+            <!-- Syarat & Ketentuan Perjalanan / Sewa Kendaraan -->
+            <div class="tk-terms mt-4">
+                <div class="tk-terms-title">Syarat &amp; Ketentuan <?= $type === 'rental' ? 'Sewa Kendaraan' : 'Perjalanan' ?>:</div>
+                <?php if ($type === 'rental'): ?>
+                <ul>
+                    <li>Penyewa wajib menunjukkan dokumen identitas asli (KTP &amp; SIM A yang masih berlaku) saat serah terima unit kendaraan.</li>
+                    <li>Durasi sewa dihitung per hari (24 jam) sesuai tanggal mulai dan selesai yang tercantum pada voucher ini. Keterlambatan pengembalian unit dikenakan biaya overtime.</li>
+                    <li><strong>Perubahan Jadwal (Reschedule):</strong> Konfirmasi perubahan jadwal wajib dilakukan maksimal <strong>H-1 (24 jam)</strong> sebelum tanggal mulai sewa dengan konfirmasi pihak rental.</li>
+                    <li><strong>Pembatalan (Cancel):</strong> Pembatalan sewa pada hari H atau setelah kendaraan dipersiapkan tidak dapat dikembalikan (non-refundable).</li>
+                </ul>
+                <?php else: ?>
+                <ul>
+                    <li>Penumpang wajib berada di titik penjemputan dan nomor telepon aktif minimal <strong>15–30 menit</strong> sebelum jadwal keberangkatan.</li>
+                    <li>Kapasitas bagasi cuma-cuma maksimal 1 tas koper standar + 1 tas jinjing per penumpang. Muatan berlebih wajib konfirmasi terlebih dahulu.</li>
+                    <li><strong>Perubahan Jadwal (Reschedule):</strong> Perubahan jam/tanggal perjalanan dapat dilakukan maksimal <strong>H-1 (24 jam)</strong> sebelum keberangkatan sesuai ketersediaan kursi.</li>
+                    <li><strong>Pembatalan (Cancel / No-Show):</strong> Pembatalan pada hari keberangkatan atau penumpang tidak dapat dihubungi saat driver tiba di lokasi penjemputan dianggap hangus (non-refundable).</li>
+                </ul>
+                <?php endif; ?>
+            </div>
+
             <table class="tk-lay w-100 mt-4"><tr>
                 <td class="align-top tk-foot">
                     <div>Dibuat oleh <strong><?= e((string) ($row['created_user'] ?: '—')) ?></strong></div>
                     <div><span class="text-muted">pada tanggal</span> <strong><?= e(tanggal_indo((string) $row['date'])) ?></strong></div>
                 </td>
                 <td class="text-end align-top" style="width:170px;padding-top:22pt">
-                    <?php $stampSrc = resolve_asset_url((string) ($row['stamp'] ?? '')); ?>
+                    <?php
+                    $stampPath = (string) ($row['stamp'] ?? '');
+                    $stampSrc  = $pdf ? resolve_asset_data_uri($stampPath) : resolve_asset_url($stampPath);
+                    ?>
                     <?php if ($stampSrc !== ''): ?>
                         <img class="tk-stamp" src="<?= e($stampSrc) ?>" alt="Stempel <?= e($row['company_name']) ?>">
                     <?php endif; ?>
@@ -212,8 +261,15 @@ $title = 'Tiket' . ($row ? ' ' . $row['document_number'] : '');
     </div>
 <?php endif; ?>
 </main>
-<?php if ($print && $row): ?>
+<?php if ($print && $row && !$pdf): ?>
 <script>window.addEventListener('load', function () { window.print(); });</script>
+<?php endif; ?>
+<?php if ($pdf): ?>
+<?php
+$html = ob_get_clean();
+require_once __DIR__ . '/includes/pdf.php';
+pdf_send_or_html(pdf_prepare_screen_html($html, '.no-print'), 'Tiket-' . ($row['document_number'] ?? $no));
+?>
 <?php endif; ?>
 </body>
 </html>
