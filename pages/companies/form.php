@@ -235,11 +235,21 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             }
             redirect("pages/companies/form.php?id={$id}&tab=payment&provider=gopay");
         } elseif ($act === 'gopay_refresh' && $prov === 'gopay') {
-            $r = gopay_refresh_channel((int) $channel['id']);
-            if ($r['ok']) {
-                flash('success', 'Token GoPay Merchant berhasil diperbarui.');
+            $chk = gopay_session_check($channel);
+            if (($chk['state'] ?? '') === 'valid') {
+                $outletLbl = !empty($chk['outlet']) ? ' (' . $chk['outlet'] . ')' : '';
+                flash('success', 'Sesi GoPay aktif dan token valid' . $outletLbl . '.');
+            } elseif (($chk['state'] ?? '') === 'expired') {
+                $r = gopay_refresh_channel((int) $channel['id']);
+                if ($r['ok']) {
+                    flash('success', 'Token kedaluwarsa — berhasil di-refresh otomatis.');
+                } else {
+                    flash('error', 'Token kedaluwarsa dan refresh gagal: ' . $r['error']);
+                }
+            } elseif (($chk['state'] ?? '') === 'empty') {
+                flash('warning', 'Belum ada sesi GoPay. Silakan login lewat OTP di bawah.');
             } else {
-                flash('error', $r['error']);
+                flash('error', 'Gagal cek sesi: ' . ($chk['error'] ?? 'Respons tidak dikenali.'));
             }
             redirect("pages/companies/form.php?id={$id}&tab=payment&provider=gopay");
         } elseif ($act === 'spay_check' && $prov === 'shopeepay') {
@@ -268,6 +278,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $feeValue = max(0.0, (float) ($_POST['fee_value'] ?? 0));
             $cfg['fee_type'] = $feeType;
             $cfg['fee_value'] = $feeValue;
+            if ($prov === 'gopay' && isset($_POST['gopay_merchant_id'])) {
+                $gmid = trim((string) $_POST['gopay_merchant_id']);
+                if ($gmid === '') {
+                    unset($cfg['merchant_ids']);
+                } else {
+                    $cfg['merchant_ids'] = $gmid;
+                }
+            }
             $cfgJson = json_encode($cfg, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
 
             $effectiveKey = $chKey !== '' ? $chKey : (string) ($channel['api_key'] ?? '');
@@ -608,6 +626,14 @@ require __DIR__ . '/../../includes/header.php';
                         <input class="form-control" type="number" step="0.01" min="0" name="fee_value" value="<?= e((string) $feeVal) ?>">
                     </div>
 
+                    <?php if ($activeProv === 'gopay'): ?>
+                        <div class="col-12">
+                            <label class="form-label">Merchant ID GoPay <small class="text-muted">(opsional, untuk query API mutasi)</small></label>
+                            <input class="form-control" name="gopay_merchant_id" maxlength="60" value="<?= e((string) ($chCfg['merchant_ids'] ?? '')) ?>" placeholder="G123456789">
+                            <small class="text-muted">Kosongkan bila tidak tahu — query API akan mengambil semua merchant dari sesi.</small>
+                        </div>
+                    <?php endif; ?>
+
                     <div class="col-12">
                         <label class="form-label">Instruksi Pembayaran (Opsional)</label>
                         <textarea class="form-control" name="instructions" rows="2" maxlength="2000"><?= e((string) ($curChannel['instructions'] ?? '')) ?></textarea>
@@ -625,21 +651,45 @@ require __DIR__ . '/../../includes/header.php';
 
             <?php if ($activeProv === 'gopay'): ?>
                 <hr class="my-4">
-                <h6 class="fw-bold">Login Otomatis GoPay Merchant via OTP GoBiz</h6>
-                <?php if (!empty($chCfg['refresh_token'])): ?>
+                <h6 class="fw-bold">Sesi GoPay Merchant via OTP GoBiz</h6>
+                <?php if (!empty($chCfg['refresh_token'])):
+                    $gpMerchant = trim((string) ($chCfg['outlet'] ?? ''))
+                        ?: trim((string) ($chCfg['merchant_name'] ?? ''))
+                        ?: (!empty($chCfg['merchant_ids']) ? ('GoPay Merchant #' . $chCfg['merchant_ids']) : 'GoPay Merchant');
+                    $gpPhone = trim((string) ($chCfg['phone'] ?? ''));
+                    if ($gpPhone !== '' && str_starts_with($gpPhone, '8')) {
+                        $gpPhone = '0' . $gpPhone;
+                    }
+                    $gpUpdatedRaw = $chCfg['updated_at'] ?? ($chCfg['login_at'] ?? null);
+                    if (is_numeric($gpUpdatedRaw) && (int) $gpUpdatedRaw > 0) {
+                        $gpUpdated = date('d-M-Y H:i', (int) $gpUpdatedRaw);
+                    } elseif (is_string($gpUpdatedRaw) && $gpUpdatedRaw !== '') {
+                        $tsUp = strtotime($gpUpdatedRaw);
+                        $gpUpdated = $tsUp ? date('d-M-Y H:i', $tsUp) : $gpUpdatedRaw;
+                    } else {
+                        $gpUpdated = !empty($curChannel['modified_date'])
+                            ? date('d-M-Y H:i', strtotime((string) $curChannel['modified_date']))
+                            : '—';
+                    }
+                    $gpExpires = !empty($chCfg['expires_at']) ? date('d-M-Y H:i', (int) $chCfg['expires_at']) : '';
+                ?>
                     <div class="alert alert-info py-2 small mb-3">
-                        Terhubung dengan: <strong><?= e((string) ($chCfg['merchant_name'] ?: 'GoPay Merchant')) ?></strong>
-                        (<?= e((string) ($chCfg['phone'] ?? '')) ?>) · Diperbarui: <?= e((string) ($chCfg['updated_at'] ?? '—')) ?>
+                        Terhubung dengan: <strong><?= e($gpMerchant) ?></strong>
+                        <?= $gpPhone !== '' ? '(' . e($gpPhone) . ')' : '' ?>
+                        · Diperbarui: <strong><?= e($gpUpdated) ?></strong>
+                        <?php if ($gpExpires !== ''): ?>
+                            · Berlaku sampai: <strong><?= e($gpExpires) ?></strong>
+                        <?php endif; ?>
                     </div>
-                    <form method="post" action="?id=<?= $id ?>&tab=payment&provider=gopay" class="mb-3">
-                        <?= csrf_field() ?>
-                        <input type="hidden" name="id" value="<?= $id ?>">
-                        <input type="hidden" name="_section" value="payment">
-                        <input type="hidden" name="_action" value="gopay_refresh">
-                        <input type="hidden" name="provider" value="gopay">
-                        <button class="btn btn-outline-primary btn-sm" type="submit"><i class="bi bi-arrow-repeat me-1"></i> Perbarui (Refresh) Token GoPay</button>
-                    </form>
                 <?php endif; ?>
+                <form method="post" action="?id=<?= $id ?>&tab=payment&provider=gopay" class="mb-3">
+                    <?= csrf_field() ?>
+                    <input type="hidden" name="id" value="<?= $id ?>">
+                    <input type="hidden" name="_section" value="payment">
+                    <input type="hidden" name="_action" value="gopay_refresh">
+                    <input type="hidden" name="provider" value="gopay">
+                    <button class="btn btn-outline-primary btn-sm" type="submit"><i class="bi bi-arrow-repeat me-1"></i> Cek / Refresh Sesi GoPay</button>
+                </form>
 
                 <?php if (empty($_SESSION['gopay_otp'])): ?>
                     <form method="post" action="?id=<?= $id ?>&tab=payment&provider=gopay" class="card card-body bg-body-tertiary border-0">

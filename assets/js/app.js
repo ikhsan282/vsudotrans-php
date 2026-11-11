@@ -136,19 +136,24 @@ document.addEventListener('click', e => {
 });
 
 // ── Rupiah input formatter & helpers ─────────────────────────────────────────
-window.formatRupiah = function (val) {
-  if (val === null || val === undefined || val === '') return '';
-  var digits = String(val).replace(/[^0-9]/g, '');
-  if (!digits) return '';
-  var num = parseInt(digits, 10);
-  if (num === 0) return '0';
-  return num.toString().replace(/\B(?=(\d{3})+(?!\d))/g, '.');
-};
-
 window.parseRupiah = function (val) {
   if (val === null || val === undefined || val === '') return 0;
-  var digits = String(val).replace(/[^0-9]/g, '');
+  if (typeof val === 'number') return Math.round(val);
+  var str = String(val).trim();
+  if (/^\d+\.(0|00)$/.test(str)) {
+    str = str.replace(/\.(0|00)$/, '');
+  }
+  var digits = str.replace(/[^0-9]/g, '');
   return digits ? parseInt(digits, 10) : 0;
+};
+
+window.formatRupiah = function (val) {
+  if (val === null || val === undefined || val === '') return '';
+  var num = window.parseRupiah(val);
+  if (num === 0) {
+    return String(val).replace(/[^0-9]/g, '') === '' ? '' : '0';
+  }
+  return num.toString().replace(/\B(?=(\d{3})+(?!\d))/g, '.');
 };
 
 window.attachRupiahInput = function (inputEl, hiddenEl, onChangeCallback) {

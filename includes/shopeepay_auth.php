@@ -1,6 +1,7 @@
 <?php
 /**
  * Validasi & penyimpanan token ShopeePay Merchant (Partner Web) untuk channel QRIS langsung.
+ * Mengikuti protokol resmi Portal Partner ShopeePay (sama dengan arya-green-ipl).
  */
 
 if (!defined('SHOPEEPAY_TX_LIST_URL')) {
@@ -21,31 +22,14 @@ function shopeepay_verify_token(string $rawToken): array
     require_once __DIR__ . '/payment_gateway_direct.php';
     $token = shopeepay_clean_token($rawToken);
     if ($token === '' || stripos($token, 'B:') !== 0) {
-        return ['ok' => false, 'error' => 'Format token tidak dikenal. Token ShopeePay diawali huruf "B:" dari header Authorization aplikasi ShopeePay Merchant.'];
+        return ['ok' => false, 'error' => 'Format token tidak dikenal. Token ShopeePay harus diawali "B:" (salin dari data.metadata.token di Portal Partner).'];
     }
-    $body = json_encode([
-        'begin_time'           => time() - 3600,
-        'end_time'             => time() + 60,
-        'page'                 => 1,
-        'page_size'            => 1,
-        'transaction_tab_type' => 102,
-    ]);
-    $headers = [
-        'Host: shopeepay.shopee.co.id',
-        'Authorization: ' . $token,
-        'User-Agent: okhttp/3.12.4 app_type=1',
-        'Content-Type: application/json',
-    ];
-    $res = gq_http_post(SHOPEEPAY_TX_LIST_URL, $body, $headers, 15);
-    if ($res['raw'] === false) {
-        return ['ok' => false, 'error' => 'Koneksi ke ShopeePay gagal: ' . $res['error']];
+    $r = gq_check_shopeepay(
+        ['api_key' => $token, 'id' => 0],
+        ['total_amount' => -1, 'created_at' => date('Y-m-d H:i:s', time() - 3600), 'order_id' => 'PING']
+    );
+    if ($r['ok']) {
+        return ['ok' => true, 'token' => $token];
     }
-    $json = json_decode((string) $res['raw'], true);
-    $list = $json['data']['transaction_list'] ?? null;
-    if ($res['code'] >= 400 || !is_array($list)) {
-        $msg = (string) ($json['debug_msg'] ?? ($json['msg'] ?? 'Token ditolak atau sudah kedaluwarsa'));
-        return ['ok' => false, 'error' => $msg . ' (HTTP ' . $res['code'] . ')'];
-    }
-    return ['ok' => true, 'token' => $token];
+    return ['ok' => false, 'error' => (string) ($r['error'] ?? 'Token ditolak atau sudah kedaluwarsa')];
 }
-

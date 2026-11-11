@@ -928,19 +928,24 @@ require __DIR__ . '/../../../includes/header.php';
 <script>
 document.addEventListener('DOMContentLoaded', function () {
     // Helper format & parse rupiah standar Indonesia
-    function formatRupiah(val) {
-        if (val === null || val === undefined || val === '') return '';
-        var digits = String(val).replace(/[^0-9]/g, '');
-        if (!digits) return '';
-        var num = parseInt(digits, 10);
-        if (num === 0) return '0';
-        return num.toString().replace(/\B(?=(\d{3})+(?!\d))/g, '.');
-    }
-
     function parseRupiah(val) {
         if (val === null || val === undefined || val === '') return 0;
-        var digits = String(val).replace(/[^0-9]/g, '');
+        if (typeof val === 'number') return Math.round(val);
+        var str = String(val).trim();
+        if (/^\d+\.(0|00)$/.test(str)) {
+            str = str.replace(/\.(0|00)$/, '');
+        }
+        var digits = str.replace(/[^0-9]/g, '');
         return digits ? parseInt(digits, 10) : 0;
+    }
+
+    function formatRupiah(val) {
+        if (val === null || val === undefined || val === '') return '';
+        var num = parseRupiah(val);
+        if (num === 0) {
+            return String(val).replace(/[^0-9]/g, '') === '' ? '' : '0';
+        }
+        return num.toString().replace(/\B(?=(\d{3})+(?!\d))/g, '.');
     }
 
     function attachRupiahMask(inputEl, hiddenEl, onChangeCallback) {

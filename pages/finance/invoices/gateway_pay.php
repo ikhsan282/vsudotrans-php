@@ -87,6 +87,27 @@ if (!$order) {
 $total      = (float) $order['total_amount'];
 $uniqueCode = max(0.0, round($total - $charge, 2));
 
+$payloadArr = !empty($order['payload']) ? (json_decode((string) $order['payload'], true) ?: []) : [];
+$qrisString = (string) ($payloadArr['qris_string'] ?? '');
+$qrisImgUrl = trim((string) ($order['qris_url'] ?? ''));
+if ($qrisImgUrl === '' || $qrisImgUrl === '0') {
+    $qrisImgUrl = trim((string) ($payloadArr['qris_url'] ?? ''));
+    if (($qrisImgUrl === '' || $qrisImgUrl === '0') && $qrisString !== '') {
+        $qrisImgUrl = gq_qr_url($qrisString);
+    }
+    if ($qrisImgUrl !== '' && $qrisImgUrl !== '0') {
+        $upQr = $db->prepare('UPDATE payment_gateway_orders SET qris_url = ? WHERE id = ?');
+        $ordRowId = (int) $order['id'];
+        $upQr->bind_param('si', $qrisImgUrl, $ordRowId);
+        $upQr->execute();
+        $upQr->close();
+        $order['qris_url'] = $qrisImgUrl;
+    }
+}
+$fallbackQrUrl = $qrisString !== ''
+    ? ('https://quickchart.io/qr?size=300&margin=1&text=' . rawurlencode($qrisString))
+    : '';
+
 $stComp = $db->prepare('SELECT name, code, logo FROM companies WHERE id = ? LIMIT 1');
 $stComp->bind_param('i', $companyId);
 $stComp->execute();
@@ -118,7 +139,8 @@ $backUrl = $no !== ''
             <div class="text-muted small mb-3">No. Tiket: <strong><?= e($inv['document_number']) ?></strong> · Invoice: <?= e($inv['invoice_no']) ?></div>
 
             <div class="p-3 bg-white border rounded-3 d-inline-block mb-3">
-                <img src="<?= e((string) $order['qris_url']) ?>" alt="QRIS Dinamis" width="260" height="260" class="img-fluid">
+                <img src="<?= e($qrisImgUrl) ?>" alt="QRIS Dinamis" width="260" height="260" class="img-fluid"
+                     <?php if ($fallbackQrUrl !== ''): ?>onerror="if(this.src!==<?= e(json_encode($fallbackQrUrl)) ?>)this.src=<?= e(json_encode($fallbackQrUrl)) ?>;"<?php endif; ?>>
             </div>
 
             <div class="border rounded bg-light p-3 text-start mb-3 small">

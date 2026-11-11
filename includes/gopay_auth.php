@@ -1,10 +1,13 @@
 <?php
 /**
  * Login & perpanjangan token GoPay Merchant (GoBiz) untuk channel QRIS langsung.
- * Mengambil token otomatis lewat OTP SMS GoBiz tanpa perlu menyalin header secara manual.
+ * Mengikuti protokol resmi portal GoBiz (sama dengan arya-green-ipl):
+ *   1. POST /goid/login/request  (client_id = go-biz-web-new)
+ *   2. POST /goid/token          (grant_type = otp / refresh_token)
+ *   3. GET  /goresto/v5/public/users/config
  */
 
-if (!defined('GOPAY_GOBIZ_CLIENT_ID')) define('GOPAY_GOBIZ_CLIENT_ID', 'go-biz-web-dashboard');
+if (!defined('GOPAY_GOBIZ_CLIENT_ID')) define('GOPAY_GOBIZ_CLIENT_ID', 'go-biz-web-new');
 if (!defined('GOPAY_GOBIZ_BASE')) define('GOPAY_GOBIZ_BASE', 'https://api.gobiz.co.id');
 
 function gopay_uuid(): string
@@ -15,46 +18,58 @@ function gopay_uuid(): string
     return vsprintf('%s%s-%s-%s-%s-%s%s%s', str_split(bin2hex($b), 4));
 }
 
+/** Normalisasi 08xx / +628xx / 8xx -> ['country_code' => '62', 'phone' => '8xxxxxxxxx'] */
 function gopay_normalize_phone(string $raw): ?array
 {
-    $digits = preg_replace('/\D+/', '', $raw);
-    if ($digits === '' || $digits === null) return null;
-    if (str_starts_with($digits, '62')) $local = substr($digits, 2);
-    elseif (str_starts_with($digits, '0')) $local = substr($digits, 1);
-    else $local = $digits;
-    if (!preg_match('/^8[0-9]{7,12}$/', $local)) return null;
-    return ['country_code' => '62', 'phone' => $local];
+    $digits = preg_replace('/\D+/', '', $raw) ?? '';
+    if (str_starts_with($digits, '62')) $digits = substr($digits, 2);
+    if (str_starts_with($digits, '0'))  $digits = substr($digits, 1);
+    if (strlen($digits) < 8 || strlen($digits) > 15 || !str_starts_with($digits, '8')) {
+        return null;
+    }
+    return ['country_code' => '62', 'phone' => $digits];
+}
+
+/** Map header standar portal GoBiz (Chrome 150 / platform-v3.111.0-1708bc9a). */
+function gopay_headers_map(?string $uniqueId = null): array
+{
+    $uid = ($uniqueId !== null && $uniqueId !== '') ? $uniqueId : 'b5f98d3a-c9de-49ca-8067-dba94002b23c';
+    return [
+        'accept'              => 'application/json, text/plain, */*',
+        'accept-language'     => 'id',
+        'authentication-type' => 'go-id',
+        'content-type'        => 'application/json',
+        'gojek-country-code'  => 'ID',
+        'gojek-timezone'      => 'Asia/Jakarta',
+        'origin'              => 'https://portal.gofoodmerchant.co.id',
+        'referer'             => 'https://portal.gofoodmerchant.co.id/',
+        'user-agent'          => 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/150.0.0.0 Safari/537.36',
+        'x-appid'             => 'go-biz-web-dashboard',
+        'x-appversion'        => 'platform-v3.111.0-1708bc9a',
+        'x-deviceos'          => 'Web',
+        'x-phonemake'         => 'Windows 10 64-bit',
+        'x-phonemodel'        => 'Chrome 150.0.0.0 on Windows 10 64-bit',
+        'x-platform'          => 'Web',
+        'x-uniqueid'          => $uid,
+        'x-user-locale'       => 'en-GB',
+        'x-user-type'         => 'merchant',
+    ];
 }
 
 function gopay_gobiz_headers(?string $token = null, ?string $uniqueId = null): array
 {
-    $uid = $uniqueId ?: gopay_uuid();
-    $h = [
-        'Content-Type: application/json',
-        'Accept: application/json, text/plain, */*',
-        'Accept-Language: id',
-        'Origin: https://portal.gofoodmerchant.co.id',
-        'Referer: https://portal.gofoodmerchant.co.id/',
-        'Authentication-Type: go-id',
-        'Gojek-Country-Code: ID',
-        'Gojek-Timezone: Asia/Jakarta',
-        'X-Appid: go-biz-web-dashboard',
-        'X-Appversion: platform-v3.97.0-b986b897',
-        'X-Deviceos: Web',
-        'X-Phonemake: Windows 10 64-bit',
-        'X-Phonemodel: Chrome 131.0.0.0 on Windows 10 64-bit',
-        'X-Platform: Web',
-        'X-Uniqueid: ' . $uid,
-        'X-User-Type: merchant',
-        'User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36',
-    ];
+    $map = gopay_headers_map($uniqueId);
     if ($token !== null && $token !== '') {
-        $h[] = 'Authorization: Bearer ' . $token;
+        $map['authorization'] = 'Bearer ' . $token;
     }
-    return $h;
+    $out = [];
+    foreach ($map as $k => $v) {
+        $out[] = "$k: $v";
+    }
+    return $out;
 }
 
-function gopay_http(string $method, string $url, ?array $body, array $headers): array
+function gopay_http(string $method, string $url, array|object|null $body, array $headers): array
 {
     if (function_exists('curl_init')) {
         $ch = curl_init();
@@ -63,8 +78,8 @@ function gopay_http(string $method, string $url, ?array $body, array $headers): 
             CURLOPT_RETURNTRANSFER => true,
             CURLOPT_ENCODING       => '',
             CURLOPT_TIMEOUT        => 20,
-            CURLOPT_CONNECTTIMEOUT => 8,
-            CURLOPT_CUSTOMRequest  => $method,
+            CURLOPT_CONNECTTIMEOUT => 10,
+            CURLOPT_CUSTOMREQUEST  => $method,
             CURLOPT_HTTPHEADER     => $headers,
             CURLOPT_SSL_VERIFYPEER => true,
             CURLOPT_SSL_VERIFYHOST => 2,
@@ -116,38 +131,52 @@ function gopay_request_otp(string $rawPhone): array
     if (!$p) {
         return ['ok' => false, 'error' => 'Nomor HP tidak valid. Gunakan format 08xxxxxxxxxx.'];
     }
-    $uid = gopay_uuid();
+    $uid = 'b5f98d3a-c9de-49ca-8067-dba94002b23c';
     $res = gopay_http('POST', GOPAY_GOBIZ_BASE . '/goid/login/request', [
         'client_id'    => GOPAY_GOBIZ_CLIENT_ID,
-        'login_type'   => 'phone',
-        ' claims'      => new stdClass(),
-        'country_code' => $p['country_code'],
         'phone_number' => $p['phone'],
+        'country_code' => $p['country_code'],
     ], gopay_gobiz_headers(null, $uid));
 
-    $otpToken = $res['data']['data']['otp_token'] ?? '';
+    $otpToken = (string) ($res['data']['data']['otp_token'] ?? ($res['data']['otp_token'] ?? ''));
     if (!$res['ok'] || $otpToken === '') {
         return ['ok' => false, 'error' => gopay_extract_error($res, 'Gagal meminta OTP GoPay Merchant')];
     }
     $_SESSION['gopay_otp'] = [
         'otp_token'  => $otpToken,
         'unique_id'  => $uid,
-        'phone'      => '0' . $p['phone'],
-        'expires_at' => time() + (int) ($res['data']['data']['otp_expires_in'] ?? 180),
+        'phone'      => $p['phone'],
+        'expires_at' => time() + (int) ($res['data']['data']['otp_expires_in'] ?? 720),
     ];
     return ['ok' => true, 'phone' => '0' . $p['phone']];
 }
 
+/** Ambil profil merchant dari /goresto/v5/public/users/config */
+function gopay_fetch_merchant_profile(string $accessToken, ?string $uniqueId = null): array
+{
+    $prof = gopay_http('GET', GOPAY_GOBIZ_BASE . '/goresto/v5/public/users/config', null, gopay_gobiz_headers($accessToken, $uniqueId));
+    if ($prof['ok'] && is_array($prof['data'] ?? null)) {
+        $p = $prof['data']['merchant'] ?? ($prof['data']['data'] ?? []);
+        $outlet = trim((string) ($p['outlet_name'] ?? ($p['name'] ?? ($p['merchant_name'] ?? ''))));
+        $mid    = trim((string) ($p['merchant_id'] ?? ($p['id'] ?? '')));
+        if ($outlet !== '' || $mid !== '') {
+            return ['outlet' => $outlet, 'merchant_id' => $mid];
+        }
+    }
+    return ['outlet' => '', 'merchant_id' => ''];
+}
+
 function gopay_verify_otp(string $otp, int $companyId): array
 {
-    $otp = preg_replace('/\D+/', '', $otp);
+    $otp = preg_replace('/\D+/', '', $otp) ?? '';
     $st  = $_SESSION['gopay_otp'] ?? null;
     if (!$st || empty($st['otp_token'])) {
         return ['ok' => false, 'error' => 'Sesi OTP tidak ditemukan. Silakan kirim ulang OTP.'];
     }
-    if (strlen($otp) < 4) {
-        return ['ok' => false, 'error' => 'Kode OTP harus berupa angka 4–6 digit.'];
+    if (strlen($otp) < 4 || strlen($otp) > 8) {
+        return ['ok' => false, 'error' => 'Kode OTP harus berupa angka 4–8 digit.'];
     }
+    $uid = (string) ($st['unique_id'] ?? 'b5f98d3a-c9de-49ca-8067-dba94002b23c');
     $res = gopay_http('POST', GOPAY_GOBIZ_BASE . '/goid/token', [
         'client_id'  => GOPAY_GOBIZ_CLIENT_ID,
         'grant_type' => 'otp',
@@ -155,67 +184,83 @@ function gopay_verify_otp(string $otp, int $companyId): array
             'otp'       => $otp,
             'otp_token' => $st['otp_token'],
         ],
-    ], gopay_gobiz_headers(null, $st['unique_id']));
+    ], gopay_gobiz_headers(null, $uid));
 
-    $accessToken  = $res['data']['access_token']  ?? '';
-    $refreshToken = $res['data']['refresh_token'] ?? '';
+    $data         = $res['data']['data'] ?? ($res['data'] ?? []);
+    $accessToken  = (string) ($data['access_token']  ?? '');
+    $refreshToken = (string) ($data['refresh_token'] ?? '');
+    $expiresIn    = (int) ($data['expires_in'] ?? 86400);
     if (!$res['ok'] || $accessToken === '') {
         return ['ok' => false, 'error' => gopay_extract_error($res, 'Kode OTP salah atau sudah kedaluwarsa')];
     }
 
-    $me = gopay_http('POST', GOPAY_GOBIZ_BASE . '/v1/users/me', (object) [], gopay_gobiz_headers($accessToken, $st['unique_id']));
-    $u  = $me['data']['user'] ?? [];
-    $merchantName = (string) ($u['merchant_name'] ?? ($u['name'] ?? ($u['phone'] ?? $st['phone'])));
+    $prof = gopay_fetch_merchant_profile($accessToken, $uid);
+    $outlet = $prof['outlet'];
+    $mid    = $prof['merchant_id'];
+    $merchantName = $outlet !== '' ? $outlet : ($mid !== '' ? ('GoPay Merchant #' . $mid) : 'GoPay Merchant');
 
-    gopay_save_tokens($companyId, $accessToken, $refreshToken, $st['unique_id'], $st['phone'], $merchantName);
+    $pNorm = gopay_normalize_phone((string) ($st['phone'] ?? ''));
+    $phoneLocal = $pNorm ? $pNorm['phone'] : ltrim((string) ($st['phone'] ?? ''), '0');
+
+    gopay_save_tokens($companyId, $accessToken, $refreshToken, $uid, $phoneLocal, $merchantName, $outlet, $mid, $expiresIn);
     unset($_SESSION['gopay_otp']);
     if (function_exists('audit')) {
         audit('payment_channel.gopay_login', 'Menghubungkan akun GoPay Merchant (' . $merchantName . ')');
     }
-    return ['ok' => true, 'merchant' => $merchantName];
+    return ['ok' => true, 'merchant' => $merchantName, 'outlet' => $outlet, 'merchant_id' => $mid];
 }
 
 function gopay_build_headers(string $accessToken, string $uniqueId): array
 {
-    return [
-        'Authorization: Bearer ' . $accessToken,
-        'Content-Type: application/json',
-        'Accept: application/json, text/plain, */*',
-        'Accept-Language: id',
-        'Origin: https://portal.gofoodmerchant.co.id',
-        'Referer: https://portal.gofoodmerchant.co.id/',
-        'Authentication-Type: go-id',
-        'Gojek-Country-Code: ID',
-        'Gojek-Timezone: Asia/Jakarta',
-        'X-Appid: go-biz-web-dashboard',
-        'X-Appversion: platform-v3.97.0-b986b897',
-        'X-Deviceos: Web',
-        'X-Phonemake: Windows 10 64-bit',
-        'X-Phonemodel: Chrome 131.0.0.0 on Windows 10 64-bit',
-        'X-Platform: Web',
-        'X-Uniqueid: ' . $uniqueId,
-        'X-User-Type: merchant',
-        'User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36',
-    ];
+    $headers = gopay_headers_map($uniqueId);
+    $headers['authorization'] = 'Bearer ' . $accessToken;
+    unset($headers['content-type'], $headers['authentication-type']);
+    return $headers;
 }
 
-function gopay_save_tokens(int $companyId, string $accessToken, string $refreshToken, string $uniqueId, string $phone, string $merchantName): void
-{
+function gopay_save_tokens(
+    int $companyId,
+    string $accessToken,
+    string $refreshToken,
+    string $uniqueId,
+    string $phone,
+    string $merchantName,
+    string $outlet = '',
+    string $merchantId = '',
+    int $expiresIn = 86400
+): void {
     $db = db();
     $apiKey = json_encode(gopay_build_headers($accessToken, $uniqueId), JSON_UNESCAPED_SLASHES);
-    $cfg = json_encode([
-        'refresh_token' => $refreshToken,
-        'unique_id'     => $uniqueId,
-        'phone'         => $phone,
-        'merchant_name' => $merchantName,
-        'updated_at'    => date('Y-m-d H:i:s'),
-    ], JSON_UNESCAPED_SLASHES);
 
-    $st = $db->prepare("SELECT id FROM payment_channels WHERE company_id = ? AND provider = 'gopay' LIMIT 1");
+    $st = $db->prepare("SELECT id, config FROM payment_channels WHERE company_id = ? AND provider = 'gopay' LIMIT 1");
     $st->bind_param('i', $companyId);
     $st->execute();
     $row = $st->get_result()->fetch_assoc();
     $st->close();
+
+    $existingCfg = ($row && !empty($row['config'])) ? (json_decode((string) $row['config'], true) ?: []) : [];
+    $pNorm = gopay_normalize_phone($phone);
+    $phoneLocal = $pNorm ? $pNorm['phone'] : $phone;
+
+    $newCfg = array_merge($existingCfg, [
+        'refresh_token' => $refreshToken,
+        'unique_id'     => $uniqueId,
+        'phone'         => $phoneLocal,
+        'merchant_name' => $merchantName,
+        'expires_at'    => time() + ($expiresIn > 0 ? $expiresIn : 86400),
+        'login_at'      => $existingCfg['login_at'] ?? time(),
+        'updated_at'    => date('Y-m-d H:i:s'),
+    ]);
+    if ($outlet !== '') {
+        $newCfg['outlet'] = $outlet;
+    }
+    if ($merchantId !== '') {
+        $newCfg['merchant_id'] = $merchantId;
+        if (empty($newCfg['merchant_ids'])) {
+            $newCfg['merchant_ids'] = $merchantId;
+        }
+    }
+    $cfg = json_encode($newCfg, JSON_UNESCAPED_SLASHES);
 
     if ($row) {
         $s = $db->prepare('UPDATE payment_channels SET api_key = ?, config = ?, modified_date = NOW() WHERE id = ?');
@@ -234,6 +279,101 @@ function gopay_save_tokens(int $companyId, string $accessToken, string $refreshT
     }
 }
 
+/**
+ * Cek sesi masih hidup (sama dengan arya-green-ipl):
+ * 1. Panggil GET /goresto/v5/public/users/config -> 401/403 berarti expired; ambil outlet & merchant_id.
+ * 2. Panggil GET /merchant-analytics/v2/merchants/transactions -> pastikan token juga diterima API transaksi.
+ */
+function gopay_session_check(array $channel): array
+{
+    $auth = trim((string) ($channel['api_key'] ?? ''));
+    $hdr  = json_decode($auth, true);
+    $h    = [];
+    $hasBearer = false;
+
+    if (is_array($hdr)) {
+        foreach ($hdr as $k => $v) {
+            if (is_int($k)) {
+                $line = trim((string) $v);
+                if ($line !== '') {
+                    $h[] = $line;
+                    if (stripos($line, 'authorization: bearer ') === 0) $hasBearer = true;
+                }
+            } else {
+                $h[] = "$k: $v";
+                if (strtolower((string) $k) === 'authorization' && str_starts_with((string) $v, 'Bearer ')) {
+                    $hasBearer = true;
+                }
+            }
+        }
+    }
+    if (!$hasBearer) {
+        return ['ok' => true, 'state' => 'empty', 'error' => null];
+    }
+
+    $cfg = json_decode((string) ($channel['config'] ?? ''), true);
+    $cfg = is_array($cfg) ? $cfg : [];
+    $merchantId = trim((string) ($cfg['merchant_ids'] ?? ($cfg['merchant_id'] ?? '')));
+
+    $prof = gopay_http('GET', GOPAY_GOBIZ_BASE . '/goresto/v5/public/users/config', null, $h);
+    if (in_array((int) $prof['code'], [401, 403], true)) {
+        return ['ok' => true, 'state' => 'expired', 'error' => null];
+    }
+    if (!$prof['ok']) {
+        return ['ok' => false, 'state' => 'unknown', 'error' => gopay_extract_error($prof, 'Gagal membaca profil merchant')];
+    }
+
+    $p = (array) ($prof['data']['merchant'] ?? ($prof['data']['data'] ?? []));
+    $outlet = trim((string) ($p['outlet_name'] ?? ($p['name'] ?? ($p['merchant_name'] ?? ''))));
+    $mid    = trim((string) ($p['id'] ?? ($p['merchant_id'] ?? '')));
+    if ($outlet === '' && $mid === '') {
+        return ['ok' => false, 'state' => 'unknown', 'error' => 'Profil merchant tidak terbaca dari sesi ini.'];
+    }
+
+    $q = [
+        'from'       => 0,
+        'size'       => 1,
+        'statuses'   => 'SETTLEMENT,CAPTURE',
+        'start_time' => gmdate('Y-m-d\TH:i:s\Z', time() - 3600),
+        'end_time'   => gmdate('Y-m-d\TH:i:s\Z', time() + 60),
+    ];
+    if ($merchantId !== '') {
+        $q['merchant_ids'] = $merchantId;
+    } elseif ($mid !== '') {
+        $q['merchant_ids'] = $mid;
+    }
+
+    $base = getenv('GOPAY_API_URL') ?: 'https://api.gojekapi.com';
+    $res  = gopay_http('GET', $base . '/merchant-analytics/v2/merchants/transactions?' . http_build_query($q), null, $h);
+    if (in_array((int) $res['code'], [401, 403], true)) {
+        return ['ok' => true, 'state' => 'expired', 'error' => null];
+    }
+    if ($res['ok']) {
+        // Sinkronkan outlet & merchant_name ke config bila baru terbaca
+        if (!empty($channel['id'])) {
+            if ($outlet !== '') {
+                $cfg['outlet'] = $outlet;
+                $cfg['merchant_name'] = $outlet;
+            }
+            if ($mid !== '') {
+                $cfg['merchant_id'] = $mid;
+                if (empty($cfg['merchant_ids'])) {
+                    $cfg['merchant_ids'] = $mid;
+                }
+            }
+            $cfg['updated_at'] = date('Y-m-d H:i:s');
+            $cfgJson = json_encode($cfg, JSON_UNESCAPED_SLASHES);
+            $chId = (int) $channel['id'];
+            $stUp = db()->prepare('UPDATE payment_channels SET config = ?, modified_date = NOW() WHERE id = ?');
+            $stUp->bind_param('si', $cfgJson, $chId);
+            $stUp->execute();
+            $stUp->close();
+        }
+        return ['ok' => true, 'state' => 'valid', 'error' => null, 'outlet' => $outlet, 'merchant_id' => $mid];
+    }
+    return ['ok' => false, 'state' => 'unknown', 'error' => gopay_extract_error($res, 'Gagal memverifikasi API transaksi GoPay')];
+}
+
 function gopay_refresh_channel(int $channelId): array
 {
     $db = db();
@@ -245,34 +385,53 @@ function gopay_refresh_channel(int $channelId): array
 
     $cfg = $row ? json_decode((string) $row['config'], true) : null;
     if (!is_array($cfg) || empty($cfg['refresh_token'])) {
-        return ['ok' => false, 'error' => 'Refresh token GoPay tidak tersedia.'];
+        return ['ok' => false, 'error' => 'Refresh token GoPay tidak tersedia. Silakan login OTP ulang.'];
     }
-    $uid = (string) ($cfg['unique_id'] ?? gopay_uuid());
+    $uid = (string) ($cfg['unique_id'] ?? 'b5f98d3a-c9de-49ca-8067-dba94002b23c');
+    $pNorm = gopay_normalize_phone((string) ($cfg['phone'] ?? ''));
+    $phoneLocal = $pNorm ? $pNorm['phone'] : ltrim((string) ($cfg['phone'] ?? ''), '0');
+
     $res = gopay_http('POST', GOPAY_GOBIZ_BASE . '/goid/token', [
         'client_id'  => GOPAY_GOBIZ_CLIENT_ID,
         'grant_type' => 'refresh_token',
         'data'       => [
-            'refresh_token' => $cfg['refresh_token'],
-            'user_type'     => 'merchant',
+            'refresh_token' => (string) $cfg['refresh_token'],
+            'phone_number'  => $phoneLocal,
+            'country_code'  => '62',
         ],
     ], gopay_gobiz_headers(null, $uid));
 
-    $accessToken  = $res['data']['access_token']  ?? '';
-    $refreshToken = $res['data']['refresh_token'] ?? $cfg['refresh_token'];
+    $data         = $res['data']['data'] ?? ($res['data'] ?? []);
+    $accessToken  = (string) ($data['access_token']  ?? '');
+    $refreshToken = (string) ($data['refresh_token'] ?? $cfg['refresh_token']);
+    $expiresIn    = (int) ($data['expires_in'] ?? 86400);
     if (!$res['ok'] || $accessToken === '') {
         return ['ok' => false, 'error' => gopay_extract_error($res, 'Gagal memperbarui token GoPay')];
     }
+
+    $prof   = gopay_fetch_merchant_profile($accessToken, $uid);
+    $outlet = $prof['outlet'] !== '' ? $prof['outlet'] : trim((string) ($cfg['outlet'] ?? ''));
+    $mid    = $prof['merchant_id'] !== '' ? $prof['merchant_id'] : trim((string) ($cfg['merchant_id'] ?? ($cfg['merchant_ids'] ?? '')));
+    $merchantName = $outlet !== ''
+        ? $outlet
+        : (trim((string) ($cfg['merchant_name'] ?? '')) ?: ($mid !== '' ? ('GoPay Merchant #' . $mid) : 'GoPay Merchant'));
+
     gopay_save_tokens(
         (int) $row['company_id'],
         $accessToken,
-        (string) $refreshToken,
+        $refreshToken,
         $uid,
-        (string) ($cfg['phone'] ?? ''),
-        (string) ($cfg['merchant_name'] ?? '')
+        $phoneLocal,
+        $merchantName,
+        $outlet,
+        $mid,
+        $expiresIn
     );
     return [
-        'ok'      => true,
-        'api_key' => json_encode(gopay_build_headers($accessToken, $uid), JSON_UNESCAPED_SLASHES),
+        'ok'         => true,
+        'api_key'    => json_encode(gopay_build_headers($accessToken, $uid), JSON_UNESCAPED_SLASHES),
+        'outlet'     => $outlet,
+        'merchant'   => $merchantName,
+        'expires_at' => time() + ($expiresIn > 0 ? $expiresIn : 86400),
     ];
 }
-

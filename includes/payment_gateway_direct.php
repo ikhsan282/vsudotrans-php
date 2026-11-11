@@ -209,14 +209,25 @@ function gq_create(array $channel, string $orderId, float $amount): array
     ];
 }
 
-/** Pecah daftar "Key: Value" (satu per baris atau JSON array) menjadi header cURL bersih. */
+/** Pecah daftar "Key: Value" (satu per baris, JSON object map, atau JSON array) menjadi header cURL bersih. */
 function gq_split(string $raw): array
 {
     $raw = trim($raw);
     if ($raw === '') return [];
-    if ($raw[0] === '[') {
+    if ($raw[0] === '{' || $raw[0] === '[') {
         $arr = json_decode($raw, true);
-        if (is_array($arr)) return array_values(array_filter(array_map('strval', $arr)));
+        if (is_array($arr)) {
+            $out = [];
+            foreach ($arr as $k => $v) {
+                if (is_int($k)) {
+                    $line = trim((string) $v);
+                    if ($line !== '') $out[] = $line;
+                } else {
+                    $out[] = "$k: $v";
+                }
+            }
+            return $out;
+        }
     }
     $out = [];
     foreach (preg_split('/\r\n|\r|\n/', $raw) as $line) {
@@ -224,6 +235,47 @@ function gq_split(string $raw): array
         if ($line !== '' && strpos($line, ':') !== false) $out[] = $line;
     }
     return $out;
+}
+
+/** HTTP GET/POST helper (cURL). */
+function gq_http_request(string $method, string $url, array $headers, ?string $body = null, int $timeout = 20): array
+{
+    if (function_exists('curl_init')) {
+        $ch = curl_init();
+        $opts = [
+            CURLOPT_URL            => $url,
+            CURLOPT_RETURNTRANSFER => true,
+            CURLOPT_ENCODING       => '',
+            CURLOPT_CUSTOMREQUEST  => $method,
+            CURLOPT_HTTPHEADER     => $headers,
+            CURLOPT_TIMEOUT        => $timeout,
+            CURLOPT_CONNECTTIMEOUT => 10,
+            CURLOPT_SSL_VERIFYPEER => true,
+            CURLOPT_SSL_VERIFYHOST => 2,
+        ];
+        if ($body !== null) {
+            $opts[CURLOPT_POSTFIELDS] = $body;
+        }
+        curl_setopt_array($ch, $opts);
+        $raw  = curl_exec($ch);
+        $err  = curl_error($ch);
+        $code = (int) curl_getinfo($ch, CURLINFO_HTTP_CODE);
+        curl_close($ch);
+        return ['raw' => $raw, 'code' => $code, 'error' => $err];
+    }
+
+    $ctxOpts = [
+        'method'        => $method,
+        'header'        => implode("\r\n", $headers) . "\r\n",
+        'timeout'       => $timeout,
+        'ignore_errors' => true,
+    ];
+    if ($body !== null) {
+        $ctxOpts['content'] = $body;
+    }
+    $raw = @file_get_contents($url, false, stream_context_create(['http' => $ctxOpts]));
+    $code = (int) (explode(' ', (string) ($http_response_header[0] ?? ''))[1] ?? 0);
+    return ['raw' => $raw, 'code' => $code, 'error' => $raw === false ? 'stream_failed' : ''];
 }
 
 /**
@@ -280,43 +332,63 @@ function gq_check_gopay(array $channel, array $order): array
     if (!$headers) {
         return ['ok' => false, 'error' => 'Akun GoPay Merchant belum dihubungkan.'];
     }
-    $createdTs = !empty($order['created_at']) ? strtotime($order['created_at']) : (time() - 3600);
-    $fromIso = gmdate('Y-m-d\TH:i:s\Z', $createdTs - 300);
-    $toIso   = gmdate('Y-m-d\TH:i:s\Z', time() + 300);
+    $cfg = json_decode((string) ($channel['config'] ?? ''), true);
+    $cfg = is_array($cfg) ? $cfg : [];
+    $merchantId = trim((string) ($cfg['merchant_ids'] ?? ($cfg['merchant_id'] ?? '')));
 
-    $wantCents = (int) round(((float) $order['total_amount']) * 100);
-    $body = json_encode([
-        'from'    => 0,
-        'size'    => 20,
-        'sort'    => ['time' => ['order' => 'desc']],
-        'aggs'    => ['total' => ['sum' => ['field' => 'amount']]],
-        'filters' => [
-            'date'   => ['from' => $fromIso, 'to' => $toIso],
-            'status' => ['values' => ['settlement', 'capture']],
-            'search' => ['value' => $wantCents, 'fields' => ['gross_amount']],
-        ],
-    ]);
+    $since = (!empty($order['created_at']) ? strtotime((string) $order['created_at']) : (time() - 3600)) - 60;
+    $q = [
+        'from'          => 0,
+        'size'          => 50,
+        'statuses'      => 'SETTLEMENT,CAPTURE',
+        'payment_types' => 'QRIS,GOPAY',
+        'start_time'    => gmdate('Y-m-d\TH:i:s\Z', $since),
+        'end_time'      => gmdate('Y-m-d\TH:i:s\Z', time() + 60),
+    ];
+    if ($merchantId !== '') {
+        $q['merchant_ids'] = $merchantId;
+    }
 
-    [$raw, $err, $code] = gq_gopay_post($body, $headers);
-    if ($code === 401 && !empty($channel['id'])) {
+    $base = getenv('GOPAY_API_URL') ?: 'https://api.gojekapi.com';
+    $url  = $base . '/merchant-analytics/v2/merchants/transactions?' . http_build_query($q);
+
+    $res = gq_http_request('GET', $url, $headers, null, 20);
+    if (in_array((int) $res['code'], [401, 403], true) && !empty($channel['id'])) {
         $ref = gopay_refresh_channel((int) $channel['id']);
         if ($ref['ok']) {
-            [$raw, $err, $code] = gq_gopay_post($body, gq_split($ref['api_key']));
+            $res = gq_http_request('GET', $url, gq_split($ref['api_key']), null, 20);
         }
     }
-    if ($raw === false) return ['ok' => false, 'error' => 'GoPay cURL: ' . $err];
-    $json = json_decode((string) $raw, true);
-    if ($code >= 400 || !is_array($json) || !isset($json['hits']) || !is_array($json['hits'])) {
-        return ['ok' => false, 'error' => 'Respons GoPay tidak valid (HTTP ' . $code . ').'];
+    if ($res['raw'] === false) {
+        return ['ok' => false, 'error' => 'GoPay cURL: ' . $res['error']];
+    }
+    $json = json_decode((string) $res['raw'], true);
+    $transactions = $json['transactions'] ?? ($json['data'] ?? ($json['hits'] ?? null));
+    if ($res['code'] >= 400 || !is_array($transactions) || ($json['success'] ?? true) === false) {
+        return ['ok' => false, 'error' => 'Respons transaksi GoPay tidak dikenali (HTTP ' . $res['code'] . ').'];
     }
 
-    foreach ($json['hits'] as $hit) {
-        $gross = (int) ($hit['gross_amount'] ?? ($hit['amount'] ?? 0));
-        if ($gross !== $wantCents) continue;
-        $txTime = isset($hit['time']) ? strtotime((string) $hit['time']) : $createdTs;
-        if ($txTime && $txTime < ($createdTs - 60)) continue;
-        $txId = (string) ($hit['id'] ?? ($hit['transaction_id'] ?? ($hit['reference_id'] ?? '')));
-        if (!gq_claim((int) ($channel['id'] ?? 0), (string) $order['order_id'], $txId)) continue;
+    $wantAmount = (int) round((float) $order['total_amount']);
+    foreach ($transactions as $tx) {
+        $amountRaw = $tx['gross_amount'] ?? ($tx['real_gross_amount'] ?? ($tx['amount'] ?? null));
+        if ($amountRaw === null) continue;
+        // gross_amount dalam SEN (1000100 = Rp10.001)
+        $txAmt = (int) round(((float) $amountRaw) / 100);
+        if ($txAmt !== $wantAmount && (int) round((float) $amountRaw) !== $wantAmount) {
+            continue;
+        }
+        $st = strtoupper((string) ($tx['transaction_status'] ?? ($tx['status'] ?? '')));
+        if ($st !== '' && !in_array($st, ['SETTLEMENT', 'CAPTURE', 'SUCCESS', 'PAID'], true)) {
+            continue;
+        }
+        $txTime = strtotime((string) ($tx['transaction_time'] ?? ($tx['create_time'] ?? ($tx['time'] ?? ''))));
+        if ($txTime !== false && $txTime < $since) {
+            continue;
+        }
+        $txId = (string) ($tx['transaction_id'] ?? ($tx['order_sn'] ?? ($tx['id'] ?? ($tx['reference_id'] ?? ''))));
+        if (!gq_claim((int) ($channel['id'] ?? 0), (string) $order['order_id'], $txId)) {
+            continue;
+        }
         return [
             'ok'   => true,
             'data' => [
@@ -329,54 +401,72 @@ function gq_check_gopay(array $channel, array $order): array
     return ['ok' => true, 'data' => ['status' => 'PENDING']];
 }
 
-function gq_gopay_post(string $body, array $headers): array
-{
-    $hasCt = false;
-    foreach ($headers as $h) {
-        if (stripos($h, 'content-type:') === 0) { $hasCt = true; break; }
-    }
-    if (!$hasCt) $headers[] = 'Content-Type: application/json';
-
-    $res = gq_http_post('https://api.gojekapi.com/merchant-analytics/v2/merchants/transactions', $body, $headers, 15);
-    return [$res['raw'], $res['error'], $res['code']];
-}
-
 function gq_check_shopeepay(array $channel, array $order): array
 {
-    $auth = trim((string) ($channel['api_key'] ?? ''));
-    if ($auth === '') {
+    $token = trim((string) ($channel['api_key'] ?? ''));
+    if ($token === '') {
         return ['ok' => false, 'error' => 'Token Authorization ShopeePay belum diisi.'];
     }
-    $createdTs = !empty($order['created_at']) ? strtotime($order['created_at']) : (time() - 3600);
+    $since = (!empty($order['created_at']) ? strtotime((string) $order['created_at']) : (time() - 3600)) - 60;
+    $url   = getenv('SHOPEEPAY_API_URL') ?: 'https://shopeepay.shopee.co.id/merchant/v1/partner-web/get-transaction-list';
+
     $body = json_encode([
-        'begin_time'           => $createdTs - 300,
-        'end_time'             => time() + 300,
-        'page'                 => 1,
-        'page_size'            => 10,
-        'transaction_tab_type' => 102,
+        'data' => [
+            'metadata' => [
+                'token'    => $token,
+                'language' => 'id',
+                'timezone' => 'Asia/Jakarta',
+            ],
+            'pageSize' => 50,
+            'filter'   => [
+                'startTime'   => $since,
+                'endTime'     => time() + 60,
+                'serviceList' => [1, 3],
+            ],
+            'sorter'        => ['field' => 'createTime', 'order' => 'descend'],
+            'next_position' => '',
+        ],
     ]);
 
     $headers = [
-        'Host: shopeepay.shopee.co.id',
-        'Authorization: ' . $auth,
-        'User-Agent: okhttp/3.12.4 app_type=1',
         'Content-Type: application/json',
+        'Origin: https://partner.shopee.co.id',
+        'Referer: https://partner.shopee.co.id/',
+        'User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
+        'X-Timestamp-Ms: ' . (string) (time() * 1000),
     ];
-    $res = gq_http_post('https://shopeepay.shopee.co.id/merchant/v1/partner-web/get-transaction-list', $body, $headers, 15);
+
+    $res = gq_http_request('POST', $url, $headers, $body, 20);
     if ($res['raw'] === false) return ['ok' => false, 'error' => 'ShopeePay cURL: ' . $res['error']];
     $json = json_decode((string) $res['raw'], true);
-    $list = $json['data']['transaction_list'] ?? null;
-    if ($res['code'] >= 400 || !is_array($list)) {
-        return ['ok' => false, 'error' => 'Respons ShopeePay tidak valid (HTTP ' . $res['code'] . ').'];
+    $code = $json['code'] ?? null;
+    if ($res['code'] >= 400 || !is_array($json) || ($code !== null && $code !== 0 && $code !== '0')) {
+        $err = is_string($json['msg'] ?? null) && $json['msg'] !== '' ? $json['msg'] : ('HTTP ' . $res['code']);
+        return ['ok' => false, 'error' => 'Respons ShopeePay tidak valid: ' . $err];
     }
 
-    $wantCents = (int) round(((float) $order['total_amount']) * 100);
-    foreach ($list as $tx) {
-        $amt = (int) ($tx['amount'] ?? 0);
-        if ($amt !== $wantCents) continue;
-        $txTime = (int) ($tx['create_time'] ?? ($tx['mtime'] ?? $createdTs));
-        if ($txTime > 0 && $txTime < ($createdTs - 60)) continue;
-        $txId = (string) ($tx['transaction_id'] ?? ($tx['order_sn'] ?? ($tx['reference_id'] ?? '')));
+    $transactions = $json['data']['list']
+        ?? ($json['data']['transactionList']
+        ?? ($json['data']['transactions']
+        ?? ($json['data']['transaction_list'] ?? null)));
+    $total = (int) ($json['data']['total'] ?? 0);
+    if ($transactions === null && is_array($json['data'] ?? null) && $total === 0) {
+        $transactions = [];
+    }
+    if (!is_array($transactions)) {
+        return ['ok' => false, 'error' => 'Respons transaksi ShopeePay tidak dikenali.'];
+    }
+
+    $wantAmount = (int) round((float) $order['total_amount']);
+    foreach ($transactions as $tx) {
+        $txAmt = (int) round((float) str_replace(['.', ','], '', (string) ($tx['amount'] ?? '0')));
+        if ($txAmt !== $wantAmount) continue;
+        $txStatus = $tx['status'] ?? null;
+        if ($txStatus !== null && (int) $txStatus !== 3) continue;
+        if (isset($tx['transactionType']) && (int) $tx['transactionType'] !== 1) continue;
+        $txTime = (int) ($tx['createTime'] ?? ($tx['create_time'] ?? 0));
+        if ($txTime > 0 && $txTime < $since) continue;
+        $txId = (string) ($tx['transaction_id'] ?? ($tx['order_sn'] ?? ($tx['reference_id'] ?? ($tx['id'] ?? ''))));
         if (!gq_claim((int) ($channel['id'] ?? 0), (string) $order['order_id'], $txId)) continue;
         return [
             'ok'   => true,

@@ -84,20 +84,62 @@ function invoice_next_no(int $company_id): string
     return 'INV/' . date('Y') . '/' . str_pad((string) $next, 6, '0', STR_PAD_LEFT);
 }
 
-/** Salin premi_configs kategori -> booking_cost_lines (snapshot). */
-function booking_copy_premi(string $type, int $booking_id, int $company_id, ?int $category_vehicle_id): void
-{
-    if ($category_vehicle_id === null) {
+/** Salin Peraturan Komisi Karyawan (untuk rental) atau premi_configs kategori -> booking_cost_lines (snapshot). */
+function booking_copy_premi(
+    string $type,
+    int $booking_id,
+    int $company_id,
+    ?int $category_vehicle_id,
+    float $total_price = 0.0,
+    float $trip = 1.0,
+    ?string $start_date = null,
+    float $existing_bbm = 0.0,
+    ?string $user = null
+): void {
+    if ($category_vehicle_id === null || $category_vehicle_id <= 0) {
         return;
     }
-    $st = db()->prepare('SELECT cost_type, premi_type, premi_value, note FROM premi_configs
+    $db = db();
+
+    if ($type === 'rental') {
+        require_once __DIR__ . '/regulation_service.php';
+        $reg = regulation_match($company_id, $category_vehicle_id, $trip, $start_date);
+        if ($reg && !empty($reg['details'])) {
+            $calc = regulation_calculate($reg, $total_price);
+            $ins = $db->prepare(
+                "INSERT INTO booking_cost_lines
+                    (company_id, booking_type, booking_id, cost_type, description, amount, premi_type, premi_value, premi_amount, created_user)
+                 VALUES (?, 'rental', ?, ?, ?, ?, ?, ?, ?, ?)"
+            );
+            foreach ($calc['crew_rows'] as $cr) {
+                $ctype  = (string) $cr['type'];
+                $desc   = $ctype;
+                $amt    = (float) $cr['amount'];
+                $ptype  = strcasecmp((string) $cr['calc_type'], 'Persentase') === 0 ? 'persen' : 'nominal';
+                $pval   = (float) $cr['raw_value'];
+                $ins->bind_param('iissdsdds', $company_id, $booking_id, $ctype, $desc, $amt, $ptype, $pval, $amt, $user);
+                $ins->execute();
+            }
+            $ins->close();
+
+            $finalBbm = $existing_bbm > 0 ? $existing_bbm : (float) $calc['bbm'];
+            $totalOp  = round($finalBbm + (float) $calc['total_crew'], 2);
+            $up = $db->prepare('UPDATE rental_car_bookings SET bbm = ?, total_operational_cost = ? WHERE id = ? AND company_id = ?');
+            $up->bind_param('ddii', $finalBbm, $totalOp, $booking_id, $company_id);
+            $up->execute();
+            $up->close();
+            return;
+        }
+    }
+
+    $st = $db->prepare('SELECT cost_type, premi_type, premi_value, note FROM premi_configs
         WHERE company_id = ? AND category_vehicle_id = ? AND is_active = 1');
     $st->bind_param('ii', $company_id, $category_vehicle_id);
     $st->execute();
     $configs = $st->get_result()->fetch_all(MYSQLI_ASSOC);
     $st->close();
 
-    $ins = db()->prepare('INSERT INTO booking_cost_lines
+    $ins = $db->prepare('INSERT INTO booking_cost_lines
         (company_id, booking_type, booking_id, cost_type, description, amount, premi_type, premi_value, premi_amount)
         VALUES (?, ?, ?, ?, ?, 0, ?, ?, ?)');
     foreach ($configs as $c) {
@@ -199,7 +241,17 @@ function booking_create(string $type, array $data): array
         $st->close();
 
         booking_insert_history($type, $booking_id, $company_id, null, 'draft', null, $data['created_user']);
-        booking_copy_premi($type, $booking_id, $company_id, $data['category_vehicle_id']);
+        booking_copy_premi(
+            $type,
+            $booking_id,
+            $company_id,
+            !empty($data['category_vehicle_id']) ? (int) $data['category_vehicle_id'] : null,
+            (float) ($data['total_price'] ?? 0),
+            (float) ($data['trip'] ?? 1),
+            (string) ($data['start_date'] ?? $data['date'] ?? date('Y-m-d')),
+            (float) ($data['bbm'] ?? 0),
+            $data['created_user'] ?? null
+        );
         // Penumpang: daftar lengkap (opsional) + primary = passenger_id booking.
         $pids = $data['passenger_ids'] ?? [];
         if (!$pids) {

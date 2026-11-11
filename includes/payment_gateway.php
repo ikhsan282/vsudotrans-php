@@ -235,7 +235,7 @@ function gateway_store_order(
          VALUES (?,?,?,?,?,?,?,?, 'PENDING', ?,?,?,?,?,?)"
     );
     $s->bind_param(
-        'iisisiiddsssss',
+        'iisisiddssssss',
         $companyId, $channelId, $orderId, $invId, $bType, $bId,
         $amount, $total, $qris, $durl, $source, $payload, $exp, $user
     );

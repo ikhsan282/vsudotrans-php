@@ -795,7 +795,7 @@ CREATE TABLE `rental_car_regulation_employees` (
   `trip` INT(11) NOT NULL DEFAULT 0,
   `start_date` DATE NOT NULL,
   `end_date` DATE NOT NULL,
-  `type` VARCHAR(40) NOT NULL,
+  `type` VARCHAR(40) NOT NULL DEFAULT 'Komisi',
   `amount` DECIMAL(18,2) NOT NULL DEFAULT 0,
   `note` VARCHAR(2000) DEFAULT NULL,
   `created_user` VARCHAR(255) DEFAULT NULL,
@@ -807,6 +807,20 @@ CREATE TABLE `rental_car_regulation_employees` (
   KEY `ix_rental_regulation_category_vehicle` (`category_vehicle_id`),
   CONSTRAINT `fk_rental_regulation_company` FOREIGN KEY (`company_id`) REFERENCES `companies` (`id`) ON DELETE RESTRICT,
   CONSTRAINT `fk_rental_regulation_category_vehicle` FOREIGN KEY (`category_vehicle_id`) REFERENCES `category_vehicles` (`id`) ON DELETE RESTRICT
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE `rental_car_regulation_employee_details` (
+  `id` INT(11) NOT NULL AUTO_INCREMENT,
+  `regulation_id` INT(11) NOT NULL,
+  `line_no` INT(11) NOT NULL DEFAULT 1,
+  `employee_type` VARCHAR(40) NOT NULL COMMENT 'Sopir|Kernet|Montir|BBM|Agen',
+  `calc_type` VARCHAR(20) NOT NULL DEFAULT 'Tetap' COMMENT 'Persentase|Tetap',
+  `amount` DECIMAL(18,2) NOT NULL DEFAULT 0.00,
+  `created_user` VARCHAR(255) DEFAULT NULL,
+  `created_date` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (`id`),
+  KEY `ix_rental_reg_detail_reg` (`regulation_id`),
+  CONSTRAINT `fk_rental_reg_detail_reg` FOREIGN KEY (`regulation_id`) REFERENCES `rental_car_regulation_employees` (`id`) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- =====================================================================
