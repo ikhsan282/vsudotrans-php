@@ -512,7 +512,7 @@ function booking_rental_crew_sync(int $booking_id, int $company_id, float $bbm, 
         VALUES (?, 'rental', ?, ?, ?, ?, ?, 'nominal', ?, ?, ?)");
 
     $crew_total = 0.0;
-    $primary_driver_id = 0;
+    $driver_assignments = [];
 
     foreach ($crew_rows as $r) {
         $ctype = trim((string) ($r['type'] ?? 'Sopir'));
@@ -530,8 +530,11 @@ function booking_rental_crew_sync(int $booking_id, int $company_id, float $bbm, 
         $ins->execute();
         $crew_total += $amt;
 
-        if ($primary_driver_id === 0 && strcasecmp($ctype, 'Sopir') === 0 && $emp_id > 0) {
-            $primary_driver_id = $emp_id;
+        // Deteksi seluruh baris sopir (Sopir, Sopir 1, Sopir 2, Sopir Cadangan)
+        if ($emp_id > 0 && preg_match('/^(sopir|driver)/i', $ctype)) {
+            if (!in_array($emp_id, $driver_assignments, true)) {
+                $driver_assignments[] = $emp_id;
+            }
         }
     }
     $ins->close();
@@ -542,15 +545,20 @@ function booking_rental_crew_sync(int $booking_id, int $company_id, float $bbm, 
     $up->execute();
     $up->close();
 
-    // Sinkronkan sopir utama ke trip_assignments bila berubah
-    if ($primary_driver_id > 0) {
-        $chk = $db->prepare("SELECT employee_id FROM trip_assignments WHERE booking_type = 'rental' AND booking_id = ? AND ended_at IS NULL LIMIT 1");
+    // Sinkronkan seluruh sopir (utama + cadangan) ke trip_assignments
+    if (!empty($driver_assignments)) {
+        // Ambil sopir aktif saat ini di trip_assignments
+        $chk = $db->prepare("SELECT employee_id FROM trip_assignments WHERE booking_type = 'rental' AND booking_id = ? AND ended_at IS NULL");
         $chk->bind_param('i', $booking_id);
         $chk->execute();
-        $cur = $chk->get_result()->fetch_assoc();
+        $curDrivers = array_map('intval', array_column($chk->get_result()->fetch_all(MYSQLI_ASSOC), 'employee_id'));
         $chk->close();
 
-        if (!$cur || (int) $cur['employee_id'] !== $primary_driver_id) {
+        sort($curDrivers);
+        $targetDrivers = $driver_assignments;
+        sort($targetDrivers);
+
+        if ($curDrivers !== $targetDrivers) {
             $endSt = $db->prepare("UPDATE trip_assignments SET ended_at = NOW(), modified_user = ?, modified_date = NOW()
                 WHERE booking_type = 'rental' AND booking_id = ? AND company_id = ? AND ended_at IS NULL");
             $endSt->bind_param('sii', $user, $booking_id, $company_id);
@@ -560,8 +568,10 @@ function booking_rental_crew_sync(int $booking_id, int $company_id, float $bbm, 
             $addSt = $db->prepare("INSERT INTO trip_assignments
                 (company_id, booking_type, booking_id, employee_id, vehicle_id, started_at, created_user)
                 VALUES (?, 'rental', ?, ?, ?, NOW(), ?)");
-            $addSt->bind_param('iiiis', $company_id, $booking_id, $primary_driver_id, $vehicle_id, $user);
-            $addSt->execute();
+            foreach ($driver_assignments as $dEmpId) {
+                $addSt->bind_param('iiiis', $company_id, $booking_id, $dEmpId, $vehicle_id, $user);
+                $addSt->execute();
+            }
             $addSt->close();
         }
     }

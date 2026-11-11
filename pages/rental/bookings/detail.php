@@ -865,7 +865,7 @@ require __DIR__ . '/../../../includes/header.php';
                                             <select class="form-select form-select-sm crew-type-select" name="crew_type[]" form="rentalDetailForm" <?= $canManage ? '' : 'disabled' ?>>
                                                 <?php
                                                 $curType = (string) ($cr['cost_type'] ?? 'Sopir');
-                                                $typeOpts = ['Sopir', 'Kernet', 'Montir', 'Agen'];
+                                                $typeOpts = ['Sopir', 'Sopir 1', 'Sopir 2', 'Sopir Cadangan', 'Kernet', 'Montir', 'Agen'];
                                                 if (!in_array($curType, $typeOpts, true) && $curType !== '') {
                                                     $typeOpts[] = $curType;
                                                 }
@@ -1449,14 +1449,15 @@ document.addEventListener('DOMContentLoaded', () => {
         tr.className = 'crew-row';
         const tp = defaultType || 'Sopir';
         const amtNum = parseRupiah(defaultAmount);
+        const typeOptions = ['Sopir', 'Sopir 1', 'Sopir 2', 'Sopir Cadangan', 'Kernet', 'Montir', 'Agen'];
+        if (!typeOptions.includes(tp)) typeOptions.unshift(tp);
+        const typeOptsHtml = typeOptions.map(t => `<option value="${t}" ${tp === t ? 'selected' : ''}>${t}</option>`).join('');
+
         tr.innerHTML = `
             <td class="text-center text-muted crew-row-num">1</td>
             <td>
                 <select class="form-select form-select-sm crew-type-select" name="crew_type[]" form="rentalDetailForm">
-                    <option value="Sopir" ${tp === 'Sopir' ? 'selected' : ''}>Sopir</option>
-                    <option value="Kernet" ${tp === 'Kernet' ? 'selected' : ''}>Kernet</option>
-                    <option value="Montir" ${tp === 'Montir' ? 'selected' : ''}>Montir</option>
-                    <option value="Agen" ${tp === 'Agen' ? 'selected' : ''}>Agen</option>
+                    ${typeOptsHtml}
                 </select>
             </td>
             <td>

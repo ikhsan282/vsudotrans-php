@@ -4,6 +4,7 @@ require_permission('rental.manage');
 require_once __DIR__ . '/../../travel/_helpers.php';
 require_once __DIR__ . '/../../../includes/booking_service.php';
 require_once __DIR__ . '/../../../includes/invoice_service.php';
+require_once __DIR__ . '/../../../includes/regulation_service.php';
 
 $cid = require_active_company();
 $in  = [
@@ -232,6 +233,7 @@ $vehicles   = opts_vehicles($cid);
 $employees  = opts_employees($cid);
 $provinces  = opts_provinces();
 $cities     = opts_cities();
+$company_regulations = regulation_list_by_company($cid);
 
 $pickup_districts = !empty($in['pickup_point_city_id'])
     ? db()->query('SELECT id, name FROM districts WHERE city_id = ' . (int) $in['pickup_point_city_id'] . ' ORDER BY name')->fetch_all(MYSQLI_ASSOC)
@@ -612,7 +614,34 @@ require __DIR__ . '/../../../includes/header.php';
             <div class="tab-pane fade" id="tab-crew" role="tabpanel">
                 <!-- Field Atas: Total Biaya Operasional & Bahan Bakar Minyak (BBM) -->
                 <div class="rnt-panel">
+                    <div class="rnt-panel-header">
+                        <span>Perhitungan Operasional &amp; Peraturan Komisi Karyawan</span>
+                        <a href="<?= e(APP_URL) ?>/pages/rental/regulations/index.php" class="btn btn-sm btn-outline-secondary py-0 px-2" target="_blank">
+                            <i class="bi bi-sliders me-1"></i>Kelola Peraturan Komisi
+                        </a>
+                    </div>
                     <div class="rnt-panel-body">
+                        <div class="rnt-row">
+                            <label class="rnt-label">Peraturan Komisi</label>
+                            <div class="rnt-field">
+                                <div class="d-flex flex-wrap gap-2 align-items-center">
+                                    <select class="form-select form-select-sm" id="crewRegulationSelect" style="max-width:480px;">
+                                        <option value="0">-- Otomatis Sesuai Kategori Kendaraan &amp; Trip --</option>
+                                        <?php foreach ($company_regulations as $crg):
+                                            $crgSummary = trim((string) ($crg['note'] ?? '')) ?: regulation_build_summary($crg['details'] ?? []);
+                                        ?>
+                                            <option value="<?= (int) $crg['id'] ?>">
+                                                <?= e('[' . $crg['category_code'] . ' · Trip ' . (int) $crg['trip'] . '] ' . $crgSummary) ?>
+                                            </option>
+                                        <?php endforeach; ?>
+                                    </select>
+                                    <button type="button" class="btn btn-sm btn-primary" id="btnApplyRegulation">
+                                        <i class="bi bi-lightning-charge-fill me-1"></i>Hitung &amp; Isi Otomatis Premi
+                                    </button>
+                                    <span class="small text-muted" id="crewRegStatusMsg"></span>
+                                </div>
+                            </div>
+                        </div>
                         <div class="rnt-row">
                             <label class="rnt-label">Total Biaya Operasional</label>
                             <div class="rnt-field">
@@ -660,7 +689,7 @@ require __DIR__ . '/../../../includes/header.php';
                                     <td class="text-center text-muted crew-row-num"><?= $idx + 1 ?></td>
                                     <td>
                                         <select class="form-select form-select-sm crew-type-select" name="crew_type[]">
-                                            <?php foreach (['Sopir', 'Kernet', 'Montir', 'Agen'] as $tp): ?>
+                                            <?php foreach (['Sopir', 'Sopir 1', 'Sopir 2', 'Sopir Cadangan', 'Kernet', 'Montir', 'Agen'] as $tp): ?>
                                                 <option value="<?= $tp ?>" <?= ($cr['type'] ?? '') === $tp ? 'selected' : '' ?>><?= $tp ?></option>
                                             <?php endforeach; ?>
                                         </select>
@@ -1450,19 +1479,23 @@ document.addEventListener('DOMContentLoaded', function () {
         }
     }
 
-    function addCrewRow(defaultType) {
+    function addCrewRow(defaultType, defaultAmount, defaultEmpId) {
         if (!crewTbody) return;
         var tr = document.createElement('tr');
         tr.className = 'crew-row';
         var tp = defaultType || 'Sopir';
+        var amtNum = parseRupiah(defaultAmount || 0);
+        var typeOptions = ['Sopir', 'Sopir 1', 'Sopir 2', 'Sopir Cadangan', 'Kernet', 'Montir', 'Agen'];
+        if (!typeOptions.includes(tp)) typeOptions.unshift(tp);
+        var typeOptsHtml = typeOptions.map(function(t) {
+            return '<option value="' + t + '"' + (tp === t ? ' selected' : '') + '>' + t + '</option>';
+        }).join('');
+
         tr.innerHTML = `
             <td class="text-center text-muted crew-row-num">1</td>
             <td>
                 <select class="form-select form-select-sm crew-type-select" name="crew_type[]">
-                    <option value="Sopir" ${tp === 'Sopir' ? 'selected' : ''}>Sopir</option>
-                    <option value="Kernet" ${tp === 'Kernet' ? 'selected' : ''}>Kernet</option>
-                    <option value="Montir" ${tp === 'Montir' ? 'selected' : ''}>Montir</option>
-                    <option value="Agen" ${tp === 'Agen' ? 'selected' : ''}>Agen</option>
+                    ${typeOptsHtml}
                 </select>
             </td>
             <td>
@@ -1471,13 +1504,124 @@ document.addEventListener('DOMContentLoaded', function () {
             <td><input type="text" class="form-control form-control-sm bg-light crew-org-input" value="" readonly placeholder="-"></td>
             <td><input type="text" class="form-control form-control-sm bg-light crew-pos-input" value="" readonly placeholder="-"></td>
             <td>
-                <input type="text" inputmode="numeric" class="form-control form-control-sm text-end fw-semibold crew-amt-display" value="0">
-                <input type="hidden" name="crew_amount[]" class="crew-amt-value" value="0">
+                <input type="text" inputmode="numeric" class="form-control form-control-sm text-end fw-semibold crew-amt-display" value="${formatRupiah(amtNum) || '0'}">
+                <input type="hidden" name="crew_amount[]" class="crew-amt-value" value="${amtNum}">
             </td>
             <td class="text-center">
                 <button type="button" class="btn btn-sm btn-link text-danger p-0 btn-remove-crew" title="Hapus baris"><i class="bi bi-x-lg"></i></button>
             </td>
         `;
+        crewTbody.appendChild(tr);
+        if (defaultEmpId) {
+            var empSel = tr.querySelector('.crew-emp-select');
+            if (empSel) empSel.value = String(defaultEmpId);
+        }
+        bindCrewRow(tr);
+        recalcCrewTotals();
+    }
+
+    // Tombol & Auto-Match Peraturan Komisi Karyawan
+    var btnApplyReg = document.getElementById('btnApplyRegulation');
+    var regSelect   = document.getElementById('crewRegulationSelect');
+    var regMsgEl    = document.getElementById('crewRegStatusMsg');
+
+    async function applyRegulationAuto(manualRegId) {
+        var catEl = document.getElementById('rental_category_select');
+        var trpEl = document.getElementById('rental_trip');
+        var stEl  = document.getElementById('rental_start_date');
+        var prEl  = document.getElementById('total_price_hidden');
+
+        var regId = typeof manualRegId !== 'undefined' ? parseInt(manualRegId || '0', 10) : (regSelect ? parseInt(regSelect.value || '0', 10) : 0);
+        var catId = catEl ? parseInt(catEl.value || '0', 10) : 0;
+        var trip  = trpEl ? parseFloat(trpEl.value || '1') : 1;
+        var sDate = stEl ? stEl.value : '';
+        var price = prEl ? parseRupiah(prEl.value) : 0;
+
+        if (btnApplyReg) btnApplyReg.disabled = true;
+        if (regMsgEl) {
+            regMsgEl.className = 'small text-muted';
+            regMsgEl.textContent = 'Menghitung komisi...';
+        }
+
+        try {
+            var qs = new URLSearchParams({
+                company_id: '<?= (int) $cid ?>',
+                regulation_id: String(regId),
+                category_vehicle_id: String(catId),
+                trip: String(trip),
+                start_date: sDate,
+                total_price: String(price)
+            });
+            var res = await fetch('<?= e(APP_URL) ?>/pages/rental/regulations/match_api.php?' + qs.toString(), {
+                headers: { 'Accept': 'application/json' }
+            });
+            var data = await res.json();
+            if (!data.ok) {
+                if (regMsgEl) {
+                    regMsgEl.className = 'small text-danger fw-semibold';
+                    regMsgEl.textContent = data.error || 'Gagal memuat peraturan komisi.';
+                }
+                return;
+            }
+
+            // Simpan karyawan yang sudah dipilih per tipe agar tidak ter-reset
+            var existingEmpsByType = {};
+            crewTbody.querySelectorAll('tr.crew-row').forEach(function (r) {
+                var t = r.querySelector('.crew-type-select')?.value || 'Sopir';
+                var e = r.querySelector('.crew-emp-select')?.value || '';
+                if (e) {
+                    if (!existingEmpsByType[t]) existingEmpsByType[t] = [];
+                    existingEmpsByType[t].push(e);
+                }
+            });
+
+            var calc = data.calculated || {};
+            var bbmNum = parseRupiah(calc.bbm || 0);
+            if (bbmVal) bbmVal.value = String(bbmNum);
+            if (bbmDisp) bbmDisp.value = formatRupiah(bbmNum) || '0';
+
+            crewTbody.innerHTML = '';
+            var crewRows = Array.isArray(calc.crew_rows) ? calc.crew_rows : [];
+            crewRows.forEach(function (cr) {
+                var tp = cr.type || 'Sopir';
+                var empQueue = existingEmpsByType[tp] || [];
+                var empId = empQueue.length > 0 ? empQueue.shift() : '';
+                addCrewRow(tp, cr.amount || 0, empId);
+            });
+            recalcCrewTotals();
+
+            if (regSelect && data.regulation && data.regulation.id) {
+                regSelect.value = String(data.regulation.id);
+            }
+            if (regMsgEl) {
+                regMsgEl.className = 'small text-success fw-semibold';
+                regMsgEl.textContent = '✓ Diterapkan: ' + (data.regulation?.note || '');
+            }
+        } catch (err) {
+            if (regMsgEl) {
+                regMsgEl.className = 'small text-danger';
+                regMsgEl.textContent = 'Gagal menghubungi server.';
+            }
+        } finally {
+            if (btnApplyReg) btnApplyReg.disabled = false;
+        }
+    }
+
+    if (btnApplyReg) {
+        btnApplyReg.addEventListener('click', function () {
+            applyRegulationAuto();
+        });
+    }
+
+    // Auto-Match Komisi saat Kategori Kendaraan atau Harga Sewa selesai diisi di Tab 1
+    var catSelectEl = document.getElementById('rental_category_select');
+    if (catSelectEl) {
+        catSelectEl.addEventListener('change', function () {
+            if (catSelectEl.value && parseRupiah(priceHidden ? priceHidden.value : 0) > 0) {
+                applyRegulationAuto(0);
+            }
+        });
+    }
         crewTbody.appendChild(tr);
         bindCrewRow(tr);
         recalcCrewTotals();

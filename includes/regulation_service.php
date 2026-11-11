@@ -5,7 +5,7 @@
  * `rental_car_regulation_employee_details` (Rincian: Sopir, Kernet, Montir, BBM, Agen).
  */
 
-const REGULATION_EMP_TYPES  = ['Sopir', 'Kernet', 'Montir', 'BBM', 'Agen'];
+const REGULATION_EMP_TYPES  = ['Sopir', 'Sopir 1', 'Sopir 2', 'Sopir Cadangan', 'Kernet', 'Montir', 'BBM', 'Agen'];
 const REGULATION_CALC_TYPES = ['Persentase', 'Tetap'];
 
 /** Pastikan tabel detail `rental_car_regulation_employee_details` tersedia di DB. */
