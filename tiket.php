@@ -241,20 +241,20 @@ if ($pdf) {
                 </td>
             </tr></table>
 
-            <div class="tk-sect mt-4 mb-1"><?= $type === 'rental' ? 'Detail Penyewa / Penumpang' : 'Detail Penumpang' ?></div>
+            <div class="tk-sect mt-4 mb-1">Detail Penumpang</div>
             <table class="table table-bordered tk-tbl mb-0">
-                <thead><tr><th style="width:25px">#</th><th style="width:76px">Tipe</th><th>Nama</th><th style="width:140px">Nomor Telepon</th></tr></thead>
+                <thead><tr><th style="width:35px" class="text-center">#</th><th style="width:150px">Tipe</th><th style="width:320px">Nama</th><th style="width:220px">Nomor Telepon</th></tr></thead>
                 <tbody>
                 <?php if (!$passengers): ?>
                 <tr>
-                    <td class="text-muted">1</td>
+                    <td class="text-center text-muted">1</td>
                     <td>Orang</td>
                     <td>—</td>
                     <td>—</td>
                 </tr>
                 <?php else: foreach ($passengers as $i => $p): ?>
                 <tr>
-                    <td class="text-muted"><?= $i + 1 ?></td>
+                    <td class="text-center text-muted"><?= $i + 1 ?></td>
                     <td><?= (int) $p['is_primary'] === 1 ? 'Orang (utama)' : 'Orang' ?></td>
                     <td><?= e((string) $p['name']) ?></td>
                     <td><?= e((string) ($p['phone_number'] ?? '—') ?: '—') ?></td>
