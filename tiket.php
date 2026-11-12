@@ -302,7 +302,7 @@ if ($pdf) {
                             </tr>
                             <?php endif; ?>
                             <tr>
-                                <td class="tk-kv-k">Total Biaya</td>
+                                <td class="tk-kv-k">Total Harga</td>
                                 <td class="tk-kv-v tk-price-val"><?= e(rupiah((float) ($row['invoice_total'] ?? $row['total_price']))) ?></td>
                             </tr>
                         <?php else: ?>
