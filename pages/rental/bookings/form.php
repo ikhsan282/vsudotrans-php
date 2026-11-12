@@ -908,7 +908,7 @@ require __DIR__ . '/../../../includes/header.php';
                                     </td>
                                     <td>
                                         <select class="form-select form-select-sm pay-type-select" name="pay_type[]">
-                                            <?php foreach (['Down Payment (DP)', 'Pelunasan', 'Pembayaran Penuh (Full)', 'Cicilan / Termin'] as $pt): ?>
+                                            <?php foreach (['Down Payment (DP)', 'Pelunasan', 'Pembayaran Penuh (Full)'] as $pt): ?>
                                                 <option value="<?= e($pt) ?>" <?= ($pr['pay_type'] ?? '') === $pt ? 'selected' : '' ?>><?= e($pt) ?></option>
                                             <?php endforeach; ?>
                                         </select>
@@ -1829,7 +1829,6 @@ document.addEventListener('DOMContentLoaded', function () {
                     <option value="Down Payment (DP)">Down Payment (DP)</option>
                     <option value="Pelunasan">Pelunasan</option>
                     <option value="Pembayaran Penuh (Full)">Pembayaran Penuh (Full)</option>
-                    <option value="Cicilan / Termin">Cicilan / Termin</option>
                 </select>
             </td>
             <td>

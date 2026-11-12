@@ -1037,7 +1037,7 @@ require __DIR__ . '/../../../includes/header.php';
                                             <select class="form-select form-select-sm pay-type-select" name="pay_type[]" form="rentalDetailForm" <?= ($canManage && !$isAutoQris) ? '' : 'disabled' ?>>
                                                 <?php
                                                 $curPt = (string) ($pr['pay_type'] ?? 'Down Payment (DP)');
-                                                $ptOpts = ['Down Payment (DP)', 'Pelunasan', 'Pembayaran Penuh (Full)', 'Cicilan / Termin'];
+                                                $ptOpts = ['Down Payment (DP)', 'Pelunasan', 'Pembayaran Penuh (Full)'];
                                                 if (!in_array($curPt, $ptOpts, true) && $curPt !== '') $ptOpts[] = $curPt;
                                                 foreach ($ptOpts as $pt): ?>
                                                     <option value="<?= e($pt) ?>" <?= $curPt === $pt ? 'selected' : '' ?>><?= e($pt) ?></option>
@@ -1937,7 +1937,6 @@ document.addEventListener('DOMContentLoaded', () => {
                     <option value="Down Payment (DP)">Down Payment (DP)</option>
                     <option value="Pelunasan">Pelunasan</option>
                     <option value="Pembayaran Penuh (Full)">Pembayaran Penuh (Full)</option>
-                    <option value="Cicilan / Termin">Cicilan / Termin</option>
                 </select>
             </td>
             <td>
