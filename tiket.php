@@ -179,22 +179,22 @@ if ($pdf) {
         .tk-terms li { margin-bottom: 2px; }
         /* Logo & gambar dibatasi agar tidak melebar menekan kolom kanan keluar halaman. */
         .tk-logo { height: 46px; width: auto; max-width: 220px; }
-        .tk-head { margin-bottom: 6px; }
+        .tk-head { margin-bottom: 4px; }
         /* Tata cetak berbasis tabel: didukung semua renderer & printer (tanpa flexbox). */
         table.tk-lay { border-collapse: collapse; table-layout: fixed; width: 100%; }
         table.tk-lay > tbody > tr > td { border: 0; padding: 0; vertical-align: top; }
         table.tk-lay > tbody > tr > td.tk-split-left { width: 43%; padding-right: 18pt; vertical-align: top; }
         table.tk-lay > tbody > tr > td.tk-split-right { width: 57%; padding-left: 18pt; border-left: 1px solid #e2e5e9; vertical-align: top; }
-        .tk-sect-lbl { color: #888; font-size: 7pt; font-weight: 700; letter-spacing: .6px; text-transform: uppercase; margin-bottom: 5pt; }
-        .tk-hr { border: 0; border-top: 1px solid #dee2e6; margin: 10pt 0 14pt 0; opacity: 1; }
+        .tk-sect-lbl { color: #888; font-size: 7pt; font-weight: 700; letter-spacing: .6px; text-transform: uppercase; margin-bottom: 4pt; }
+        .tk-hr { border: 0; border-top: 1px solid #dee2e6; margin: 6pt 0 10pt 0; opacity: 1; }
         table.tk-kv { width: 100%; border-collapse: collapse; table-layout: fixed; }
-        table.tk-kv td { padding: 3.5pt 0; vertical-align: middle; border-bottom: 1px dashed #eceff2; }
+        table.tk-kv td { padding: 2.5pt 0; vertical-align: middle; border-bottom: 1px dashed #eceff2; }
         table.tk-kv tr:last-child td { border-bottom: 0; padding-bottom: 0; }
         table.tk-kv tr:first-child td { padding-top: 0; }
         table.tk-kv td.tk-kv-k { width: 105pt; color: #6c757d; font-size: 7.5pt; font-weight: 700; letter-spacing: .3px; text-transform: uppercase; white-space: nowrap; }
         table.tk-kv td.tk-kv-v { color: #111; font-size: 9pt; font-weight: 700; line-height: 13pt; }
-        table.tk-kv td.tk-kv-k-sm { width: 52pt; color: #6c757d; font-size: 7.5pt; font-weight: 700; letter-spacing: .3px; text-transform: uppercase; white-space: nowrap; border-bottom: 0; padding: 2pt 0; vertical-align: top; }
-        table.tk-kv td.tk-kv-v-sm { color: #495057; font-size: 8.5pt; font-weight: 400; line-height: 12.5pt; border-bottom: 0; padding: 2pt 0; vertical-align: top; word-break: break-word; }
+        table.tk-kv td.tk-kv-k-sm { width: 52pt; color: #6c757d; font-size: 7.5pt; font-weight: 700; letter-spacing: .3px; text-transform: uppercase; white-space: nowrap; border-bottom: 0; padding: 1.5pt 0; vertical-align: top; }
+        table.tk-kv td.tk-kv-v-sm { color: #495057; font-size: 8.5pt; font-weight: 400; line-height: 12.5pt; border-bottom: 0; padding: 1.5pt 0; vertical-align: top; word-break: break-word; }
         .tk-doc-badge { display: inline-block; background: #f1f3f5; border: 1px solid #dee2e6; border-radius: 3px; padding: 1pt 5pt; font-family: Consolas, "Courier New", monospace; font-size: 9pt; font-weight: 700; color: #111; letter-spacing: .5px; }
         .tk-price-val { color: #0a58ca; font-size: 9.8pt; font-weight: 700; }
         .tk-card {
@@ -284,7 +284,7 @@ if ($pdf) {
                 <td class="tk-split-left">
                     <div class="tk-sect-lbl">Perusahaan</div>
                     <div class="tk-sub mb-1"><?= e($row['company_name']) ?></div>
-                    <div class="tk-body text-muted" style="margin-bottom: 6pt; line-height: 13.5pt;">
+                    <div class="tk-body text-muted" style="margin-bottom: 4pt; line-height: 13pt;">
                         <?= e((string) $row['address']) ?>
                     </div>
                     <table class="tk-kv">
@@ -364,7 +364,7 @@ if ($pdf) {
                 </td>
             </tr></table>
 
-            <div class="tk-sect mt-4 mb-1">Detail Penumpang</div>
+            <div class="tk-sect mb-1" style="margin-top: 12pt;">Detail Penumpang</div>
             <table class="table table-bordered tk-tbl mb-0">
                 <thead><tr><th style="width:35px" class="text-center">#</th><th style="width:150px">Tipe</th><th style="width:320px">Nama</th><th style="width:220px">Nomor Telepon</th></tr></thead>
                 <tbody>
