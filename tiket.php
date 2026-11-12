@@ -282,7 +282,7 @@ if ($pdf) {
 
             <table class="tk-lay w-100"><tr>
                 <td class="tk-split-left">
-                    <div class="tk-sect-lbl">Penerbit / Perusahaan</div>
+                    <div class="tk-sect-lbl">Perusahaan</div>
                     <div class="tk-sub mb-1"><?= e($row['company_name']) ?></div>
                     <div class="tk-body text-muted" style="margin-bottom: 6pt; line-height: 13.5pt;">
                         <?= e((string) $row['address']) ?>
