@@ -329,23 +329,28 @@ if ($pdf) {
 
             <!-- FOOTER RESMI (SELALU DI BAWAH) -->
             <div class="tk-footer">
-                <table class="tk-lay w-100"><tr>
-                    <td class="align-bottom tk-ver" style="vertical-align: bottom !important; padding-bottom: 2px;">
-                        Dibuat oleh <strong><?= e((string) ($row['created_user'] ?: '—')) ?></strong> pada tanggal <strong><?= e(tanggal_indo((string) $row['date'])) ?></strong>
-                    </td>
+                <?php
+                $stampPath = (string) ($row['stamp'] ?? '');
+                $stampSrc  = $pdf ? resolve_asset_data_uri($stampPath) : resolve_asset_url($stampPath);
+                ?>
+                <?php if ($stampSrc !== ''): ?>
+                <table class="tk-lay w-100 mb-2"><tr>
+                    <td></td>
                     <td class="text-end align-bottom" style="width:170px; vertical-align: bottom !important;">
-                        <?php
-                        $stampPath = (string) ($row['stamp'] ?? '');
-                        $stampSrc  = $pdf ? resolve_asset_data_uri($stampPath) : resolve_asset_url($stampPath);
-                        ?>
-                        <?php if ($stampSrc !== ''): ?>
-                            <img class="tk-stamp" src="<?= e($stampSrc) ?>" alt="Stempel <?= e($row['company_name']) ?>" style="vertical-align: bottom;">
-                        <?php endif; ?>
+                        <img class="tk-stamp" src="<?= e($stampSrc) ?>" alt="Stempel <?= e($row['company_name']) ?>" style="vertical-align: bottom;">
                     </td>
                 </tr></table>
+                <?php endif; ?>
 
-                <div class="tk-ver mt-3" style="border-top:1px dashed #c8c8c8;padding-top:8px">
-                    Cek keaslian melalui: <span class="text-break"><?= e($ver_link) ?></span>
+                <div class="tk-ver" style="border-top:1px dashed #c8c8c8;padding-top:8px">
+                    <table class="tk-lay w-100"><tr>
+                        <td class="align-bottom tk-ver" style="width:58%; vertical-align: bottom !important;">
+                            Cek keaslian melalui: <span class="text-break"><?= e($ver_link) ?></span>
+                        </td>
+                        <td class="text-end align-bottom tk-ver" style="width:42%; vertical-align: bottom !important;">
+                            Dibuat oleh <strong><?= e((string) ($row['created_user'] ?: '—')) ?></strong> pada tanggal <strong><?= e(tanggal_indo((string) $row['date'])) ?></strong>
+                        </td>
+                    </tr></table>
                 </div>
             </div>
         </div>
