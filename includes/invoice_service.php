@@ -182,13 +182,14 @@ function invoice_payments(int $invoice_id): array
 
     foreach ($rows as &$r) {
         $note = trim((string) ($r['note'] ?? ''));
-        $payType   = 'Down Payment (DP)';
-        $payMethod = 'Transfer';
+        $isAutoQris = (($r['pm_code'] ?? '') === 'QRIS-AUTO' || stripos((string) ($r['created_user'] ?? ''), 'qris') !== false);
+        $payType   = $isAutoQris ? 'Pelunasan' : 'Down Payment (DP)';
+        $payMethod = $isAutoQris ? 'QRIS' : 'Transfer';
         if (strpos($note, '|') !== false) {
             [$pt, $pm] = array_map('trim', explode('|', $note, 2));
             if ($pt !== '') $payType = $pt;
-            if ($pm !== '') $payMethod = $pm;
-        } elseif (stripos($note, 'QRIS') !== false || ($r['pm_code'] ?? '') === 'QRIS-AUTO') {
+            if (!$isAutoQris && $pm !== '') $payMethod = $pm;
+        } elseif (stripos($note, 'QRIS') !== false || $isAutoQris) {
             $payType   = 'Pelunasan';
             $payMethod = 'QRIS';
         } elseif ($note !== '') {
@@ -200,7 +201,7 @@ function invoice_payments(int $invoice_id): array
         $r['pay_type']     = $payType;
         $r['pay_method']   = $payMethod;
         $r['pay_date']     = substr((string) ($r['created_date'] ?? date('Y-m-d')), 0, 10);
-        $r['is_auto_qris'] = (($r['pm_code'] ?? '') === 'QRIS-AUTO' || stripos((string) ($r['created_user'] ?? ''), 'qris') !== false);
+        $r['is_auto_qris'] = $isAutoQris;
     }
     unset($r);
     return $rows;

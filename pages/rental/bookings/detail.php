@@ -6,6 +6,7 @@ require_once __DIR__ . '/../../../includes/booking_service.php';
 require_once __DIR__ . '/../../../includes/dispatch_service.php';
 require_once __DIR__ . '/../../../includes/invoice_service.php';
 require_once __DIR__ . '/../../../includes/regulation_service.php';
+require_once __DIR__ . '/../../../includes/payment_gateway.php';
 
 $cid = require_active_company();
 $id  = (int) ($_GET['id'] ?? $_POST['id'] ?? 0);
@@ -303,6 +304,20 @@ $stInvId->close();
 $invoice = $invRowId ? invoice_find((int) $invRowId['id']) : null;
 $payment_rows = $invoice ? invoice_payments((int) $invoice['id']) : [];
 
+$qrisChannels   = gateway_active_channels($booking_cid);
+$qrisInvTotal   = $invoice ? (float) $invoice['total'] : (float) $b['total_price'];
+$qrisPaidTotal  = $invoice ? (float) ($invoice['paid_total'] ?? 0) : (float) ($b['total_payment'] ?? 0);
+$qrisRemaining  = max(0.0, round($qrisInvTotal - $qrisPaidTotal, 2));
+$hasPendingQris = false;
+if ($invoice) {
+    $stQChk = db()->prepare("SELECT 1 FROM payment_gateway_orders WHERE invoice_id = ? AND status = 'PENDING' AND (expired_at IS NULL OR expired_at > NOW()) LIMIT 1");
+    $invIdInt = (int) $invoice['id'];
+    $stQChk->bind_param('i', $invIdInt);
+    $stQChk->execute();
+    $hasPendingQris = (bool) $stQChk->get_result()->fetch_row();
+    $stQChk->close();
+}
+
 $assignments = dispatch_by_booking('rental', $id);
 $crew_rows   = booking_rental_crew_list($id);
 if (!$crew_rows) {
@@ -548,7 +563,7 @@ require __DIR__ . '/../../../includes/header.php';
     <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-2">
         <div class="d-flex align-items-center gap-2">
             <span class="badge bg-primary text-white"><i class="bi bi-car-front me-1"></i>Pemesanan Sewa Kendaraan</span>
-            <?= status_badge($status) ?>
+            <span id="bookingStatusBadgeWrap"><?= status_badge($status) ?></span>
             <span class="small text-muted d-none d-md-inline">Akses: <strong><?= e($curCompany['label']) ?></strong></span>
         </div>
         <div class="d-flex flex-wrap gap-2 ms-auto">
@@ -979,20 +994,48 @@ require __DIR__ . '/../../../includes/header.php';
                         <div class="rnt-panel-body">
                             <div class="rnt-row">
                                 <div class="rnt-label">Total Pembayaran</div>
-                                <div class="rnt-field">
-                                    <input type="text" class="form-control form-control-sm fw-bold bg-light" id="pay_total_top_display" value="<?= format_nominal((float) ($invoice['paid_total'] ?? $b['total_payment'] ?? 0)) ?>" readonly style="max-width:320px;">
+                                <div class="rnt-field d-flex flex-wrap align-items-center gap-3">
+                                    <input type="text" class="form-control form-control-sm fw-bold bg-light" id="pay_total_top_display" value="<?= format_nominal((float) ($invoice['paid_total'] ?? $b['total_payment'] ?? 0)) ?>" readonly style="max-width:240px;">
+                                    <span class="small text-muted">
+                                        Sisa Tagihan:
+                                        <strong id="qrisRemainingDisplay" class="<?= $qrisRemaining > 0 ? 'text-danger' : 'text-success' ?>">
+                                            <?= $qrisRemaining > 0 ? ('Rp ' . format_nominal($qrisRemaining)) : 'Lunas (Rp 0)' ?>
+                                        </strong>
+                                    </span>
+                                    <span id="qrisLiveSyncBadge" class="badge bg-info-subtle text-info-emphasis border <?= $hasPendingQris ? '' : 'd-none' ?>">
+                                        <i class="bi bi-arrow-repeat me-1"></i>Pantau QRIS Otomatis Aktif
+                                    </span>
                                 </div>
                             </div>
                         </div>
+                    </div>
+
+                    <div id="qrisAutoNewRowBanner" class="alert alert-success py-2 px-3 small d-none align-items-center justify-content-between mb-3" role="alert">
+                        <div>
+                            <i class="bi bi-check-circle-fill me-1"></i>
+                            <span id="qrisAutoNewRowMsg">Pembayaran QRIS baru telah masuk dan ditambahkan otomatis ke tabel.</span>
+                        </div>
+                        <button type="button" class="btn-close btn-sm" aria-label="Tutup" onclick="document.getElementById('qrisAutoNewRowBanner').classList.add('d-none');document.getElementById('qrisAutoNewRowBanner').classList.remove('d-flex');"></button>
                     </div>
 
                     <div class="rnt-panel mb-0">
                         <div class="rnt-panel-header">
                             <span>Pembayaran Sewa</span>
                             <?php if ($canManage): ?>
-                            <button type="button" class="btn btn-sm btn-outline-primary py-0 px-2" id="btnAddPayRow">
-                                <i class="bi bi-plus-lg me-1"></i>Tambah Pembayaran Manual
-                            </button>
+                            <div class="d-flex flex-wrap align-items-center gap-2">
+                                <?php if (!empty($qrisChannels)): ?>
+                                <button type="button" class="btn btn-sm btn-success py-0 px-2" id="btnPayQrisAuto" <?= ($status === 'cancelled' || $qrisRemaining <= 0) ? 'disabled' : '' ?>>
+                                    <i class="bi bi-qr-code-scan me-1"></i>Bayar via QRIS Otomatis
+                                </button>
+                                <?php else: ?>
+                                <button type="button" class="btn btn-sm btn-outline-secondary py-0 px-2" disabled title="Konfigurasikan channel QRIS aktif di menu Payment Channel terlebih dahulu">
+                                    <i class="bi bi-qr-code me-1"></i>QRIS Belum Aktif
+                                </button>
+                                <?php endif; ?>
+                                <button type="button" class="btn btn-sm btn-outline-primary py-0 px-2" id="btnAddPayRow">
+                                    <i class="bi bi-plus-lg me-1"></i>Tambah Pembayaran Manual
+                                </button>
+                            </div>
                             <?php endif; ?>
                         </div>
                         <div class="table-responsive">
@@ -1011,7 +1054,7 @@ require __DIR__ . '/../../../includes/header.php';
                                 <tbody id="payTableBody">
                                     <?php foreach ($payment_rows as $idx => $pr): ?>
                                     <?php $isAutoQris = !empty($pr['is_auto_qris']); ?>
-                                    <tr class="pay-row">
+                                    <tr class="pay-row" data-payment-id="<?= (int) ($pr['id'] ?? 0) ?>">
                                         <td class="text-center text-muted pay-row-num"><?= $idx + 1 ?></td>
                                         <td>
                                             <input type="hidden" name="pay_id[]" form="rentalDetailForm" value="<?= (int) ($pr['id'] ?? 0) ?>">
@@ -1030,6 +1073,8 @@ require __DIR__ . '/../../../includes/header.php';
                                                         <i class="bi bi-paperclip"></i>
                                                         <input type="file" name="pay_proof[]" form="rentalDetailForm" class="d-none pay-file-input" accept="image/*,application/pdf">
                                                     </label>
+                                                <?php elseif ($canManage): ?>
+                                                    <input type="file" name="pay_proof[]" form="rentalDetailForm" class="d-none" tabindex="-1">
                                                 <?php endif; ?>
                                             </div>
                                         </td>
@@ -1063,6 +1108,9 @@ require __DIR__ . '/../../../includes/header.php';
                                         </td>
                                         <td>
                                             <input type="text" class="form-control form-control-sm bg-white flatpickr-date" name="pay_date[]" form="rentalDetailForm" value="<?= e($pr['pay_date'] ?? date('Y-m-d')) ?>" placeholder="dd-MMM-yyyy" <?= ($canManage && !$isAutoQris) ? '' : 'disabled' ?>>
+                                            <?php if ($isAutoQris): ?>
+                                                <input type="hidden" name="pay_date[]" form="rentalDetailForm" value="<?= e($pr['pay_date'] ?? date('Y-m-d')) ?>">
+                                            <?php endif; ?>
                                         </td>
                                         <td>
                                             <?php $pRowAmt = (float) ($pr['amount'] ?? 0); ?>
@@ -1193,6 +1241,136 @@ require __DIR__ . '/../../../includes/header.php';
                 <button type="submit" class="btn btn-primary" id="qpSubmitBtn"><i class="bi bi-check2 me-1"></i>Simpan & Pilih</button>
             </div>
         </form>
+    </div>
+</div>
+<?php endif; ?>
+
+<?php if ($canManage && !empty($qrisChannels)): ?>
+<!-- Modal Pembayaran QRIS Otomatis -->
+<div class="modal fade" id="qrisAutoModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content">
+            <div class="modal-header py-2">
+                <h6 class="modal-title fw-bold mb-0"><i class="bi bi-qr-code-scan text-success me-2"></i>Pembayaran QRIS Otomatis</h6>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Tutup"></button>
+            </div>
+
+            <!-- Step 1: Form Input Nominal & Tipe -->
+            <div id="qrisStepForm">
+                <div class="modal-body">
+                    <div id="qrisCreateErr" class="alert alert-danger py-2 small d-none"></div>
+                    <div id="qrisUnsavedPriceWarn" class="alert alert-warning py-2 small d-none">
+                        <i class="bi bi-exclamation-triangle me-1"></i>Perubahan harga di Tab Detail belum disimpan. Batas maksimal mengikuti total invoice tersimpan.
+                    </div>
+
+                    <div class="p-2 px-3 bg-light border rounded small mb-3 d-flex justify-content-between align-items-center">
+                        <span class="text-muted">Sisa Tagihan Invoice:</span>
+                        <strong class="text-danger fs-6" id="qrisFormSisaText">Rp <?= format_nominal($qrisRemaining) ?></strong>
+                    </div>
+
+                    <div class="mb-3">
+                        <label class="form-label small fw-semibold mb-1">Tipe Pembayaran <span class="text-danger">*</span></label>
+                        <select class="form-select form-select-sm" id="qrisPayType">
+                            <option value="Down Payment (DP)">Down Payment (DP)</option>
+                            <option value="Pelunasan">Pelunasan</option>
+                            <option value="Pembayaran Penuh (Full)">Pembayaran Penuh (Full)</option>
+                        </select>
+                    </div>
+
+                    <?php if (count($qrisChannels) > 1): ?>
+                    <div class="mb-3">
+                        <label class="form-label small fw-semibold mb-1">Channel QRIS</label>
+                        <select class="form-select form-select-sm" id="qrisChannelProvider">
+                            <?php foreach ($qrisChannels as $ch): ?>
+                                <option value="<?= e($ch['provider']) ?>"><?= e($ch['name']) ?> (<?= e(strtoupper((string) $ch['provider'])) ?>)</option>
+                            <?php endforeach; ?>
+                        </select>
+                    </div>
+                    <?php else: ?>
+                        <input type="hidden" id="qrisChannelProvider" value="<?= e((string) ($qrisChannels[0]['provider'] ?? '')) ?>">
+                    <?php endif; ?>
+
+                    <div class="mb-2">
+                        <label class="form-label small fw-semibold mb-1">Nominal Tagihan QRIS (Rp) <span class="text-danger">*</span></label>
+                        <div class="input-group input-group-sm">
+                            <span class="input-group-text">Rp</span>
+                            <input type="text" inputmode="numeric" class="form-control fw-bold text-end" id="qrisAmountDisplay" value="<?= format_nominal($qrisRemaining) ?>" autocomplete="off">
+                        </div>
+                        <input type="hidden" id="qrisAmountValue" value="<?= (int) round($qrisRemaining) ?>">
+                    </div>
+
+                    <div class="d-flex flex-wrap gap-1 mt-2">
+                        <button type="button" class="btn btn-outline-secondary btn-sm py-0 px-2 qris-preset-btn" data-qris-preset="full">Sisa Tagihan</button>
+                        <button type="button" class="btn btn-outline-secondary btn-sm py-0 px-2 qris-preset-btn" data-qris-preset="dp50">DP 50%</button>
+                        <button type="button" class="btn btn-outline-secondary btn-sm py-0 px-2 qris-preset-btn" data-qris-preset="dp30">DP 30%</button>
+                    </div>
+                </div>
+                <div class="modal-footer py-2">
+                    <button type="button" class="btn btn-light btn-sm" data-bs-dismiss="modal">Batal</button>
+                    <button type="button" class="btn btn-success btn-sm px-3" id="btnGenerateQris">
+                        <i class="bi bi-qr-code me-1"></i>Buat QRIS Dinamis
+                    </button>
+                </div>
+            </div>
+
+            <!-- Step 2: Tampil QR Code & Auto-Polling -->
+            <div id="qrisStepShow" class="d-none">
+                <div class="modal-body text-center">
+                    <div class="d-flex justify-content-between align-items-center mb-2">
+                        <span class="badge bg-dark" id="qrisShowChannelBadge">QRIS</span>
+                        <span class="badge bg-warning-subtle text-warning-emphasis border" id="qrisShowStatusBadge">
+                            <span class="spinner-border spinner-border-sm me-1" style="width:.7rem;height:.7rem;" role="status"></span>Menunggu Pembayaran
+                        </span>
+                    </div>
+                    <div class="text-muted small mb-2">Order ID: <code id="qrisShowOrderId">-</code></div>
+
+                    <div class="p-2 bg-white border rounded-3 d-inline-block mb-3 shadow-sm">
+                        <img id="qrisShowImg" src="" alt="QRIS Dinamis" width="230" height="230" class="img-fluid">
+                    </div>
+
+                    <div class="border rounded bg-light p-2 px-3 text-start small mb-2">
+                        <div class="d-flex justify-content-between mb-1">
+                            <span class="text-muted">Tipe Pembayaran</span>
+                            <strong id="qrisShowPayType">-</strong>
+                        </div>
+                        <div class="d-flex justify-content-between mb-1">
+                            <span class="text-muted">Nominal Tagihan</span>
+                            <span id="qrisShowBill">Rp 0</span>
+                        </div>
+                        <div class="d-flex justify-content-between mb-1 d-none" id="qrisShowFeeRow">
+                            <span class="text-muted">Biaya Layanan</span>
+                            <span id="qrisShowFee">Rp 0</span>
+                        </div>
+                        <div class="d-flex justify-content-between mb-1 d-none" id="qrisShowUniqueRow">
+                            <span class="text-muted">Kode Unik Verifikasi</span>
+                            <span class="text-primary fw-semibold" id="qrisShowUnique">+Rp 0</span>
+                        </div>
+                        <hr class="my-1">
+                        <div class="d-flex justify-content-between align-items-center">
+                            <span class="fw-semibold">Total Scan / Transfer QRIS</span>
+                            <strong class="fs-5 text-primary" id="qrisShowTotal">Rp 0</strong>
+                        </div>
+                    </div>
+
+                    <div class="small text-muted mb-0">
+                        Batas waktu: <strong id="qrisShowCountdown">-</strong> · Baris pembayaran akan otomatis bertambah begitu dana masuk.
+                    </div>
+                </div>
+                <div class="modal-footer py-2 justify-content-between">
+                    <button type="button" class="btn btn-outline-secondary btn-sm" id="btnQrisBackToForm">
+                        <i class="bi bi-arrow-left me-1"></i>Ubah Nominal
+                    </button>
+                    <div class="d-flex gap-2">
+                        <button type="button" class="btn btn-outline-primary btn-sm" id="btnCopyQrisLink" title="Salin link pembayaran untuk dikirim ke pelanggan">
+                            <i class="bi bi-link-45deg me-1"></i>Salin Link
+                        </button>
+                        <button type="button" class="btn btn-primary btn-sm" id="btnCheckQrisNow">
+                            <i class="bi bi-arrow-clockwise me-1"></i>Cek Status
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
     </div>
 </div>
 <?php endif; ?>
@@ -1986,6 +2164,467 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     }
     recalcPayTotals();
+
+    // ==================== QRIS OTOMATIS & AUTO-APPEND ROW ====================
+    const qrisBookingId   = <?= (int) $id ?>;
+    const qrisCanManage   = <?= $canManage ? 'true' : 'false' ?>;
+    const qrisBookStat    = <?= json_encode((string) $status) ?>;
+    let qrisInvTotal      = <?= json_encode((float) $qrisInvTotal) ?>;
+    let qrisServerPaid    = <?= json_encode((float) $qrisPaidTotal) ?>;
+    let qrisHasPending    = <?= $hasPendingQris ? 'true' : 'false' ?>;
+    let qrisCurrentOrderId   = '';
+    let qrisCurrentPayWebUrl = '';
+    let qrisModalPollTimer   = null;
+    let qrisBgPollTimer      = null;
+    let qrisCountdownTimer   = null;
+    let qrisPollInFlight     = false;
+
+    const btnPayQrisAuto     = document.getElementById('btnPayQrisAuto');
+    const qrisModalEl        = document.getElementById('qrisAutoModal');
+    const qrisStepForm       = document.getElementById('qrisStepForm');
+    const qrisStepShow       = document.getElementById('qrisStepShow');
+    const qrisCreateErr      = document.getElementById('qrisCreateErr');
+    const qrisUnsavedWarn    = document.getElementById('qrisUnsavedPriceWarn');
+    const qrisFormSisaText   = document.getElementById('qrisFormSisaText');
+    const qrisPayTypeSel     = document.getElementById('qrisPayType');
+    const qrisProvSel        = document.getElementById('qrisChannelProvider');
+    const qrisAmtDisp        = document.getElementById('qrisAmountDisplay');
+    const qrisAmtVal         = document.getElementById('qrisAmountValue');
+    const btnGenQris         = document.getElementById('btnGenerateQris');
+    const qrisRemainingDisp  = document.getElementById('qrisRemainingDisplay');
+    const qrisLiveSyncBadge  = document.getElementById('qrisLiveSyncBadge');
+    const qrisNewRowBanner   = document.getElementById('qrisAutoNewRowBanner');
+    const qrisNewRowMsg      = document.getElementById('qrisAutoNewRowMsg');
+
+    function escHtml(str) {
+        return String(str ?? '').replace(/[&<>"']/g, (c) => ({
+            '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
+        }[c] || c));
+    }
+
+    function appendAutoQrisRow(p) {
+        if (!payTbody || !p || !p.id) return false;
+        if (payTbody.querySelector(`tr.pay-row[data-payment-id="${Number(p.id)}"]`)) {
+            return false;
+        }
+        const ptOpts = ['Down Payment (DP)', 'Pelunasan', 'Pembayaran Penuh (Full)'];
+        if (p.pay_type && !ptOpts.includes(p.pay_type)) ptOpts.push(p.pay_type);
+        const pmOpts = ['Transfer', 'Tunai', 'QRIS', 'EDC / Kartu'];
+        if (p.pay_method && !pmOpts.includes(p.pay_method)) pmOpts.push(p.pay_method);
+
+        const ptOptionsHtml = ptOpts.map((opt) =>
+            `<option value="${escHtml(opt)}" ${opt === p.pay_type ? 'selected' : ''}>${escHtml(opt)}</option>`
+        ).join('');
+        const pmOptionsHtml = pmOpts.map((opt) =>
+            `<option value="${escHtml(opt)}" ${opt === (p.pay_method || 'QRIS') ? 'selected' : ''}>${escHtml(opt)}</option>`
+        ).join('');
+
+        const tr = document.createElement('tr');
+        tr.className = 'pay-row table-success';
+        tr.setAttribute('data-payment-id', String(Number(p.id)));
+        tr.innerHTML = `
+            <td class="text-center text-muted pay-row-num">1</td>
+            <td>
+                <input type="hidden" name="pay_id[]" form="rentalDetailForm" value="${Number(p.id)}">
+                <div class="d-flex align-items-center gap-2">
+                    <span class="badge bg-success-subtle text-success border"><i class="bi bi-qr-code me-1"></i>Verified QRIS</span>
+                    ${qrisCanManage ? '<input type="file" name="pay_proof[]" form="rentalDetailForm" class="d-none" tabindex="-1">' : ''}
+                </div>
+            </td>
+            <td>
+                <select class="form-select form-select-sm pay-type-select" name="pay_type[]" form="rentalDetailForm" disabled>${ptOptionsHtml}</select>
+                <input type="hidden" name="pay_type[]" form="rentalDetailForm" value="${escHtml(p.pay_type || 'Pelunasan')}">
+            </td>
+            <td>
+                <select class="form-select form-select-sm pay-method-select" name="pay_method[]" form="rentalDetailForm" disabled>${pmOptionsHtml}</select>
+                <input type="hidden" name="pay_method[]" form="rentalDetailForm" value="${escHtml(p.pay_method || 'QRIS')}">
+            </td>
+            <td>
+                <input type="text" class="form-control form-control-sm bg-light" value="${escHtml(p.pay_date_fmt || p.pay_date || todayIso)}" disabled>
+                <input type="hidden" name="pay_date[]" form="rentalDetailForm" value="${escHtml(p.pay_date || todayIso)}">
+            </td>
+            <td>
+                <input type="text" inputmode="numeric" class="form-control form-control-sm text-end fw-semibold pay-amt-display" value="${escHtml(p.amount_fmt || formatRupiah(p.amount || 0))}" readonly>
+                <input type="hidden" name="pay_amount[]" class="pay-amt-value" form="rentalDetailForm" value="${Number(p.amount || 0)}">
+            </td>
+            ${qrisCanManage ? '<td class="text-center"><i class="bi bi-lock-fill text-muted small" title="Pembayaran terverifikasi otomatis oleh QRIS"></i></td>' : ''}
+        `;
+        payTbody.appendChild(tr);
+        recalcPayTotals();
+        setTimeout(() => tr.classList.remove('table-success'), 4000);
+        return true;
+    }
+
+    function updateQrisSummaryUi(data) {
+        if (typeof data.invoice_total === 'number') qrisInvTotal = data.invoice_total;
+        if (typeof data.paid_total === 'number') qrisServerPaid = data.paid_total;
+        if (typeof data.has_pending === 'boolean') qrisHasPending = data.has_pending;
+
+        const rem = Math.max(0, Math.round(qrisInvTotal - qrisServerPaid));
+        if (qrisRemainingDisp) {
+            qrisRemainingDisp.textContent = rem > 0 ? ('Rp ' + formatRupiah(rem)) : 'Lunas (Rp 0)';
+            qrisRemainingDisp.className = rem > 0 ? 'text-danger' : 'text-success';
+        }
+        if (qrisFormSisaText) {
+            qrisFormSisaText.textContent = 'Rp ' + formatRupiah(rem);
+        }
+        if (btnPayQrisAuto) {
+            const curSt = data.booking_status || qrisBookStat;
+            btnPayQrisAuto.disabled = (curSt === 'cancelled' || rem <= 0);
+        }
+        if (data.booking_status_badge) {
+            const wrap = document.getElementById('bookingStatusBadgeWrap');
+            if (wrap) wrap.innerHTML = data.booking_status_badge;
+        }
+        if (qrisLiveSyncBadge) {
+            const tabPayPane = document.getElementById('tab-payment');
+            const tabActive = tabPayPane && tabPayPane.classList.contains('active');
+            if (qrisHasPending || tabActive) {
+                qrisLiveSyncBadge.classList.remove('d-none');
+            } else {
+                qrisLiveSyncBadge.classList.add('d-none');
+            }
+        }
+    }
+
+    function stopQrisModalTimers() {
+        if (qrisModalPollTimer) { clearInterval(qrisModalPollTimer); qrisModalPollTimer = null; }
+        if (qrisCountdownTimer) { clearInterval(qrisCountdownTimer); qrisCountdownTimer = null; }
+    }
+
+    function startQrisCountdown(expiredTs) {
+        if (qrisCountdownTimer) { clearInterval(qrisCountdownTimer); qrisCountdownTimer = null; }
+        const cdEl = document.getElementById('qrisShowCountdown');
+        if (!cdEl) return;
+        if (!expiredTs) { cdEl.textContent = '±15 menit'; return; }
+        const tick = () => {
+            const left = Math.max(0, expiredTs - Math.floor(Date.now() / 1000));
+            if (left <= 0) {
+                cdEl.textContent = 'Kedaluwarsa';
+                clearInterval(qrisCountdownTimer);
+                qrisCountdownTimer = null;
+                return;
+            }
+            const m = Math.floor(left / 60);
+            const s = left % 60;
+            cdEl.textContent = String(m).padStart(2, '0') + ':' + String(s).padStart(2, '0');
+        };
+        tick();
+        qrisCountdownTimer = setInterval(tick, 1000);
+    }
+
+    async function pollQrisPayments(targetOrderId = '') {
+        if (qrisPollInFlight) return null;
+        qrisPollInFlight = true;
+        try {
+            const fd = new FormData();
+            fd.append('csrf_token', csrfTok);
+            fd.append('act', 'poll');
+            fd.append('booking_id', String(qrisBookingId));
+            if (targetOrderId) fd.append('order_id', targetOrderId);
+
+            const res = await fetch(`${appUrl}/pages/rental/bookings/qris_ajax.php`, {
+                method: 'POST',
+                body: fd
+            });
+            const data = await res.json();
+            if (!res.ok || !data || !data.ok) return data;
+
+            let addedCount = 0;
+            let addedSum = 0;
+            if (Array.isArray(data.payments)) {
+                data.payments.forEach((p) => {
+                    if (p && p.is_auto_qris && Number(p.id) > 0) {
+                        if (appendAutoQrisRow(p)) {
+                            addedCount++;
+                            addedSum += Number(p.amount || 0);
+                        }
+                    }
+                });
+            }
+
+            if (addedCount > 0 && qrisNewRowBanner && qrisNewRowMsg) {
+                qrisNewRowMsg.textContent = `Pembayaran QRIS baru sebesar Rp ${formatRupiah(addedSum)} telah masuk dan ditambahkan otomatis ke tabel Pembayaran Sewa.`;
+                qrisNewRowBanner.classList.remove('d-none');
+                qrisNewRowBanner.classList.add('d-flex');
+            }
+
+            updateQrisSummaryUi(data);
+
+            // Update modal view bila sedang memantau order yang sama
+            if (targetOrderId && qrisCurrentOrderId === targetOrderId) {
+                const stBadge = document.getElementById('qrisShowStatusBadge');
+                if (data.order_status === 'PAID') {
+                    stopQrisModalTimers();
+                    if (stBadge) {
+                        stBadge.className = 'badge bg-success text-white';
+                        stBadge.innerHTML = '<i class="bi bi-check-circle-fill me-1"></i>Lunas / Terverifikasi';
+                    }
+                    setTimeout(() => {
+                        if (qrisModalEl && typeof bootstrap !== 'undefined') {
+                            const inst = bootstrap.Modal.getInstance(qrisModalEl);
+                            if (inst) inst.hide();
+                        }
+                    }, 1200);
+                } else if (data.order_status === 'EXPIRED') {
+                    stopQrisModalTimers();
+                    if (stBadge) {
+                        stBadge.className = 'badge bg-danger text-white';
+                        stBadge.innerHTML = '<i class="bi bi-x-circle me-1"></i>Kedaluwarsa';
+                    }
+                }
+            }
+            return data;
+        } catch (err) {
+            return null;
+        } finally {
+            qrisPollInFlight = false;
+        }
+    }
+
+    function refreshBgQrisPoller() {
+        const tabPayPane = document.getElementById('tab-payment');
+        const tabActive = tabPayPane && tabPayPane.classList.contains('active');
+        const shouldPoll = !document.hidden && (qrisHasPending || tabActive);
+
+        if (shouldPoll && !qrisBgPollTimer) {
+            qrisBgPollTimer = setInterval(() => {
+                if (document.hidden) return;
+                pollQrisPayments('');
+            }, 6000);
+        } else if (!shouldPoll && qrisBgPollTimer) {
+            clearInterval(qrisBgPollTimer);
+            qrisBgPollTimer = null;
+        }
+        if (qrisLiveSyncBadge) {
+            if (qrisHasPending || tabActive) qrisLiveSyncBadge.classList.remove('d-none');
+            else qrisLiveSyncBadge.classList.add('d-none');
+        }
+    }
+
+    const tabPaymentBtn = document.getElementById('tab-payment-btn');
+    if (tabPaymentBtn) {
+        tabPaymentBtn.addEventListener('shown.bs.tab', () => {
+            pollQrisPayments('');
+            refreshBgQrisPoller();
+        });
+    }
+    document.querySelectorAll('#rentalDetailTabs [data-bs-toggle="tab"]').forEach((btn) => {
+        if (btn.id !== 'tab-payment-btn') {
+            btn.addEventListener('shown.bs.tab', refreshBgQrisPoller);
+        }
+    });
+    document.addEventListener('visibilitychange', refreshBgQrisPoller);
+
+    if (qrisAmtDisp && qrisAmtVal) {
+        attachRupiahMask(qrisAmtDisp, qrisAmtVal);
+    }
+
+    document.querySelectorAll('.qris-preset-btn').forEach((btn) => {
+        btn.addEventListener('click', () => {
+            const preset = btn.getAttribute('data-qris-preset');
+            const rem = Math.max(0, Math.round(qrisInvTotal - qrisServerPaid));
+            let val = rem;
+            if (preset === 'dp50') {
+                val = Math.min(rem, Math.max(1, Math.round(qrisInvTotal * 0.5)));
+                if (qrisPayTypeSel) qrisPayTypeSel.value = 'Down Payment (DP)';
+            } else if (preset === 'dp30') {
+                val = Math.min(rem, Math.max(1, Math.round(qrisInvTotal * 0.3)));
+                if (qrisPayTypeSel) qrisPayTypeSel.value = 'Down Payment (DP)';
+            } else if (qrisPayTypeSel) {
+                qrisPayTypeSel.value = qrisServerPaid > 0 ? 'Pelunasan' : 'Pembayaran Penuh (Full)';
+            }
+            if (qrisAmtDisp) qrisAmtDisp.value = formatRupiah(val);
+            if (qrisAmtVal) qrisAmtVal.value = String(val);
+        });
+    });
+
+    if (btnPayQrisAuto && qrisModalEl) {
+        btnPayQrisAuto.addEventListener('click', () => {
+            stopQrisModalTimers();
+            qrisCurrentOrderId = '';
+            qrisCurrentPayWebUrl = '';
+            if (qrisCreateErr) { qrisCreateErr.classList.add('d-none'); qrisCreateErr.textContent = ''; }
+
+            const rem = Math.max(0, Math.round(qrisInvTotal - qrisServerPaid));
+            if (qrisFormSisaText) qrisFormSisaText.textContent = 'Rp ' + formatRupiah(rem);
+            if (qrisPayTypeSel) {
+                qrisPayTypeSel.value = qrisServerPaid > 0 ? 'Pelunasan' : 'Pembayaran Penuh (Full)';
+            }
+            if (qrisAmtDisp) qrisAmtDisp.value = formatRupiah(rem);
+            if (qrisAmtVal) qrisAmtVal.value = String(rem);
+
+            const uiPriceInput = document.getElementById('totalPriceValue');
+            if (qrisUnsavedWarn && uiPriceInput) {
+                const uiPrice = parseRupiah(uiPriceInput.value || '0');
+                if (Math.abs(uiPrice - Math.round(qrisInvTotal)) > 1) {
+                    qrisUnsavedWarn.classList.remove('d-none');
+                } else {
+                    qrisUnsavedWarn.classList.add('d-none');
+                }
+            }
+
+            if (qrisStepForm) qrisStepForm.classList.remove('d-none');
+            if (qrisStepShow) qrisStepShow.classList.add('d-none');
+            if (typeof bootstrap !== 'undefined') {
+                bootstrap.Modal.getOrCreateInstance(qrisModalEl).show();
+            }
+        });
+
+        qrisModalEl.addEventListener('hidden.bs.modal', () => {
+            stopQrisModalTimers();
+            qrisCurrentOrderId = '';
+            refreshBgQrisPoller();
+        });
+    }
+
+    if (btnGenQris) {
+        btnGenQris.addEventListener('click', async () => {
+            const amt = parseRupiah(qrisAmtVal ? qrisAmtVal.value : (qrisAmtDisp ? qrisAmtDisp.value : '0'));
+            const pt  = qrisPayTypeSel ? qrisPayTypeSel.value : 'Pelunasan';
+            const prov = qrisProvSel ? qrisProvSel.value : '';
+
+            if (qrisCreateErr) { qrisCreateErr.classList.add('d-none'); qrisCreateErr.textContent = ''; }
+            if (amt <= 0) {
+                if (qrisCreateErr) {
+                    qrisCreateErr.textContent = 'Masukkan nominal tagihan QRIS lebih dari Rp 0.';
+                    qrisCreateErr.classList.remove('d-none');
+                }
+                return;
+            }
+
+            btnGenQris.disabled = true;
+            const origHtml = btnGenQris.innerHTML;
+            btnGenQris.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span>Membuat QRIS...';
+            try {
+                const fd = new FormData();
+                fd.append('csrf_token', csrfTok);
+                fd.append('act', 'create');
+                fd.append('booking_id', String(qrisBookingId));
+                fd.append('pay_type', pt);
+                fd.append('amount', String(amt));
+                if (prov) fd.append('provider', prov);
+
+                const res = await fetch(`${appUrl}/pages/rental/bookings/qris_ajax.php`, {
+                    method: 'POST',
+                    body: fd
+                });
+                const data = await res.json();
+                if (!res.ok || !data || !data.ok) {
+                    throw new Error((data && data.error) || 'Gagal membuat transaksi QRIS.');
+                }
+
+                qrisCurrentOrderId   = data.order_id || '';
+                qrisCurrentPayWebUrl = data.pay_web_url || '';
+                qrisHasPending       = true;
+
+                const imgEl = document.getElementById('qrisShowImg');
+                if (imgEl) {
+                    const primarySrc  = data.qris_image_url || data.fallback_qr_url || '';
+                    const fallbackSrc = data.fallback_qr_url || '';
+                    imgEl.onerror = function () {
+                        if (fallbackSrc && this.src !== fallbackSrc) this.src = fallbackSrc;
+                    };
+                    imgEl.src = primarySrc;
+                }
+                const chEl = document.getElementById('qrisShowChannelBadge');
+                if (chEl) chEl.textContent = data.channel_name || 'QRIS';
+                const oidEl = document.getElementById('qrisShowOrderId');
+                if (oidEl) oidEl.textContent = qrisCurrentOrderId;
+                const ptEl = document.getElementById('qrisShowPayType');
+                if (ptEl) ptEl.textContent = data.pay_type || pt;
+                const billEl = document.getElementById('qrisShowBill');
+                if (billEl) billEl.textContent = 'Rp ' + formatRupiah(Math.round(Number(data.bill_amount || amt)));
+
+                const feeRow = document.getElementById('qrisShowFeeRow');
+                const feeEl  = document.getElementById('qrisShowFee');
+                const feeNum = Math.round(Number(data.fee || 0));
+                if (feeRow && feeEl) {
+                    if (feeNum > 0) {
+                        feeEl.textContent = 'Rp ' + formatRupiah(feeNum);
+                        feeRow.classList.remove('d-none');
+                    } else {
+                        feeRow.classList.add('d-none');
+                    }
+                }
+                const uniqRow = document.getElementById('qrisShowUniqueRow');
+                const uniqEl  = document.getElementById('qrisShowUnique');
+                const uniqNum = Math.round(Number(data.unique_code || 0));
+                if (uniqRow && uniqEl) {
+                    if (uniqNum > 0) {
+                        uniqEl.textContent = '+Rp ' + formatRupiah(uniqNum);
+                        uniqRow.classList.remove('d-none');
+                    } else {
+                        uniqRow.classList.add('d-none');
+                    }
+                }
+                const totEl = document.getElementById('qrisShowTotal');
+                if (totEl) totEl.textContent = 'Rp ' + formatRupiah(Math.round(Number(data.total_amount || amt)));
+
+                const stBadge = document.getElementById('qrisShowStatusBadge');
+                if (stBadge) {
+                    stBadge.className = 'badge bg-warning-subtle text-warning-emphasis border';
+                    stBadge.innerHTML = '<span class="spinner-border spinner-border-sm me-1" style="width:.7rem;height:.7rem;" role="status"></span>Menunggu Pembayaran';
+                }
+
+                if (qrisStepForm) qrisStepForm.classList.add('d-none');
+                if (qrisStepShow) qrisStepShow.classList.remove('d-none');
+
+                startQrisCountdown(data.expired_ts || null);
+                qrisModalPollTimer = setInterval(() => {
+                    if (qrisCurrentOrderId) pollQrisPayments(qrisCurrentOrderId);
+                }, 4000);
+                refreshBgQrisPoller();
+            } catch (err) {
+                if (qrisCreateErr) {
+                    qrisCreateErr.textContent = err.message || 'Terjadi kesalahan saat membuat QRIS.';
+                    qrisCreateErr.classList.remove('d-none');
+                }
+            } finally {
+                btnGenQris.disabled = false;
+                btnGenQris.innerHTML = origHtml;
+            }
+        });
+    }
+
+    const btnQrisBack = document.getElementById('btnQrisBackToForm');
+    if (btnQrisBack) {
+        btnQrisBack.addEventListener('click', () => {
+            stopQrisModalTimers();
+            qrisCurrentOrderId = '';
+            if (qrisStepShow) qrisStepShow.classList.add('d-none');
+            if (qrisStepForm) qrisStepForm.classList.remove('d-none');
+        });
+    }
+
+    const btnCheckQrisNow = document.getElementById('btnCheckQrisNow');
+    if (btnCheckQrisNow) {
+        btnCheckQrisNow.addEventListener('click', async () => {
+            if (!qrisCurrentOrderId) return;
+            btnCheckQrisNow.disabled = true;
+            await pollQrisPayments(qrisCurrentOrderId);
+            btnCheckQrisNow.disabled = false;
+        });
+    }
+
+    const btnCopyQrisLink = document.getElementById('btnCopyQrisLink');
+    if (btnCopyQrisLink) {
+        btnCopyQrisLink.addEventListener('click', async () => {
+            if (!qrisCurrentPayWebUrl) return;
+            const orig = btnCopyQrisLink.innerHTML;
+            try {
+                await navigator.clipboard.writeText(qrisCurrentPayWebUrl);
+                btnCopyQrisLink.innerHTML = '<i class="bi bi-check2 me-1"></i>Tersalin';
+                setTimeout(() => { btnCopyQrisLink.innerHTML = orig; }, 1800);
+            } catch (e) {
+                window.prompt('Salin tautan pembayaran QRIS berikut:', qrisCurrentPayWebUrl);
+            }
+        });
+    }
+
+    if (qrisHasPending) {
+        refreshBgQrisPoller();
+    }
 
     // Intersep submit form rentalDetailForm untuk validasi HTML5 otomatis lintas tab
     const detailForm = document.getElementById('rentalDetailForm');

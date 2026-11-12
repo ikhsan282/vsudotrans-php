@@ -360,19 +360,34 @@ function gateway_finalize(string $orderId, ?float $paidAmount = null): array
         $invTotal    = (float) $inv['total'];
         $remaining   = max(0.0, round($invTotal - $alreadyPaid, 2));
 
-        // Nominal yang dicatat ke pelunasan invoice adalah nominal pokok tagihan (tanpa kode unik),
+        $payloadArr = !empty($ord['payload']) ? json_decode((string) $ord['payload'], true) : [];
+        if (!is_array($payloadArr)) {
+            $payloadArr = [];
+        }
+        $orderBillAmount = isset($payloadArr['bill_amount']) && (float) $payloadArr['bill_amount'] > 0
+            ? (float) $payloadArr['bill_amount']
+            : (float) $ord['amount'];
+
+        // Nominal yang dicatat ke pelunasan invoice adalah nominal pokok tagihan (tanpa fee/kode unik),
         // sedangkan nominal aktual QRIS (termasuk kode unik) dicatat di note.
-        $principalPaid = $remaining > 0 ? min($remaining, (float) $ord['amount']) : (float) $ord['amount'];
+        $principalPaid = $remaining > 0 ? min($remaining, $orderBillAmount) : $orderBillAmount;
         if ($principalPaid <= 0) {
-            $principalPaid = (float) $ord['amount'];
+            $principalPaid = $orderBillAmount;
         }
         $actualQrisPaid = $paidAmount ?? (float) $ord['total_amount'];
         $uniqueCode = max(0, (int) round($actualQrisPaid - (float) $ord['amount']));
 
+        $chosenPayType = trim((string) ($payloadArr['pay_type'] ?? ''));
+        $allowedPayTypes = ['Down Payment (DP)', 'Pelunasan', 'Pembayaran Penuh (Full)'];
+        if ($chosenPayType !== '' && !in_array($chosenPayType, $allowedPayTypes, true)) {
+            $chosenPayType = '';
+        }
+
         $pmId = gateway_ensure_payment_method($companyId, 'QRIS Dinamis Otomatis');
         $desc = 'INV#' . $invoiceId;
-        $note = 'QRIS Otomatis #' . $orderId . ' (Dibayar: ' . rupiah($actualQrisPaid)
-              . ($uniqueCode > 0 ? ', kode unik +' . $uniqueCode : '') . ')';
+        $qrisLabel = 'QRIS Otomatis #' . $orderId . ' (Dibayar: ' . rupiah($actualQrisPaid)
+                   . ($uniqueCode > 0 ? ', kode unik +' . $uniqueCode : '') . ')';
+        $note = ($chosenPayType !== '' ? ($chosenPayType . ' | ') : '') . $qrisLabel;
         $user = 'system-qris';
 
         $CostLineId = (int) ($ord['cost_line_id'] ?? 0);
