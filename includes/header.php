@@ -14,9 +14,13 @@ $user   = current_user();
 $companies  = accessible_companies();
 $activeCid  = active_company_id();
 $activeName = 'Semua Perusahaan';
+$activeCode = '';
+$activeLogo = '';
 foreach ($companies as $comp) {
     if ((int) $comp['id'] === $activeCid) {
         $activeName = $comp['name'];
+        $activeCode = (string) ($comp['code'] ?? '');
+        $activeLogo = (string) ($comp['logo'] ?? '');
         break;
     }
 }
@@ -28,8 +32,8 @@ unset($comp);
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title><?= e($title ? $title . ' — ' : '') ?><?= e(APP_NAME) ?></title>
     <script>
-      // Anti-FOUC: terapkan tema sebelum render
-      (function(){try{var t=localStorage.getItem('vst_theme');if(!t)t=matchMedia('(prefers-color-scheme: dark)').matches?'dark':'light';document.documentElement.setAttribute('data-bs-theme',t);}catch(e){}})();
+      // Anti-FOUC: terapkan tema & status collapse sidebar sebelum render
+      (function(){try{var t=localStorage.getItem('vst_theme');if(!t)t=matchMedia('(prefers-color-scheme: dark)').matches?'dark':'light';document.documentElement.setAttribute('data-bs-theme',t);if(localStorage.getItem('vst_sidebar_collapsed')==='1')document.documentElement.classList.add('sidebar-collapsed');}catch(e){}})();
     </script>
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.8/dist/css/bootstrap.min.css" rel="stylesheet">
     <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.13.2/font/bootstrap-icons.css" rel="stylesheet">
@@ -42,7 +46,7 @@ unset($comp);
 <?php require __DIR__ . '/sidebar.php'; ?>
 <div class="content-wrapper">
     <div class="topbar d-flex align-items-center px-3 gap-2">
-        <button class="btn btn-sm btn-outline-secondary d-lg-none" id="sidebarToggler" type="button" aria-label="Buka menu" aria-controls="sidebar" aria-expanded="false">
+        <button class="btn btn-sm btn-outline-secondary" id="sidebarToggler" type="button" aria-label="Toggle menu sidebar" title="Tampilkan/Sembunyikan Sidebar" aria-controls="sidebar" aria-expanded="false">
             <i class="bi bi-list fs-5" aria-hidden="true"></i>
         </button>
         <h6 class="mb-0 fw-semibold"><i class="bi bi-<?= e($nav_icon ?? 'grid') ?> me-1 text-primary"></i> <?= e($title) ?></h6>

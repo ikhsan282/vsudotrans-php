@@ -191,9 +191,9 @@ function accessible_companies(bool $force_refresh = false): array
     }
 
     if ($is_sa) {
-        $rows = db()->query('SELECT id, code, name FROM companies WHERE is_active = 1 ORDER BY name')->fetch_all(MYSQLI_ASSOC);
+        $rows = db()->query('SELECT id, code, name, logo FROM companies WHERE is_active = 1 ORDER BY name')->fetch_all(MYSQLI_ASSOC);
     } else {
-        $stmt = db()->prepare('SELECT c.id, c.code, c.name FROM companies c
+        $stmt = db()->prepare('SELECT c.id, c.code, c.name, c.logo FROM companies c
             JOIN user_companies uc ON uc.company_id = c.id WHERE uc.user_id = ? AND c.is_active = 1 ORDER BY c.name');
         $stmt->bind_param('i', $uid);
         $stmt->execute();

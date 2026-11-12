@@ -81,10 +81,11 @@ function dash_active_drivers(): array
  */
 function dash_overdue_receivables(int $grace_days = 0, int $limit = 8): array
 {
-    [$where, $types, $params] = company_scope('i.company_id');
+    // Filter tenant diterapkan di query luar (alias x), jadi company_id harus ikut dipilih di subquery.
+    [$where, $types, $params] = company_scope('x.company_id');
 
     $sql = "SELECT * FROM (
-                SELECT 'travel' AS booking_type, i.booking_id,
+                SELECT 'travel' AS booking_type, i.company_id, i.booking_id,
                        i.document_number, i.invoice_no, b.date AS booking_date,
                        i.total,
                        COALESCE(b.total_payment, 0) AS total_payment,
@@ -94,7 +95,7 @@ function dash_overdue_receivables(int $grace_days = 0, int $limit = 8): array
                 JOIN travel_ticket_bookings b ON b.id = i.booking_id
                 WHERE i.status = 'issued' AND i.booking_type = 'travel'
                 UNION ALL
-                SELECT 'rental' AS booking_type, i.booking_id,
+                SELECT 'rental' AS booking_type, i.company_id, i.booking_id,
                        i.document_number, i.invoice_no, b.date AS booking_date,
                        i.total,
                        COALESCE(b.total_payment, 0) AS total_payment,

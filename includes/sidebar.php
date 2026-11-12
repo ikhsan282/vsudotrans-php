@@ -67,14 +67,18 @@ $menu = [
         ['label' => 'Papan & Riwayat',      'href' => 'pages/dispatch/index.php',    'perms' => 'dispatch.view'],
         ['label' => 'Tugaskan Driver',      'href' => 'pages/dispatch/assign.php',   'perms' => 'dispatch.manage'],
     ]],
-    ['key' => 'vehicles',   'section' => 'Operasional & Armada', 'label' => 'Kendaraan',    'icon' => 'truck',       'href' => 'pages/vehicles/index.php',          'perm' => 'vehicles.view'],
+    ['key' => 'vehicles',   'section' => 'Operasional & Armada', 'label' => 'Kendaraan',    'icon' => 'truck', 'perm' => 'vehicles.view', 'sub' => [
+        ['label' => 'Daftar Kendaraan', 'href' => 'pages/vehicles/index.php',  'perms' => 'vehicles.view'],
+        ['label' => 'Master Kategori',  'href' => 'pages/vehicles/master.php', 'perms' => 'vehicles.view'],
+    ]],
 
     // ── KEUANGAN & AKUNTANSI ────────────────────────────────────────────────
     ['key' => 'finance', 'section' => 'Keuangan & Akuntansi', 'label' => 'Keuangan', 'icon' => 'cash-coin', 'perm' => null, 'sub' => [
-        ['label' => 'Invoice',           'href' => 'pages/finance/invoices/index.php',        'perms' => 'invoices.view'],
-        ['label' => 'Buku Kas & Bank',   'href' => 'pages/finance/cash/index.php',            'perms' => 'finance.view'],
-        ['label' => 'Akun Kas/Bank',     'href' => 'pages/finance/cash_accounts/index.php',   'perms' => 'finance.view'],
-        ['label' => 'Metode Pembayaran', 'href' => 'pages/finance/payment_methods/index.php', 'perms' => 'finance.view'],
+        ['label' => 'Invoice',            'href' => 'pages/finance/invoices/index.php',         'perms' => 'invoices.view'],
+        ['label' => 'Buku Kas & Bank',    'href' => 'pages/finance/cash/index.php',             'perms' => 'finance.view'],
+        ['label' => 'Akun Kas/Bank',      'href' => 'pages/finance/cash_accounts/index.php',    'perms' => 'finance.view'],
+        ['label' => 'Metode Pembayaran',  'href' => 'pages/finance/payment_methods/index.php',  'perms' => 'finance.view'],
+        ['label' => 'Saluran QRIS/Gopay', 'href' => 'pages/finance/payment_channels/index.php', 'perms' => 'companies.manage'],
     ]],
 
     // ── SDM & PAYROLL ───────────────────────────────────────────────────────
@@ -137,12 +141,27 @@ foreach ($menu as $m) {
     }
 }
 $req_path = parse_url($_SERVER['REQUEST_URI'] ?? '', PHP_URL_PATH) ?: '';
+$default_brand_logo = APP_URL . '/assets/brand/logo-transmandiri.png';
+$sidebar_logo_url = $default_brand_logo;
+if (!empty($activeLogo) && !preg_match('#/logo_[a-z]+\.png$#i', (string) $activeLogo) && function_exists('resolve_asset_url')) {
+    $resolved = resolve_asset_url((string) $activeLogo);
+    if ($resolved !== '') {
+        $sidebar_logo_url = $resolved;
+    }
+}
 ?>
 <nav id="sidebar" class="sidebar d-flex flex-column flex-shrink-0 p-0">
   <a href="<?= e(APP_URL) ?>/pages/dashboard/index.php"
-     class="d-flex align-items-center justify-content-center p-3 text-white text-decoration-none sidebar-brand"
-     title="<?= e(APP_NAME) ?>">
-    <img src="<?= e(APP_URL) ?>/assets/brand/logo-transmandiri.png" alt="<?= e(APP_NAME) ?>" class="sidebar-logo">
+     class="d-flex flex-column align-items-center justify-content-center px-3 py-2 text-white text-decoration-none sidebar-brand"
+     title="<?= e($activeName ?? APP_NAME) ?>">
+    <img src="<?= e($sidebar_logo_url) ?>"
+         onerror="this.onerror=null;this.src='<?= e($default_brand_logo) ?>';"
+         alt="<?= e($activeName ?? APP_NAME) ?>" class="sidebar-logo">
+    <?php if (!empty($activeName) && $activeName !== 'Semua Perusahaan'): ?>
+      <div class="sidebar-tenant-badge text-truncate mt-1" title="<?= e($activeName) ?>">
+        <?php if (!empty($activeCode)): ?><span class="fw-bold"><?= e($activeCode) ?></span> &middot; <?php endif; ?><?= e($activeName) ?>
+      </div>
+    <?php endif; ?>
   </a>
   <hr class="text-white m-0">
 
@@ -172,7 +191,7 @@ $req_path = parse_url($_SERVER['REQUEST_URI'] ?? '', PHP_URL_PATH) ?: '';
           $is_open = sidebar_is_active($m, $active);
       ?>
           <li class="nav-item">
-            <a class="nav-link text-white d-flex align-items-center"
+            <a class="nav-link text-white d-flex align-items-center<?= $is_open ? ' has-active' : '' ?>"
                data-bs-toggle="collapse" href="#menu-<?= e($m['key']) ?>" role="button"
                aria-expanded="<?= $is_open ? 'true' : 'false' ?>"
                aria-controls="menu-<?= e($m['key']) ?>">
@@ -180,10 +199,17 @@ $req_path = parse_url($_SERVER['REQUEST_URI'] ?? '', PHP_URL_PATH) ?: '';
               <i class="bi bi-chevron-down ms-auto small"></i>
             </a>
             <div class="collapse<?= $is_open ? ' show' : '' ?>" id="menu-<?= e($m['key']) ?>">
-              <ul class="nav flex-column ms-3">
+              <ul class="nav flex-column ms-3 ps-2 sidebar-tree">
                 <?php foreach ($visible_sub as $s):
+                    $s_href_clean = explode('?', $s['href'])[0];
+                    $s_dir = dirname($s_href_clean);
+                    $is_index_entry = basename($s_href_clean) === 'index.php';
+                    $req_base = basename($req_path);
                     $sub_active = (!empty($s['key']) && $s['key'] === $active)
-                        || ($req_path !== '' && str_ends_with($req_path, '/' . $s['href']));
+                        || ($req_path !== '' && (
+                            str_ends_with($req_path, '/' . $s_href_clean)
+                            || ($is_index_entry && $s_dir !== '.' && str_contains($req_path, '/' . $s_dir . '/') && in_array($req_base, ['index.php', 'form.php', 'detail.php', 'view.php'], true))
+                        ));
                 ?>
                   <li class="nav-item">
                     <a href="<?= e(APP_URL . '/' . $s['href']) ?>"
@@ -208,14 +234,18 @@ $req_path = parse_url($_SERVER['REQUEST_URI'] ?? '', PHP_URL_PATH) ?: '';
   <hr class="text-white m-0">
   <div class="p-3 sidebar-footer">
     <div class="d-flex align-items-center mb-2">
-      <div class="avatar-sm me-2">
-        <i class="bi bi-person-circle fs-4 text-white-50"></i>
-      </div>
-      <div class="text-white lh-1 flex-grow-1 overflow-hidden">
-        <div class="fw-semibold text-truncate" style="font-size:.85rem"><?= e($user['name'] ?? '') ?></div>
-        <small class="text-white-50"><?= e($_SESSION['role_name'] ?? '') ?></small>
-      </div>
-      <button type="button" class="dark-toggle sidebar-theme-toggle text-white ms-2" aria-label="Ganti tema" title="Ganti tema">
+      <a href="<?= e(APP_URL) ?>/pages/profile/index.php"
+         class="d-flex align-items-center text-white text-decoration-none flex-grow-1 overflow-hidden sidebar-user-link"
+         title="Buka Profil Saya">
+        <div class="avatar-sm me-2 flex-shrink-0 d-flex align-items-center justify-content-center">
+          <i class="bi bi-person-circle fs-4 text-white-50"></i>
+        </div>
+        <div class="text-white lh-1 flex-grow-1 overflow-hidden">
+          <div class="fw-semibold text-truncate" style="font-size:.85rem"><?= e($user['name'] ?? '') ?></div>
+          <small class="text-white-50 text-truncate d-block mt-1"><?= e($_SESSION['role_name'] ?? '') ?></small>
+        </div>
+      </a>
+      <button type="button" class="dark-toggle sidebar-theme-toggle text-white ms-2 flex-shrink-0" aria-label="Ganti tema" title="Ganti tema">
         <i class="bi bi-moon-stars"></i>
       </button>
     </div>

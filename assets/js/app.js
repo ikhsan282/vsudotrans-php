@@ -16,6 +16,12 @@ function setSidebarOpen(open, restoreFocus = false) {
   else if (restoreFocus && toggler && toggler.getClientRects().length) toggler.focus();
 }
 if (toggler && sidebar) toggler.addEventListener('click', () => {
+  if (window.innerWidth >= 992) {
+    const collapsed = document.documentElement.classList.toggle('sidebar-collapsed');
+    try { localStorage.setItem('vst_sidebar_collapsed', collapsed ? '1' : '0'); } catch (e) {}
+    toggler.setAttribute('aria-expanded', String(!collapsed));
+    return;
+  }
   const open = !sidebar.classList.contains('show');
   setSidebarOpen(open);
   if (open) sidebar.querySelector('a.nav-link')?.focus();
@@ -39,10 +45,17 @@ document.addEventListener('keydown', e => {
   else if (!e.shiftKey && document.activeElement === last) { e.preventDefault(); first?.focus(); }
 });
 
-// Keep collapsible navigation state available to assistive technology.
+// Keep collapsible navigation state available to assistive technology + Accordion behavior.
 document.querySelectorAll('.sidebar [data-bs-toggle="collapse"]').forEach(toggle => {
   const target = document.querySelector(toggle.getAttribute('href'));
   if (!target) return;
+  target.addEventListener('show.bs.collapse', () => {
+    document.querySelectorAll('.sidebar .collapse.show').forEach(other => {
+      if (other !== target && window.bootstrap?.Collapse) {
+        bootstrap.Collapse.getOrCreateInstance(other, { toggle: false }).hide();
+      }
+    });
+  });
   target.addEventListener('shown.bs.collapse', () => toggle.setAttribute('aria-expanded', 'true'));
   target.addEventListener('hidden.bs.collapse', () => toggle.setAttribute('aria-expanded', 'false'));
 });
