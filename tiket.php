@@ -31,13 +31,20 @@ if (booking_doc_valid($no)) {
             c.code AS company_code, c.name AS company_name, c.address, c.phone_number, c.email, c.website, c.logo, c.stamp,
             i.id AS invoice_id, i.status AS invoice_status, i.total AS invoice_total, i.invoice_no,
             cp1.name AS city_from, cp2.name AS city_to,
+            dp1.name AS dist_from, dp2.name AS dist_to,
+            pp1.name AS prov_from, pp2.name AS prov_to,
             p.name AS passenger_name, p.phone_number AS passenger_phone,
-            v.vehicle_number, CONCAT_WS(' ', bv.name, mu.name) AS vehicle_name, cv.name AS category_name
+            v.vehicle_number, bv.name AS brand_name, mu.name AS model_name,
+            CONCAT_WS(' ', bv.name, mu.name) AS vehicle_name, cv.name AS category_name
         FROM {$table} b
         JOIN companies c ON c.id = b.company_id
         LEFT JOIN invoices i ON i.document_number = b.document_number
         LEFT JOIN cities cp1 ON cp1.id = b.pickup_point_city_id
         LEFT JOIN cities cp2 ON cp2.id = b.delivery_point_city_id
+        LEFT JOIN districts dp1 ON dp1.id = b.pickup_point_district_id
+        LEFT JOIN districts dp2 ON dp2.id = b.delivery_point_district_id
+        LEFT JOIN provinces pp1 ON pp1.id = b.pickup_point_province_id
+        LEFT JOIN provinces pp2 ON pp2.id = b.delivery_point_province_id
         LEFT JOIN passengers p ON p.id = b.passenger_id
         LEFT JOIN vehicles v ON v.id = b.vehicle_id
         LEFT JOIN brand_vehicles bv ON bv.id = v.brand_id
@@ -64,6 +71,32 @@ if (booking_doc_valid($no)) {
         if ($rem > 0.01 && ($row['invoice_status'] ?? 'issued') !== 'cancelled') {
             $canPayQris = gateway_active_channel((int) $row['company_id']) !== null;
         }
+
+        $pickupParts = array_filter([
+            trim((string) ($row['pickup_address'] ?? '')),
+            trim((string) ($row['dist_from'] ?? '')),
+            trim((string) ($row['city_from'] ?? '')),
+            trim((string) ($row['prov_from'] ?? ''))
+        ]);
+        $pickupFull = $pickupParts ? implode(', ', $pickupParts) : '—';
+
+        $deliveryParts = array_filter([
+            trim((string) ($row['delivery_address'] ?? '')),
+            trim((string) ($row['dist_to'] ?? '')),
+            trim((string) ($row['city_to'] ?? '')),
+            trim((string) ($row['prov_to'] ?? ''))
+        ]);
+        $deliveryFull = $deliveryParts ? implode(', ', $deliveryParts) : '—';
+
+        $bName = trim((string) ($row['brand_name'] ?? ''));
+        $mName = trim((string) ($row['model_name'] ?? ''));
+        if ($bName !== '' && $mName !== '') {
+            $vUnit = (stripos($mName, $bName) === 0) ? $mName : ($bName . ' ' . $mName);
+        } else {
+            $vUnit = $bName ?: $mName;
+        }
+        $vPlat = trim((string) ($row['vehicle_number'] ?? ''));
+        $vehicleDisplay = trim($vUnit . ($vPlat !== '' ? ' (' . $vPlat . ')' : ''));
     }
 }
 
@@ -189,8 +222,8 @@ if ($pdf) {
                             <tr><td class="tk-doc">Nomor Dokumen</td><td class="tk-v"><?= e($row['document_number']) ?></td></tr>
                             <tr><td class="tk-doc">Periode Sewa</td><td class="tk-v"><?= e(tanggal_indo((string) ($row['start_date'] ?: $row['date']))) ?> s/d <?= e(tanggal_indo((string) ($row['end_date'] ?: $row['date']))) ?></td></tr>
                             <tr><td class="tk-doc">Jam Mulai</td><td class="tk-v"><?= e(substr((string) $row['time'], 0, 5)) ?> WIB</td></tr>
-                            <?php if (!empty($row['vehicle_name']) || !empty($row['vehicle_number'])): ?>
-                                <tr><td class="tk-doc">Unit Armada</td><td class="tk-v"><?= e(trim(($row['vehicle_name'] ?? '') . ' ' . ($row['vehicle_number'] ? '(' . $row['vehicle_number'] . ')' : ''))) ?></td></tr>
+                            <?php if (!empty($vehicleDisplay) && $vehicleDisplay !== '—'): ?>
+                                <tr><td class="tk-doc">Unit Armada</td><td class="tk-v"><?= e($vehicleDisplay) ?></td></tr>
                             <?php endif; ?>
                             <tr><td class="tk-doc">Total Biaya</td><td class="tk-v"><?= e(rupiah((float) ($row['invoice_total'] ?? $row['total_price']))) ?></td></tr>
                             <tr><td class="tk-doc">Penyewa</td><td class="tk-v"><?= count($passengers) ?> orang</td></tr>
@@ -225,57 +258,50 @@ if ($pdf) {
                     <td><?= e((string) ($p['phone_number'] ?? '—') ?: '—') ?></td>
                 </tr>
                 <?php endforeach; endif; ?>
-                <tr>
-                    <td colspan="3" class="text-end fw-bold">TOTAL</td>
-                    <td class="fw-bold"><?= e(rupiah((float) ($row['invoice_total'] ?? $row['total_price']))) ?></td>
-                </tr>
                 </tbody>
             </table>
 
-            <div class="mt-4">
-                <div class="tk-doc">Alamat Penjemputan</div>
-                <div class="tk-addr"><?= e((string) ($row['pickup_address'] ?: '—')) ?></div>
-                <div class="tk-doc mt-2">Alamat Pengantaran</div>
-                <div class="tk-addr"><?= e((string) ($row['delivery_address'] ?: '—')) ?></div>
-            </div>
+            <table class="tk-lay w-100 mt-4"><tr>
+                <td style="width:50%;padding-right:15px;vertical-align:top">
+                    <div class="tk-doc">Alamat / Titik Penjemputan</div>
+                    <div class="tk-addr"><?= e($pickupFull) ?></div>
+                </td>
+                <td style="width:50%;padding-left:15px;vertical-align:top">
+                    <div class="tk-doc">Alamat / Titik Pengantaran</div>
+                    <div class="tk-addr"><?= e($deliveryFull) ?></div>
+                </td>
+            </tr></table>
 
-            <!-- Syarat & Ketentuan Perjalanan / Sewa Kendaraan -->
+            <?php if ($type !== 'rental'): ?>
+            <!-- Syarat & Ketentuan Perjalanan (Travel) -->
             <div class="tk-terms mt-4">
-                <div class="tk-terms-title">Syarat &amp; Ketentuan <?= $type === 'rental' ? 'Sewa Kendaraan' : 'Perjalanan' ?>:</div>
-                <?php if ($type === 'rental'): ?>
-                <ul>
-                    <li>Penyewa wajib menunjukkan dokumen identitas asli (KTP &amp; SIM A yang masih berlaku) saat serah terima unit kendaraan.</li>
-                    <li>Durasi sewa dihitung per hari (24 jam) sesuai tanggal mulai dan selesai yang tercantum pada voucher ini. Keterlambatan pengembalian unit dikenakan biaya overtime.</li>
-                    <li><strong>Perubahan Jadwal (Reschedule):</strong> Konfirmasi perubahan jadwal wajib dilakukan maksimal <strong>H-1 (24 jam)</strong> sebelum tanggal mulai sewa dengan konfirmasi pihak rental.</li>
-                    <li><strong>Pembatalan (Cancel):</strong> Pembatalan sewa pada hari H atau setelah kendaraan dipersiapkan tidak dapat dikembalikan (non-refundable).</li>
-                </ul>
-                <?php else: ?>
+                <div class="tk-terms-title">Syarat &amp; Ketentuan Perjalanan:</div>
                 <ul>
                     <li>Penumpang wajib berada di titik penjemputan dan nomor telepon aktif minimal <strong>15–30 menit</strong> sebelum jadwal keberangkatan.</li>
                     <li>Kapasitas bagasi cuma-cuma maksimal 1 tas koper standar + 1 tas jinjing per penumpang. Muatan berlebih wajib konfirmasi terlebih dahulu.</li>
                     <li><strong>Perubahan Jadwal (Reschedule):</strong> Perubahan jam/tanggal perjalanan dapat dilakukan maksimal <strong>H-1 (24 jam)</strong> sebelum keberangkatan sesuai ketersediaan kursi.</li>
                     <li><strong>Pembatalan (Cancel / No-Show):</strong> Pembatalan pada hari keberangkatan atau penumpang tidak dapat dihubungi saat driver tiba di lokasi penjemputan dianggap hangus (non-refundable).</li>
                 </ul>
-                <?php endif; ?>
             </div>
+            <?php endif; ?>
 
             <table class="tk-lay w-100 mt-4"><tr>
-                <td class="align-top tk-foot">
-                    <div>Dibuat oleh <strong><?= e((string) ($row['created_user'] ?: '—')) ?></strong></div>
-                    <div><span class="text-muted">pada tanggal</span> <strong><?= e(tanggal_indo((string) $row['date'])) ?></strong></div>
+                <td class="align-bottom tk-foot" style="padding-bottom:4px">
+                    <span class="text-muted">Dibuat oleh</span> <strong><?= e((string) ($row['created_user'] ?: '—')) ?></strong> 
+                    <span class="text-muted ms-2">pada tanggal</span> <strong><?= e(tanggal_indo((string) $row['date'])) ?></strong>
                 </td>
-                <td class="text-end align-top" style="width:170px;padding-top:22pt">
+                <td class="text-end align-bottom" style="width:160px">
                     <?php
                     $stampPath = (string) ($row['stamp'] ?? '');
                     $stampSrc  = $pdf ? resolve_asset_data_uri($stampPath) : resolve_asset_url($stampPath);
                     ?>
                     <?php if ($stampSrc !== ''): ?>
-                        <img class="tk-stamp" src="<?= e($stampSrc) ?>" alt="Stempel <?= e($row['company_name']) ?>">
+                        <img class="tk-stamp" src="<?= e($stampSrc) ?>" alt="Stempel <?= e($row['company_name']) ?>" style="max-height:65px; width:auto;">
                     <?php endif; ?>
                 </td>
             </tr></table>
 
-            <div class="tk-ver mt-4" style="border-top:1px dashed #c8c8c8;padding-top:8px">
+            <div class="tk-ver mt-3" style="border-top:1px dashed #c8c8c8;padding-top:8px">
                 Tiket ini sah. Cek keaslian: <span class="text-break"><?= e($ver_link) ?></span>
             </div>
         </div>
