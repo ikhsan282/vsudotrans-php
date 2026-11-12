@@ -321,12 +321,12 @@ if ($pdf) {
                                 <td class="tk-kv-v"><?= e($periodeDisplay) ?></td>
                             </tr>
                             <tr>
-                                <td class="tk-kv-k">Jam Mulai</td>
+                                <td class="tk-kv-k">Jam Berangkat</td>
                                 <td class="tk-kv-v"><?= e(substr((string) $row['time'], 0, 5)) ?> WIB</td>
                             </tr>
                             <?php if (!empty($vehicleDisplay) && $vehicleDisplay !== '—'): ?>
                             <tr>
-                                <td class="tk-kv-k">Unit Armada</td>
+                                <td class="tk-kv-k">Kendaraan</td>
                                 <td class="tk-kv-v"><?= e($vehicleDisplay) ?></td>
                             </tr>
                             <?php endif; ?>
