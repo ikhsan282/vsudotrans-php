@@ -560,11 +560,6 @@ require __DIR__ . '/../../../includes/header.php';
                     <i class="bi bi-check2-circle me-1"></i>Simpan Perubahan
                 </button>
             <?php endif; ?>
-            <?php if ($invoice): ?>
-                <a class="btn btn-outline-success btn-sm" href="<?= e(APP_URL) ?>/pages/finance/invoices/detail.php?id=<?= (int) $invoice['id'] ?>">
-                    <i class="bi bi-receipt me-1"></i>Invoice
-                </a>
-            <?php endif; ?>
             <a class="btn btn-dark btn-sm" target="_blank" href="<?= e(APP_URL) ?>/tiket.php?no=<?= urlencode((string) $b['document_number']) ?>&print=1">
                 <i class="bi bi-printer me-1"></i>Cetak E-Tiket
             </a>
