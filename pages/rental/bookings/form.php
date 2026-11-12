@@ -78,19 +78,18 @@ if ($is_edit && $_SERVER['REQUEST_METHOD'] !== 'POST') {
         'note'                       => (string) ($b['note'] ?? ''),
     ];
 
-    if (empty($in['pickup_point_city_id']) && !empty($in['pickup_point_district_id'])) {
-        $stc = db()->query('SELECT city_id, province_id FROM districts WHERE id = ' . (int)$in['pickup_point_district_id'])->fetch_assoc();
-        if ($stc) {
-            $in['pickup_point_city_id'] = (string)$stc['city_id'];
-            if (empty($in['pickup_point_province_id'])) $in['pickup_point_province_id'] = (string)$stc['province_id'];
-        }
+    $in['pickup_point_district_id']   = (string) resolve_district_id($in['pickup_point_district_id']);
+    $in['delivery_point_district_id'] = (string) resolve_district_id($in['delivery_point_district_id']);
+
+    $p_info = resolve_district_info($in['pickup_point_district_id']);
+    if ($p_info) {
+        $in['pickup_point_city_id'] = (string) $p_info['city_id'];
+        $in['pickup_point_province_id'] = (string) $p_info['province_id'];
     }
-    if (empty($in['delivery_point_city_id']) && !empty($in['delivery_point_district_id'])) {
-        $stc = db()->query('SELECT city_id, province_id FROM districts WHERE id = ' . (int)$in['delivery_point_district_id'])->fetch_assoc();
-        if ($stc) {
-            $in['delivery_point_city_id'] = (string)$stc['city_id'];
-            if (empty($in['delivery_point_province_id'])) $in['delivery_point_province_id'] = (string)$stc['province_id'];
-        }
+    $d_info = resolve_district_info($in['delivery_point_district_id']);
+    if ($d_info) {
+        $in['delivery_point_city_id'] = (string) $d_info['city_id'];
+        $in['delivery_point_province_id'] = (string) $d_info['province_id'];
     }
 
     $bp_list = booking_passengers_list('rental', $id, (int) $b['passenger_id']);
@@ -235,18 +234,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     }
 
     if ($err === '') {
-        // Resolusi city_id & province_id dari district penjemputan & pengantaran bila kosong
-        $st = db()->prepare('SELECT city_id, province_id FROM districts WHERE id = ?');
-        $p_dist_id = (int) $in['pickup_point_district_id'];
-        $st->bind_param('i', $p_dist_id);
-        $st->execute();
-        $p_loc = $st->get_result()->fetch_assoc() ?: [];
+        // Resolusi city_id & province_id dari district penjemputan & pengantaran
+        $p_dist_id = resolve_district_id($in['pickup_point_district_id']);
+        $d_dist_id = resolve_district_id($in['delivery_point_district_id']);
 
-        $d_dist_id = (int) $in['delivery_point_district_id'];
-        $st->bind_param('i', $d_dist_id);
-        $st->execute();
-        $d_loc = $st->get_result()->fetch_assoc() ?: [];
-        $st->close();
+        $p_loc = resolve_district_info($p_dist_id) ?: [];
+        $d_loc = resolve_district_info($d_dist_id) ?: [];
 
         $data = [
             'company_id'                 => $cid,
@@ -323,20 +316,67 @@ if ($in['branch_id'] === '' && !empty($branches[0]['id'])) {
     $in['branch_id'] = (string) $branches[0]['id'];
 }
 $passengers = opts_passengers($cid);
-$cats       = opts_categories($cid);
-$vehicles   = opts_vehicles($cid);
+$userCompanies = accessible_companies();
+$userCompanyIds = array_map(static fn($c) => (int) $c['id'], $userCompanies);
+if (!in_array((int) $cid, $userCompanyIds, true)) {
+    $userCompanyIds[] = (int) $cid;
+}
+$compInSql = implode(',', array_unique(array_filter($userCompanyIds))) ?: (string)(int)$cid;
+
+$cats = db()->query(
+    "SELECT id, CONCAT(code, ' - ', name) AS name, company_id
+       FROM category_vehicles
+      WHERE is_active = 1 AND (company_id = " . (int) $cid . (!empty($in['category_vehicle_id']) ? " OR id = " . (int) $in['category_vehicle_id'] : "") . ")
+      ORDER BY code, name"
+)->fetch_all(MYSQLI_ASSOC);
+
+$stVeh = db()->query(
+    "SELECT v.id, v.company_id, v.category_vehicle_id, v.vehicle_number, v.vehicle_color, v.seat,
+            bv.name AS brand_name, mu.name AS model_name, cv.name AS category_name, c.code AS company_code,
+            CONCAT(v.vehicle_number, ' - ', COALESCE(bv.name, ''), ' ', COALESCE(mu.name, ''),
+                   IF(v.vehicle_color != '' OR v.seat > 0, CONCAT(' (', CONCAT_WS(', ', NULLIF(v.vehicle_color, ''), IF(v.seat > 0, CONCAT(v.seat, ' Kursi'), NULL)), ')'), ''),
+                   IF(v.company_id != " . (int) $cid . ", CONCAT(' [', c.code, ']'), '')) AS name
+       FROM vehicles v
+       LEFT JOIN brand_vehicles bv ON bv.id = v.brand_id
+       LEFT JOIN model_units mu ON mu.id = v.model_unit_id
+       LEFT JOIN category_vehicles cv ON cv.id = v.category_vehicle_id
+       LEFT JOIN companies c ON c.id = v.company_id
+      WHERE v.is_active = 1 AND (v.company_id IN ({$compInSql})" . (!empty($in['vehicle_id']) ? " OR v.id = " . (int) $in['vehicle_id'] : "") . ")
+      ORDER BY v.vehicle_number"
+);
+$vehicles = $stVeh ? $stVeh->fetch_all(MYSQLI_ASSOC) : [];
 $employees  = opts_employees($cid);
 $provinces  = opts_provinces();
 $cities     = opts_cities();
 $company_regulations = regulation_list_by_company($cid);
 
+$p_form_dist = resolve_district_id($in['pickup_point_district_id'] ?? 0);
+$d_form_dist = resolve_district_id($in['delivery_point_district_id'] ?? 0);
+
 $pickup_districts = !empty($in['pickup_point_city_id'])
     ? db()->query('SELECT id, name FROM districts WHERE city_id = ' . (int) $in['pickup_point_city_id'] . ' ORDER BY name')->fetch_all(MYSQLI_ASSOC)
-    : (!empty($in['pickup_point_district_id']) ? db()->query('SELECT id, name FROM districts WHERE id = ' . (int) $in['pickup_point_district_id'])->fetch_all(MYSQLI_ASSOC) : []);
+    : ($p_form_dist > 0 ? db()->query('SELECT id, name FROM districts WHERE id = ' . (int) $p_form_dist)->fetch_all(MYSQLI_ASSOC) : []);
 
 $delivery_districts = !empty($in['delivery_point_city_id'])
     ? db()->query('SELECT id, name FROM districts WHERE city_id = ' . (int) $in['delivery_point_city_id'] . ' ORDER BY name')->fetch_all(MYSQLI_ASSOC)
-    : (!empty($in['delivery_point_district_id']) ? db()->query('SELECT id, name FROM districts WHERE id = ' . (int) $in['delivery_point_district_id'])->fetch_all(MYSQLI_ASSOC) : []);
+    : ($d_form_dist > 0 ? db()->query('SELECT id, name FROM districts WHERE id = ' . (int) $d_form_dist)->fetch_all(MYSQLI_ASSOC) : []);
+
+if ($p_form_dist > 0 && !array_filter($pickup_districts, static fn($x) => (int)$x['id'] === $p_form_dist)) {
+    $stD = db()->prepare('SELECT id, name FROM districts WHERE id = ? LIMIT 1');
+    $stD->bind_param('i', $p_form_dist);
+    $stD->execute();
+    $r = $stD->get_result()->fetch_assoc();
+    $stD->close();
+    if ($r) $pickup_districts[] = $r;
+}
+if ($d_form_dist > 0 && !array_filter($delivery_districts, static fn($x) => (int)$x['id'] === $d_form_dist)) {
+    $stD = db()->prepare('SELECT id, name FROM districts WHERE id = ? LIMIT 1');
+    $stD->bind_param('i', $d_form_dist);
+    $stD->execute();
+    $r = $stD->get_result()->fetch_assoc();
+    $stD->close();
+    if ($r) $delivery_districts[] = $r;
+}
 
 $active = 'rental';
 $title  = $is_edit ? 'Ubah Pemesanan Sewa Kendaraan - ' . $b['document_number'] : 'Pemesanan Sewa Kendaraan Baru';
@@ -732,10 +772,18 @@ require __DIR__ . '/../../../includes/header.php';
                 <!-- Sub-panel Karyawan (Grid Premi / Biaya Kru) -->
                 <div class="rnt-panel mb-0">
                     <div class="rnt-panel-header">
-                        <span>Karyawan</span>
-                        <button type="button" class="btn btn-sm btn-outline-primary py-0 px-2" id="btnAddCrewRow">
-                            <i class="bi bi-plus-lg me-1"></i>Tambah Baris
-                        </button>
+                        <div class="d-flex align-items-center gap-2">
+                            <span>Karyawan</span>
+                            <span id="crewRegStatusMsg" class="small text-muted fw-normal"></span>
+                        </div>
+                        <div class="d-flex align-items-center gap-2">
+                            <button type="button" class="btn btn-sm btn-outline-success py-0 px-2" id="btnApplyRegulation" title="Hitung otomatis premi dan BBM sesuai peraturan komisi kategori armada">
+                                <i class="bi bi-calculator me-1"></i>Auto Hitung Komisi
+                            </button>
+                            <button type="button" class="btn btn-sm btn-outline-primary py-0 px-2" id="btnAddCrewRow">
+                                <i class="bi bi-plus-lg me-1"></i>Tambah Baris
+                            </button>
+                        </div>
                     </div>
                     <div class="table-responsive">
                         <table class="table table-sm table-bordered mb-0 align-middle" id="crewTable" style="font-size:.84rem;">
@@ -748,10 +796,6 @@ require __DIR__ . '/../../../includes/header.php';
                                     <th style="width:190px;">Posisi</th>
                                     <th style="width:170px;" class="text-end">Nominal</th>
                                     <th style="width:42px;" class="text-center">Aksi</th>
-                                </tr>
-                                <tr class="bg-light text-muted small" style="cursor:pointer;" id="crewQuickAddBanner" title="Klik untuk menambah baris karyawan baru">
-                                    <td class="text-center text-warning"><i class="bi bi-sun-fill"></i></td>
-                                    <td colspan="6" class="text-center fst-italic py-1">Click here to add a new row</td>
                                 </tr>
                             </thead>
                             <tbody id="crewTableBody">
@@ -847,10 +891,6 @@ require __DIR__ . '/../../../includes/header.php';
                                     <th style="width:170px;">Tanggal</th>
                                     <th style="width:180px;" class="text-end">Nominal</th>
                                     <th style="width:42px;" class="text-center">Aksi</th>
-                                </tr>
-                                <tr class="bg-light text-muted small" style="cursor:pointer;" id="payQuickAddBanner" title="Klik untuk menambah baris pembayaran">
-                                    <td class="text-center text-warning"><i class="bi bi-sun-fill"></i></td>
-                                    <td colspan="6" class="text-center fst-italic py-1">Click here to add a new row</td>
                                 </tr>
                             </thead>
                             <tbody id="payTableBody">
@@ -1257,10 +1297,20 @@ document.addEventListener('DOMContentLoaded', function () {
     if (catSelect && vehSelect) {
         catSelect.addEventListener('change', function () {
             var cidVal = String(this.value || '');
+            var curVal = String(vehSelect.value || '');
             var filtered = allVehicles.filter(function (v) {
                 return !cidVal || v.category === cidVal;
             });
-            updateSelectOptions(vehSelect, filtered, '', '-- Pilih Unit Kendaraan --');
+            var isCurrentInFiltered = filtered.some(function(v) { return v.id === curVal; });
+            updateSelectOptions(vehSelect, filtered, isCurrentInFiltered ? curVal : '', '-- Pilih Unit Kendaraan --');
+        });
+
+        vehSelect.addEventListener('change', function () {
+            var vId = String(this.value || '');
+            var vData = allVehicles.find(function (v) { return v.id === vId; });
+            if (vData && vData.category && catSelect && !catSelect.value) {
+                catSelect.value = vData.category;
+            }
         });
     }
 
@@ -1596,6 +1646,14 @@ document.addEventListener('DOMContentLoaded', function () {
         var sDate = stEl ? stEl.value : '';
         var price = prEl ? parseRupiah(prEl.value) : 0;
 
+        if (!catId) {
+            if (regMsgEl) {
+                regMsgEl.className = 'small text-warning fw-semibold';
+                regMsgEl.textContent = 'Pilih Kategori Kendaraan terlebih dahulu pada tab Detail!';
+            }
+            return;
+        }
+
         if (btnApplyReg) btnApplyReg.disabled = true;
         if (regMsgEl) {
             regMsgEl.className = 'small text-muted';
@@ -1672,16 +1730,6 @@ document.addEventListener('DOMContentLoaded', function () {
         });
     }
 
-    // Auto-Match Komisi saat Kategori Kendaraan atau Harga Sewa selesai diisi di Tab 1
-    var catSelectEl = document.getElementById('rental_category_select');
-    if (catSelectEl) {
-        catSelectEl.addEventListener('change', function () {
-            if (catSelectEl.value && parseRupiah(priceHidden ? priceHidden.value : 0) > 0) {
-                applyRegulationAuto(0);
-            }
-        });
-    }
-
     if (bbmDisp && bbmVal) {
         attachRupiahMask(bbmDisp, bbmVal, function () {
             recalcCrewTotals();
@@ -1691,7 +1739,7 @@ document.addEventListener('DOMContentLoaded', function () {
     if (crewTbody) {
         crewTbody.querySelectorAll('tr.crew-row').forEach(bindCrewRow);
     }
-    ['btnAddCrewRow', 'crewQuickAddBanner', 'btnFooterAddCrew'].forEach(function (id) {
+    ['btnAddCrewRow', 'btnFooterAddCrew'].forEach(function (id) {
         var el = document.getElementById(id);
         if (el) el.addEventListener('click', function () { addCrewRow('Sopir'); });
     });
@@ -1813,7 +1861,7 @@ document.addEventListener('DOMContentLoaded', function () {
     if (payTbody) {
         payTbody.querySelectorAll('tr.pay-row').forEach(bindPayRow);
     }
-    ['btnAddPayRow', 'payQuickAddBanner', 'btnFooterAddPay'].forEach(function (id) {
+    ['btnAddPayRow', 'btnFooterAddPay'].forEach(function (id) {
         var el = document.getElementById(id);
         if (el) el.addEventListener('click', addPayRow);
     });
@@ -1837,12 +1885,42 @@ document.addEventListener('DOMContentLoaded', function () {
         });
     }
     // Handler auto-switch tab bila ada field required yang belum diisi di tab lain
+    var rentalFormEl = document.getElementById('formRentalBooking');
+    if (rentalFormEl) {
+        rentalFormEl.addEventListener('submit', function (e) {
+            if (!this.checkValidity()) {
+                e.preventDefault();
+                var firstInvalid = this.querySelector(':invalid');
+                if (firstInvalid) {
+                    var pane = firstInvalid.closest('.tab-pane');
+                    if (pane) {
+                        var tabBtn = document.querySelector('[data-bs-target="#' + pane.id + '"]');
+                        if (tabBtn && typeof bootstrap !== 'undefined' && bootstrap.Tab) {
+                            bootstrap.Tab.getOrCreateInstance(tabBtn).show();
+                        }
+                    }
+                    setTimeout(function () {
+                        if (firstInvalid.tomselect) {
+                            firstInvalid.tomselect.focus();
+                        } else {
+                            if (typeof firstInvalid.reportValidity === 'function') {
+                                firstInvalid.reportValidity();
+                            }
+                            firstInvalid.focus();
+                        }
+                    }, 150);
+                }
+                return false;
+            }
+        });
+    }
+
     document.querySelectorAll('#formRentalBooking [required]').forEach(function (el) {
         el.addEventListener('invalid', function () {
             var pane = el.closest('.tab-pane');
             if (pane) {
                 var tabBtn = document.querySelector('[data-bs-target="#' + pane.id + '"]');
-                if (tabBtn) {
+                if (tabBtn && typeof bootstrap !== 'undefined' && bootstrap.Tab) {
                     bootstrap.Tab.getOrCreateInstance(tabBtn).show();
                 }
             }

@@ -134,124 +134,49 @@ $active = 'rental';
 $title  = $tabTitle;
 require __DIR__ . '/../../../includes/header.php';
 ?>
-<style>
-.reg-workspace {
-    background: #f4f6f9;
-    border: 1px solid #d0d7de;
-    border-radius: 4px;
-    overflow: hidden;
-    font-size: 0.84rem;
-}
 
-.reg-inner-tabs {
-    background: #fff;
+<style>
+.reg-panel-card {
+    background: #ffffff;
+    border: 1px solid #ced4da;
+    border-radius: 4px;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
+}
+.reg-table thead th {
+    background: #f8f9fa;
+    color: #495057;
+    font-weight: 600;
     border-bottom: 1px solid #dee2e6;
-    padding: 6px 12px 0;
-}
-.reg-inner-tabs .nav-link {
+    padding: 7px 10px;
     font-size: 0.81rem;
-    padding: 4px 12px;
-    color: #495057;
-    border-radius: 3px 3px 0 0;
 }
-.reg-inner-tabs .nav-link.active {
-    font-weight: 600;
-    color: #0078d4;
-    border-color: #dee2e6 #dee2e6 #fff;
+.reg-table tbody td {
+    padding: 6px 10px;
+    border-color: #f1f3f5;
+    vertical-align: middle;
 }
-.reg-form-card {
-    background: #fff;
-    border: 1px solid #dee2e6;
-    border-radius: 3px;
-    padding: 10px 14px;
-}
-.reg-row {
-    display: flex;
-    align-items: center;
-    margin-bottom: 6px;
-    gap: 10px;
-}
-.reg-row:last-child { margin-bottom: 0; }
-.reg-label {
-    width: 165px;
-    flex-shrink: 0;
-    color: #212529;
-    font-size: 0.82rem;
-    margin-bottom: 0;
-    font-weight: 500;
-}
-.reg-field { flex-grow: 1; min-width: 0; }
-.reg-blue-divider {
-    height: 2px;
-    background: #0078d4;
-    margin: 12px 0 8px 0;
-}
-.reg-table {
-    border: 1px solid #ced4da;
-    font-size: 0.83rem;
-    background: #fff;
-}
-.reg-table th {
-    background: #f8f9fa;
-    color: #212529;
-    font-weight: 600;
-    border-bottom: 1px solid #ced4da;
-    padding: 5px 8px;
-}
-.reg-table td {
-    padding: 3px 6px;
-    border-color: #e9ecef;
-}
-.reg-detail-row.active-row td {
-    background-color: #f0f7ff;
-}
-.reg-nav-btn {
-    font-family: inherit;
-    font-size: 0.78rem;
-    line-height: 1.2;
-    padding: 2px 7px;
-    border: 1px solid #ced4da;
-    background: #fff;
-    color: #495057;
-    border-radius: 2px;
-}
-.reg-nav-btn:hover { background: #e9ecef; color: #212529; }
-.reg-status-bar {
-    background: #f8f9fa;
-    border-top: 1px solid #ced4da;
-    padding: 4px 12px;
-    font-size: 0.76rem;
-    color: #495057;
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    flex-wrap: wrap;
-    gap: 8px;
-}
-@media (max-width: 767.98px) {
-    .reg-row { flex-direction: column; align-items: stretch; gap: 3px; }
-    .reg-label { width: 100%; font-weight: 600; }
+.reg-table tbody tr:hover td {
+    background-color: #f8fbff;
 }
 </style>
 
-<main class="p-2 p-lg-3 w-100 flex-grow-1">
-    <div class="reg-workspace shadow-sm">
-        <!-- Header Toolbar Halaman -->
-        <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 p-2 px-3 border-bottom bg-white">
-            <div>
-                <h1 class="h5 fw-bold mb-0 text-break d-flex align-items-center gap-2">
-                    <span><i class="bi bi-sliders text-primary me-1"></i><?= e($title) ?></span>
-                </h1>
-                <div class="small text-muted">Perusahaan: <strong><?= e($reg ? ($reg['company_code'] . ' - ' . $reg['company_name']) : active_company_name()) ?></strong></div>
-            </div>
-            <div class="d-flex align-items-center gap-2">
-                <a href="<?= e(APP_URL) ?>/pages/rental/regulations/index.php" class="btn btn-sm btn-outline-secondary">
-                    <i class="bi bi-arrow-left me-1"></i>Kembali
-                </a>
-                <button type="submit" form="formRegulation" class="btn btn-sm btn-primary px-3">
+<main class="p-2 p-md-3 w-100 flex-grow-1">
+    <!-- Top Action Toolbar -->
+    <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-3">
+        <div class="d-flex align-items-center gap-2">
+            <span class="badge bg-primary text-white"><i class="bi bi-sliders me-1"></i>Peraturan Komisi Karyawan</span>
+            <span class="badge bg-secondary-subtle text-secondary border"><?= $reg ? 'Ubah Peraturan #' . (int) $reg['id'] : 'Draft Peraturan Baru' ?></span>
+            <span class="small text-muted d-none d-md-inline">Akses: <strong><?= e($reg ? ($reg['company_code'] . ' - ' . $reg['company_name']) : active_company_name()) ?></strong></span>
+        </div>
+        <div class="d-flex flex-wrap gap-2 ms-auto">
+            <a href="<?= e(APP_URL) ?>/pages/rental/regulations/index.php" class="btn btn-sm btn-outline-secondary">
+                <i class="bi bi-arrow-left me-1"></i>Kembali
+            </a>
+            <?php if ($canManage): ?>
+                <button type="submit" form="regulationForm" class="btn btn-sm btn-primary px-3">
                     <i class="bi bi-check2-circle me-1"></i>Simpan Peraturan
                 </button>
-                <?php if ($canManage && $id > 0): ?>
+                <?php if ($id > 0): ?>
                     <a href="<?= e(APP_URL) ?>/pages/rental/regulations/form.php" class="btn btn-sm btn-outline-primary">
                         <i class="bi bi-plus-lg me-1"></i>Buat Baru
                     </a>
@@ -264,16 +189,23 @@ require __DIR__ . '/../../../includes/header.php';
                         </button>
                     </form>
                 <?php endif; ?>
-            </div>
+            <?php endif; ?>
         </div>
+    </div>
 
-        <!-- Sub-Tab: Detail | Audit Trail -->
-        <ul class="nav nav-tabs reg-inner-tabs" role="tablist">
+    <!-- ERP Window Container -->
+    <div class="erp-window-card">
+        <!-- Sub-Tabs: Detail | Audit Trail -->
+        <ul class="nav nav-tabs erp-sub-tabs" role="tablist">
             <li class="nav-item" role="presentation">
-                <button class="nav-link active" data-bs-toggle="tab" data-bs-target="#tab-reg-detail" type="button" role="tab">Detail</button>
+                <button class="nav-link active" data-bs-toggle="tab" data-bs-target="#tab-reg-detail" type="button" role="tab">
+                    <i class="bi bi-file-earmark-text me-1"></i>Detail Peraturan & Rincian Komisi
+                </button>
             </li>
             <li class="nav-item" role="presentation">
-                <button class="nav-link" data-bs-toggle="tab" data-bs-target="#tab-reg-audit" type="button" role="tab">Audit Trail</button>
+                <button class="nav-link" data-bs-toggle="tab" data-bs-target="#tab-reg-audit" type="button" role="tab">
+                    <i class="bi bi-clock-history me-1"></i>Audit Trail
+                </button>
             </li>
         </ul>
 
@@ -286,200 +218,196 @@ require __DIR__ . '/../../../includes/header.php';
                 <div class="tab-content">
                     <!-- ================= TAB 1: DETAIL ================= -->
                     <div class="tab-pane fade show active" id="tab-reg-detail" role="tabpanel">
-                        <!-- Header Form Fields -->
-                        <div class="reg-form-card mb-2">
-                            <div class="reg-row">
-                                <label class="reg-label">Perusahaan</label>
-                                <div class="reg-field">
-                                    <select class="form-select form-select-sm" name="company_id" id="regCompanySelect" <?= $canManage ? 'required' : 'disabled' ?>>
-                                        <?php foreach ($companies as $c): ?>
-                                            <option value="<?= (int) $c['id'] ?>" <?= (int) $c['id'] === $curCompanyId ? 'selected' : '' ?>>
-                                                <?= e($c['code'] . ' - ' . $c['name']) ?>
-                                            </option>
-                                        <?php endforeach; ?>
-                                    </select>
-                                </div>
+                        <!-- Panel 1: Parameter Peraturan -->
+                        <div class="card border mb-3">
+                            <div class="card-header bg-light py-2 px-3 fw-semibold small text-dark d-flex align-items-center">
+                                <i class="bi bi-sliders2 me-2 text-primary"></i>Parameter & Masa Berlaku Peraturan
                             </div>
-
-                            <div class="reg-row">
-                                <label class="reg-label">Kategori Kendaraan</label>
-                                <div class="reg-field">
-                                    <select class="form-select form-select-sm" name="category_vehicle_id" id="regCategorySelect" <?= $canManage ? 'required' : 'disabled' ?>>
-                                        <option value="">-- Pilih Kategori Kendaraan --</option>
-                                        <?php foreach ($allCategories as $cv): ?>
-                                            <?php if ((int) $cv['company_id'] === $curCompanyId || (int) $cv['id'] === $curCategoryId): ?>
-                                                <option value="<?= (int) $cv['id'] ?>" <?= (int) $cv['id'] === $curCategoryId ? 'selected' : '' ?>>
-                                                    <?= e($cv['label']) ?>
+                            <div class="card-body p-3">
+                                <div class="row g-3">
+                                    <div class="col-12 col-md-4">
+                                        <label class="form-label small fw-semibold mb-1">Perusahaan <span class="text-danger">*</span></label>
+                                        <select class="form-select form-select-sm" name="company_id" id="regCompanySelect" <?= $canManage ? 'required' : 'disabled' ?>>
+                                            <?php foreach ($companies as $c): ?>
+                                                <option value="<?= (int) $c['id'] ?>" <?= (int) $c['id'] === $curCompanyId ? 'selected' : '' ?>>
+                                                    <?= e($c['code'] . ' - ' . $c['name']) ?>
                                                 </option>
-                                            <?php endif; ?>
-                                        <?php endforeach; ?>
-                                    </select>
-                                </div>
-                            </div>
-
-                            <div class="reg-row">
-                                <label class="reg-label">Trip</label>
-                                <div class="reg-field">
-                                    <input type="number" min="1" step="1" class="form-control form-control-sm" name="trip" value="<?= $curTrip ?>" <?= $canManage ? 'required' : 'readonly' ?>>
-                                </div>
-                            </div>
-
-                            <div class="reg-row">
-                                <label class="reg-label">Tanggal Mulai</label>
-                                <div class="reg-field">
-                                    <input type="text" class="form-control form-control-sm bg-white flatpickr-date" name="start_date" value="<?= e($curStartDate) ?>" placeholder="dd-MMM-yyyy" <?= $canManage ? 'required' : 'disabled' ?>>
-                                </div>
-                            </div>
-
-                            <div class="reg-row">
-                                <label class="reg-label">Tanggal Selesai</label>
-                                <div class="reg-field">
-                                    <input type="text" class="form-control form-control-sm bg-white flatpickr-date" name="end_date" value="<?= e($curEndDate) ?>" placeholder="dd-MMM-yyyy" <?= $canManage ? 'required' : 'disabled' ?>>
-                                </div>
-                            </div>
-
-                            <div class="reg-row align-items-start">
-                                <label class="reg-label pt-1">
-                                    Catatan
-                                    <?php if ($canManage): ?>
-                                        <div class="mt-1">
-                                            <button type="button" class="btn btn-link btn-sm p-0 text-decoration-none" id="btnAutoSummaryNote" style="font-size:.73rem;">
-                                                <i class="bi bi-magic me-1"></i>Isi Otomatis
-                                            </button>
+                                            <?php endforeach; ?>
+                                        </select>
+                                    </div>
+                                    <div class="col-12 col-md-5">
+                                        <label class="form-label small fw-semibold mb-1">Kategori Kendaraan <span class="text-danger">*</span></label>
+                                        <select class="form-select form-select-sm" name="category_vehicle_id" id="regCategorySelect" <?= $canManage ? 'required' : 'disabled' ?>>
+                                            <option value="">-- Pilih Kategori Kendaraan --</option>
+                                            <?php foreach ($allCategories as $cv): ?>
+                                                <?php if ((int) $cv['company_id'] === $curCompanyId || (int) $cv['id'] === $curCategoryId): ?>
+                                                    <option value="<?= (int) $cv['id'] ?>" <?= (int) $cv['id'] === $curCategoryId ? 'selected' : '' ?>>
+                                                        <?= e($cv['label']) ?>
+                                                    </option>
+                                                <?php endif; ?>
+                                            <?php endforeach; ?>
+                                        </select>
+                                    </div>
+                                    <div class="col-12 col-md-3">
+                                        <label class="form-label small fw-semibold mb-1">Trip ke- <span class="text-danger">*</span></label>
+                                        <input type="number" min="1" step="1" class="form-control form-control-sm" name="trip" value="<?= $curTrip ?>" <?= $canManage ? 'required' : 'readonly' ?>>
+                                    </div>
+                                    <div class="col-12 col-md-3">
+                                        <label class="form-label small fw-semibold mb-1">Tanggal Mulai Berlaku <span class="text-danger">*</span></label>
+                                        <div class="input-group input-group-sm">
+                                            <span class="input-group-text bg-light"><i class="bi bi-calendar-event"></i></span>
+                                            <input type="text" class="form-control bg-white flatpickr-date" name="start_date" value="<?= e($curStartDate) ?>" placeholder="dd-MMM-yyyy" <?= $canManage ? 'required' : 'disabled' ?>>
                                         </div>
-                                    <?php endif; ?>
-                                </label>
-                                <div class="reg-field">
-                                    <textarea class="form-control form-control-sm" name="note" id="regNoteInput" rows="3" maxlength="2000" placeholder="Contoh: Sopir 13.5%, Kernet 150k, Montir 145k, BBM 26.5% (Kosongkan untuk diisi otomatis)" <?= $canManage ? '' : 'readonly' ?>><?= e($curNote) ?></textarea>
+                                    </div>
+                                    <div class="col-12 col-md-3">
+                                        <label class="form-label small fw-semibold mb-1">Tanggal Selesai Berlaku <span class="text-danger">*</span></label>
+                                        <div class="input-group input-group-sm">
+                                            <span class="input-group-text bg-light"><i class="bi bi-calendar-check"></i></span>
+                                            <input type="text" class="form-control bg-white flatpickr-date" name="end_date" value="<?= e($curEndDate) ?>" placeholder="dd-MMM-yyyy" <?= $canManage ? 'required' : 'disabled' ?>>
+                                        </div>
+                                    </div>
+                                    <div class="col-12 col-md-6">
+                                        <div class="d-flex justify-content-between align-items-center mb-1">
+                                            <label class="form-label small fw-semibold mb-0">Catatan Ringkasan Peraturan</label>
+                                            <?php if ($canManage): ?>
+                                                <button type="button" class="btn btn-link btn-sm p-0 text-decoration-none" id="btnAutoSummaryNote" style="font-size: 0.76rem;">
+                                                    <i class="bi bi-magic me-1"></i>Isi Otomatis Ringkasan
+                                                </button>
+                                            <?php endif; ?>
+                                        </div>
+                                        <input type="text" class="form-control form-control-sm" name="note" id="regNoteInput" maxlength="2000" placeholder="Contoh: Sopir 13.5%, Kernet 150k, Montir 145k, BBM 26.5%" value="<?= e($curNote) ?>" <?= $canManage ? '' : 'readonly' ?>>
+                                    </div>
                                 </div>
                             </div>
                         </div>
 
-                        <!-- Solid Blue Divider Line (Seperti Desktop ERP) -->
-                        <div class="reg-blue-divider"></div>
-
-                        <!-- Grid Rincian Komisi / Premi Karyawan -->
-                        <div class="table-responsive">
-                            <table class="table table-sm table-bordered mb-0 align-middle reg-table" id="regDetailTable">
-                                <thead>
-                                    <tr>
-                                        <th style="width: 32px;" class="text-center text-warning" title="Row indicator">
-                                            <i class="bi bi-sun-fill" style="color: #f59e0b;"></i>
-                                        </th>
-                                        <th style="width: 220px;">Tipe Karyawan</th>
-                                        <th style="width: 180px;">Tipe</th>
-                                        <th class="text-center text-muted fst-italic py-1" id="regQuickAddBanner" style="cursor: pointer; background: #fafafa;" title="Klik untuk menambah baris baru">
-                                            Click here to add a new row
-                                        </th>
-                                        <th style="width: 170px;" class="text-end">Jumlah</th>
-                                        <?php if ($canManage): ?><th style="width: 38px;" class="text-center">Aksi</th><?php endif; ?>
-                                    </tr>
-                                </thead>
-                                <tbody id="regDetailTbody">
-                                    <?php foreach ($detailRows as $idx => $dr):
-                                        $eType = (string) ($dr['employee_type'] ?? 'Sopir');
-                                        $cType = (string) ($dr['calc_type'] ?? 'Tetap');
-                                        $amt   = (float) ($dr['amount'] ?? 0);
-                                        $isPct = strcasecmp($cType, 'Persentase') === 0;
-                                        $dispVal = $isPct
-                                            ? number_format($amt, 2, '.', '')
-                                            : number_format($amt, 2, '.', ',');
-                                        $rowActive = $idx === 0 ? ' active-row' : '';
-                                    ?>
-                                    <tr class="reg-detail-row<?= $rowActive ?>" data-row-index="<?= $idx ?>">
-                                        <td class="text-center text-muted reg-row-num" style="width: 32px; font-size: 0.75rem;">
-                                            <?= $idx === 0 ? '▶' : ($idx + 1) ?>
-                                        </td>
-                                        <td>
-                                            <select class="form-select form-select-sm reg-emp-type" name="detail_emp_type[]" <?= $canManage ? '' : 'disabled' ?>>
-                                                <?php
-                                                $empOpts = REGULATION_EMP_TYPES;
-                                                if (!in_array($eType, $empOpts, true) && $eType !== '') {
-                                                    $empOpts[] = $eType;
-                                                }
-                                                foreach ($empOpts as $eo): ?>
-                                                    <option value="<?= e($eo) ?>" <?= $eType === $eo ? 'selected' : '' ?>><?= e($eo) ?></option>
-                                                <?php endforeach; ?>
-                                            </select>
-                                        </td>
-                                        <td>
-                                            <select class="form-select form-select-sm reg-calc-type" name="detail_calc_type[]" <?= $canManage ? '' : 'disabled' ?>>
-                                                <?php foreach (REGULATION_CALC_TYPES as $co): ?>
-                                                    <option value="<?= e($co) ?>" <?= strcasecmp($cType, $co) === 0 ? 'selected' : '' ?>><?= e($co) ?></option>
-                                                <?php endforeach; ?>
-                                            </select>
-                                        </td>
-                                        <td class="text-muted small fst-italic"></td>
-                                        <td>
-                                            <input type="text" inputmode="decimal" class="form-control form-control-sm text-end fw-semibold reg-amount-input" name="detail_amount[]" value="<?= e($dispVal) ?>" <?= $canManage ? '' : 'readonly' ?>>
-                                        </td>
-                                        <?php if ($canManage): ?>
-                                        <td class="text-center">
-                                            <button type="button" class="btn btn-sm btn-link text-danger p-0 btn-remove-reg-row" title="Hapus baris"><i class="bi bi-x-lg"></i></button>
-                                        </td>
-                                        <?php endif; ?>
-                                    </tr>
-                                    <?php endforeach; ?>
-                                </tbody>
-                                <tfoot>
-                                    <tr>
-                                        <td colspan="4" class="py-2 bg-light">
-                                            <!-- DevExpress / Access Style Bottom Navigation Bar -->
-                                            <div class="d-flex align-items-center gap-1 font-monospace" style="font-size: 0.8rem;">
-                                                <button type="button" class="reg-nav-btn" id="navFirst" title="Baris Pertama">|&lt;&lt;</button>
-                                                <button type="button" class="reg-nav-btn" id="navPrev" title="Baris Sebelumnya">&lt;</button>
-                                                <span class="px-2 text-dark font-sans-serif" id="regRecordCount" style="font-family: inherit; font-size: 0.8rem;">
-                                                    Record 1 of <?= count($detailRows) ?>
-                                                </span>
-                                                <button type="button" class="reg-nav-btn" id="navNext" title="Baris Berikutnya">&gt;</button>
-                                                <button type="button" class="reg-nav-btn" id="navLast" title="Baris Terakhir">&gt;&gt;|</button>
-                                                <?php if ($canManage): ?>
-                                                    <button type="button" class="reg-nav-btn ms-2 fw-bold" id="btnFooterAddReg" title="Tambah Baris Baru">+</button>
-                                                    <button type="button" class="reg-nav-btn fw-bold" id="btnFooterDelReg" title="Hapus Baris Aktif">&minus;</button>
-                                                    <button type="button" class="reg-nav-btn" id="btnFooterEditReg" title="Edit Baris">✎</button>
-                                                    <button type="button" class="reg-nav-btn text-success fw-bold" id="btnFooterSaveReg" title="Simpan Peraturan">✓</button>
-                                                    <button type="button" class="reg-nav-btn text-danger" id="btnFooterCancelReg" title="Batal / Reset">✕</button>
-                                                    <button type="button" class="btn btn-xs btn-outline-secondary ms-2 py-0 px-2" id="btnLoadDefaultPreset" title="Preset Standar (LIZ Sopir 13.5%, Kernet 150k, Montir 145k, BBM 26.5%)" style="font-size:0.75rem;">
-                                                        Preset LIZ
-                                                    </button>
-                                                <?php endif; ?>
-                                            </div>
-                                        </td>
-                                        <td class="py-2 bg-light">
-                                            <input type="text" class="form-control form-control-sm text-end fw-bold bg-white" id="regTotalDisplay" value="0.00" readonly style="font-size: 0.85rem;">
-                                        </td>
-                                        <?php if ($canManage): ?><td class="bg-light"></td><?php endif; ?>
-                                    </tr>
-                                </tfoot>
-                            </table>
+                        <!-- Panel 2: Komponen Komisi / Premi per Trip -->
+                        <div class="card border mb-2">
+                            <div class="card-header bg-light py-2 px-3 d-flex flex-wrap justify-content-between align-items-center gap-2">
+                                <div class="fw-semibold small text-dark d-flex align-items-center">
+                                    <i class="bi bi-table me-2 text-primary"></i>Komponen Komisi / Premi per Trip
+                                </div>
+                                <?php if ($canManage): ?>
+                                    <div class="d-flex align-items-center gap-2">
+                                        <button type="button" class="btn btn-xs btn-outline-secondary py-1 px-2" id="btnLoadDefaultPreset" title="Preset Standar LIZ" style="font-size: 0.78rem;">
+                                            <i class="bi bi-arrow-repeat me-1"></i>Preset LIZ
+                                        </button>
+                                        <button type="button" class="btn btn-sm btn-primary py-1 px-2" id="btnAddRegRow" style="font-size: 0.78rem;">
+                                            <i class="bi bi-plus-circle me-1"></i>Tambah Baris Komisi
+                                        </button>
+                                    </div>
+                                <?php endif; ?>
+                            </div>
+                            <div class="table-responsive">
+                                <table class="table table-sm table-hover align-middle border-0 mb-0 reg-table" id="regDetailTable">
+                                    <thead>
+                                        <tr>
+                                            <th style="width: 45px;" class="text-center">#</th>
+                                            <th style="width: 220px;">Penerima / Pos Komisi</th>
+                                            <th style="width: 170px;">Tipe Perhitungan</th>
+                                            <th style="width: 240px;" class="text-end">Nilai / Jumlah</th>
+                                            <th class="ps-3">Keterangan / Preview</th>
+                                            <?php if ($canManage): ?><th style="width: 50px;" class="text-center">Aksi</th><?php endif; ?>
+                                        </tr>
+                                    </thead>
+                                    <tbody id="regDetailTbody">
+                                        <?php foreach ($detailRows as $idx => $dr):
+                                            $eType = (string) ($dr['employee_type'] ?? 'Sopir');
+                                            $cType = (string) ($dr['calc_type'] ?? 'Tetap');
+                                            $amt   = (float) ($dr['amount'] ?? 0);
+                                            $isPct = strcasecmp($cType, 'Persentase') === 0;
+                                            $dispVal = $isPct
+                                                ? number_format($amt, 2, '.', '')
+                                                : number_format($amt, 2, '.', ',');
+                                        ?>
+                                        <tr class="reg-detail-row" data-row-index="<?= $idx ?>">
+                                            <td class="text-center text-muted reg-row-num" style="font-size: 0.8rem; font-weight: 600;">
+                                                <?= $idx + 1 ?>
+                                            </td>
+                                            <td>
+                                                <select class="form-select form-select-sm reg-emp-type" name="detail_emp_type[]" <?= $canManage ? '' : 'disabled' ?>>
+                                                    <?php
+                                                    $empOpts = REGULATION_EMP_TYPES;
+                                                    if (!in_array($eType, $empOpts, true) && $eType !== '') {
+                                                        $empOpts[] = $eType;
+                                                    }
+                                                    foreach ($empOpts as $eo): ?>
+                                                        <option value="<?= e($eo) ?>" <?= $eType === $eo ? 'selected' : '' ?>><?= e($eo) ?></option>
+                                                    <?php endforeach; ?>
+                                                </select>
+                                            </td>
+                                            <td>
+                                                <select class="form-select form-select-sm reg-calc-type" name="detail_calc_type[]" <?= $canManage ? '' : 'disabled' ?>>
+                                                    <option value="Persentase" <?= $isPct ? 'selected' : '' ?>>Persentase (%)</option>
+                                                    <option value="Tetap" <?= !$isPct ? 'selected' : '' ?>>Tetap (Rp)</option>
+                                                </select>
+                                            </td>
+                                            <td>
+                                                <div class="input-group input-group-sm reg-amount-group">
+                                                    <span class="input-group-text bg-light reg-addon-prefix" <?= $isPct ? 'style="display:none;"' : '' ?>>Rp</span>
+                                                    <input type="text" inputmode="decimal" class="form-control form-control-sm text-end fw-semibold reg-amount-input" name="detail_amount[]" value="<?= e($dispVal) ?>" <?= $canManage ? '' : 'readonly' ?>>
+                                                    <span class="input-group-text bg-light reg-addon-suffix" <?= !$isPct ? 'style="display:none;"' : '' ?>>%</span>
+                                                </div>
+                                            </td>
+                                            <td class="ps-3">
+                                                <span class="reg-preview-text small text-muted"></span>
+                                            </td>
+                                            <?php if ($canManage): ?>
+                                            <td class="text-center">
+                                                <button type="button" class="btn btn-sm btn-outline-danger border-0 btn-remove-reg-row py-0 px-2" title="Hapus baris">
+                                                    <i class="bi bi-trash"></i>
+                                                </button>
+                                            </td>
+                                            <?php endif; ?>
+                                        </tr>
+                                        <?php endforeach; ?>
+                                    </tbody>
+                                    <tfoot class="table-light border-top">
+                                        <tr>
+                                            <td colspan="3" class="py-2 text-muted small">
+                                                <span id="regTotalRowsBadge" class="badge bg-secondary-subtle text-secondary border">0 Komponen</span>
+                                            </td>
+                                            <td colspan="<?= $canManage ? '3' : '2' ?>" class="py-2 text-end">
+                                                <div class="d-inline-flex flex-wrap gap-2 align-items-center justify-content-end">
+                                                    <span class="badge bg-primary-subtle text-primary border px-2 py-1" style="font-size: 0.82rem;">
+                                                        Total Persentase: <strong id="regTotalPctDisplay">0.00%</strong>
+                                                    </span>
+                                                    <span class="badge bg-success-subtle text-success border px-2 py-1" style="font-size: 0.82rem;">
+                                                        Total Nominal Tetap: <strong id="regTotalFixedDisplay">Rp 0,00</strong>
+                                                    </span>
+                                                </div>
+                                            </td>
+                                        </tr>
+                                    </tfoot>
+                                </table>
+                            </div>
                         </div>
                     </div>
 
                     <!-- ================= TAB 2: AUDIT TRAIL ================= -->
                     <div class="tab-pane fade" id="tab-reg-audit" role="tabpanel">
-                        <div class="reg-form-card mb-0">
-                            <div class="reg-row">
-                                <label class="reg-label">Dibuat Oleh</label>
-                                <div class="reg-field">
-                                    <input type="text" class="form-control form-control-sm bg-light" value="<?= e((string) ($reg['created_user'] ?? '-')) ?>" readonly>
-                                </div>
+                        <div class="card border">
+                            <div class="card-header bg-light py-2 px-3 fw-semibold small text-dark d-flex align-items-center">
+                                <i class="bi bi-clock-history me-2 text-primary"></i>Riwayat Perubahan Data (Audit Trail)
                             </div>
-                            <div class="reg-row">
-                                <label class="reg-label">Dibuat Tanggal</label>
-                                <div class="reg-field">
-                                    <input type="text" class="form-control form-control-sm bg-light" value="<?= !empty($reg['created_date']) ? date('d-M-Y H:i', strtotime((string) $reg['created_date'])) : '-' ?>" readonly>
-                                </div>
-                            </div>
-                            <div class="reg-row">
-                                <label class="reg-label">Diubah Oleh</label>
-                                <div class="reg-field">
-                                    <input type="text" class="form-control form-control-sm bg-light" value="<?= e((string) ($reg['modified_user'] ?? '-')) ?>" readonly>
-                                </div>
-                            </div>
-                            <div class="reg-row">
-                                <label class="reg-label">Diubah Tanggal</label>
-                                <div class="reg-field">
-                                    <input type="text" class="form-control form-control-sm bg-light" value="<?= !empty($reg['modified_date']) ? date('d-M-Y H:i', strtotime((string) $reg['modified_date'])) : '-' ?>" readonly>
+                            <div class="card-body p-3">
+                                <div class="row g-3">
+                                    <div class="col-12 col-md-6">
+                                        <div class="p-3 bg-light rounded border">
+                                            <div class="small text-muted mb-1"><i class="bi bi-person-plus me-1 text-primary"></i>Dibuat Oleh</div>
+                                            <div class="fw-semibold text-dark fs-6"><?= e((string) ($reg['created_user'] ?? '-')) ?></div>
+                                            <div class="small text-muted mt-3 mb-1"><i class="bi bi-calendar3 me-1"></i>Tanggal Dibuat</div>
+                                            <div class="text-dark small fw-semibold"><?= !empty($reg['created_date']) ? date('d-M-Y H:i:s', strtotime((string) $reg['created_date'])) : '-' ?></div>
+                                        </div>
+                                    </div>
+                                    <div class="col-12 col-md-6">
+                                        <div class="p-3 bg-light rounded border">
+                                            <div class="small text-muted mb-1"><i class="bi bi-pencil-square me-1 text-warning"></i>Terakhir Diubah Oleh</div>
+                                            <div class="fw-semibold text-dark fs-6"><?= e((string) ($reg['modified_user'] ?? '-')) ?></div>
+                                            <div class="small text-muted mt-3 mb-1"><i class="bi bi-calendar3 me-1"></i>Tanggal Perubahan</div>
+                                            <div class="text-dark small fw-semibold"><?= !empty($reg['modified_date']) ? date('d-M-Y H:i:s', strtotime((string) $reg['modified_date'])) : '-' ?></div>
+                                        </div>
+                                    </div>
                                 </div>
                             </div>
                         </div>
@@ -496,8 +424,9 @@ document.addEventListener('DOMContentLoaded', () => {
     const compSel       = document.getElementById('regCompanySelect');
     const catSel        = document.getElementById('regCategorySelect');
     const tbody         = document.getElementById('regDetailTbody');
-    const totalDisp     = document.getElementById('regTotalDisplay');
-    const recCountEl    = document.getElementById('regRecordCount');
+    const totalPctDisp  = document.getElementById('regTotalPctDisplay');
+    const totalFixDisp  = document.getElementById('regTotalFixedDisplay');
+    const totalRowsBadge = document.getElementById('regTotalRowsBadge');
     const noteInput     = document.getElementById('regNoteInput');
 
     document.querySelectorAll('.flatpickr-date').forEach((el) => {
@@ -525,8 +454,6 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     }
 
-    let activeRowIndex = 0;
-
     function parseRowVal(calcType, rawStr) {
         const s = String(rawStr || '').trim();
         if (!s) return 0;
@@ -535,7 +462,6 @@ document.addEventListener('DOMContentLoaded', () => {
             const num = parseFloat(clean);
             return isNaN(num) ? 0 : num;
         } else {
-            // Hilangkan pemisah ribuan koma/titik jika ada dua desimal di akhir
             let clean = s;
             if (/,00$|\.00$/.test(clean)) {
                 clean = clean.replace(/,00$|\.00$/, '');
@@ -554,48 +480,62 @@ document.addEventListener('DOMContentLoaded', () => {
     function updateRowIndicators() {
         if (!tbody) return;
         const rows = tbody.querySelectorAll('tr.reg-detail-row');
-        if (activeRowIndex >= rows.length) activeRowIndex = Math.max(0, rows.length - 1);
-        if (activeRowIndex < 0) activeRowIndex = 0;
-
         rows.forEach((tr, idx) => {
             const numCell = tr.querySelector('.reg-row-num');
-            if (idx === activeRowIndex) {
-                tr.classList.add('active-row');
-                if (numCell) numCell.innerHTML = '<span class="text-primary fw-bold">▶</span>';
-            } else {
-                tr.classList.remove('active-row');
-                if (numCell) numCell.textContent = String(idx + 1);
-            }
+            if (numCell) numCell.textContent = String(idx + 1);
         });
 
-        if (recCountEl) {
-            recCountEl.textContent = 'Record ' + (rows.length ? (activeRowIndex + 1) : 0) + ' of ' + rows.length;
+        if (totalRowsBadge) {
+            totalRowsBadge.textContent = `${rows.length} Komponen`;
         }
     }
 
-    function setActiveRow(index, shouldFocus = false) {
-        if (!tbody) return;
-        const rows = tbody.querySelectorAll('tr.reg-detail-row');
-        if (!rows.length) return;
-        activeRowIndex = Math.max(0, Math.min(rows.length - 1, index));
-        updateRowIndicators();
-        if (shouldFocus && rows[activeRowIndex]) {
-            const inp = rows[activeRowIndex].querySelector('.reg-amount-input');
-            if (inp) inp.focus();
+    function updateRowPreview(tr) {
+        const cType = tr.querySelector('.reg-calc-type')?.value || 'Tetap';
+        const inp   = tr.querySelector('.reg-amount-input');
+        const prev  = tr.querySelector('.reg-preview-text');
+        const preAddon = tr.querySelector('.reg-addon-prefix');
+        const sufAddon = tr.querySelector('.reg-addon-suffix');
+
+        const val = parseRowVal(cType, inp ? inp.value : '0');
+
+        if (cType === 'Persentase') {
+            if (preAddon) preAddon.style.display = 'none';
+            if (sufAddon) sufAddon.style.display = '';
+            if (prev) {
+                prev.innerHTML = `<span class="badge bg-info-subtle text-info border">${val.toFixed(2)}% dari Total Biaya Sewa</span>`;
+            }
+        } else {
+            if (preAddon) preAddon.style.display = '';
+            if (sufAddon) sufAddon.style.display = 'none';
+            if (prev) {
+                prev.innerHTML = `<span class="badge bg-secondary-subtle text-secondary border">Rp ${val.toLocaleString('id-ID')} / trip</span>`;
+            }
         }
     }
 
-    function recalcRegTotal() {
+    function recalcRegTotals() {
         if (!tbody) return;
-        let sum = 0;
+        let sumPct = 0;
+        let sumFixed = 0;
         const rows = tbody.querySelectorAll('tr.reg-detail-row');
         rows.forEach((tr) => {
             const cType = tr.querySelector('.reg-calc-type')?.value || 'Tetap';
             const inp   = tr.querySelector('.reg-amount-input');
-            sum += parseRowVal(cType, inp ? inp.value : '0');
+            const val   = parseRowVal(cType, inp ? inp.value : '0');
+            if (cType === 'Persentase') {
+                sumPct += val;
+            } else {
+                sumFixed += val;
+            }
+            updateRowPreview(tr);
         });
-        if (totalDisp) {
-            totalDisp.value = sum.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+
+        if (totalPctDisp) {
+            totalPctDisp.textContent = sumPct.toFixed(2) + '%';
+        }
+        if (totalFixDisp) {
+            totalFixDisp.textContent = 'Rp ' + sumFixed.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
         }
         updateRowIndicators();
     }
@@ -629,41 +569,37 @@ document.addEventListener('DOMContentLoaded', () => {
         const cSel = tr.querySelector('.reg-calc-type');
         const inp  = tr.querySelector('.reg-amount-input');
         const del  = tr.querySelector('.btn-remove-reg-row');
-
-        tr.addEventListener('click', (e) => {
-            if (e.target.closest('button')) return;
-            const rows = Array.from(tbody.querySelectorAll('tr.reg-detail-row'));
-            const idx  = rows.indexOf(tr);
-            if (idx >= 0) setActiveRow(idx);
-        });
+        const eSel = tr.querySelector('.reg-emp-type');
 
         if (cSel && inp) {
             cSel.addEventListener('change', () => {
                 const v = parseRowVal(cSel.value, inp.value);
                 inp.value = formatNumberDisplay(v, cSel.value);
-                recalcRegTotal();
-            });
-
-            inp.addEventListener('focus', () => {
-                const rows = Array.from(tbody.querySelectorAll('tr.reg-detail-row'));
-                const idx  = rows.indexOf(tr);
-                if (idx >= 0) setActiveRow(idx);
+                recalcRegTotals();
             });
 
             inp.addEventListener('blur', function () {
                 const cType = cSel.value;
                 const v = parseRowVal(cType, this.value);
                 this.value = formatNumberDisplay(v, cType);
-                recalcRegTotal();
+                recalcRegTotals();
+            });
+        }
+
+        if (eSel) {
+            eSel.addEventListener('change', () => {
+                recalcRegTotals();
             });
         }
 
         if (del) {
             del.addEventListener('click', () => {
                 tr.remove();
-                recalcRegTotal();
+                recalcRegTotals();
             });
         }
+
+        updateRowPreview(tr);
     }
 
     function addRegRow(empType = 'Agen', calcType = 'Tetap', amount = 0) {
@@ -671,11 +607,15 @@ document.addEventListener('DOMContentLoaded', () => {
         const tr = document.createElement('tr');
         tr.className = 'reg-detail-row';
         const disp = formatNumberDisplay(amount, calcType);
+        const isPct = calcType === 'Persentase';
         tr.innerHTML = `
-            <td class="text-center text-muted reg-row-num" style="width: 32px; font-size: 0.75rem;">1</td>
+            <td class="text-center text-muted reg-row-num" style="font-size: 0.8rem; font-weight: 600;">1</td>
             <td>
                 <select class="form-select form-select-sm reg-emp-type" name="detail_emp_type[]">
                     <option value="Sopir" ${empType === 'Sopir' ? 'selected' : ''}>Sopir</option>
+                    <option value="Sopir 1" ${empType === 'Sopir 1' ? 'selected' : ''}>Sopir 1</option>
+                    <option value="Sopir 2" ${empType === 'Sopir 2' ? 'selected' : ''}>Sopir 2</option>
+                    <option value="Sopir Cadangan" ${empType === 'Sopir Cadangan' ? 'selected' : ''}>Sopir Cadangan</option>
                     <option value="Kernet" ${empType === 'Kernet' ? 'selected' : ''}>Kernet</option>
                     <option value="Montir" ${empType === 'Montir' ? 'selected' : ''}>Montir</option>
                     <option value="BBM" ${empType === 'BBM' ? 'selected' : ''}>BBM</option>
@@ -684,97 +624,60 @@ document.addEventListener('DOMContentLoaded', () => {
             </td>
             <td>
                 <select class="form-select form-select-sm reg-calc-type" name="detail_calc_type[]">
-                    <option value="Persentase" ${calcType === 'Persentase' ? 'selected' : ''}>Persentase</option>
-                    <option value="Tetap" ${calcType === 'Tetap' ? 'selected' : ''}>Tetap</option>
+                    <option value="Persentase" ${isPct ? 'selected' : ''}>Persentase (%)</option>
+                    <option value="Tetap" ${!isPct ? 'selected' : ''}>Tetap (Rp)</option>
                 </select>
             </td>
-            <td class="text-muted small fst-italic"></td>
             <td>
-                <input type="text" inputmode="decimal" class="form-control form-control-sm text-end fw-semibold reg-amount-input" name="detail_amount[]" value="${disp}">
+                <div class="input-group input-group-sm reg-amount-group">
+                    <span class="input-group-text bg-light reg-addon-prefix" ${isPct ? 'style="display:none;"' : ''}>Rp</span>
+                    <input type="text" inputmode="decimal" class="form-control form-control-sm text-end fw-semibold reg-amount-input" name="detail_amount[]" value="${disp}">
+                    <span class="input-group-text bg-light reg-addon-suffix" ${!isPct ? 'style="display:none;"' : ''}>%</span>
+                </div>
+            </td>
+            <td class="ps-3">
+                <span class="reg-preview-text small text-muted"></span>
             </td>
             <td class="text-center">
-                <button type="button" class="btn btn-sm btn-link text-danger p-0 btn-remove-reg-row" title="Hapus baris"><i class="bi bi-x-lg"></i></button>
+                <button type="button" class="btn btn-sm btn-outline-danger border-0 btn-remove-reg-row py-0 px-2" title="Hapus baris">
+                    <i class="bi bi-trash"></i>
+                </button>
             </td>
         `;
         tbody.appendChild(tr);
         bindRegRow(tr);
-        const rows = tbody.querySelectorAll('tr.reg-detail-row');
-        setActiveRow(rows.length - 1, true);
-        recalcRegTotal();
+        recalcRegTotals();
+        const inp = tr.querySelector('.reg-amount-input');
+        if (inp) inp.focus();
     }
 
     if (tbody) {
         tbody.querySelectorAll('tr.reg-detail-row').forEach(bindRegRow);
-        recalcRegTotal();
+        recalcRegTotals();
     }
 
-    // Navigasi Toolbar Access/DevExpress
-    const navFirst = document.getElementById('navFirst');
-    if (navFirst) navFirst.addEventListener('click', () => setActiveRow(0, true));
-
-    const navPrev = document.getElementById('navPrev');
-    if (navPrev) navPrev.addEventListener('click', () => setActiveRow(activeRowIndex - 1, true));
-
-    const navNext = document.getElementById('navNext');
-    if (navNext) navNext.addEventListener('click', () => setActiveRow(activeRowIndex + 1, true));
-
-    const navLast = document.getElementById('navLast');
-    if (navLast) navLast.addEventListener('click', () => {
-        const rows = tbody.querySelectorAll('tr.reg-detail-row');
-        setActiveRow(rows.length - 1, true);
-    });
-
-    const btnEdit = document.getElementById('btnFooterEditReg');
-    if (btnEdit) btnEdit.addEventListener('click', () => setActiveRow(activeRowIndex, true));
-
-    const btnSave = document.getElementById('btnFooterSaveReg');
-    if (btnSave) btnSave.addEventListener('click', () => {
-        const form = document.getElementById('regulationForm');
-        if (form) form.requestSubmit();
-    });
-
-    const btnCancel = document.getElementById('btnFooterCancelReg');
-    if (btnCancel) btnCancel.addEventListener('click', () => {
-        if (confirm('Batal perubahan formulir ini?')) {
-            window.location.reload();
-        }
-    });
-
-    ['btnAddRegRow', 'regQuickAddBanner', 'btnFooterAddReg'].forEach((btnId) => {
-        const el = document.getElementById(btnId);
-        if (el) el.addEventListener('click', () => addRegRow('Agen', 'Tetap', 0));
-    });
-
-    const btnDelCurrent = document.getElementById('btnFooterDelReg');
-    if (btnDelCurrent && tbody) {
-        btnDelCurrent.addEventListener('click', () => {
-            const rows = tbody.querySelectorAll('tr.reg-detail-row');
-            if (rows.length > 1) {
-                if (rows[activeRowIndex]) {
-                    rows[activeRowIndex].remove();
-                } else {
-                    rows[rows.length - 1].remove();
-                }
-                recalcRegTotal();
-            }
-        });
+    const btnAdd = document.getElementById('btnAddRegRow');
+    if (btnAdd) {
+        btnAdd.addEventListener('click', () => addRegRow('Agen', 'Tetap', 0));
     }
 
     const btnPreset = document.getElementById('btnLoadDefaultPreset');
     if (btnPreset && tbody) {
         btnPreset.addEventListener('click', () => {
-            tbody.innerHTML = '';
-            addRegRow('Sopir', 'Persentase', 13.50);
-            addRegRow('Kernet', 'Tetap', 150000);
-            addRegRow('Montir', 'Tetap', 145000);
-            addRegRow('BBM', 'Persentase', 26.50);
-            addRegRow('Agen', 'Tetap', 20000);
-            addRegRow('Agen', 'Tetap', 25000);
-            addRegRow('Agen', 'Tetap', 5000);
-            if (noteInput && !noteInput.value.trim()) {
-                noteInput.value = 'Sopir 13.5%, Kernet 150k, Montir 145k, BBM 26.5%';
+            if (confirm('Muat ulang baris dengan template preset standar LIZ (Sopir 13.5%, Kernet 150k, Montir 145k, BBM 26.5%, Agen 20k, 25k, 5k)?')) {
+                tbody.innerHTML = '';
+                addRegRow('Sopir', 'Persentase', 13.50);
+                addRegRow('Kernet', 'Tetap', 150000);
+                addRegRow('Montir', 'Tetap', 145000);
+                addRegRow('BBM', 'Persentase', 26.50);
+                addRegRow('Agen', 'Tetap', 20000);
+                addRegRow('Agen', 'Tetap', 25000);
+                addRegRow('Agen', 'Tetap', 5000);
+                if (noteInput && !noteInput.value.trim()) {
+                    noteInput.value = 'Sopir 13.5%, Kernet 150k, Montir 145k, BBM 26.5%';
+                }
+                recalcRegTotals();
             }
-            recalcRegTotal();
         });
     }
 
@@ -787,4 +690,3 @@ document.addEventListener('DOMContentLoaded', () => {
 });
 </script>
 <?php require __DIR__ . '/../../../includes/footer.php'; ?>
-

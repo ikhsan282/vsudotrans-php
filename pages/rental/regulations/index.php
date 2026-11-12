@@ -117,7 +117,7 @@ if ($rows) {
 
 $categories = $filter_company_id > 0
     ? opts_categories($filter_company_id)
-    : db()->query("SELECT id, CONCAT(code, ' - ', name) AS label FROM category_vehicles ORDER BY code, name")->fetch_all(MYSQLI_ASSOC);
+    : db()->query("SELECT cv.id, CONCAT(c.code, ' | ', cv.code, ' - ', cv.name) AS label FROM category_vehicles cv LEFT JOIN companies c ON c.id = cv.company_id ORDER BY c.code, cv.code, cv.name")->fetch_all(MYSQLI_ASSOC);
 
 $header_actions = [
     ['label' => 'Pemesanan Sewa Kendaraan', 'icon' => 'car-front', 'href' => 'pages/rental/bookings/index.php', 'class' => 'btn btn-outline-secondary btn-sm'],

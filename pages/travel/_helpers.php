@@ -150,3 +150,57 @@ function opts_rental_regulations(int $company_id): array
     $st->close();
     return $rows;
 }
+
+/**
+ * Resolusi district_id, city_id, province_id dari nilai input (bisa primary key id atau kode Kemendagri).
+ * @return array{id:int, city_id:int, province_id:int, name:string, code:string}|null
+ */
+function resolve_district_info($val): ?array
+{
+    if (empty($val)) {
+        return null;
+    }
+    $v = (int) $val;
+    if ($v > 0) {
+        $st = db()->prepare('SELECT id, city_id, province_id, name, code FROM districts WHERE id = ? LIMIT 1');
+        $st->bind_param('i', $v);
+        $st->execute();
+        $row = $st->get_result()->fetch_assoc();
+        $st->close();
+        if ($row) {
+            return [
+                'id'          => (int) $row['id'],
+                'city_id'     => (int) $row['city_id'],
+                'province_id' => (int) $row['province_id'],
+                'name'        => (string) $row['name'],
+                'code'        => (string) $row['code'],
+            ];
+        }
+    }
+
+    $s = trim((string) $val);
+    if ($s !== '') {
+        $st2 = db()->prepare("SELECT id, city_id, province_id, name, code FROM districts WHERE code = ? OR REPLACE(code, '.', '') = ? LIMIT 1");
+        $st2->bind_param('ss', $s, $s);
+        $st2->execute();
+        $row2 = $st2->get_result()->fetch_assoc();
+        $st2->close();
+        if ($row2) {
+            return [
+                'id'          => (int) $row2['id'],
+                'city_id'     => (int) $row2['city_id'],
+                'province_id' => (int) $row2['province_id'],
+                'name'        => (string) $row2['name'],
+                'code'        => (string) $row2['code'],
+            ];
+        }
+    }
+
+    return null;
+}
+
+function resolve_district_id($val): int
+{
+    $info = resolve_district_info($val);
+    return $info ? $info['id'] : (int) $val;
+}

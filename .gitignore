@@ -3,3 +3,5 @@
 uploads/*
 !uploads/.gitkeep
 database/seeds/data/
+backup/
+
