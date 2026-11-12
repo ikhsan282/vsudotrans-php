@@ -286,17 +286,16 @@ if ($pdf) {
             <?php endif; ?>
 
             <table class="tk-lay w-100 mt-4"><tr>
-                <td class="align-bottom tk-foot" style="padding-bottom:4px">
-                    <span class="text-muted">Dibuat oleh</span> <strong><?= e((string) ($row['created_user'] ?: '—')) ?></strong> 
-                    <span class="text-muted ms-2">pada tanggal</span> <strong><?= e(tanggal_indo((string) $row['date'])) ?></strong>
+                <td class="align-bottom tk-ver" style="padding-bottom:4px">
+                    Dibuat oleh <strong><?= e((string) ($row['created_user'] ?: '—')) ?></strong> pada tanggal <strong><?= e(tanggal_indo((string) $row['date'])) ?></strong>
                 </td>
-                <td class="text-end align-bottom" style="width:160px">
+                <td class="text-end align-bottom" style="width:170px">
                     <?php
                     $stampPath = (string) ($row['stamp'] ?? '');
                     $stampSrc  = $pdf ? resolve_asset_data_uri($stampPath) : resolve_asset_url($stampPath);
                     ?>
                     <?php if ($stampSrc !== ''): ?>
-                        <img class="tk-stamp" src="<?= e($stampSrc) ?>" alt="Stempel <?= e($row['company_name']) ?>" style="max-height:65px; width:auto;">
+                        <img class="tk-stamp" src="<?= e($stampSrc) ?>" alt="Stempel <?= e($row['company_name']) ?>">
                     <?php endif; ?>
                 </td>
             </tr></table>
