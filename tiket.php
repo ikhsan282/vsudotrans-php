@@ -288,12 +288,12 @@ if ($pdf) {
                                 <td class="tk-kv-v"><?= e(substr((string) $row['time'], 0, 5)) ?> WIB</td>
                             </tr>
                             <tr>
-                                <td class="tk-kv-k">Layanan</td>
-                                <td class="tk-kv-v">Sewa Kendaraan<?= !empty($row['category_name']) ? ' &middot; ' . e($row['category_name']) : '' ?></td>
-                            </tr>
-                            <tr>
                                 <td class="tk-kv-k">Periode Sewa</td>
                                 <td class="tk-kv-v"><?= e($periodeDisplay) ?></td>
+                            </tr>
+                            <tr>
+                                <td class="tk-kv-k">Layanan</td>
+                                <td class="tk-kv-v">Sewa Kendaraan<?= !empty($row['category_name']) ? ' &middot; ' . e($row['category_name']) : '' ?></td>
                             </tr>
                             <?php if (!empty($vehicleDisplay) && $vehicleDisplay !== '—'): ?>
                             <tr>
