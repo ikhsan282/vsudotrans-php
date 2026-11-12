@@ -98,16 +98,6 @@ if (booking_doc_valid($no)) {
         $vPlat = trim((string) ($row['vehicle_number'] ?? ''));
         $vehicleDisplay = trim($vUnit . ($vPlat !== '' ? ' (' . $vPlat . ')' : ''));
 
-        // Format nomor telepon perusahaan agar lebih mudah dibaca
-        $rawPhone = preg_replace('/\D+/', '', (string) ($row['phone_number'] ?? ''));
-        if (str_starts_with($rawPhone, '62') && strlen($rawPhone) >= 10) {
-            $phoneFormatted = '+62 ' . preg_replace('/(\d{3})(\d{4})(\d+)/', '$1-$2-$3', substr($rawPhone, 2));
-        } elseif (str_starts_with($rawPhone, '0') && strlen($rawPhone) >= 9) {
-            $phoneFormatted = preg_replace('/(\d{4})(\d{4})(\d+)/', '$1-$2-$3', $rawPhone);
-        } else {
-            $phoneFormatted = trim((string) ($row['phone_number'] ?? '')) ?: '—';
-        }
-
         // Format periode sewa: dd-MMM-yyyy s/d dd-MMM-yyyy (X Hari)
         $sDate = (string) ($row['start_date'] ?: $row['date']);
         $eDate = (string) ($row['end_date'] ?: $sDate);
@@ -193,8 +183,6 @@ if ($pdf) {
         table.tk-kv tr:first-child td { padding-top: 0; }
         table.tk-kv td.tk-kv-k { width: 105pt; color: #6c757d; font-size: 7.5pt; font-weight: 700; letter-spacing: .3px; text-transform: uppercase; white-space: nowrap; }
         table.tk-kv td.tk-kv-v { color: #111; font-size: 9pt; font-weight: 700; line-height: 13pt; }
-        table.tk-kv td.tk-kv-k-sm { width: 52pt; color: #6c757d; font-size: 7.5pt; font-weight: 700; letter-spacing: .3px; text-transform: uppercase; white-space: nowrap; border-bottom: 0; padding: 1.5pt 0; vertical-align: top; }
-        table.tk-kv td.tk-kv-v-sm { color: #495057; font-size: 8.5pt; font-weight: 400; line-height: 12.5pt; border-bottom: 0; padding: 1.5pt 0; vertical-align: top; word-break: break-word; }
         .tk-price-val { color: #0a58ca; font-size: 9.8pt; font-weight: 700; }
         .tk-card {
             min-height: 820px;
@@ -283,25 +271,9 @@ if ($pdf) {
                 <td class="tk-split-left">
                     <div class="tk-sect-lbl">Perusahaan</div>
                     <div class="tk-sub mb-1"><?= e($row['company_name']) ?></div>
-                    <div class="tk-body text-muted" style="margin-bottom: 4pt; line-height: 13pt;">
+                    <div class="tk-body text-muted" style="line-height: 13.5pt;">
                         <?= e((string) $row['address']) ?>
                     </div>
-                    <table class="tk-kv">
-                        <tr>
-                            <td class="tk-kv-k-sm">Telepon</td>
-                            <td class="tk-kv-v-sm"><?= e($phoneFormatted) ?></td>
-                        </tr>
-                        <tr>
-                            <td class="tk-kv-k-sm">Email</td>
-                            <td class="tk-kv-v-sm"><?= e((string) $row['email']) ?></td>
-                        </tr>
-                        <?php if (!empty($row['website'])): ?>
-                        <tr>
-                            <td class="tk-kv-k-sm">Website</td>
-                            <td class="tk-kv-v-sm"><?= e((string) $row['website']) ?></td>
-                        </tr>
-                        <?php endif; ?>
-                    </table>
                 </td>
                 <td class="tk-split-right">
                     <div class="tk-sect-lbl"><?= $type === 'rental' ? 'Detail Pemesanan' : 'Detail Tiket Perjalanan' ?></div>
@@ -312,16 +284,16 @@ if ($pdf) {
                                 <td class="tk-kv-v"><?= e($row['document_number']) ?></td>
                             </tr>
                             <tr>
+                                <td class="tk-kv-k">Jam Berangkat</td>
+                                <td class="tk-kv-v"><?= e(substr((string) $row['time'], 0, 5)) ?> WIB</td>
+                            </tr>
+                            <tr>
                                 <td class="tk-kv-k">Layanan</td>
                                 <td class="tk-kv-v">Sewa Kendaraan<?= !empty($row['category_name']) ? ' &middot; ' . e($row['category_name']) : '' ?></td>
                             </tr>
                             <tr>
                                 <td class="tk-kv-k">Periode Sewa</td>
                                 <td class="tk-kv-v"><?= e($periodeDisplay) ?></td>
-                            </tr>
-                            <tr>
-                                <td class="tk-kv-k">Jam Berangkat</td>
-                                <td class="tk-kv-v"><?= e(substr((string) $row['time'], 0, 5)) ?> WIB</td>
                             </tr>
                             <?php if (!empty($vehicleDisplay) && $vehicleDisplay !== '—'): ?>
                             <tr>
