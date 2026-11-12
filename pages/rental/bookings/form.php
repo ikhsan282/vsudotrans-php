@@ -205,6 +205,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $err = 'Kecamatan penjemputan dan pengantaran wajib dipilih.';
     } elseif ((float) $in['trip'] < 0 || (float) $in['bbm'] < 0 || (float) $in['total_price'] < 0) {
         $err = 'Trip, BBM, dan harga sewa tidak boleh negatif.';
+    } else {
+        $manualPaySum = array_sum(array_map(static fn($r) => (float) ($r['amount'] ?? 0), $in_payments));
+        if ($manualPaySum > (float) $in['total_price'] + 0.001) {
+            $err = 'Total pembayaran (' . rupiah($manualPaySum) . ') tidak boleh melebihi total harga sewa (' . rupiah((float) $in['total_price']) . ').';
+        }
     }
 
     // Validasi Anti Double-Booking Armada Rental
@@ -300,6 +305,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             redirect('pages/rental/bookings/detail.php?id=' . $res['id']);
         } catch (mysqli_sql_exception $ex) {
             throw $ex;
+        } catch (Throwable $ex) {
+            $err = $ex->getMessage() === '' ? 'Gagal menyimpan pemesanan sewa.' : $ex->getMessage();
         }
     }
     flash('error', $err);
@@ -880,6 +887,9 @@ require __DIR__ . '/../../../includes/header.php';
                             <i class="bi bi-plus-lg me-1"></i>Tambah Pembayaran Manual
                         </button>
                     </div>
+                    <div id="payOverpayAlert" class="alert alert-danger py-2 px-3 small d-none m-2 mb-0" role="alert">
+                        <i class="bi bi-exclamation-octagon me-1"></i><span id="payOverpayMsg"></span>
+                    </div>
                     <div class="table-responsive">
                         <table class="table table-sm table-bordered mb-0 align-middle" id="payTable" style="font-size:.84rem;">
                             <thead class="table-light">
@@ -1112,9 +1122,12 @@ document.addEventListener('DOMContentLoaded', function () {
     function syncPriceDisplayFromHidden() {
         var raw = parseRupiah(priceHidden ? priceHidden.value : '0');
         if (priceDisplay) priceDisplay.value = formatRupiah(raw);
+        if (typeof recalcPayTotals === 'function') recalcPayTotals();
     }
     if (priceDisplay && priceHidden) {
-        attachRupiahMask(priceDisplay, priceHidden);
+        attachRupiahMask(priceDisplay, priceHidden, function () {
+            if (typeof recalcPayTotals === 'function') recalcPayTotals();
+        });
     }
 
     // 2. Sinkronisasi 2 Arah: Tanggal Mulai + Selesai <-> Durasi Hari (Spinner)
@@ -1757,10 +1770,27 @@ document.addEventListener('DOMContentLoaded', function () {
 
     // 8. Grid Pembayaran Sewa (Lampiran | Tipe Pembayaran | Metode Pembayaran | Tanggal | Nominal)
     var payTopDisp = document.getElementById('pay_total_top_display');
-    var paySubDisp = document.getElementById('pay_subtotal_display');
-    var payTbody   = document.getElementById('payTableBody');
-    var payCountEl = document.getElementById('payRecordCount');
-    var todayIso   = <?= json_encode(date('Y-m-d')) ?>;
+    var paySubDisp      = document.getElementById('pay_subtotal_display');
+    var payTbody        = document.getElementById('payTableBody');
+    var payCountEl      = document.getElementById('payRecordCount');
+    var payOverAlert    = document.getElementById('payOverpayAlert');
+    var payOverMsg      = document.getElementById('payOverpayMsg');
+    var todayIso        = <?= json_encode(date('Y-m-d')) ?>;
+
+    function getPayValidationState(paySum) {
+        var current = paySum !== undefined ? paySum : (function () {
+            var s = 0;
+            var rs = payTbody ? payTbody.querySelectorAll('tr.pay-row') : [];
+            rs.forEach(function (tr) {
+                var hid = tr.querySelector('.pay-amt-value');
+                s += parseRupiah(hid ? hid.value : '0');
+            });
+            return s;
+        })();
+        var targetTotal = parseRupiah(priceHidden ? priceHidden.value : '0');
+        var exceeded = current > targetTotal + 0.001;
+        return { paySum: current, targetTotal: targetTotal, exceeded: exceeded };
+    }
 
     function recalcPayTotals() {
         var paySum = 0;
@@ -1774,6 +1804,22 @@ document.addEventListener('DOMContentLoaded', function () {
         if (payTopDisp) payTopDisp.value = formatRupiah(paySum);
         if (paySubDisp) paySubDisp.value = formatRupiah(paySum);
         if (payCountEl) payCountEl.textContent = 'Record ' + (rows.length ? 1 : 0) + ' of ' + rows.length;
+
+        var st = getPayValidationState(paySum);
+        if (payOverAlert && payOverMsg) {
+            if (st.exceeded) {
+                payOverMsg.textContent = 'Total pembayaran (Rp ' + formatRupiah(st.paySum) + ') tidak boleh melebihi total harga sewa (Rp ' + formatRupiah(st.targetTotal) + ').';
+                payOverAlert.classList.remove('d-none');
+            } else {
+                payOverAlert.classList.add('d-none');
+                payOverMsg.textContent = '';
+            }
+        }
+        [payTopDisp, paySubDisp].forEach(function (el) {
+            if (!el) return;
+            el.classList.toggle('is-invalid', st.exceeded);
+            el.classList.toggle('text-danger', st.exceeded);
+        });
     }
 
     function bindPayRow(tr) {
@@ -1886,7 +1932,29 @@ document.addEventListener('DOMContentLoaded', function () {
     // Handler auto-switch tab bila ada field required yang belum diisi di tab lain
     var rentalFormEl = document.getElementById('formRentalBooking');
     if (rentalFormEl) {
+        recalcPayTotals();
         rentalFormEl.addEventListener('submit', function (e) {
+            var paySt = getPayValidationState();
+            if (paySt.exceeded) {
+                e.preventDefault();
+                recalcPayTotals();
+                var payTabBtn = document.querySelector('[data-bs-target="#tab-payment"]');
+                if (payTabBtn && typeof bootstrap !== 'undefined' && bootstrap.Tab) {
+                    bootstrap.Tab.getOrCreateInstance(payTabBtn).show();
+                }
+                setTimeout(function () {
+                    var targetInp = null;
+                    if (payTbody) {
+                        payTbody.querySelectorAll('tr.pay-row').forEach(function (tr) {
+                            var v = parseRupiah((tr.querySelector('.pay-amt-value') || {}).value || '0');
+                            if (!targetInp && v > 0) targetInp = tr.querySelector('.pay-amt-display');
+                        });
+                    }
+                    if (targetInp) targetInp.focus();
+                    if (payOverAlert) payOverAlert.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                }, 150);
+                return false;
+            }
             if (!this.checkValidity()) {
                 e.preventDefault();
                 var firstInvalid = this.querySelector(':invalid');

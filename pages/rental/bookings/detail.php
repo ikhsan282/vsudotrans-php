@@ -1038,6 +1038,9 @@ require __DIR__ . '/../../../includes/header.php';
                             </div>
                             <?php endif; ?>
                         </div>
+                        <div id="payOverpayAlert" class="alert alert-danger py-2 px-3 small d-none m-2 mb-0" role="alert">
+                            <i class="bi bi-exclamation-octagon me-1"></i><span id="payOverpayMsg"></span>
+                        </div>
                         <div class="table-responsive">
                             <table class="table table-sm table-bordered mb-0 align-middle" id="payTable" style="font-size:.84rem;">
                                 <thead class="table-light">
@@ -1660,7 +1663,9 @@ document.addEventListener('DOMContentLoaded', () => {
     const priceDisp = document.getElementById('totalPriceDisplay');
     const priceVal  = document.getElementById('totalPriceValue');
     if (priceDisp && priceVal) {
-        attachRupiahMask(priceDisp, priceVal);
+        attachRupiahMask(priceDisp, priceVal, () => {
+            if (typeof recalcPayTotals === 'function') recalcPayTotals();
+        });
     }
 
     // Inisialisasi Flatpickr dengan format tampilan 'd-M-Y' (misal: 11-Nov-2026) dan value server 'Y-m-d'
@@ -2037,17 +2042,67 @@ document.addEventListener('DOMContentLoaded', () => {
     const paySubDisp = document.getElementById('pay_subtotal_display');
     const payTbody   = document.getElementById('payTableBody');
     const payCountEl = document.getElementById('payRecordCount');
-    const todayIso   = <?= json_encode(date('Y-m-d')) ?>;
+    const payOverAlert = document.getElementById('payOverpayAlert');
+    const payOverMsg   = document.getElementById('payOverpayMsg');
+    const todayIso     = <?= json_encode(date('Y-m-d')) ?>;
+    const qrisTaxPct   = <?= json_encode((float) ($invoice['tax_percent'] ?? 0)) ?>;
+    const qrisOrigBookingPrice = <?= json_encode((float) $b['total_price']) ?>;
+    let qrisInvTotal   = <?= json_encode((float) $qrisInvTotal) ?>;
+    let qrisServerPaid = <?= json_encode((float) $qrisPaidTotal) ?>;
+
+    function getExpectedInvoiceTotal() {
+        if (priceVal) {
+            const uiPrice = parseRupiah(priceVal.value || '0');
+            if (Math.abs(uiPrice - Math.round(qrisOrigBookingPrice)) > 1) {
+                return uiPrice + Math.round(uiPrice * qrisTaxPct / 100);
+            }
+        }
+        return Math.round(qrisInvTotal);
+    }
+
+    function getCurrentPaySum() {
+        let s = 0;
+        const rows = payTbody ? payTbody.querySelectorAll('tr.pay-row') : [];
+        rows.forEach((tr) => {
+            const hid = tr.querySelector('.pay-amt-value');
+            s += parseRupiah(hid ? hid.value : '0');
+        });
+        return s;
+    }
+
+    function getPayValidationState(currentPaySum) {
+        const paySum = currentPaySum !== undefined ? currentPaySum : getCurrentPaySum();
+        const targetTotal = getExpectedInvoiceTotal();
+        const exceeded = paySum > targetTotal + 0.001;
+        return { paySum, targetTotal, exceeded };
+    }
 
     function updateDynamicInvoiceSisa(currentPaySum) {
-        const invSumText  = document.getElementById('invoiceSummaryText');
-        const invSisaDisp = document.getElementById('invSisaDisplay');
-        if (!invSumText || !invSisaDisp) return;
-        const invTotal = parseFloat(invSumText.getAttribute('data-inv-total') || '0');
-        const paid     = currentPaySum !== undefined ? currentPaySum : parseRupiah(payTopDisp ? payTopDisp.value : '0');
-        const sisa     = Math.max(0, Math.round(invTotal - paid));
-        invSisaDisp.textContent = 'Rp ' + formatRupiah(sisa);
-        invSisaDisp.className   = sisa > 0 ? 'text-danger' : 'text-success';
+        const st = getPayValidationState(currentPaySum);
+        const sisa = Math.round(st.targetTotal - st.paySum);
+        if (qrisRemainingDisp) {
+            if (st.exceeded) {
+                qrisRemainingDisp.textContent = 'Melebihi Rp ' + formatRupiah(Math.abs(sisa));
+                qrisRemainingDisp.className = 'text-danger fw-bold';
+            } else {
+                qrisRemainingDisp.textContent = sisa > 0 ? ('Rp ' + formatRupiah(sisa)) : 'Lunas (Rp 0)';
+                qrisRemainingDisp.className = sisa > 0 ? 'text-danger' : 'text-success';
+            }
+        }
+        if (payOverAlert && payOverMsg) {
+            if (st.exceeded) {
+                payOverMsg.textContent = 'Total pembayaran (Rp ' + formatRupiah(st.paySum) + ') tidak boleh melebihi total tagihan (Rp ' + formatRupiah(st.targetTotal) + ').';
+                payOverAlert.classList.remove('d-none');
+            } else {
+                payOverAlert.classList.add('d-none');
+                payOverMsg.textContent = '';
+            }
+        }
+        [payTopDisp, paySubDisp].forEach((el) => {
+            if (!el) return;
+            el.classList.toggle('is-invalid', st.exceeded);
+            el.classList.toggle('text-danger', st.exceeded);
+        });
     }
 
     function recalcPayTotals() {
@@ -2169,8 +2224,6 @@ document.addEventListener('DOMContentLoaded', () => {
     const qrisBookingId   = <?= (int) $id ?>;
     const qrisCanManage   = <?= $canManage ? 'true' : 'false' ?>;
     const qrisBookStat    = <?= json_encode((string) $status) ?>;
-    let qrisInvTotal      = <?= json_encode((float) $qrisInvTotal) ?>;
-    let qrisServerPaid    = <?= json_encode((float) $qrisPaidTotal) ?>;
     let qrisHasPending    = <?= $hasPendingQris ? 'true' : 'false' ?>;
     let qrisCurrentOrderId   = '';
     let qrisCurrentPayWebUrl = '';
@@ -2454,10 +2507,8 @@ document.addEventListener('DOMContentLoaded', () => {
             if (qrisAmtDisp) qrisAmtDisp.value = formatRupiah(rem);
             if (qrisAmtVal) qrisAmtVal.value = String(rem);
 
-            const uiPriceInput = document.getElementById('totalPriceValue');
-            if (qrisUnsavedWarn && uiPriceInput) {
-                const uiPrice = parseRupiah(uiPriceInput.value || '0');
-                if (Math.abs(uiPrice - Math.round(qrisInvTotal)) > 1) {
+            if (qrisUnsavedWarn) {
+                if (Math.abs(getExpectedInvoiceTotal() - Math.round(qrisInvTotal)) > 1) {
                     qrisUnsavedWarn.classList.remove('d-none');
                 } else {
                     qrisUnsavedWarn.classList.add('d-none');
@@ -2484,10 +2535,25 @@ document.addEventListener('DOMContentLoaded', () => {
             const pt  = qrisPayTypeSel ? qrisPayTypeSel.value : 'Pelunasan';
             const prov = qrisProvSel ? qrisProvSel.value : '';
 
+            const rem = Math.max(0, Math.round(qrisInvTotal - qrisServerPaid));
             if (qrisCreateErr) { qrisCreateErr.classList.add('d-none'); qrisCreateErr.textContent = ''; }
+            if (rem <= 0) {
+                if (qrisCreateErr) {
+                    qrisCreateErr.textContent = 'Tagihan invoice ini sudah lunas (sisa Rp 0).';
+                    qrisCreateErr.classList.remove('d-none');
+                }
+                return;
+            }
             if (amt <= 0) {
                 if (qrisCreateErr) {
                     qrisCreateErr.textContent = 'Masukkan nominal tagihan QRIS lebih dari Rp 0.';
+                    qrisCreateErr.classList.remove('d-none');
+                }
+                return;
+            }
+            if (amt > rem) {
+                if (qrisCreateErr) {
+                    qrisCreateErr.textContent = 'Nominal QRIS (Rp ' + formatRupiah(amt) + ') tidak boleh melebihi sisa tagihan (Rp ' + formatRupiah(rem) + ').';
                     qrisCreateErr.classList.remove('d-none');
                 }
                 return;
@@ -2626,12 +2692,37 @@ document.addEventListener('DOMContentLoaded', () => {
         refreshBgQrisPoller();
     }
 
-    // Intersep submit form rentalDetailForm untuk validasi HTML5 otomatis lintas tab
+    // Intersep submit form rentalDetailForm untuk validasi pembayaran & HTML5 otomatis lintas tab
     const detailForm = document.getElementById('rentalDetailForm');
     if (detailForm) {
+        recalcPayTotals();
         detailForm.addEventListener('submit', function (e) {
             if (visNote && hidNote) {
                 hidNote.value = visNote.value;
+            }
+
+            const paySt = getPayValidationState();
+            if (paySt.exceeded) {
+                e.preventDefault();
+                recalcPayTotals();
+                const payTabBtn = document.querySelector('[data-bs-target="#tab-payment"]');
+                if (payTabBtn && typeof bootstrap !== 'undefined' && bootstrap.Tab) {
+                    bootstrap.Tab.getOrCreateInstance(payTabBtn).show();
+                }
+                setTimeout(() => {
+                    let targetInp = null;
+                    if (payTbody) {
+                        payTbody.querySelectorAll('tr.pay-row').forEach((tr) => {
+                            if (targetInp) return;
+                            const disp = tr.querySelector('.pay-amt-display');
+                            const val  = parseRupiah((tr.querySelector('.pay-amt-value') || {}).value || '0');
+                            if (disp && !disp.readOnly && val > 0) targetInp = disp;
+                        });
+                    }
+                    if (targetInp) targetInp.focus();
+                    if (payOverAlert) payOverAlert.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                }, 150);
+                return false;
             }
 
             if (!this.checkValidity()) {

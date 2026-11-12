@@ -222,8 +222,49 @@ function booking_rental_payments_sync(int $booking_id, int $invoice_id, int $com
 
     // Ambil baris eksisting agar proof_blob_path lama & baris QRIS otomatis tidak hilang
     $existing = [];
+    $qrisTotal = 0.0;
     foreach (invoice_payments($invoice_id) as $ex) {
         $existing[(int) $ex['id']] = $ex;
+        if (!empty($ex['is_auto_qris'])) {
+            $qrisTotal += max(0.0, (float) ($ex['amount'] ?? 0));
+        }
+    }
+
+    // Validasi sebelum menghapus baris lama agar data tidak terhapus bila ditolak
+    $manualTotal = 0.0;
+    foreach ($pay_rows as $r) {
+        $rowId = (int) ($r['id'] ?? 0);
+        if ($rowId > 0 && !empty($existing[$rowId]['is_auto_qris'])) {
+            continue;
+        }
+        $rawAmt = (float) ($r['amount'] ?? 0);
+        if ($rawAmt < -0.001) {
+            throw new InvalidArgumentException('Nominal pembayaran tidak boleh negatif.');
+        }
+        if ($rawAmt <= 0) {
+            continue;
+        }
+        $manualTotal += $rawAmt;
+    }
+
+    $stInv = $db->prepare('SELECT total, status FROM invoices WHERE id = ? AND company_id = ? LIMIT 1');
+    $stInv->bind_param('ii', $invoice_id, $company_id);
+    $stInv->execute();
+    $invRow = $stInv->get_result()->fetch_assoc();
+    $stInv->close();
+    if ($invRow) {
+        if (($invRow['status'] ?? '') === 'cancelled' && $manualTotal > 0.001) {
+            throw new RuntimeException('Invoice sudah dibatalkan — tidak bisa menerima pembayaran.');
+        }
+        $invTotal  = max(0.0, (float) $invRow['total']);
+        $grandPaid = round($qrisTotal + $manualTotal, 2);
+        if ($grandPaid > $invTotal + 0.001) {
+            $remainingAllowed = max(0.0, round($invTotal - $qrisTotal, 2));
+            throw new InvalidArgumentException(
+                'Total pembayaran (' . rupiah($grandPaid) . ') tidak boleh melebihi total tagihan (' . rupiah($invTotal) . ').'
+                . ($qrisTotal > 0 ? ' Maksimal pembayaran manual tersisa ' . rupiah($remainingAllowed) . '.' : '')
+            );
+        }
     }
 
     // Hapus baris manual lama (pertahankan baris yang berasal dari webhook QRIS otomatis)

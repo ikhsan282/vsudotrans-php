@@ -180,14 +180,68 @@ try {
         'act=poll returns auto QRIS row with preserved DP pay_type, method=QRIS, and exact principal 400000'
     );
 
-    // 9. Verify booking_rental_payments_sync keeps Verified QRIS row without duplicating + adds manual row
+    // 8b. After 400.000 QRIS is paid (remaining 600.000), QRIS create for 700.000 must fail with HTTP 422
+    $resOverAfterQris = rq_http_post($base, $jar, '/pages/rental/bookings/qris_ajax.php', [
+        'csrf_token' => $csrf,
+        'act'        => 'create',
+        'booking_id' => $bid,
+        'pay_type'   => 'Pelunasan',
+        'amount'     => '700000',
+    ]);
+    rq_check(
+        $resOverAfterQris['code'] === 422 && empty($resOverAfterQris['json']['ok']),
+        'Partial-paid invoice rejects QRIS > remaining bill (700.000 > 600.000) with HTTP 422'
+    );
+
+    // 9. Verify booking_rental_payments_sync keeps Verified QRIS row, saves valid manual DP 200.000,
+    // rejects overpay (700.000 when 400.000 QRIS already exists => 1.100.000 > 1.000.000) without deleting existing rows,
+    // and then allows exact remaining manual settlement (600.000).
     $qrisRowId = (int) ($pRows[0]['id'] ?? 0);
+    $totalPartialManual = booking_rental_payments_sync($bid, $invId, 1, [
+        ['id' => $qrisRowId, 'pay_type' => 'Down Payment (DP)', 'pay_method' => 'QRIS', 'pay_date' => $today, 'amount' => 400000],
+        ['id' => 0, 'pay_type' => 'Down Payment (DP)', 'pay_method' => 'Transfer', 'pay_date' => $today, 'amount' => 200000],
+    ], 'test');
+    rq_check(abs($totalPartialManual - 600000.0) < 0.01, 'booking_rental_payments_sync accepts valid 400k QRIS + 200k manual (600k <= 1jt)');
+
+    $manualOverThrown = false;
+    try {
+        booking_rental_payments_sync($bid, $invId, 1, [
+            ['id' => $qrisRowId, 'pay_type' => 'Down Payment (DP)', 'pay_method' => 'QRIS', 'pay_date' => $today, 'amount' => 400000],
+            ['id' => 0, 'pay_type' => 'Pelunasan', 'pay_method' => 'Transfer', 'pay_date' => $today, 'amount' => 700000],
+        ], 'test');
+    } catch (InvalidArgumentException $ex) {
+        $manualOverThrown = str_contains($ex->getMessage(), 'tidak boleh melebihi');
+    }
+    $rowsAfterRejectedSync = invoice_payments($invId);
+    rq_check(
+        $manualOverThrown && count($rowsAfterRejectedSync) === 2 && abs(invoice_paid_total($invId) - 600000.0) < 0.01,
+        'booking_rental_payments_sync rejects manual overpay above total bill AND preserves prior QRIS + manual rows'
+    );
+
     $totalAfterSync = booking_rental_payments_sync($bid, $invId, 1, [
         ['id' => $qrisRowId, 'pay_type' => 'Down Payment (DP)', 'pay_method' => 'QRIS', 'pay_date' => $today, 'amount' => 400000],
         ['id' => 0, 'pay_type' => 'Pelunasan', 'pay_method' => 'Transfer', 'pay_date' => $today, 'amount' => 600000],
     ], 'test');
     $afterSyncRows = invoice_payments($invId);
-    rq_check(count($afterSyncRows) === 2 && abs($totalAfterSync - 1000000.0) < 0.01, 'booking_rental_payments_sync preserves QRIS row & appends manual row without duplication');
+    rq_check(count($afterSyncRows) === 2 && abs($totalAfterSync - 1000000.0) < 0.01, 'booking_rental_payments_sync preserves QRIS row & settles exact remaining manual amount without duplication');
+
+    // 10. Once fully paid (1.000.000), creating new QRIS fails with 422 AND settling an old pending order ($ordId2) must not overpay!
+    $resWhenFull = rq_http_post($base, $jar, '/pages/rental/bookings/qris_ajax.php', [
+        'csrf_token' => $csrf,
+        'act'        => 'create',
+        'booking_id' => $bid,
+        'pay_type'   => 'Pelunasan',
+        'amount'     => '10000',
+    ]);
+    rq_check($resWhenFull['code'] === 422 && empty($resWhenFull['json']['ok']), 'Fully paid invoice rejects new QRIS creation with HTTP 422');
+
+    if ($ordId2 !== '') {
+        $fin2 = gateway_finalize($ordId2, (float) ($resPel['json']['total_amount'] ?? 600100));
+        rq_check(
+            !empty($fin2['ok']) && (int) ($fin2['cost_line_id'] ?? 0) === 0 && abs(invoice_paid_total($invId) - 1000000.0) < 0.01,
+            'gateway_finalize on already-settled invoice does not insert an overpaying cost line'
+        );
+    }
 } finally {
     @unlink($jar);
     foreach ($createdOrders as $oid) {

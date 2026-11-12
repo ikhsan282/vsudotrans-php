@@ -140,14 +140,20 @@ require __DIR__ . '/../../../includes/header.php';
     <?php if (can('invoices.manage') && $inv['status'] !== 'cancelled'): ?>
     <div class="card shadow-sm border-0 mb-3"><div class="card-body">
         <h6 class="fw-bold">Catat Pembayaran</h6>
-        <form method="post" action="" class="row g-2 align-items-end" enctype="multipart/form-data">
+        <?php if ($remaining <= 0): ?>
+            <div class="alert alert-success py-2 px-3 small mb-0">
+                <i class="bi bi-check-circle me-1"></i>Tagihan invoice ini sudah lunas (sisa Rp 0). Pembayaran baru tidak diperlukan.
+            </div>
+        <?php else: ?>
+        <form method="post" action="" id="invPayForm" class="row g-2 align-items-end" enctype="multipart/form-data" data-remaining="<?= e((string) $remaining) ?>">
             <?= csrf_field() ?>
             <input type="hidden" name="id" value="<?= $id ?>">
             <input type="hidden" name="act" value="pay">
             <div class="col-md-3">
                 <label class="form-label small mb-1">Nominal</label>
-                <input class="form-control form-control-sm" name="amount" inputmode="numeric" required
-                       value="<?= $remaining > 0 ? e(number_format($remaining, 0, ',', '.')) : '' ?>" placeholder="0">
+                <input class="form-control form-control-sm" id="invPayAmount" name="amount" inputmode="numeric" required
+                       value="<?= e(number_format($remaining, 0, ',', '.')) ?>" placeholder="0">
+                <div class="invalid-feedback" id="invPayAmountErr">Nominal melebihi sisa tagihan.</div>
             </div>
             <div class="col-md-3">
                 <label class="form-label small mb-1">Metode Pembayaran</label>
@@ -180,6 +186,7 @@ require __DIR__ . '/../../../includes/header.php';
             </div>
         </form>
         <?php if (!$methods): ?><p class="text-muted small mb-0 mt-2">Belum ada metode pembayaran aktif — tambahkan di menu Keuangan → Metode Pembayaran.</p><?php endif; ?>
+        <?php endif; ?>
     </div></div>
     <?php endif; ?>
 
@@ -225,4 +232,45 @@ require __DIR__ . '/../../../includes/header.php';
     </div></div>
     <?php endif; ?>
 </main>
+<script>
+document.addEventListener('DOMContentLoaded', function () {
+    const form = document.getElementById('invPayForm');
+    const inp  = document.getElementById('invPayAmount');
+    const err  = document.getElementById('invPayAmountErr');
+    if (!form || !inp || !err) return;
+
+    const remaining = parseFloat(form.getAttribute('data-remaining') || '0');
+    function parseIndoAmount(raw) {
+        const cleaned = String(raw || '').trim().replace(/\./g, '').replace(',', '.');
+        const n = parseFloat(cleaned);
+        return Number.isFinite(n) ? n : 0;
+    }
+    function formatId(n) {
+        return Math.round(n).toLocaleString('id-ID');
+    }
+    function validateAmount() {
+        const val = parseIndoAmount(inp.value);
+        if (val <= 0) {
+            inp.classList.add('is-invalid');
+            err.textContent = 'Nominal pembayaran harus lebih dari Rp 0.';
+            return false;
+        }
+        if (val > remaining + 0.001) {
+            inp.classList.add('is-invalid');
+            err.textContent = 'Nominal (Rp ' + formatId(val) + ') tidak boleh melebihi sisa tagihan (Rp ' + formatId(remaining) + ').';
+            return false;
+        }
+        inp.classList.remove('is-invalid');
+        return true;
+    }
+    inp.addEventListener('input', validateAmount);
+    form.addEventListener('submit', function (e) {
+        if (!validateAmount()) {
+            e.preventDefault();
+            inp.focus();
+            return false;
+        }
+    });
+});
+</script>
 <?php require __DIR__ . '/../../../includes/footer.php'; ?>

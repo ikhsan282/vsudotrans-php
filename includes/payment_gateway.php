@@ -401,9 +401,10 @@ function gateway_finalize(string $orderId, ?float $paidAmount = null): array
 
         // Nominal yang dicatat ke pelunasan invoice adalah nominal pokok tagihan (tanpa fee/kode unik),
         // sedangkan nominal aktual QRIS (termasuk kode unik) dicatat di note.
-        $principalPaid = $remaining > 0 ? min($remaining, $orderBillAmount) : $orderBillAmount;
-        if ($principalPaid <= 0) {
-            $principalPaid = $orderBillAmount;
+        // Jangan pernah mencatat melebihi sisa tagihan ($remaining) jika sudah terbayar oleh sumber lain.
+        $principalPaid = round(min($remaining, $orderBillAmount), 2);
+        if ($principalPaid < 0) {
+            $principalPaid = 0.0;
         }
         $actualQrisPaid = $paidAmount ?? (float) $ord['total_amount'];
         $uniqueCode = max(0, (int) round($actualQrisPaid - (float) $ord['amount']));
@@ -422,7 +423,7 @@ function gateway_finalize(string $orderId, ?float $paidAmount = null): array
         $user = 'system-qris';
 
         $CostLineId = (int) ($ord['cost_line_id'] ?? 0);
-        if ($CostLineId <= 0 && $inv['status'] !== 'cancelled') {
+        if ($CostLineId <= 0 && $inv['status'] !== 'cancelled' && $principalPaid > 0.001) {
             $ins = $db->prepare(
                 "INSERT INTO booking_cost_lines
                     (company_id, booking_type, booking_id, cost_type, description, amount, payment_method_id, note, created_user)
@@ -454,7 +455,7 @@ function gateway_finalize(string $orderId, ?float $paidAmount = null): array
 
         $uOrd = $db->prepare(
             "UPDATE payment_gateway_orders
-                SET status = 'PAID', paid_at = NOW(), cost_line_id = ?
+                SET status = 'PAID', paid_at = NOW(), cost_line_id = NULLIF(?, 0)
               WHERE id = ?"
         );
         $ordDbId = (int) $ord['id'];
