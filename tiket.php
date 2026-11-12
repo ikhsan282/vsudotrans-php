@@ -345,7 +345,7 @@ if ($pdf) {
                 </tr></table>
 
                 <div class="tk-ver mt-3" style="border-top:1px dashed #c8c8c8;padding-top:8px">
-                    Tiket ini sah. Cek keaslian: <span class="text-break"><?= e($ver_link) ?></span>
+                    Cek keaslian melalui: <span class="text-break"><?= e($ver_link) ?></span>
                 </div>
             </div>
         </div>
