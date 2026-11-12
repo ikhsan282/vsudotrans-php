@@ -195,7 +195,6 @@ if ($pdf) {
         table.tk-kv td.tk-kv-v { color: #111; font-size: 9pt; font-weight: 700; line-height: 13pt; }
         table.tk-kv td.tk-kv-k-sm { width: 52pt; color: #6c757d; font-size: 7.5pt; font-weight: 700; letter-spacing: .3px; text-transform: uppercase; white-space: nowrap; border-bottom: 0; padding: 1.5pt 0; vertical-align: top; }
         table.tk-kv td.tk-kv-v-sm { color: #495057; font-size: 8.5pt; font-weight: 400; line-height: 12.5pt; border-bottom: 0; padding: 1.5pt 0; vertical-align: top; word-break: break-word; }
-        .tk-doc-badge { display: inline-block; background: #f1f3f5; border: 1px solid #dee2e6; border-radius: 3px; padding: 1pt 5pt; font-family: Consolas, "Courier New", monospace; font-size: 9pt; font-weight: 700; color: #111; letter-spacing: .5px; }
         .tk-price-val { color: #0a58ca; font-size: 9.8pt; font-weight: 700; }
         .tk-card {
             min-height: 820px;
@@ -310,7 +309,7 @@ if ($pdf) {
                         <?php if ($type === 'rental'): ?>
                             <tr>
                                 <td class="tk-kv-k">Resi</td>
-                                <td class="tk-kv-v"><span class="tk-doc-badge"><?= e($row['document_number']) ?></span></td>
+                                <td class="tk-kv-v"><?= e($row['document_number']) ?></td>
                             </tr>
                             <tr>
                                 <td class="tk-kv-k">Layanan</td>
@@ -337,7 +336,7 @@ if ($pdf) {
                         <?php else: ?>
                             <tr>
                                 <td class="tk-kv-k">Nomor Tiket</td>
-                                <td class="tk-kv-v"><span class="tk-doc-badge"><?= e($row['document_number']) ?></span></td>
+                                <td class="tk-kv-v"><?= e($row['document_number']) ?></td>
                             </tr>
                             <tr>
                                 <td class="tk-kv-k">Rute Perjalanan</td>
