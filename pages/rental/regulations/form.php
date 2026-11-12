@@ -158,6 +158,39 @@ require __DIR__ . '/../../../includes/header.php';
 .reg-table tbody tr:hover td {
     background-color: #f8fbff;
 }
+.rnt-panel {
+    border: 1px solid #dee2e6;
+    border-radius: .375rem;
+    background: #fff;
+    margin-bottom: 1rem;
+}
+.rnt-panel-body {
+    padding: .875rem;
+}
+.rnt-row {
+    display: flex;
+    align-items: center;
+    margin-bottom: .5rem;
+}
+.rnt-row:last-child {
+    margin-bottom: 0;
+}
+.rnt-label {
+    width: 165px;
+    flex-shrink: 0;
+    font-size: .84rem;
+    color: #343a40;
+    font-weight: 500;
+    padding-right: .5rem;
+}
+.rnt-field {
+    flex: 1 1 auto;
+    min-width: 0;
+}
+@media (max-width: 767.98px) {
+    .rnt-row { flex-direction: column; align-items: stretch; }
+    .rnt-label { width: 100%; margin-bottom: .25rem; }
+}
 </style>
 
 <main class="p-2 p-md-3 w-100 flex-grow-1">
@@ -386,27 +419,30 @@ require __DIR__ . '/../../../includes/header.php';
 
                     <!-- ================= TAB 2: AUDIT TRAIL ================= -->
                     <div class="tab-pane fade" id="tab-reg-audit" role="tabpanel">
-                        <div class="card border">
-                            <div class="card-header bg-light py-2 px-3 fw-semibold small text-dark d-flex align-items-center">
-                                <i class="bi bi-clock-history me-2 text-primary"></i>Riwayat Perubahan Data (Audit Trail)
-                            </div>
-                            <div class="card-body p-3">
-                                <div class="row g-3">
-                                    <div class="col-12 col-md-6">
-                                        <div class="p-3 bg-light rounded border">
-                                            <div class="small text-muted mb-1"><i class="bi bi-person-plus me-1 text-primary"></i>Dibuat Oleh</div>
-                                            <div class="fw-semibold text-dark fs-6"><?= e((string) ($reg['created_user'] ?? '-')) ?></div>
-                                            <div class="small text-muted mt-3 mb-1"><i class="bi bi-calendar3 me-1"></i>Tanggal Dibuat</div>
-                                            <div class="text-dark small fw-semibold"><?= !empty($reg['created_date']) ? date('d-M-Y H:i:s', strtotime((string) $reg['created_date'])) : '-' ?></div>
-                                        </div>
+                        <div class="rnt-panel mb-0">
+                            <div class="rnt-panel-body">
+                                <div class="rnt-row">
+                                    <label class="rnt-label">Dibuat Oleh</label>
+                                    <div class="rnt-field">
+                                        <input type="text" class="form-control form-control-sm bg-light" value="<?= e(trim((string) ($reg['created_user'] ?? '')) ?: '-') ?>" readonly>
                                     </div>
-                                    <div class="col-12 col-md-6">
-                                        <div class="p-3 bg-light rounded border">
-                                            <div class="small text-muted mb-1"><i class="bi bi-pencil-square me-1 text-warning"></i>Terakhir Diubah Oleh</div>
-                                            <div class="fw-semibold text-dark fs-6"><?= e((string) ($reg['modified_user'] ?? '-')) ?></div>
-                                            <div class="small text-muted mt-3 mb-1"><i class="bi bi-calendar3 me-1"></i>Tanggal Perubahan</div>
-                                            <div class="text-dark small fw-semibold"><?= !empty($reg['modified_date']) ? date('d-M-Y H:i:s', strtotime((string) $reg['modified_date'])) : '-' ?></div>
-                                        </div>
+                                </div>
+                                <div class="rnt-row">
+                                    <label class="rnt-label">Dibuat Tanggal</label>
+                                    <div class="rnt-field">
+                                        <input type="text" class="form-control form-control-sm bg-light" value="<?= !empty($reg['created_date']) ? date('d-M-Y H:i', strtotime((string) $reg['created_date'])) : '-' ?>" readonly>
+                                    </div>
+                                </div>
+                                <div class="rnt-row">
+                                    <label class="rnt-label">Diubah Oleh</label>
+                                    <div class="rnt-field">
+                                        <input type="text" class="form-control form-control-sm bg-light" value="<?= e(trim((string) ($reg['modified_user'] ?? '')) ?: '-') ?>" readonly>
+                                    </div>
+                                </div>
+                                <div class="rnt-row">
+                                    <label class="rnt-label">Diubah Tanggal</label>
+                                    <div class="rnt-field">
+                                        <input type="text" class="form-control form-control-sm bg-light" value="<?= !empty($reg['modified_date']) ? date('d-M-Y H:i', strtotime((string) $reg['modified_date'])) : '-' ?>" readonly>
                                     </div>
                                 </div>
                             </div>
