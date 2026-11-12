@@ -306,15 +306,15 @@ require __DIR__ . '/../../../includes/header.php';
                         <th class="text-center" style="width: 48px;">No</th>
                         <th>Resi</th>
                         <th>Penumpang</th>
-                        <th>Kendaraan</th>
-                        <th>Jam</th>
+                        <th class="text-center">Kendaraan</th>
+                        <th class="text-center">Jam</th>
                         <th>Tanggal</th>
                         <th>Penjemputan</th>
                         <th>Pengantaran</th>
                         <th class="text-end">Total Harga</th>
                         <th class="text-end">Total Pembayaran</th>
                         <th class="text-center">Status</th>
-                        <th class="text-end" style="width: 140px;">Aksi</th>
+                        <th class="text-center" style="width: 110px;">Aksi</th>
                     </tr>
                 </thead>
                 <tbody>
@@ -336,7 +336,7 @@ require __DIR__ . '/../../../includes/header.php';
                             <div class="small fw-semibold text-dark"><?= e($r['passenger_name']) ?></div>
                             <div class="text-muted" style="font-size: 0.8rem;"><?= e($r['passenger_phone'] ?: '-') ?></div>
                         </td>
-                        <td>
+                        <td class="text-center">
                             <?php if ($plate !== ''): ?>
                                 <div class="small fw-semibold text-dark text-nowrap"><?= e($plate) ?></div>
                                 <?php if ($brand_model !== ''): ?>
@@ -355,7 +355,7 @@ require __DIR__ . '/../../../includes/header.php';
                                 <span class="text-muted small">-</span>
                             <?php endif; ?>
                         </td>
-                        <td class="text-nowrap">
+                        <td class="text-center text-nowrap">
                             <?= e($jam) ?>
                         </td>
                         <td class="text-nowrap small">
@@ -369,13 +369,13 @@ require __DIR__ . '/../../../includes/header.php';
                         <td class="text-end fw-semibold text-nowrap"><?= e(rupiah((float) $r['total_price'])) ?></td>
                         <td class="text-end fw-semibold text-nowrap text-success"><?= e(rupiah((float) $r['total_payment'])) ?></td>
                         <td class="text-center"><?= status_badge($r['status']) ?></td>
-                        <td class="text-end text-nowrap">
+                        <td class="text-center text-nowrap">
                             <a class="btn btn-sm btn-outline-secondary" href="<?= e(APP_URL) ?>/pages/rental/bookings/detail.php?id=<?= (int) $r['id'] ?>" title="Lihat Detail">
-                                <i class="bi bi-eye me-1"></i>Detail
+                                <i class="bi bi-eye"></i>
                             </a>
                             <?php if (can('rental.manage')): ?>
                                 <a class="btn btn-sm btn-outline-primary" href="<?= e(APP_URL) ?>/pages/rental/bookings/detail.php?id=<?= (int) $r['id'] ?>" title="Ubah Pemesanan">
-                                    <i class="bi bi-pencil-square me-1"></i>Ubah
+                                    <i class="bi bi-pencil-square"></i>
                                 </a>
                                 <form method="post" action="" class="d-inline" onsubmit="return confirm('Yakin ingin menghapus permanen booking <?= e($r['document_number']) ?> beserta invoice dan riwayat pembayarannya?');">
                                     <?= csrf_field() ?>
