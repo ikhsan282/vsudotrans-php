@@ -182,7 +182,7 @@ if (in_array($export_format, ['xlsx', 'pdf'], true)) {
 
     grid_export_send(
         'Daftar Pemesanan Sewa Kendaraan',
-        ['Resi', 'Penumpang (Nama & HP)', 'Kendaraan', 'Jam', 'Tanggal', 'Kota Penjemputan', 'Kota Pengantaran', 'Total Harga', 'Total Pembayaran', 'Status'],
+        ['Resi', 'Penumpang (Nama & HP)', 'Kendaraan', 'Jam', 'Tanggal', 'Penjemputan', 'Pengantaran', 'Total Harga', 'Total Pembayaran', 'Status'],
         $row_stream,
         $export_format,
         'landscape',
@@ -307,8 +307,8 @@ require __DIR__ . '/../../../includes/header.php';
                         <th>Kendaraan</th>
                         <th>Jam</th>
                         <th>Tanggal</th>
-                        <th>Kota Penjemputan</th>
-                        <th>Kota Pengantaran</th>
+                        <th>Penjemputan</th>
+                        <th>Pengantaran</th>
                         <th class="text-end">Total Harga</th>
                         <th class="text-end">Total Pembayaran</th>
                         <th class="text-center">Status</th>
@@ -328,21 +328,16 @@ require __DIR__ . '/../../../includes/header.php';
                             <a class="fw-semibold text-decoration-none" href="<?= e(APP_URL) ?>/pages/rental/bookings/detail.php?id=<?= (int) $r['id'] ?>">
                                 <?= e($r['document_number']) ?>
                             </a>
-                            <div class="small">
-                                <span class="badge bg-light text-secondary border"><?= e($r['company_code']) ?></span>
-                            </div>
                         </td>
                         <td>
-                            <div class="fw-semibold text-dark"><?= e($r['passenger_name']) ?></div>
-                            <div class="small text-muted">
-                                <i class="bi bi-telephone me-1"></i><?= e($r['passenger_phone'] ?: '-') ?>
-                            </div>
+                            <div class="small fw-semibold text-dark"><?= e($r['passenger_name']) ?></div>
+                            <div class="text-muted" style="font-size: 0.8rem;"><?= e($r['passenger_phone'] ?: '-') ?></div>
                         </td>
                         <td>
                             <span class="text-nowrap"><?= e($veh_name) ?></span>
                         </td>
                         <td class="text-nowrap">
-                            <i class="bi bi-clock me-1 text-muted"></i><?= e($jam) ?>
+                            <?= e($jam) ?>
                         </td>
                         <td class="text-nowrap">
                             <div><?= e($tgl_mulai) ?></div>
