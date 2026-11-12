@@ -183,7 +183,7 @@ if (in_array($export_format, ['xlsx', 'pdf'], true)) {
     $sub = $sub_parts ? implode(' | ', $sub_parts) : 'Semua Data';
 
     grid_export_send(
-        'Daftar Pemesanan Sewa Kendaraan',
+        'Pemesanan Sewa Kendaraan',
         ['Resi', 'Penumpang (Nama & HP)', 'Kendaraan', 'Jam', 'Tanggal', 'Penjemputan', 'Pengantaran', 'Total Harga', 'Total Pembayaran', 'Status'],
         $row_stream,
         $export_format,
@@ -234,14 +234,14 @@ $query_base = http_build_query($query_params);
 $has_active_filter = ($q !== '' || $status !== '' || $start_date !== '' || $end_date !== '' || (isset($_GET['company_id']) && (int) $_GET['company_id'] !== ($active_cid ?? 0)));
 
 $active = 'rental';
-$title  = 'Daftar Pemesanan Sewa Kendaraan';
+$title  = 'Pemesanan Sewa Kendaraan';
 require __DIR__ . '/../../../includes/header.php';
 ?>
 
 <main class="p-3 p-lg-4 w-100 flex-grow-1">
 
     <?= ui_page_header(
-        'Daftar Pemesanan Sewa Kendaraan',
+        'Pemesanan Sewa Kendaraan',
         ['Dashboard' => 'pages/dashboard/index.php', 'Rental' => null, 'Pemesanan' => null],
         [['text' => number_format($total, 0, ',', '.') . ' Pemesanan', 'class' => 'bg-light text-secondary border']],
         $header_actions
