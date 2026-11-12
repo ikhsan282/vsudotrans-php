@@ -108,17 +108,15 @@ if (booking_doc_valid($no)) {
             $phoneFormatted = trim((string) ($row['phone_number'] ?? '')) ?: '—';
         }
 
-        // Format periode sewa agar tidak redundan jika tanggal mulai = selesai
+        // Format periode sewa: dd-MMM-yyyy s/d dd-MMM-yyyy (X Hari)
         $sDate = (string) ($row['start_date'] ?: $row['date']);
-        $eDate = (string) ($row['end_date'] ?: $row['date']);
+        $eDate = (string) ($row['end_date'] ?: $sDate);
         $sTs = strtotime($sDate);
         $eTs = strtotime($eDate);
         $days = ($sTs && $eTs && $eTs >= $sTs) ? (int) round(($eTs - $sTs) / 86400) + 1 : 1;
-        if ($sDate === $eDate || $eDate === '') {
-            $periodeDisplay = tanggal_indo($sDate) . ' (' . $days . ' Hari)';
-        } else {
-            $periodeDisplay = tanggal_indo($sDate) . ' s/d ' . tanggal_indo($eDate) . ' (' . $days . ' Hari)';
-        }
+        $sFmt = $sTs ? date('d-M-Y', $sTs) : $sDate;
+        $eFmt = $eTs ? date('d-M-Y', $eTs) : $eDate;
+        $periodeDisplay = $sFmt . ' s/d ' . $eFmt . ' (' . $days . ' Hari)';
     }
 }
 
@@ -307,11 +305,11 @@ if ($pdf) {
                     </table>
                 </td>
                 <td class="tk-split-right">
-                    <div class="tk-sect-lbl"><?= $type === 'rental' ? 'Detail Pemesanan Sewa' : 'Detail Tiket Perjalanan' ?></div>
+                    <div class="tk-sect-lbl"><?= $type === 'rental' ? 'Detail Pemesanan' : 'Detail Tiket Perjalanan' ?></div>
                     <table class="tk-kv">
                         <?php if ($type === 'rental'): ?>
                             <tr>
-                                <td class="tk-kv-k">Nomor Dokumen</td>
+                                <td class="tk-kv-k">Resi</td>
                                 <td class="tk-kv-v"><span class="tk-doc-badge"><?= e($row['document_number']) ?></span></td>
                             </tr>
                             <tr>
@@ -332,10 +330,6 @@ if ($pdf) {
                                 <td class="tk-kv-v"><?= e($vehicleDisplay) ?></td>
                             </tr>
                             <?php endif; ?>
-                            <tr>
-                                <td class="tk-kv-k">Jumlah Penyewa</td>
-                                <td class="tk-kv-v"><?= count($passengers) ?> orang</td>
-                            </tr>
                             <tr>
                                 <td class="tk-kv-k">Total Biaya</td>
                                 <td class="tk-kv-v tk-price-val"><?= e(rupiah((float) ($row['invoice_total'] ?? $row['total_price']))) ?></td>
