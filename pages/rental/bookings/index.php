@@ -111,7 +111,7 @@ $export_format = strtolower(trim((string) ($_GET['export'] ?? '')));
 if (in_array($export_format, ['xlsx', 'pdf'], true)) {
     $sql_export = "SELECT b.document_number, c.code AS company_code,
                           p.name AS passenger_name, p.phone_number AS passenger_phone,
-                          CONCAT_WS(' - ', bv.name, mu.name, v.vehicle_number) AS vehicle_name,
+                          bv.name AS brand_name, mu.name AS model_name,
                           v.vehicle_number, cv.name AS category_name,
                           b.time, b.start_date, b.end_date,
                           pc.name AS pickup_city_name, dc.name AS delivery_city_name,
@@ -134,7 +134,9 @@ if (in_array($export_format, ['xlsx', 'pdf'], true)) {
         $types,
         $params,
         static function (array $r): array {
-            $veh = $r['vehicle_name'] ?: ($r['vehicle_number'] ?: ($r['category_name'] ?: '-'));
+            $plate = trim((string) ($r['vehicle_number'] ?? ''));
+            $brand_model = trim(implode(' - ', array_filter([$r['brand_name'] ?? '', $r['model_name'] ?? ''])));
+            $veh = $plate !== '' ? ($plate . ($brand_model !== '' ? ' (' . $brand_model . ')' : '')) : ($brand_model ?: ($r['category_name'] ?: '-'));
             $jam = !empty($r['time']) ? substr($r['time'], 0, 5) : '-';
             $tgl = !empty($r['start_date']) ? date('d-M-Y', strtotime($r['start_date'])) : '-';
             if (!empty($r['end_date']) && $r['end_date'] !== $r['start_date']) {
@@ -196,7 +198,7 @@ $st = db()->prepare("SELECT b.id, b.company_id, c.code AS company_code, c.name A
                      b.document_number, b.time, b.start_date, b.end_date, b.total_price,
                      COALESCE(b.total_payment, 0) AS total_payment,
                      p.name AS passenger_name, p.phone_number AS passenger_phone,
-                     CONCAT_WS(' - ', bv.name, mu.name, v.vehicle_number) AS vehicle_name,
+                     bv.name AS brand_name, mu.name AS model_name,
                      v.vehicle_number, cv.name AS category_name,
                      pc.name AS pickup_city_name, dc.name AS delivery_city_name,
                      COALESCE({$status_sql}, 'draft') AS status
@@ -317,7 +319,8 @@ require __DIR__ . '/../../../includes/header.php';
                 </thead>
                 <tbody>
                 <?php foreach ($rows as $idx => $r): 
-                    $veh_name = $r['vehicle_name'] ?: ($r['vehicle_number'] ?: ($r['category_name'] ?: '-'));
+                    $plate = trim((string) ($r['vehicle_number'] ?? ''));
+                    $brand_model = trim(implode(' - ', array_filter([$r['brand_name'] ?? '', $r['model_name'] ?? ''])));
                     $jam = !empty($r['time']) ? substr($r['time'], 0, 5) : '-';
                     $tgl_mulai = !empty($r['start_date']) ? date('d-M-Y', strtotime($r['start_date'])) : '-';
                     $tgl_selesai = !empty($r['end_date']) ? date('d-M-Y', strtotime($r['end_date'])) : '';
@@ -334,7 +337,23 @@ require __DIR__ . '/../../../includes/header.php';
                             <div class="text-muted" style="font-size: 0.8rem;"><?= e($r['passenger_phone'] ?: '-') ?></div>
                         </td>
                         <td>
-                            <span class="text-nowrap"><?= e($veh_name) ?></span>
+                            <?php if ($plate !== ''): ?>
+                                <div class="small fw-semibold text-dark text-nowrap"><?= e($plate) ?></div>
+                                <?php if ($brand_model !== ''): ?>
+                                    <div class="text-muted text-nowrap" style="font-size: 0.8rem;"><?= e($brand_model) ?></div>
+                                <?php elseif (!empty($r['category_name'])): ?>
+                                    <div class="text-muted text-nowrap" style="font-size: 0.8rem;"><?= e($r['category_name']) ?></div>
+                                <?php endif; ?>
+                            <?php elseif ($brand_model !== ''): ?>
+                                <div class="small fw-semibold text-dark text-nowrap"><?= e($brand_model) ?></div>
+                                <?php if (!empty($r['category_name'])): ?>
+                                    <div class="text-muted text-nowrap" style="font-size: 0.8rem;"><?= e($r['category_name']) ?></div>
+                                <?php endif; ?>
+                            <?php elseif (!empty($r['category_name'])): ?>
+                                <div class="small text-muted text-nowrap"><?= e($r['category_name']) ?></div>
+                            <?php else: ?>
+                                <span class="text-muted small">-</span>
+                            <?php endif; ?>
                         </td>
                         <td class="text-nowrap">
                             <?= e($jam) ?>
