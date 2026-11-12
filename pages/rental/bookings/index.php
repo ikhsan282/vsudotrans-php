@@ -339,14 +339,14 @@ require __DIR__ . '/../../../includes/header.php';
                         <td class="text-nowrap">
                             <?= e($jam) ?>
                         </td>
-                        <td class="text-nowrap">
+                        <td class="text-nowrap small">
                             <div><?= e($tgl_mulai) ?></div>
                             <?php if ($tgl_selesai !== '' && $tgl_selesai !== $tgl_mulai): ?>
-                                <div class="small text-muted">s/d <?= e($tgl_selesai) ?></div>
+                                <div class="text-muted" style="font-size: 0.8rem;">s/d <?= e($tgl_selesai) ?></div>
                             <?php endif; ?>
                         </td>
-                        <td><?= e($r['pickup_city_name'] ?: '-') ?></td>
-                        <td><?= e($r['delivery_city_name'] ?: '-') ?></td>
+                        <td class="small"><?= e($r['pickup_city_name'] ?: '-') ?></td>
+                        <td class="small"><?= e($r['delivery_city_name'] ?: '-') ?></td>
                         <td class="text-end fw-semibold text-nowrap"><?= e(rupiah((float) $r['total_price'])) ?></td>
                         <td class="text-end fw-semibold text-nowrap text-success"><?= e(rupiah((float) $r['total_payment'])) ?></td>
                         <td class="text-center"><?= status_badge($r['status']) ?></td>
