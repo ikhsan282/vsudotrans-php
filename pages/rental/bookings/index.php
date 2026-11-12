@@ -218,7 +218,6 @@ $rows = $st->get_result()->fetch_all(MYSQLI_ASSOC);
 $st->close();
 
 $header_actions = ui_export_actions();
-$header_actions[] = ['label' => 'Peraturan Komisi', 'icon' => 'sliders', 'href' => 'pages/rental/regulations/index.php', 'class' => 'btn btn-outline-secondary btn-sm'];
 if (can('rental.manage') && active_company_id() !== null) {
     $header_actions[] = ['label' => 'Tambah', 'icon' => 'plus-lg', 'href' => 'pages/rental/bookings/form.php', 'class' => 'btn btn-primary btn-sm'];
 }
