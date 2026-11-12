@@ -462,6 +462,9 @@ require __DIR__ . '/../../../includes/header.php';
             <span class="small text-muted d-none d-md-inline">Akses: <strong><?= e($curCompany['label']) ?></strong></span>
         </div>
         <div class="d-flex flex-wrap gap-2 ms-auto">
+            <a class="btn btn-outline-secondary btn-sm" href="<?= e(APP_URL) ?>/pages/rental/bookings/index.php">
+                <i class="bi bi-arrow-left me-1"></i>Kembali
+            </a>
             <?php if ($canManage): ?>
                 <button type="submit" form="rentalDetailForm" class="btn btn-primary btn-sm px-3">
                     <i class="bi bi-check2-circle me-1"></i>Simpan Perubahan
@@ -488,9 +491,6 @@ require __DIR__ . '/../../../includes/header.php';
                     </button>
                 </form>
             <?php endif; ?>
-            <a class="btn btn-outline-secondary btn-sm" href="<?= e(APP_URL) ?>/pages/rental/bookings/index.php">
-                <i class="bi bi-arrow-left me-1"></i>Daftar
-            </a>
         </div>
     </div>
 
@@ -1059,14 +1059,6 @@ require __DIR__ . '/../../../includes/header.php';
                     </div>
                 </div>
             </div>
-
-            <?php if ($canManage): ?>
-            <div class="d-flex justify-content-end gap-2 mt-3 pt-3 border-top">
-                <button type="submit" form="rentalDetailForm" class="btn btn-primary btn-sm px-4">
-                    <i class="bi bi-check2-circle me-1"></i>Simpan Perubahan Booking
-                </button>
-            </div>
-            <?php endif; ?>
         </div>
     </div>
 </main>

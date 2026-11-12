@@ -425,16 +425,17 @@ require __DIR__ . '/../../../includes/header.php';
     <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-2">
         <div class="d-flex align-items-center gap-2">
             <span class="badge bg-primary text-white"><i class="bi bi-car-front-fill me-1"></i>Pemesanan Sewa Kendaraan</span>
-            <span class="badge bg-secondary-subtle text-secondary border">Draft Baru</span>
+            <span class="badge bg-secondary-subtle text-secondary border"><?= $is_edit ? 'Ubah Pemesanan' : 'Draft Baru' ?></span>
+            <span id="rental_duration_badge" class="badge bg-primary-subtle text-primary border">1 Hari Sewa</span>
             <span class="small text-muted d-none d-md-inline">Akses: <strong><?= e($curCompany['label']) ?></strong></span>
         </div>
         <div class="d-flex flex-wrap gap-2 ms-auto">
+            <a class="btn btn-outline-secondary btn-sm" href="<?= e(APP_URL) ?>/pages/rental/bookings/index.php">
+                <i class="bi bi-arrow-left me-1"></i>Batal
+            </a>
             <button type="submit" form="formRentalBooking" class="btn btn-primary btn-sm px-3">
                 <i class="bi bi-check2-circle me-1"></i>Simpan Pemesanan
             </button>
-            <a class="btn btn-outline-secondary btn-sm" href="<?= e(APP_URL) ?>/pages/rental/bookings/index.php">
-                <i class="bi bi-arrow-left me-1"></i>Batal / Kembali
-            </a>
         </div>
     </div>
 
@@ -962,20 +963,6 @@ require __DIR__ . '/../../../includes/header.php';
                 </div>
             </div>
         </div><!-- /tab-content -->
-
-        <!-- Tombol Simpan Bawah -->
-        <div class="mt-3 pt-3 border-top d-flex justify-content-between align-items-center flex-wrap gap-2">
-            <div class="small text-muted">
-                <span id="rental_duration_badge" class="badge bg-primary-subtle text-primary border me-1">1 Hari Sewa</span>
-                Pastikan data penjemputan, pengantaran, dan harga sewa sudah sesuai.
-            </div>
-            <div class="d-flex gap-2">
-                <a class="btn btn-outline-secondary btn-sm px-3" href="<?= e(APP_URL) ?>/pages/rental/bookings/index.php">Batal</a>
-                <button class="btn btn-primary btn-sm px-4 fw-semibold" type="submit">
-                    <i class="bi bi-check2-circle me-1"></i>Simpan Pemesanan
-                </button>
-            </div>
-        </div>
     </form>
     </div><!-- /.erp-content-body -->
 </div><!-- /.erp-window-card -->
