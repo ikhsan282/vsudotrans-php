@@ -91,13 +91,23 @@ $title  = $id > 0 ? 'Ubah Role' : 'Tambah Role';
 require __DIR__ . '/../../includes/header.php';
 ?>
 <main class="col-12 col-md-9 col-lg-10 p-4">
-    <h4 class="fw-bold mb-3"><?= e($title) ?></h4>
+    <div class="d-flex justify-content-between align-items-center mb-3">
+        <h4 class="fw-bold mb-0"><?= e($title) ?></h4>
+        <div class="d-flex gap-2">
+            <a class="btn btn-outline-secondary btn-sm" href="<?= e(APP_URL) ?>/pages/roles/index.php">
+                <i class="bi bi-arrow-left me-1"></i>Batal
+            </a>
+            <button type="submit" form="formRole" class="btn btn-primary btn-sm px-3">
+                <i class="bi bi-check2 me-1"></i>Simpan
+            </button>
+        </div>
+    </div>
     <?php if ($errors): ?>
         <div class="alert alert-danger py-2"><?php foreach ($errors as $err): ?><div><?= e($err) ?></div><?php endforeach; ?></div>
     <?php endif; ?>
     <div class="card shadow-sm border-0" style="max-width: 640px;">
         <div class="card-body">
-            <form method="post" action="<?= e(APP_URL) ?>/pages/roles/form.php<?= $id > 0 ? '?id=' . $id : '' ?>">
+            <form method="post" action="<?= e(APP_URL) ?>/pages/roles/form.php<?= $id > 0 ? '?id=' . $id : '' ?>" id="formRole">
                 <?= csrf_field() ?>
                 <input type="hidden" name="id" value="<?= $id ?>">
                 <div class="mb-3">
@@ -117,8 +127,6 @@ require __DIR__ . '/../../includes/header.php';
                     <label class="form-label" for="description">Deskripsi</label>
                     <input class="form-control" id="description" name="description" maxlength="255" value="<?= e($row['description'] ?? '') ?>">
                 </div>
-                <button type="submit" class="btn btn-primary">Simpan</button>
-                <a class="btn btn-outline-secondary" href="<?= e(APP_URL) ?>/pages/roles/index.php">Batal</a>
             </form>
         </div>
     </div>

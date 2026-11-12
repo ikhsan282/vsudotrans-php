@@ -106,14 +106,17 @@ require __DIR__ . '/../../includes/header.php';
             ['text' => 'ID #' . $id, 'class' => 'bg-light text-secondary border'],
             isset($row['is_active']) ? ['text' => !empty($row['is_active']) ? 'Aktif' : 'Nonaktif', 'class' => 'bg-' . (!empty($row['is_active']) ? 'success' : 'secondary') . '-subtle text-' . (!empty($row['is_active']) ? 'success' : 'secondary') . ' border'] : null,
         ])) : [],
-        [['label' => 'Kembali ke Daftar', 'icon' => 'arrow-left', 'href' => 'pages/branches/index.php']]
+        [
+            ['label' => 'Batal', 'icon' => 'arrow-left', 'href' => 'pages/branches/index.php', 'class' => 'btn btn-sm btn-outline-secondary'],
+            ['label' => 'Simpan', 'icon' => 'check2', 'type' => 'submit', 'form' => 'formBranch', 'class' => 'btn btn-sm btn-primary'],
+        ]
     ) ?>
     <?php if ($errors): ?>
         <div class="alert alert-danger py-2"><?php foreach ($errors as $err): ?><div><?= e($err) ?></div><?php endforeach; ?></div>
     <?php endif; ?>
     <div class="card shadow-sm border-0" style="max-width: 640px;">
         <div class="card-body">
-            <form method="post" action="<?= e(APP_URL) ?>/pages/branches/form.php<?= $id > 0 ? '?id=' . $id : '' ?>">
+            <form method="post" action="<?= e(APP_URL) ?>/pages/branches/form.php<?= $id > 0 ? '?id=' . $id : '' ?>" id="formBranch">
                 <?= csrf_field() ?>
                 <input type="hidden" name="id" value="<?= $id ?>">
                 <div class="mb-3">
@@ -138,12 +141,10 @@ require __DIR__ . '/../../includes/header.php';
                     <label class="form-label" for="note">Catatan</label>
                     <textarea class="form-control" id="note" name="note" rows="2" maxlength="2000"><?= e($row['note']) ?></textarea>
                 </div>
-                <div class="form-check mb-4">
+                <div class="form-check mb-2">
                     <input class="form-check-input" type="checkbox" id="is_active" name="is_active" <?= $row['is_active'] ? 'checked' : '' ?>>
                     <label class="form-check-label" for="is_active">Aktif</label>
                 </div>
-                <button type="submit" class="btn btn-primary">Simpan</button>
-                <a class="btn btn-outline-secondary" href="<?= e(APP_URL) ?>/pages/branches/index.php">Batal</a>
             </form>
         </div>
     </div>

@@ -95,13 +95,23 @@ $title  = ($id > 0 ? 'Ubah' : 'Tambah') . ' Akun Kas/Bank';
 require __DIR__ . '/../../../includes/header.php';
 ?>
 <main class="col-12 col-md-9 col-lg-10 p-4">
-    <h4 class="fw-bold mb-3"><?= e($title) ?></h4>
+    <div class="d-flex justify-content-between align-items-center mb-3">
+        <h4 class="fw-bold mb-0"><?= e($title) ?></h4>
+        <div class="d-flex gap-2">
+            <a class="btn btn-outline-secondary btn-sm" href="index.php">
+                <i class="bi bi-arrow-left me-1"></i>Batal
+            </a>
+            <button type="submit" form="formCashAccount" class="btn btn-primary btn-sm px-3">
+                <i class="bi bi-check2 me-1"></i>Simpan
+            </button>
+        </div>
+    </div>
     <?php if ($errors): ?>
         <div class="alert alert-danger py-2"><?php foreach ($errors as $err): ?><div><?= e($err) ?></div><?php endforeach; ?></div>
     <?php endif; ?>
     <div class="card shadow-sm border-0" style="max-width: 720px;">
         <div class="card-body">
-            <form method="post" action="form.php<?= $id > 0 ? '?id=' . $id : '' ?>">
+            <form method="post" action="form.php<?= $id > 0 ? '?id=' . $id : '' ?>" id="formCashAccount">
                 <?= csrf_field() ?>
                 <input type="hidden" name="id" value="<?= $id ?>">
                 <div class="row g-3">
@@ -167,8 +177,6 @@ require __DIR__ . '/../../../includes/header.php';
                     <label class="form-label" for="note">Catatan</label>
                     <textarea class="form-control" id="note" name="note" rows="2" maxlength="2000"><?= e($form['note']) ?></textarea>
                 </div>
-                <button type="submit" class="btn btn-primary">Simpan</button>
-                <a class="btn btn-outline-secondary" href="index.php">Batal</a>
             </form>
         </div>
     </div>

@@ -91,10 +91,13 @@ require __DIR__ . '/../../../includes/header.php';
             ['text' => 'ID #' . $id, 'class' => 'bg-light text-secondary border'],
             ['text' => $row['start'] . ' - ' . $row['end'], 'class' => 'bg-primary-subtle text-primary border border-primary-subtle font-monospace'],
         ] : [],
-        [['label' => 'Kembali ke Daftar', 'icon' => 'arrow-left', 'href' => 'pages/travel/schedules/index.php']]
+        [
+            ['label' => 'Batal', 'icon' => 'arrow-left', 'href' => 'pages/travel/schedules/index.php', 'class' => 'btn btn-sm btn-outline-secondary'],
+            ['label' => 'Simpan', 'icon' => 'check2', 'type' => 'submit', 'form' => 'formSchedule', 'class' => 'btn btn-sm btn-primary'],
+        ]
     ) ?>
     <div class="card shadow-sm border-0"><div class="card-body">
-    <form method="post" action="">
+    <form method="post" action="" id="formSchedule">
         <?= csrf_field() ?>
         <input type="hidden" name="id" value="<?= $id ?>">
         <div class="row g-3">
@@ -106,10 +109,6 @@ require __DIR__ . '/../../../includes/header.php';
                 <input type="time" class="form-control" name="start_break" value="<?= e($row['start_break']) ?>"></div>
             <div class="col-md-3"><label class="form-label">Istirahat Selesai</label>
                 <input type="time" class="form-control" name="end_break" value="<?= e($row['end_break']) ?>"></div>
-        </div>
-        <div class="mt-4">
-            <button class="btn btn-primary" type="submit">Simpan</button>
-            <a class="btn btn-outline-secondary" href="<?= e(APP_URL) ?>/pages/travel/schedules/index.php">Batal</a>
         </div>
     </form>
     </div></div>

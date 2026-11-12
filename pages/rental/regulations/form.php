@@ -245,6 +245,9 @@ require __DIR__ . '/../../../includes/header.php';
                 <div class="small text-muted">Perusahaan: <strong><?= e($reg ? ($reg['company_code'] . ' - ' . $reg['company_name']) : active_company_name()) ?></strong></div>
             </div>
             <div class="d-flex align-items-center gap-2">
+                <a href="<?= e(APP_URL) ?>/pages/rental/regulations/index.php" class="btn btn-sm btn-outline-secondary">
+                    <i class="bi bi-arrow-left me-1"></i>Kembali
+                </a>
                 <button type="submit" form="formRegulation" class="btn btn-sm btn-primary px-3">
                     <i class="bi bi-check2-circle me-1"></i>Simpan Peraturan
                 </button>
@@ -261,9 +264,6 @@ require __DIR__ . '/../../../includes/header.php';
                         </button>
                     </form>
                 <?php endif; ?>
-                <a href="<?= e(APP_URL) ?>/pages/rental/regulations/index.php" class="btn btn-sm btn-outline-secondary">
-                    <i class="bi bi-arrow-left me-1"></i>Kembali
-                </a>
             </div>
         </div>
 
@@ -485,29 +485,7 @@ require __DIR__ . '/../../../includes/header.php';
                         </div>
                     </div>
                 </div>
-
-                <?php if ($canManage): ?>
-                <div class="d-flex justify-content-end gap-2 mt-3 pt-2 border-top">
-                    <a href="<?= e(APP_URL) ?>/pages/rental/regulations/index.php" class="btn btn-light btn-sm px-3">Kembali ke Daftar</a>
-                    <button type="submit" class="btn btn-primary btn-sm px-4">
-                        <i class="bi bi-check2-circle me-1"></i>Simpan Peraturan Komisi
-                    </button>
-                </div>
-                <?php endif; ?>
             </form>
-        </div>
-
-        <!-- Windows ERP Status Bar di bagian bawah (Persis Screenshot) -->
-        <div class="reg-status-bar">
-            <div class="d-flex align-items-center gap-3">
-                <span><i class="bi bi-person-fill me-1"></i><?= e($user ?: 'Administrator') ?></span>
-                <span><i class="bi bi-globe me-1 text-primary"></i>Url : <?= e($_SERVER['HTTP_HOST'] ?? 'vsudotrans.azurewebsites.net') ?></span>
-                <span><i class="bi bi-shield-check me-1 text-success"></i>Akses Perusahaan : <?= e($reg ? ($reg['company_code'] . ' - ' . $reg['company_name']) : 'LIZ - PT LIZ WISATA ALAM INDAH') ?></span>
-            </div>
-            <div class="d-flex align-items-center gap-3">
-                <span><i class="bi bi-calendar3 me-1 text-warning"></i>Tanggal : <?= date('d-M-Y H:i:s') ?></span>
-                <span><i class="bi bi-gear-fill me-1 text-primary"></i>Versi : 1.0.1.19</span>
-            </div>
         </div>
     </div>
 </main>

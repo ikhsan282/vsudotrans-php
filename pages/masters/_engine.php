@@ -777,14 +777,17 @@ function master_form(string $key): void
                 ['text' => 'ID #' . $id, 'class' => 'bg-light text-secondary border'],
                 isset($row['is_active']) ? ['text' => !empty($row['is_active']) ? 'Aktif' : 'Nonaktif', 'class' => 'bg-' . (!empty($row['is_active']) ? 'success' : 'secondary') . '-subtle text-' . (!empty($row['is_active']) ? 'success' : 'secondary') . ' border'] : null,
             ])) : [],
-            [['label' => 'Kembali ke Daftar', 'icon' => 'arrow-left', 'href' => master_base_url($spec) . '/index.php']]
+            [
+                ['label' => 'Batal', 'icon' => 'arrow-left', 'href' => master_base_url($spec) . '/index.php', 'class' => 'btn btn-sm btn-outline-secondary'],
+                ['label' => 'Simpan', 'icon' => 'check2', 'type' => 'submit', 'form' => 'formMasterEngine', 'class' => 'btn btn-sm btn-primary'],
+            ]
         ) ?>
         <?php if ($errors): ?>
             <div class="alert alert-danger py-2"><?php foreach ($errors as $err): ?><div><?= e($err) ?></div><?php endforeach; ?></div>
         <?php endif; ?>
         <div class="card shadow-sm border-0" style="max-width: 720px;">
             <div class="card-body">
-                <form method="post" action="<?= e(master_base_url($spec)) ?>/form.php<?= $id > 0 ? '?id=' . $id : '' ?>" enctype="multipart/form-data">
+                <form method="post" action="<?= e(master_base_url($spec)) ?>/form.php<?= $id > 0 ? '?id=' . $id : '' ?>" id="formMasterEngine" enctype="multipart/form-data">
                     <?= csrf_field() ?>
                     <input type="hidden" name="id" value="<?= $id ?>">
                     <?php foreach ($spec['fields'] as $f): $col = $f['col']; $val = $row[$col] ?? null; ?>
@@ -835,8 +838,6 @@ function master_form(string $key): void
                             <?php endif; ?>
                         </div>
                     <?php endforeach; ?>
-                    <button type="submit" class="btn btn-primary">Simpan</button>
-                    <a class="btn btn-outline-secondary" href="<?= e(master_base_url($spec)) ?>/index.php">Batal</a>
                 </form>
             </div>
         </div>

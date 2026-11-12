@@ -89,12 +89,19 @@ require __DIR__ . '/../../includes/header.php';
 <main class="col-12 col-md-9 col-lg-10 p-4">
     <div class="d-flex justify-content-between align-items-center mb-3">
         <h4 class="fw-bold mb-0">Hak Akses — <?= e($role['name']) ?></h4>
-        <a class="btn btn-outline-secondary btn-sm" href="<?= e(APP_URL) ?>/pages/roles/index.php">Kembali</a>
+        <div class="d-flex gap-2">
+            <a class="btn btn-outline-secondary btn-sm" href="<?= e(APP_URL) ?>/pages/roles/index.php">
+                <i class="bi bi-arrow-left me-1"></i>Batal
+            </a>
+            <button type="submit" form="formPermissions" class="btn btn-primary btn-sm px-3">
+                <i class="bi bi-check2 me-1"></i>Simpan Hak Akses
+            </button>
+        </div>
     </div>
     <?php if ($errors): ?>
         <div class="alert alert-danger py-2"><?php foreach ($errors as $err): ?><div><?= e($err) ?></div><?php endforeach; ?></div>
     <?php endif; ?>
-    <form method="post" action="<?= e(APP_URL) ?>/pages/roles/permissions.php?id=<?= $id ?>">
+    <form method="post" action="<?= e(APP_URL) ?>/pages/roles/permissions.php?id=<?= $id ?>" id="formPermissions">
         <?= csrf_field() ?>
         <input type="hidden" name="id" value="<?= $id ?>">
         <?php foreach ($grouped as $module => $items): ?>
@@ -130,8 +137,6 @@ require __DIR__ . '/../../includes/header.php';
                 </div>
             </div>
         <?php endforeach; ?>
-        <button type="submit" class="btn btn-primary">Simpan Hak Akses</button>
-        <a class="btn btn-outline-secondary" href="<?= e(APP_URL) ?>/pages/roles/index.php">Batal</a>
     </form>
 </main>
 <?php require __DIR__ . '/../../includes/footer.php'; ?>

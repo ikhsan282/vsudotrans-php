@@ -93,10 +93,13 @@ require __DIR__ . '/../../../includes/header.php';
             ['text' => 'ID #' . $id, 'class' => 'bg-light text-secondary border'],
             !empty($row['phone_number']) ? ['text' => $row['phone_number'], 'class' => 'bg-light text-secondary border'] : null,
         ])) : [],
-        [['label' => 'Kembali ke Daftar', 'icon' => 'arrow-left', 'href' => 'pages/travel/passengers/index.php']]
+        [
+            ['label' => 'Batal', 'icon' => 'arrow-left', 'href' => 'pages/travel/passengers/index.php', 'class' => 'btn btn-sm btn-outline-secondary'],
+            ['label' => 'Simpan', 'icon' => 'check2', 'type' => 'submit', 'form' => 'formPassenger', 'class' => 'btn btn-sm btn-primary'],
+        ]
     ) ?>
     <div class="card shadow-sm border-0"><div class="card-body">
-    <form method="post" action="">
+    <form method="post" action="" id="formPassenger">
         <?= csrf_field() ?>
         <input type="hidden" name="id" value="<?= $id ?>">
         <div class="row g-3">
@@ -112,10 +115,6 @@ require __DIR__ . '/../../../includes/header.php';
                 <input type="email" class="form-control" name="email" maxlength="100" value="<?= e((string) $row['email']) ?>"></div>
             <div class="col-12"><label class="form-label">Catatan</label>
                 <textarea class="form-control" name="note" rows="2" maxlength="2000"><?= e((string) $row['note']) ?></textarea></div>
-        </div>
-        <div class="mt-4">
-            <button class="btn btn-primary" type="submit">Simpan</button>
-            <a class="btn btn-outline-secondary" href="<?= e(APP_URL) ?>/pages/travel/passengers/index.php">Batal</a>
         </div>
     </form>
     </div></div>

@@ -60,7 +60,17 @@ $active = 'attendance';
 require __DIR__ . '/../../includes/header.php';
 ?>
 <main class="col-12 col-md-9 col-lg-10 p-4">
-    <h4 class="fw-bold mb-4"><?= e($title) ?></h4>
+    <div class="d-flex justify-content-between align-items-center mb-3">
+        <h4 class="fw-bold mb-0"><?= e($title) ?></h4>
+        <div class="d-flex gap-2">
+            <a href="index.php" class="btn btn-outline-secondary btn-sm">
+                <i class="bi bi-arrow-left me-1"></i>Batal
+            </a>
+            <button type="submit" form="formAttendance" class="btn btn-primary btn-sm px-3">
+                <i class="bi bi-check2 me-1"></i>Simpan
+            </button>
+        </div>
+    </div>
 
     <?php if (!$employees): ?>
         <div class="alert alert-warning">Belum ada karyawan aktif di perusahaan ini.</div>
@@ -72,7 +82,7 @@ require __DIR__ . '/../../includes/header.php';
         </ul></div>
     <?php endif; ?>
 
-    <form method="post" class="card shadow-sm">
+    <form method="post" id="formAttendance" class="card shadow-sm">
         <div class="card-body">
             <?= csrf_field() ?>
             <input type="hidden" name="id" value="<?= $id ?>">
@@ -115,10 +125,6 @@ require __DIR__ . '/../../includes/header.php';
                     <input name="note" class="form-control" maxlength="1000" value="<?= e($v('note')) ?>">
                 </div>
             </div>
-        </div>
-        <div class="card-footer bg-white d-flex justify-content-end gap-2">
-            <a href="index.php" class="btn btn-outline-secondary">Batal</a>
-            <button type="submit" class="btn btn-primary">Simpan</button>
         </div>
     </form>
 </main>

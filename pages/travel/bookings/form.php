@@ -225,8 +225,11 @@ require __DIR__ . '/../../../includes/header.php';
         </div>
         <div class="d-flex gap-2">
             <a class="btn btn-outline-secondary btn-sm" href="<?= e(APP_URL) ?>/<?= $is_edit ? 'pages/travel/bookings/detail.php?id=' . $id : 'pages/travel/bookings/index.php' ?>">
-                <i class="bi bi-arrow-left me-1"></i>Kembali
+                <i class="bi bi-arrow-left me-1"></i>Batal
             </a>
+            <button class="btn btn-primary btn-sm px-3 fw-semibold" type="submit" form="formTravelBooking">
+                <i class="bi bi-check2-circle me-1"></i><?= $is_edit ? 'Simpan Perubahan' : 'Simpan Booking' ?>
+            </button>
         </div>
     </div>
     <?php
@@ -234,7 +237,7 @@ require __DIR__ . '/../../../includes/header.php';
     require __DIR__ . '/../../../includes/ai_panel.php';
     ?>
     <div class="card shadow-sm border-0"><div class="card-body">
-    <form method="post" action="">
+    <form method="post" action="" id="formTravelBooking">
         <?= csrf_field() ?>
         <?php if ($is_edit): ?>
             <input type="hidden" name="id" value="<?= $id ?>">
@@ -283,14 +286,6 @@ require __DIR__ . '/../../../includes/header.php';
             </div>
             <div class="col-12"><label class="form-label">Catatan</label>
                 <textarea class="form-control" name="note" rows="2" maxlength="2000"><?= e($in['note']) ?></textarea></div>
-        </div>
-        <div class="mt-4 d-flex flex-wrap gap-2">
-            <button class="btn btn-primary btn-sm px-4 fw-semibold" type="submit">
-                <i class="bi bi-check2-circle me-1"></i><?= $is_edit ? 'Simpan Perubahan' : 'Simpan Booking' ?>
-            </button>
-            <a class="btn btn-outline-secondary btn-sm px-3" href="<?= e(APP_URL) ?>/<?= $is_edit ? 'pages/travel/bookings/detail.php?id=' . $id : 'pages/travel/bookings/index.php' ?>">
-                Batal
-            </a>
         </div>
     </form>
     </div></div>

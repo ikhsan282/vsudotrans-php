@@ -190,7 +190,17 @@ $title  = $id > 0 ? 'Ubah Pengguna' : 'Tambah Pengguna';
 require __DIR__ . '/../../includes/header.php';
 ?>
 <main class="col-12 col-md-9 col-lg-10 p-4">
-    <h4 class="fw-bold mb-3"><?= e($title) ?></h4>
+    <div class="d-flex justify-content-between align-items-center mb-3">
+        <h4 class="fw-bold mb-0"><?= e($title) ?></h4>
+        <div class="d-flex gap-2">
+            <a class="btn btn-outline-secondary btn-sm" href="<?= e(APP_URL) ?>/pages/users/index.php">
+                <i class="bi bi-arrow-left me-1"></i>Batal
+            </a>
+            <button type="submit" form="formUser" class="btn btn-primary btn-sm px-3">
+                <i class="bi bi-check2 me-1"></i>Simpan
+            </button>
+        </div>
+    </div>
     <?php if ($errors): ?>
         <div class="alert alert-danger"><ul class="mb-0">
             <?php foreach ($errors as $err): ?><li><?= e($err) ?></li><?php endforeach; ?>
@@ -198,7 +208,7 @@ require __DIR__ . '/../../includes/header.php';
     <?php endif; ?>
     <div class="card shadow-sm border-0">
         <div class="card-body">
-            <form method="post">
+            <form method="post" id="formUser">
                 <?= csrf_field() ?>
                 <input type="hidden" name="id" value="<?= (int) $id ?>">
                 <div class="row g-3">
@@ -263,10 +273,6 @@ require __DIR__ . '/../../includes/header.php';
                             <label class="form-check-label" for="is_active">Aktif</label>
                         </div>
                     </div>
-                </div>
-                <div class="mt-4">
-                    <button type="submit" class="btn btn-primary">Simpan</button>
-                    <a href="<?= e(APP_URL) ?>/pages/users/index.php" class="btn btn-outline-secondary">Batal</a>
                 </div>
             </form>
         </div>

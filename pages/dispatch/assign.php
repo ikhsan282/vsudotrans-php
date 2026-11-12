@@ -42,12 +42,19 @@ require __DIR__ . '/../../includes/header.php';
 <main class="col-12 col-md-9 col-lg-10 p-4">
     <div class="d-flex justify-content-between align-items-center mb-3">
         <h4 class="fw-bold mb-0">Tugaskan Driver</h4>
-        <a class="btn btn-outline-secondary btn-sm" href="<?= e(APP_URL) ?>/pages/dispatch/index.php">Kembali</a>
+        <div class="d-flex gap-2">
+            <a class="btn btn-outline-secondary btn-sm" href="<?= e(APP_URL) ?>/pages/dispatch/index.php">
+                <i class="bi bi-arrow-left me-1"></i>Batal
+            </a>
+            <button class="btn btn-primary btn-sm px-3" type="submit" form="formDispatchAssign">
+                <i class="bi bi-person-check me-1"></i>Tugaskan
+            </button>
+        </div>
     </div>
 
     <div class="card shadow-sm border-0">
         <div class="card-body">
-            <form method="post" action="<?= e(APP_URL) ?>/pages/dispatch/assign.php" class="row g-3">
+            <form method="post" action="<?= e(APP_URL) ?>/pages/dispatch/assign.php" id="formDispatchAssign" class="row g-3">
                 <?= csrf_field() ?>
                 <div class="col-md-6">
                     <label class="form-label small mb-1">Booking (belum ada penugasan aktif, 50 terbaru per tipe)</label>
@@ -77,10 +84,6 @@ require __DIR__ . '/../../includes/header.php';
                 <div class="col-md-6">
                     <label class="form-label small mb-1" for="dispatch-reason">Alasan / catatan</label>
                     <input id="dispatch-reason" class="form-control form-control-sm" name="reason" maxlength="2000" placeholder="mis. shift pagi, driver pengganti">
-                </div>
-                <div class="col-12">
-                    <button class="btn btn-primary btn-sm" type="submit">Tugaskan</button>
-                    <a class="btn btn-outline-secondary btn-sm" href="<?= e(APP_URL) ?>/pages/dispatch/index.php">Batal</a>
                 </div>
             </form>
         </div>

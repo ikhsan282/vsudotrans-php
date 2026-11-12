@@ -85,7 +85,10 @@ require __DIR__ . '/../../includes/header.php';
         ['text' => 'ID #' . $id, 'class' => 'bg-light text-secondary border'],
         !empty($v('status')) ? ['text' => ucfirst($v('status')), 'class' => 'bg-' . ($v('status') === 'aktif' ? 'success' : 'secondary') . '-subtle text-' . ($v('status') === 'aktif' ? 'success' : 'secondary') . ' border'] : null,
     ])) : [],
-    [['label' => 'Kembali ke Daftar', 'icon' => 'arrow-left', 'href' => 'pages/employees/index.php']]
+    [
+        ['label' => 'Batal', 'icon' => 'arrow-left', 'href' => $id > 0 ? 'pages/employees/detail.php?id=' . $id : 'pages/employees/index.php', 'class' => 'btn btn-sm btn-outline-secondary'],
+        ['label' => 'Simpan', 'icon' => 'check2', 'type' => 'submit', 'form' => 'formEmployee', 'class' => 'btn btn-sm btn-primary'],
+    ]
 ) ?>
 <?php if ($errors): ?>
     <div class="alert alert-danger">
@@ -95,7 +98,7 @@ require __DIR__ . '/../../includes/header.php';
     </div>
 <?php endif; ?>
 
-<form method="post" class="card shadow-sm" enctype="multipart/form-data">
+<form method="post" id="formEmployee" class="card shadow-sm" enctype="multipart/form-data">
     <div class="card-body">
         <?= csrf_field() ?>
         <input type="hidden" name="id" value="<?= $id ?>">
@@ -289,10 +292,6 @@ require __DIR__ . '/../../includes/header.php';
                 <div class="form-text small">Wajib dipantau untuk pengemudi / driver.</div>
             </div>
         </div>
-    </div>
-    <div class="card-footer bg-white d-flex justify-content-end gap-2">
-        <a href="<?= $id > 0 ? 'detail.php?id=' . $id : 'index.php' ?>" class="btn btn-outline-secondary">Batal</a>
-        <button type="submit" class="btn btn-primary">Simpan</button>
     </div>
 </form>
 </main>

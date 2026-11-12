@@ -161,14 +161,17 @@ require __DIR__ . '/../../includes/header.php';
             ['text' => 'ID #' . $id, 'class' => 'bg-light text-secondary border'],
             isset($row['is_active']) ? ['text' => !empty($row['is_active']) ? 'Aktif' : 'Nonaktif', 'class' => 'bg-' . (!empty($row['is_active']) ? 'success' : 'secondary') . '-subtle text-' . (!empty($row['is_active']) ? 'success' : 'secondary') . ' border'] : null,
         ])) : [],
-        [['label' => 'Kembali ke Daftar', 'icon' => 'arrow-left', 'href' => 'pages/vehicles/index.php']]
+        [
+            ['label' => 'Batal', 'icon' => 'arrow-left', 'href' => $id > 0 ? 'pages/vehicles/detail.php?id=' . $id : 'pages/vehicles/index.php', 'class' => 'btn btn-sm btn-outline-secondary'],
+            ['label' => 'Simpan', 'icon' => 'check2', 'type' => 'submit', 'form' => 'formVehicle', 'class' => 'btn btn-sm btn-primary'],
+        ]
     ) ?>
     <?php if ($errors): ?>
         <div class="alert alert-danger py-2"><?php foreach ($errors as $err): ?><div><?= e($err) ?></div><?php endforeach; ?></div>
     <?php endif; ?>
     <div class="card shadow-sm border-0" style="max-width: 860px;">
         <div class="card-body">
-            <form method="post" action="<?= e(APP_URL) ?>/pages/vehicles/form.php<?= $id > 0 ? '?id=' . $id : '' ?>" enctype="multipart/form-data">
+            <form method="post" action="<?= e(APP_URL) ?>/pages/vehicles/form.php<?= $id > 0 ? '?id=' . $id : '' ?>" id="formVehicle" enctype="multipart/form-data">
                 <?= csrf_field() ?>
                 <input type="hidden" name="id" value="<?= $id ?>">
                 <div class="row g-3">
@@ -291,8 +294,6 @@ require __DIR__ . '/../../includes/header.php';
                         <textarea class="form-control" id="note" name="note" rows="2" maxlength="2000"><?= e((string) $row['note']) ?></textarea>
                     </div>
                 </div>
-                <button type="submit" class="btn btn-primary mt-4">Simpan</button>
-                <a class="btn btn-outline-secondary mt-4" href="<?= e(APP_URL) ?>/pages/vehicles/index.php">Batal</a>
             </form>
         </div>
     </div>

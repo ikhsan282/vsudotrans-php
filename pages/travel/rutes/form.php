@@ -112,10 +112,13 @@ require __DIR__ . '/../../../includes/header.php';
             ['text' => 'ID #' . $id, 'class' => 'bg-light text-secondary border'],
             isset($row['is_active']) ? ['text' => !empty($row['is_active']) ? 'Aktif' : 'Nonaktif', 'class' => 'bg-' . (!empty($row['is_active']) ? 'success' : 'secondary') . '-subtle text-' . (!empty($row['is_active']) ? 'success' : 'secondary') . ' border'] : null,
         ])) : [],
-        [['label' => 'Kembali ke Daftar', 'icon' => 'arrow-left', 'href' => 'pages/travel/rutes/index.php']]
+        [
+            ['label' => 'Batal', 'icon' => 'arrow-left', 'href' => 'pages/travel/rutes/index.php', 'class' => 'btn btn-sm btn-outline-secondary'],
+            ['label' => 'Simpan', 'icon' => 'check2', 'type' => 'submit', 'form' => 'formRute', 'class' => 'btn btn-sm btn-primary'],
+        ]
     ) ?>
     <div class="card shadow-sm border-0"><div class="card-body">
-    <form method="post" action="">
+    <form method="post" action="" id="formRute">
         <?= csrf_field() ?>
         <input type="hidden" name="id" value="<?= $id ?>">
         <div class="row g-3">
@@ -144,10 +147,6 @@ require __DIR__ . '/../../../includes/header.php';
             <div class="col-12"><div class="form-check">
                 <input class="form-check-input" type="checkbox" name="is_active" id="is_active" value="1" <?= $row['is_active'] ? 'checked' : '' ?>>
                 <label class="form-check-label" for="is_active">Aktif</label></div></div>
-        </div>
-        <div class="mt-4">
-            <button class="btn btn-primary" type="submit">Simpan</button>
-            <a class="btn btn-outline-secondary" href="<?= e(APP_URL) ?>/pages/travel/rutes/index.php">Batal</a>
         </div>
     </form>
     </div></div>
