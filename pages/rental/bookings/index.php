@@ -81,10 +81,10 @@ if ($start_date !== '' && $end_date !== '') {
 
 // Filter Pencarian Resi / Penumpang
 if ($q !== '') {
-    $where .= ' AND (b.document_number LIKE ? OR p.name LIKE ?)';
-    $types .= 'ss';
+    $where .= ' AND (b.document_number LIKE ? OR p.name LIKE ? OR p.phone_number LIKE ?)';
+    $types .= 'sss';
     $q_like = '%' . $q . '%';
-    array_push($params, $q_like, $q_like);
+    array_push($params, $q_like, $q_like, $q_like);
 }
 
 // Filter Status
@@ -109,11 +109,23 @@ $st->close();
 // Export XLSX / PDF
 $export_format = strtolower(trim((string) ($_GET['export'] ?? '')));
 if (in_array($export_format, ['xlsx', 'pdf'], true)) {
-    $sql_export = "SELECT b.document_number, c.code AS company_code, b.start_date, b.end_date, p.name AS passenger, b.bbm, b.total_price,
+    $sql_export = "SELECT b.document_number, c.code AS company_code,
+                          p.name AS passenger_name, p.phone_number AS passenger_phone,
+                          CONCAT_WS(' - ', bv.name, mu.name, v.vehicle_number) AS vehicle_name,
+                          v.vehicle_number, cv.name AS category_name,
+                          b.time, b.start_date, b.end_date,
+                          pc.name AS pickup_city_name, dc.name AS delivery_city_name,
+                          b.total_price, COALESCE(b.total_payment, 0) AS total_payment,
                           COALESCE({$status_sql}, 'draft') AS status
                    FROM rental_car_bookings b
                    JOIN companies c ON c.id = b.company_id
                    JOIN passengers p ON p.id = b.passenger_id
+                   LEFT JOIN vehicles v ON v.id = b.vehicle_id
+                   LEFT JOIN brand_vehicles bv ON bv.id = v.brand_id
+                   LEFT JOIN model_units mu ON mu.id = v.model_unit_id
+                   LEFT JOIN category_vehicles cv ON cv.id = b.category_vehicle_id
+                   LEFT JOIN cities pc ON pc.id = b.pickup_point_city_id
+                   LEFT JOIN cities dc ON dc.id = b.delivery_point_city_id
                    WHERE {$where} ORDER BY b.start_date DESC, b.id DESC";
     $max_export_rows = $export_format === 'pdf' ? GRID_PDF_MAX_ROWS : null;
 
@@ -121,16 +133,26 @@ if (in_array($export_format, ['xlsx', 'pdf'], true)) {
         $sql_export,
         $types,
         $params,
-        static fn (array $r): array => [
-            $r['document_number'],
-            $r['company_code'],
-            !empty($r['start_date']) ? date('d-M-Y', strtotime($r['start_date'])) : '-',
-            !empty($r['end_date']) ? date('d-M-Y', strtotime($r['end_date'])) : '-',
-            $r['passenger'],
-            (float) $r['bbm'],
-            (float) $r['total_price'],
-            ucfirst($r['status']),
-        ],
+        static function (array $r): array {
+            $veh = $r['vehicle_name'] ?: ($r['vehicle_number'] ?: ($r['category_name'] ?: '-'));
+            $jam = !empty($r['time']) ? substr($r['time'], 0, 5) : '-';
+            $tgl = !empty($r['start_date']) ? date('d-M-Y', strtotime($r['start_date'])) : '-';
+            if (!empty($r['end_date']) && $r['end_date'] !== $r['start_date']) {
+                $tgl .= ' s/d ' . date('d-M-Y', strtotime($r['end_date']));
+            }
+            return [
+                $r['document_number'],
+                $r['passenger_name'] . ($r['passenger_phone'] ? ' (' . $r['passenger_phone'] . ')' : ''),
+                $veh,
+                $jam,
+                $tgl,
+                $r['pickup_city_name'] ?: '-',
+                $r['delivery_city_name'] ?: '-',
+                (float) $r['total_price'],
+                (float) $r['total_payment'],
+                ucfirst($r['status']),
+            ];
+        },
         $max_export_rows
     );
 
@@ -160,7 +182,7 @@ if (in_array($export_format, ['xlsx', 'pdf'], true)) {
 
     grid_export_send(
         'Daftar Pemesanan Sewa Kendaraan',
-        ['No Resi / Dokumen', 'Perusahaan', 'Tgl Mulai', 'Tgl Selesai', 'Penyewa', 'Biaya BBM', 'Total Biaya', 'Status'],
+        ['Resi', 'Penumpang (Nama & HP)', 'Kendaraan', 'Jam', 'Tanggal', 'Kota Penjemputan', 'Kota Pengantaran', 'Total Harga', 'Total Pembayaran', 'Status'],
         $row_stream,
         $export_format,
         'landscape',
@@ -171,11 +193,22 @@ if (in_array($export_format, ['xlsx', 'pdf'], true)) {
 
 $p = paginate($total, (int) ($_GET['page'] ?? 1));
 $st = db()->prepare("SELECT b.id, b.company_id, c.code AS company_code, c.name AS company_name,
-                     b.document_number, b.start_date, b.end_date, b.total_price, b.bbm, p.name AS passenger,
+                     b.document_number, b.time, b.start_date, b.end_date, b.total_price,
+                     COALESCE(b.total_payment, 0) AS total_payment,
+                     p.name AS passenger_name, p.phone_number AS passenger_phone,
+                     CONCAT_WS(' - ', bv.name, mu.name, v.vehicle_number) AS vehicle_name,
+                     v.vehicle_number, cv.name AS category_name,
+                     pc.name AS pickup_city_name, dc.name AS delivery_city_name,
                      COALESCE({$status_sql}, 'draft') AS status
                      FROM rental_car_bookings b
                      JOIN companies c ON c.id = b.company_id
                      JOIN passengers p ON p.id = b.passenger_id
+                     LEFT JOIN vehicles v ON v.id = b.vehicle_id
+                     LEFT JOIN brand_vehicles bv ON bv.id = v.brand_id
+                     LEFT JOIN model_units mu ON mu.id = v.model_unit_id
+                     LEFT JOIN category_vehicles cv ON cv.id = b.category_vehicle_id
+                     LEFT JOIN cities pc ON pc.id = b.pickup_point_city_id
+                     LEFT JOIN cities dc ON dc.id = b.delivery_point_city_id
                      WHERE {$where} ORDER BY b.start_date DESC, b.id DESC LIMIT ? OFFSET ?");
 $st->bind_param($types . 'ii', ...[...$params, $p['per_page'], $p['offset']]);
 $st->execute();
@@ -219,7 +252,7 @@ require __DIR__ . '/../../../includes/header.php';
                 <div class="col-12 col-md-3">
                     <div class="input-group input-group-sm">
                         <span class="input-group-text bg-white text-muted"><i class="bi bi-search"></i></span>
-                        <input type="text" name="q" class="form-control" placeholder="Cari resi / penyewa..." value="<?= e($q) ?>">
+                        <input type="text" name="q" class="form-control" placeholder="Cari resi / penumpang / no. hp..." value="<?= e($q) ?>">
                     </div>
                 </div>
                 <div class="col-6 col-md-2">
@@ -268,19 +301,27 @@ require __DIR__ . '/../../../includes/header.php';
             <table class="table table-hover mb-0 align-middle">
                 <thead class="table-light">
                     <tr>
-                        <th class="text-center" style="width: 52px;">No</th>
-                        <th>Resi &amp; Perusahaan</th>
-                        <th>Mulai</th>
-                        <th>Selesai</th>
+                        <th class="text-center" style="width: 48px;">No</th>
+                        <th>Resi</th>
                         <th>Penumpang</th>
-                        <th class="text-end">BBM</th>
-                        <th class="text-end">Total</th>
-                        <th>Status</th>
-                        <th class="text-end">Aksi</th>
+                        <th>Kendaraan</th>
+                        <th>Jam</th>
+                        <th>Tanggal</th>
+                        <th>Kota Penjemputan</th>
+                        <th>Kota Pengantaran</th>
+                        <th class="text-end">Total Harga</th>
+                        <th class="text-end">Total Pembayaran</th>
+                        <th class="text-center">Status</th>
+                        <th class="text-end" style="width: 140px;">Aksi</th>
                     </tr>
                 </thead>
                 <tbody>
-                <?php foreach ($rows as $idx => $r): ?>
+                <?php foreach ($rows as $idx => $r): 
+                    $veh_name = $r['vehicle_name'] ?: ($r['vehicle_number'] ?: ($r['category_name'] ?: '-'));
+                    $jam = !empty($r['time']) ? substr($r['time'], 0, 5) : '-';
+                    $tgl_mulai = !empty($r['start_date']) ? date('d-M-Y', strtotime($r['start_date'])) : '-';
+                    $tgl_selesai = !empty($r['end_date']) ? date('d-M-Y', strtotime($r['end_date'])) : '';
+                ?>
                     <tr>
                         <td class="text-center text-muted small"><?= number_format($p['offset'] + $idx + 1, 0, ',', '.') ?></td>
                         <td>
@@ -291,22 +332,37 @@ require __DIR__ . '/../../../includes/header.php';
                                 <span class="badge bg-light text-secondary border"><?= e($r['company_code']) ?></span>
                             </div>
                         </td>
-                        <td><?= !empty($r['start_date']) ? date('d-M-Y', strtotime($r['start_date'])) : '-' ?></td>
-                        <td><?= !empty($r['end_date']) ? date('d-M-Y', strtotime($r['end_date'])) : '-' ?></td>
-                        <td><?= e($r['passenger']) ?></td>
-                        <td class="text-end"><?= e(rupiah((float) $r['bbm'])) ?></td>
-                        <td class="text-end"><?= e(rupiah((float) $r['total_price'])) ?></td>
-                        <td><?= status_badge($r['status']) ?></td>
+                        <td>
+                            <div class="fw-semibold text-dark"><?= e($r['passenger_name']) ?></div>
+                            <div class="small text-muted">
+                                <i class="bi bi-telephone me-1"></i><?= e($r['passenger_phone'] ?: '-') ?>
+                            </div>
+                        </td>
+                        <td>
+                            <span class="text-nowrap"><?= e($veh_name) ?></span>
+                        </td>
+                        <td class="text-nowrap">
+                            <i class="bi bi-clock me-1 text-muted"></i><?= e($jam) ?>
+                        </td>
+                        <td class="text-nowrap">
+                            <div><?= e($tgl_mulai) ?></div>
+                            <?php if ($tgl_selesai !== '' && $tgl_selesai !== $tgl_mulai): ?>
+                                <div class="small text-muted">s/d <?= e($tgl_selesai) ?></div>
+                            <?php endif; ?>
+                        </td>
+                        <td><?= e($r['pickup_city_name'] ?: '-') ?></td>
+                        <td><?= e($r['delivery_city_name'] ?: '-') ?></td>
+                        <td class="text-end fw-semibold text-nowrap"><?= e(rupiah((float) $r['total_price'])) ?></td>
+                        <td class="text-end fw-semibold text-nowrap text-success"><?= e(rupiah((float) $r['total_payment'])) ?></td>
+                        <td class="text-center"><?= status_badge($r['status']) ?></td>
                         <td class="text-end text-nowrap">
-                            <a class="btn btn-sm btn-outline-secondary" href="<?= e(APP_URL) ?>/pages/rental/bookings/detail.php?id=<?= (int) $r['id'] ?>">
+                            <a class="btn btn-sm btn-outline-secondary" href="<?= e(APP_URL) ?>/pages/rental/bookings/detail.php?id=<?= (int) $r['id'] ?>" title="Lihat Detail">
                                 <i class="bi bi-eye me-1"></i>Detail
                             </a>
                             <?php if (can('rental.manage')): ?>
-                                <a class="btn btn-sm btn-outline-primary" href="<?= e(APP_URL) ?>/pages/rental/bookings/detail.php?id=<?= (int) $r['id'] ?>">
+                                <a class="btn btn-sm btn-outline-primary" href="<?= e(APP_URL) ?>/pages/rental/bookings/detail.php?id=<?= (int) $r['id'] ?>" title="Ubah Pemesanan">
                                     <i class="bi bi-pencil-square me-1"></i>Ubah
                                 </a>
-                            <?php endif; ?>
-                            <?php if (can('rental.manage')): ?>
                                 <form method="post" action="" class="d-inline" onsubmit="return confirm('Yakin ingin menghapus permanen booking <?= e($r['document_number']) ?> beserta invoice dan riwayat pembayarannya?');">
                                     <?= csrf_field() ?>
                                     <input type="hidden" name="act" value="delete">
@@ -321,7 +377,7 @@ require __DIR__ . '/../../../includes/header.php';
                     </tr>
                 <?php endforeach; ?>
                 <?php if (!$rows): ?>
-                    <tr><td colspan="9" class="text-center text-muted py-4">Belum ada pemesanan sewa kendaraan yang cocok dengan filter yang dipilih.</td></tr>
+                    <tr><td colspan="12" class="text-center text-muted py-4">Belum ada pemesanan sewa kendaraan yang cocok dengan filter yang dipilih.</td></tr>
                 <?php endif; ?>
                 </tbody>
             </table>

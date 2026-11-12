@@ -496,19 +496,7 @@ require __DIR__ . '/../../../includes/header.php';
 
     <!-- ERP Window Container -->
     <div class="erp-window-card">
-        <!-- TOP DOCUMENT TABS (Exact match to screenshot) -->
-        <div class="erp-doc-tabbar">
-            <a href="<?= e(APP_URL) ?>/pages/rental/bookings/index.php" class="erp-doc-tab">
-                Daftar Pemesanan Sewa Kendaraan
-            </a>
-            <div class="erp-doc-tab active">
-                <span>Detail Pemesanan Sewa Kendaraan (<?= e($b['document_number']) ?>)</span>
-                <a href="<?= e(APP_URL) ?>/pages/rental/bookings/index.php" class="erp-doc-tab-close" title="Tutup">&times;</a>
-            </div>
-            <a href="<?= e(APP_URL) ?>/pages/rental/bookings/index.php" class="erp-doc-window-close" title="Tutup">&times;</a>
-        </div>
-
-        <!-- 5 SUB-TABS (Exact match to screenshot) -->
+        <!-- 5 SUB-TABS -->
         <ul class="nav nav-tabs erp-sub-tabs" id="rentalDetailTabs" role="tablist">
             <li class="nav-item" role="presentation">
                 <button class="nav-link active" id="tab-detail-btn" data-bs-toggle="tab" data-bs-target="#tab-detail" type="button" role="tab">
@@ -571,7 +559,7 @@ require __DIR__ . '/../../../includes/header.php';
                             <div class="rnt-row">
                                 <div class="rnt-label">Cabang <span class="text-danger">*</span></div>
                                 <div class="rnt-field">
-                                    <select class="form-select form-select-sm ts-select" name="branch_id" form="rentalDetailForm" <?= $canManage ? 'required' : 'disabled' ?>>
+                                    <select class="form-select form-select-sm" name="branch_id" form="rentalDetailForm" <?= $canManage ? 'required' : 'disabled' ?>>
                                         <option value="">-- Pilih Cabang --</option>
                                         <?= select_options($branches, $b['branch_id']) ?>
                                     </select>
@@ -588,10 +576,7 @@ require __DIR__ . '/../../../includes/header.php';
                                             <input type="text" class="form-control form-control-sm bg-white flatpickr-date" name="end_date" id="endDateInput" form="rentalDetailForm" required value="<?= e($b['end_date']) ?>" placeholder="dd-MMM-yyyy" <?= $canManage ? '' : 'disabled' ?>>
                                         </div>
                                         <div class="col-12 col-sm-2">
-                                            <div class="input-group input-group-sm">
-                                                <input type="number" min="1" max="365" class="form-control form-control-sm text-end" id="durationDaysInput" value="<?= $duration_days ?>" title="Durasi Sewa (Hari)" <?= $canManage ? '' : 'readonly' ?>>
-                                                <span class="input-group-text">hr</span>
-                                            </div>
+                                            <input type="number" min="1" max="365" class="form-control form-control-sm text-end" id="durationDaysInput" value="<?= $duration_days ?>" title="Durasi Sewa (Hari)" <?= $canManage ? '' : 'readonly' ?>>
                                         </div>
                                     </div>
                                 </div>
@@ -599,10 +584,7 @@ require __DIR__ . '/../../../includes/header.php';
                             <div class="rnt-row">
                                 <div class="rnt-label">Jam <span class="text-danger">*</span></div>
                                 <div class="rnt-field">
-                                    <div class="input-group input-group-sm" style="max-width: 260px;">
-                                        <input type="time" class="form-control form-control-sm" name="time" id="rentalTimeInput" form="rentalDetailForm" required value="<?= e(substr((string) $b['time'], 0, 5)) ?>" <?= $canManage ? '' : 'readonly' ?>>
-                                        <span class="input-group-text bg-light text-muted fw-semibold" id="rentalTimePeriodBadge"><?= time_period_label((string) $b['time']) ?></span>
-                                    </div>
+                                    <input type="time" class="form-control form-control-sm" name="time" id="rentalTimeInput" form="rentalDetailForm" required value="<?= e(substr((string) $b['time'], 0, 5)) ?>" <?= $canManage ? '' : 'readonly' ?> style="max-width: 260px;">
                                 </div>
                             </div>
                             <div class="rnt-row">
@@ -629,7 +611,7 @@ require __DIR__ . '/../../../includes/header.php';
                             <div class="rnt-row">
                                 <div class="rnt-label">Kategori</div>
                                 <div class="rnt-field">
-                                    <select class="form-select form-select-sm ts-select" name="category_vehicle_id" id="categoryVehicleSelect" form="rentalDetailForm" <?= $canManage ? '' : 'disabled' ?>>
+                                    <select class="form-select form-select-sm" name="category_vehicle_id" id="categoryVehicleSelect" form="rentalDetailForm" <?= $canManage ? '' : 'disabled' ?>>
                                         <option value="">-- Semua Kategori --</option>
                                         <?= select_options($cats, $b['category_vehicle_id']) ?>
                                     </select>
@@ -638,7 +620,7 @@ require __DIR__ . '/../../../includes/header.php';
                             <div class="rnt-row">
                                 <div class="rnt-label">Kendaraan</div>
                                 <div class="rnt-field">
-                                    <select class="form-select form-select-sm ts-select" name="vehicle_id" id="vehicleSelect" form="rentalDetailForm" <?= $canManage ? '' : 'disabled' ?>>
+                                    <select class="form-select form-select-sm" name="vehicle_id" id="vehicleSelect" form="rentalDetailForm" <?= $canManage ? '' : 'disabled' ?>>
                                         <option value="">-- Pilih Kendaraan --</option>
                                         <?php foreach ($vehicles as $v): ?>
                                             <option value="<?= (int) $v['id'] ?>"
@@ -648,7 +630,6 @@ require __DIR__ . '/../../../includes/header.php';
                                             </option>
                                         <?php endforeach; ?>
                                     </select>
-                                    <div id="vehicleAvailBadge" class="small mt-1" style="display:none;"></div>
                                 </div>
                             </div>
                         </div>
@@ -668,17 +649,9 @@ require __DIR__ . '/../../../includes/header.php';
                             <div class="rnt-row">
                                 <div class="rnt-label">Pelanggan <span class="text-danger">*</span></div>
                                 <div class="rnt-field">
-                                    <select class="form-select form-select-sm ts-select" name="passenger_id" id="primaryPassengerSelect" form="rentalDetailForm" <?= $canManage ? 'required' : 'disabled' ?>>
+                                    <select class="form-select form-select-sm" name="passenger_id" id="primaryPassengerSelect" form="rentalDetailForm" <?= $canManage ? 'required' : 'disabled' ?>>
                                         <option value="">-- Pilih Pelanggan --</option>
                                         <?= select_options($passengers, $b['passenger_id']) ?>
-                                    </select>
-                                </div>
-                            </div>
-                            <div class="rnt-row">
-                                <div class="rnt-label">Penumpang Tambahan</div>
-                                <div class="rnt-field">
-                                    <select class="form-select form-select-sm ts-select" name="passenger_ids[]" id="extraPassengersSelect" form="rentalDetailForm" multiple data-placeholder="Opsional: pilih penumpang pendamping..." <?= $canManage ? '' : 'disabled' ?>>
-                                        <?= select_options($passengers, $extra_passenger_ids) ?>
                                     </select>
                                 </div>
                             </div>
@@ -696,7 +669,7 @@ require __DIR__ . '/../../../includes/header.php';
                                     <div class="rnt-row">
                                         <div class="rnt-label">Provinsi</div>
                                         <div class="rnt-field">
-                                            <select class="form-select form-select-sm ts-select" name="pickup_point_province_id" id="pickupProvince" form="rentalDetailForm" <?= $canManage ? '' : 'disabled' ?>>
+                                            <select class="form-select form-select-sm" name="pickup_point_province_id" id="pickupProvince" form="rentalDetailForm" <?= $canManage ? '' : 'disabled' ?>>
                                                 <option value="">-- Pilih Provinsi --</option>
                                                 <?= select_options($provinces, $p_prov_id) ?>
                                             </select>
@@ -705,7 +678,7 @@ require __DIR__ . '/../../../includes/header.php';
                                     <div class="rnt-row">
                                         <div class="rnt-label">Kota/Kab <span class="text-danger">*</span></div>
                                         <div class="rnt-field">
-                                            <select class="form-select form-select-sm ts-select" name="pickup_point_city_id" id="pickupCity" form="rentalDetailForm" <?= $canManage ? '' : 'disabled' ?>>
+                                            <select class="form-select form-select-sm" name="pickup_point_city_id" id="pickupCity" form="rentalDetailForm" <?= $canManage ? '' : 'disabled' ?>>
                                                 <option value="">-- Pilih Kota/Kab --</option>
                                                 <?php foreach ($cities as $c): ?>
                                                     <option value="<?= (int) $c['id'] ?>"
@@ -720,7 +693,7 @@ require __DIR__ . '/../../../includes/header.php';
                                     <div class="rnt-row">
                                         <div class="rnt-label">Kecamatan <span class="text-danger">*</span></div>
                                         <div class="rnt-field">
-                                            <select class="form-select form-select-sm ts-select" name="pickup_point_district_id" id="pickupDistrict" form="rentalDetailForm" <?= $canManage ? 'required' : 'disabled' ?>>
+                                            <select class="form-select form-select-sm" name="pickup_point_district_id" id="pickupDistrict" form="rentalDetailForm" <?= $canManage ? 'required' : 'disabled' ?>>
                                                 <option value="">-- Pilih Kecamatan --</option>
                                                 <?= select_options($pickup_districts, $b['pickup_point_district_id']) ?>
                                             </select>
@@ -745,7 +718,7 @@ require __DIR__ . '/../../../includes/header.php';
                                     <div class="rnt-row">
                                         <div class="rnt-label">Provinsi</div>
                                         <div class="rnt-field">
-                                            <select class="form-select form-select-sm ts-select" name="delivery_point_province_id" id="deliveryProvince" form="rentalDetailForm" <?= $canManage ? '' : 'disabled' ?>>
+                                            <select class="form-select form-select-sm" name="delivery_point_province_id" id="deliveryProvince" form="rentalDetailForm" <?= $canManage ? '' : 'disabled' ?>>
                                                 <option value="">-- Pilih Provinsi --</option>
                                                 <?= select_options($provinces, $d_prov_id) ?>
                                             </select>
@@ -754,7 +727,7 @@ require __DIR__ . '/../../../includes/header.php';
                                     <div class="rnt-row">
                                         <div class="rnt-label">Kota/Kab <span class="text-danger">*</span></div>
                                         <div class="rnt-field">
-                                            <select class="form-select form-select-sm ts-select" name="delivery_point_city_id" id="deliveryCity" form="rentalDetailForm" <?= $canManage ? '' : 'disabled' ?>>
+                                            <select class="form-select form-select-sm" name="delivery_point_city_id" id="deliveryCity" form="rentalDetailForm" <?= $canManage ? '' : 'disabled' ?>>
                                                 <option value="">-- Pilih Kota/Kab --</option>
                                                 <?php foreach ($cities as $c): ?>
                                                     <option value="<?= (int) $c['id'] ?>"
@@ -769,7 +742,7 @@ require __DIR__ . '/../../../includes/header.php';
                                     <div class="rnt-row">
                                         <div class="rnt-label">Kecamatan <span class="text-danger">*</span></div>
                                         <div class="rnt-field">
-                                            <select class="form-select form-select-sm ts-select" name="delivery_point_district_id" id="deliveryDistrict" form="rentalDetailForm" <?= $canManage ? 'required' : 'disabled' ?>>
+                                            <select class="form-select form-select-sm" name="delivery_point_district_id" id="deliveryDistrict" form="rentalDetailForm" <?= $canManage ? 'required' : 'disabled' ?>>
                                                 <option value="">-- Pilih Kecamatan --</option>
                                                 <?= select_options($delivery_districts, $b['delivery_point_district_id']) ?>
                                             </select>
@@ -790,37 +763,7 @@ require __DIR__ . '/../../../includes/header.php';
                 <!-- ================= TAB 2: SOPIR/KERNET/MONTIR ================= -->
                 <div class="tab-pane fade" id="tab-crew" role="tabpanel">
                     <div class="rnt-panel">
-                        <div class="rnt-panel-header">
-                            <span>Perhitungan Operasional &amp; Peraturan Komisi Karyawan</span>
-                            <a href="<?= e(APP_URL) ?>/pages/rental/regulations/index.php?company_id=<?= (int) $b['company_id'] ?>" class="btn btn-sm btn-outline-secondary py-0 px-2" target="_blank">
-                                <i class="bi bi-sliders me-1"></i>Kelola Peraturan Komisi
-                            </a>
-                        </div>
                         <div class="rnt-panel-body">
-                            <?php if ($canManage): ?>
-                            <div class="rnt-row">
-                                <div class="rnt-label">Peraturan Komisi</div>
-                                <div class="rnt-field">
-                                    <div class="d-flex flex-wrap gap-2 align-items-center">
-                                        <select class="form-select form-select-sm" id="crewRegulationSelect" style="max-width:480px;">
-                                            <option value="0">-- Otomatis Sesuai Kategori Kendaraan &amp; Trip --</option>
-                                            <?php foreach ($company_regulations as $crg):
-                                                $crgSummary = trim((string) ($crg['note'] ?? '')) ?: regulation_build_summary($crg['details'] ?? []);
-                                                $isMatched  = $matched_regulation && (int) $matched_regulation['id'] === (int) $crg['id'];
-                                            ?>
-                                                <option value="<?= (int) $crg['id'] ?>" <?= $isMatched ? 'selected' : '' ?>>
-                                                    <?= e('[' . $crg['category_code'] . ' · Trip ' . (int) $crg['trip'] . '] ' . $crgSummary) ?>
-                                                </option>
-                                            <?php endforeach; ?>
-                                        </select>
-                                        <button type="button" class="btn btn-sm btn-primary" id="btnApplyRegulation">
-                                            <i class="bi bi-lightning-charge-fill me-1"></i>Hitung &amp; Isi Otomatis Premi
-                                        </button>
-                                        <span class="small text-muted" id="crewRegStatusMsg"></span>
-                                    </div>
-                                </div>
-                            </div>
-                            <?php endif; ?>
                             <div class="rnt-row">
                                 <div class="rnt-label">Total Biaya Operasional</div>
                                 <div class="rnt-field">
@@ -837,7 +780,7 @@ require __DIR__ . '/../../../includes/header.php';
                     </div>
 
                     <!-- Sub-panel Karyawan (Grid Premi / Biaya Kru) -->
-                    <div class="rnt-panel">
+                    <div class="rnt-panel mb-0">
                         <div class="rnt-panel-header">
                             <span>Karyawan</span>
                             <?php if ($canManage): ?>
@@ -932,64 +875,16 @@ require __DIR__ . '/../../../includes/header.php';
                             </table>
                         </div>
                     </div>
-
-                    <div class="rnt-panel mb-0">
-                        <div class="rnt-panel-header">
-                            <span>Riwayat Penugasan Sopir (Modul Penjadwalan)</span>
-                            <a class="btn btn-sm btn-outline-secondary py-0" href="<?= e(APP_URL) ?>/pages/dispatch/detail.php?type=rental&amp;id=<?= $id ?>">
-                                Buka Papan Penjadwalan
-                            </a>
-                        </div>
-                        <div class="table-responsive">
-                            <table class="table table-sm mb-0 align-middle">
-                                <thead class="table-light">
-                                    <tr><th>Sopir</th><th>Kendaraan</th><th>Mulai</th><th>Selesai</th><th>Status</th></tr>
-                                </thead>
-                                <tbody>
-                                <?php foreach ($assignments as $a): ?>
-                                    <tr>
-                                        <td class="fw-semibold"><?= e((string) $a['employee_name']) ?></td>
-                                        <td><?= e((string) ($a['vehicle_number'] ?? '-')) ?></td>
-                                        <td><?= !empty($a['started_at']) ? date('d-M-Y H:i', strtotime($a['started_at'])) : '—' ?></td>
-                                        <td><?= !empty($a['ended_at']) ? date('d-M-Y H:i', strtotime($a['ended_at'])) : '—' ?></td>
-                                        <td><span class="badge bg-<?= empty($a['ended_at']) ? 'warning text-dark' : 'secondary' ?>"><?= empty($a['ended_at']) ? 'Sedang Jalan' : 'Selesai' ?></span></td>
-                                    </tr>
-                                <?php endforeach; ?>
-                                <?php if (!$assignments): ?>
-                                    <tr><td colspan="5" class="text-center text-muted py-3">Belum ada penugasan sopir untuk booking ini.</td></tr>
-                                <?php endif; ?>
-                                </tbody>
-                            </table>
-                        </div>
-                    </div>
                 </div>
 
                 <!-- ================= TAB 3: PEMBAYARAN SEWA ================= -->
                 <div class="tab-pane fade" id="tab-payment" role="tabpanel">
-                    <?php $sisa = $invoice ? max(0, (float) $invoice['total'] - (float) $invoice['paid_total']) : 0; ?>
                     <div class="rnt-panel">
                         <div class="rnt-panel-body">
                             <div class="rnt-row">
                                 <div class="rnt-label">Total Pembayaran</div>
                                 <div class="rnt-field">
-                                    <div class="d-flex flex-wrap align-items-center gap-2">
-                                        <input type="text" class="form-control form-control-sm fw-bold bg-light" id="pay_total_top_display" value="<?= format_nominal((float) ($invoice['paid_total'] ?? $b['total_payment'] ?? 0)) ?>" readonly style="max-width:320px;">
-                                        <?php if ($invoice): ?>
-                                            <?= invoice_pay_badge($invoice['pay_status']) ?>
-                                            <span class="small text-muted" id="invoiceSummaryText" data-inv-total="<?= (float) $invoice['total'] ?>">
-                                                Tagihan: <strong id="invTotalDisplay"><?= e(rupiah((float) $invoice['total'])) ?></strong> ·
-                                                Sisa: <strong id="invSisaDisplay" class="text-<?= $sisa > 0 ? 'danger' : 'success' ?>"><?= e(rupiah($sisa)) ?></strong>
-                                            </span>
-                                            <?php if ($sisa > 0): ?>
-                                                <a class="btn btn-sm btn-primary ms-auto" href="<?= e(APP_URL) ?>/pages/finance/invoices/gateway_pay.php?invoice_id=<?= (int) $invoice['id'] ?>" target="_blank">
-                                                    <i class="bi bi-qr-code-scan me-1"></i>Bayar Otomatis via QRIS
-                                                </a>
-                                            <?php endif; ?>
-                                            <a class="btn btn-sm btn-outline-secondary <?= $sisa > 0 ? '' : 'ms-auto' ?>" href="<?= e(APP_URL) ?>/pages/finance/invoices/detail.php?id=<?= (int) $invoice['id'] ?>">
-                                                <i class="bi bi-receipt me-1"></i>Detail Invoice
-                                            </a>
-                                        <?php endif; ?>
-                                    </div>
+                                    <input type="text" class="form-control form-control-sm fw-bold bg-light" id="pay_total_top_display" value="<?= format_nominal((float) ($invoice['paid_total'] ?? $b['total_payment'] ?? 0)) ?>" readonly style="max-width:320px;">
                                 </div>
                             </div>
                         </div>
@@ -997,7 +892,7 @@ require __DIR__ . '/../../../includes/header.php';
 
                     <div class="rnt-panel mb-0">
                         <div class="rnt-panel-header">
-                            <span>Rincian Pembayaran Sewa (Input Manual &amp; Otomatis QRIS)</span>
+                            <span>Pembayaran Sewa</span>
                             <?php if ($canManage): ?>
                             <button type="button" class="btn btn-sm btn-outline-primary py-0 px-2" id="btnAddPayRow">
                                 <i class="bi bi-plus-lg me-1"></i>Tambah Pembayaran Manual
@@ -1122,88 +1017,19 @@ require __DIR__ . '/../../../includes/header.php';
 
                 <!-- ================= TAB 4: KETERANGAN ================= -->
                 <div class="tab-pane fade" id="tab-note" role="tabpanel">
-                    <div class="rnt-panel">
+                    <div class="rnt-panel mb-0">
                         <div class="rnt-panel-header">
-                            <span>Catatan / Keterangan Tambahan</span>
+                            <span>Keterangan</span>
                         </div>
                         <div class="rnt-panel-body">
-                            <textarea class="form-control form-control-sm" id="visibleNote" rows="5" maxlength="2000" placeholder="Tuliskan catatan khusus sewa, itinerary singkat, atau instruksi penjemputan..." <?= $canManage ? '' : 'readonly' ?>><?= e((string) $b['note']) ?></textarea>
-                            <?php if ($canManage): ?>
-                                <div class="mt-2 text-end">
-                                    <button type="submit" form="rentalDetailForm" class="btn btn-sm btn-primary">
-                                        <i class="bi bi-check2 me-1"></i>Simpan Catatan
-                                    </button>
-                                </div>
-                            <?php endif; ?>
+                            <textarea class="form-control form-control-sm" id="visibleNote" rows="8" maxlength="2000" placeholder="Tuliskan keterangan sewa, fasilitas tambahan, atau instruksi khusus..." <?= $canManage ? '' : 'readonly' ?>><?= e((string) $b['note']) ?></textarea>
                         </div>
                     </div>
-
-                    <?php if ($canManage): ?>
-                    <div class="row g-3">
-                        <div class="col-md-4">
-                            <div class="rnt-panel h-100 mb-0">
-                                <div class="rnt-panel-header"><span>Ubah Status Booking</span></div>
-                                <div class="rnt-panel-body">
-                                    <?php if ($next): ?>
-                                    <form method="post" action="" class="d-flex flex-column gap-2">
-                                        <?= csrf_field() ?>
-                                        <input type="hidden" name="id" value="<?= $id ?>">
-                                        <input type="hidden" name="act" value="status">
-                                        <select class="form-select form-select-sm" name="to_status">
-                                            <?php foreach ($next as $n): ?><option value="<?= e($n) ?>"><?= e($n) ?></option><?php endforeach; ?>
-                                        </select>
-                                        <input class="form-control form-control-sm" name="reason" placeholder="Catatan perubahan status" maxlength="2000">
-                                        <button class="btn btn-sm btn-primary" type="submit">Proses Status</button>
-                                    </form>
-                                    <?php else: ?>
-                                        <p class="text-muted mb-0 small">Status akhir — tidak ada transisi lanjutan.</p>
-                                    <?php endif; ?>
-                                </div>
-                            </div>
-                        </div>
-                        <div class="col-md-4">
-                            <div class="rnt-panel h-100 mb-0">
-                                <div class="rnt-panel-header"><span>Reschedule Cepat</span></div>
-                                <div class="rnt-panel-body">
-                                    <form method="post" action="" class="d-flex flex-column gap-2">
-                                        <?= csrf_field() ?>
-                                        <input type="hidden" name="id" value="<?= $id ?>">
-                                        <input type="hidden" name="act" value="reschedule">
-                                        <input type="text" class="form-control form-control-sm bg-white flatpickr-date" name="date" required value="<?= e($b['date']) ?>" placeholder="dd-MMM-yyyy">
-                                        <div class="input-group input-group-sm">
-                                            <input type="time" class="form-control form-control-sm" name="time" id="rescheduleTimeInput" required value="<?= e(substr((string) $b['time'], 0, 5)) ?>">
-                                            <span class="input-group-text bg-light text-muted fw-semibold" id="rescheduleTimePeriodBadge"><?= time_period_label((string) $b['time']) ?></span>
-                                        </div>
-                                        <button class="btn btn-sm btn-outline-primary" type="submit">Simpan Reschedule</button>
-                                    </form>
-                                </div>
-                            </div>
-                        </div>
-                        <div class="col-md-4">
-                            <div class="rnt-panel h-100 mb-0">
-                                <div class="rnt-panel-header"><span class="text-danger">Batalkan Booking</span></div>
-                                <div class="rnt-panel-body">
-                                    <?php if ($status === 'cancelled'): ?>
-                                        <p class="text-muted mb-0 small">Booking sudah dibatalkan.</p>
-                                    <?php else: ?>
-                                    <form method="post" action="" class="d-flex flex-column gap-2" onsubmit="return confirm('Batalkan pemesanan sewa kendaraan ini?')">
-                                        <?= csrf_field() ?>
-                                        <input type="hidden" name="id" value="<?= $id ?>">
-                                        <input type="hidden" name="act" value="cancel">
-                                        <input class="form-control form-control-sm" name="reason" placeholder="Alasan pembatalan" maxlength="2000" required>
-                                        <button class="btn btn-sm btn-outline-danger" type="submit">Batalkan Pemesanan</button>
-                                    </form>
-                                    <?php endif; ?>
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-                    <?php endif; ?>
                 </div>
 
                 <!-- ================= TAB 5: AUDIT TRAIL ================= -->
                 <div class="tab-pane fade" id="tab-audit" role="tabpanel">
-                    <div class="rnt-panel">
+                    <div class="rnt-panel mb-0">
                         <div class="rnt-panel-body">
                             <div class="rnt-row">
                                 <label class="rnt-label">Dibuat Oleh</label>
@@ -1214,10 +1040,7 @@ require __DIR__ . '/../../../includes/header.php';
                             <div class="rnt-row">
                                 <label class="rnt-label">Dibuat Tanggal</label>
                                 <div class="rnt-field">
-                                    <div class="input-group input-group-sm">
-                                        <input type="text" class="form-control form-control-sm bg-light" value="<?= !empty($b['created_date']) ? date('d-M-Y H:i', strtotime($b['created_date'])) : '-' ?>" readonly>
-                                        <span class="input-group-text bg-white"><i class="bi bi-chevron-down text-muted"></i></span>
-                                    </div>
+                                    <input type="text" class="form-control form-control-sm bg-light" value="<?= !empty($b['created_date']) ? date('d-M-Y H:i', strtotime($b['created_date'])) : '-' ?>" readonly>
                                 </div>
                             </div>
                             <div class="rnt-row">
@@ -1229,39 +1052,9 @@ require __DIR__ . '/../../../includes/header.php';
                             <div class="rnt-row">
                                 <label class="rnt-label">Diubah Tanggal</label>
                                 <div class="rnt-field">
-                                    <div class="input-group input-group-sm">
-                                        <input type="text" class="form-control form-control-sm bg-light" value="<?= !empty($b['modified_date']) ? date('d-M-Y H:i', strtotime($b['modified_date'])) : '-' ?>" readonly>
-                                        <span class="input-group-text bg-white"><i class="bi bi-chevron-down text-muted"></i></span>
-                                    </div>
+                                    <input type="text" class="form-control form-control-sm bg-light" value="<?= !empty($b['modified_date']) ? date('d-M-Y H:i', strtotime($b['modified_date'])) : '-' ?>" readonly>
                                 </div>
                             </div>
-                        </div>
-                    </div>
-
-                    <div class="rnt-panel mb-0">
-                        <div class="rnt-panel-header">
-                            <span>Riwayat Perubahan Status (Detail Log)</span>
-                        </div>
-                        <div class="table-responsive">
-                            <table class="table table-sm mb-0 align-middle">
-                                <thead class="table-light">
-                                    <tr><th>Waktu</th><th>Dari Status</th><th>Ke Status</th><th>Alasan / Catatan</th><th>Oleh</th></tr>
-                                </thead>
-                                <tbody>
-                                <?php foreach ($history as $h): ?>
-                                    <tr>
-                                        <td><?= !empty($h['changed_at']) ? date('d-M-Y H:i:s', strtotime($h['changed_at'])) : '-' ?></td>
-                                        <td><?= $h['from_status'] ? status_badge((string) $h['from_status']) : '<span class="text-muted">—</span>' ?></td>
-                                        <td><?= status_badge((string) $h['to_status']) ?></td>
-                                        <td><?= e((string) $h['reason']) ?></td>
-                                        <td><span class="badge bg-light text-dark border"><?= e((string) $h['changed_by']) ?></span></td>
-                                    </tr>
-                                <?php endforeach; ?>
-                                <?php if (!$history): ?>
-                                    <tr><td colspan="5" class="text-center text-muted py-3">Belum ada riwayat status.</td></tr>
-                                <?php endif; ?>
-                                </tbody>
-                            </table>
                         </div>
                     </div>
                 </div>
