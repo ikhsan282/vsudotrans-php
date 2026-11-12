@@ -12,7 +12,7 @@ $cek_no = strtoupper(trim((string) ($_POST['no'] ?? '')));
 $cek_err = '';
 if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
     if (!booking_doc_valid($cek_no)) {
-        $cek_err = 'Format nomor tiket tidak dikenal. Contoh: 10000720261110.';
+        $cek_err = 'Format nomor tiket tidak dikenal. Contoh: 100120261113.';
     } else {
         redirect('tiket.php?no=' . urlencode($cek_no));
     }
@@ -281,7 +281,7 @@ try {
                                 </span>
                                 <input class="form-control text-uppercase fw-bold border-start-0 ps-0" id="ticket_no" name="no"
                                        pattern="(\d{10,20}|(TRV|RNT)-[A-Z2-9]{8})"
-                                       placeholder="10000720261110" maxlength="20" required
+                                       placeholder="100120261113" maxlength="20" required
                                        value="<?= e($cek_no) ?>" style="letter-spacing: 0.05em;">
                             </div>
                             <?php if ($cek_err !== ''): ?>
@@ -291,7 +291,7 @@ try {
                                 </div>
                             <?php endif; ?>
                             <div class="form-text small mt-1">
-                                Contoh nomor dokumen: <code>10000720261110</code> (Travel / Rental Mobil).
+                                Contoh nomor dokumen: <code>100120261113</code> (Travel / Rental Mobil).
                             </div>
                         </div>
 
@@ -595,7 +595,7 @@ try {
                         </h2>
                         <div id="faq1" class="accordion-collapse collapse" data-bs-parent="#accordionFaq">
                             <div class="accordion-body text-secondary small">
-                                Masukkan nomor dokumen tiket (contoh: <code>10000720261110</code>) pada form <strong>Cek E-Tiket</strong> di atas. Anda akan langsung melihat detail jadwal, kendaraan, nama sopir, dan status pembayaran secara real-time.
+                                Masukkan nomor dokumen tiket (contoh: <code>100120261113</code>) pada form <strong>Cek E-Tiket</strong> di atas. Anda akan langsung melihat detail jadwal, kendaraan, nama sopir, dan status pembayaran secara real-time.
                             </div>
                         </div>
                     </div>

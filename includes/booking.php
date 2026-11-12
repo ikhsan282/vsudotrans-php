@@ -30,16 +30,16 @@ function booking_doc_number(string $prefix): string
 }
 
 /**
- * Format nomor dokumen numerik standar ERP Desktop (14 digit):
- * 6 digit nomor urut (mulai 100001) + 8 digit tanggal YYYYMMDD.
- * Contoh: 10000720261110
+ * Format nomor dokumen numerik standar ERP Desktop (12 digit):
+ * 4 digit nomor urut (mulai 1001) + 8 digit tanggal YYYYMMDD.
+ * Contoh: 100120261113
  */
 function booking_numeric_doc_number(int $seq, ?string $date = null): string
 {
-    $num = max(100001, $seq);
+    $num = max(1001, $seq);
     $ts  = ($date !== null && $date !== '') ? strtotime($date) : false;
     $ymd = $ts ? date('Ymd', $ts) : date('Ymd');
-    return sprintf('%06d%s', $num, $ymd);
+    return sprintf('%04d%s', $num, $ymd);
 }
 
 /**

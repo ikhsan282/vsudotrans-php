@@ -163,12 +163,50 @@ if ($pdf) {
         /* Tata cetak berbasis tabel: didukung semua renderer & printer (tanpa flexbox). */
         table.tk-lay { border-collapse: collapse; table-layout: fixed; width: 100%; }
         table.tk-lay > tbody > tr > td { border: 0; padding: 0; vertical-align: top; }
+        .tk-card {
+            min-height: 820px;
+            display: flex;
+            flex-direction: column;
+        }
+        .tk-card > .card-body {
+            display: flex;
+            flex-direction: column;
+            flex: 1 1 auto;
+        }
+        .tk-body-content {
+            flex: 1 0 auto;
+        }
+        .tk-footer {
+            margin-top: auto;
+            padding-top: 18pt;
+        }
         @media print {
-            @page { size: A4; margin: 13mm 13mm 13mm 13mm; }
-            body { background: #fff !important; }
+            @page { size: A4; margin: 12mm 12mm 12mm 12mm; }
+            html, body { background: #fff !important; height: 100%; margin: 0 !important; padding: 0 !important; }
             .no-print { display: none !important; }
-            .tk-card { border: 0 !important; box-shadow: none !important; }
-            .tk-card, .tk-table tr { page-break-inside: avoid; }
+            main.container { max-width: 100% !important; padding: 0 !important; margin: 0 !important; }
+            .tk-card {
+                border: 0 !important;
+                box-shadow: none !important;
+                min-height: 260mm !important;
+                display: flex !important;
+                flex-direction: column !important;
+                page-break-inside: avoid;
+            }
+            .tk-card > .card-body {
+                display: flex !important;
+                flex-direction: column !important;
+                flex: 1 1 auto !important;
+                padding: 0 !important;
+            }
+            .tk-body-content {
+                flex: 1 0 auto !important;
+            }
+            .tk-footer {
+                margin-top: auto !important;
+                padding-top: 18pt !important;
+                page-break-inside: avoid;
+            }
         }
     </style>
 </head>
@@ -191,6 +229,7 @@ if ($pdf) {
 <?php else: ?>
     <div class="card tk-card shadow-sm border-0">
         <div class="card-body">
+            <div class="tk-body-content">
             <table class="tk-lay tk-head w-100"><tr>
                 <td class="align-top" style="width:340px">
                     <?php
@@ -286,24 +325,28 @@ if ($pdf) {
                 </ul>
             </div>
             <?php endif; ?>
+            </div>
 
-            <table class="tk-lay w-100 mt-4"><tr>
-                <td class="align-bottom tk-ver" style="vertical-align: bottom !important; padding-bottom: 2px;">
-                    Dibuat oleh <strong><?= e((string) ($row['created_user'] ?: '—')) ?></strong> pada tanggal <strong><?= e(tanggal_indo((string) $row['date'])) ?></strong>
-                </td>
-                <td class="text-end align-bottom" style="width:170px; vertical-align: bottom !important;">
-                    <?php
-                    $stampPath = (string) ($row['stamp'] ?? '');
-                    $stampSrc  = $pdf ? resolve_asset_data_uri($stampPath) : resolve_asset_url($stampPath);
-                    ?>
-                    <?php if ($stampSrc !== ''): ?>
-                        <img class="tk-stamp" src="<?= e($stampSrc) ?>" alt="Stempel <?= e($row['company_name']) ?>" style="vertical-align: bottom;">
-                    <?php endif; ?>
-                </td>
-            </tr></table>
+            <!-- FOOTER RESMI (SELALU DI BAWAH) -->
+            <div class="tk-footer">
+                <table class="tk-lay w-100"><tr>
+                    <td class="align-bottom tk-ver" style="vertical-align: bottom !important; padding-bottom: 2px;">
+                        Dibuat oleh <strong><?= e((string) ($row['created_user'] ?: '—')) ?></strong> pada tanggal <strong><?= e(tanggal_indo((string) $row['date'])) ?></strong>
+                    </td>
+                    <td class="text-end align-bottom" style="width:170px; vertical-align: bottom !important;">
+                        <?php
+                        $stampPath = (string) ($row['stamp'] ?? '');
+                        $stampSrc  = $pdf ? resolve_asset_data_uri($stampPath) : resolve_asset_url($stampPath);
+                        ?>
+                        <?php if ($stampSrc !== ''): ?>
+                            <img class="tk-stamp" src="<?= e($stampSrc) ?>" alt="Stempel <?= e($row['company_name']) ?>" style="vertical-align: bottom;">
+                        <?php endif; ?>
+                    </td>
+                </tr></table>
 
-            <div class="tk-ver mt-3" style="border-top:1px dashed #c8c8c8;padding-top:8px">
-                Tiket ini sah. Cek keaslian: <span class="text-break"><?= e($ver_link) ?></span>
+                <div class="tk-ver mt-3" style="border-top:1px dashed #c8c8c8;padding-top:8px">
+                    Tiket ini sah. Cek keaslian: <span class="text-break"><?= e($ver_link) ?></span>
+                </div>
             </div>
         </div>
     </div>

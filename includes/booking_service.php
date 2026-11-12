@@ -54,8 +54,8 @@ function booking_resolve_type_by_doc(string $no, string $company_code = ''): str
 }
 
 /**
- * Nomor dokumen numerik unik (14 digit: 6 digit urutan mulai 100001 + YYYYMMDD),
- * contoh: 10000720261110. Dicek agar unik di tabel travel maupun rental.
+ * Nomor dokumen numerik unik (12 digit: 4 digit urutan mulai 1001 + YYYYMMDD),
+ * contoh: 100120261113. Dicek agar unik di tabel travel maupun rental.
  */
 function booking_unique_doc(string $type, int $company_id, ?string $date = null): string
 {
@@ -63,22 +63,22 @@ function booking_unique_doc(string $type, int $company_id, ?string $date = null)
     $db = db();
 
     $stMax = $db->prepare(
-        "SELECT COALESCE(MAX(seq), 100000) AS max_seq FROM (
-            SELECT CAST(LEFT(document_number, 6) AS UNSIGNED) AS seq
+        "SELECT COALESCE(MAX(seq), 1000) AS max_seq FROM (
+            SELECT CAST(LEFT(document_number, 4) AS UNSIGNED) AS seq
               FROM rental_car_bookings
-             WHERE company_id = ? AND document_number REGEXP '^[0-9]{14}$'
+             WHERE company_id = ? AND document_number REGEXP '^[0-9]{12}$'
             UNION ALL
-            SELECT CAST(LEFT(document_number, 6) AS UNSIGNED) AS seq
+            SELECT CAST(LEFT(document_number, 4) AS UNSIGNED) AS seq
               FROM travel_ticket_bookings
-             WHERE company_id = ? AND document_number REGEXP '^[0-9]{14}$'
+             WHERE company_id = ? AND document_number REGEXP '^[0-9]{12}$'
         ) u"
     );
     $stMax->bind_param('ii', $company_id, $company_id);
     $stMax->execute();
-    $maxSeq = (int) ($stMax->get_result()->fetch_assoc()['max_seq'] ?? 100000);
+    $maxSeq = (int) ($stMax->get_result()->fetch_assoc()['max_seq'] ?? 1000);
     $stMax->close();
 
-    $baseSeq = max(100000, $maxSeq) + 1;
+    $baseSeq = max(1000, $maxSeq) + 1;
 
     for ($i = 0; $i < 50; $i++) {
         $doc = booking_numeric_doc_number($baseSeq + $i, $date);
