@@ -97,6 +97,28 @@ if (booking_doc_valid($no)) {
         }
         $vPlat = trim((string) ($row['vehicle_number'] ?? ''));
         $vehicleDisplay = trim($vUnit . ($vPlat !== '' ? ' (' . $vPlat . ')' : ''));
+
+        // Format nomor telepon perusahaan agar lebih mudah dibaca
+        $rawPhone = preg_replace('/\D+/', '', (string) ($row['phone_number'] ?? ''));
+        if (str_starts_with($rawPhone, '62') && strlen($rawPhone) >= 10) {
+            $phoneFormatted = '+62 ' . preg_replace('/(\d{3})(\d{4})(\d+)/', '$1-$2-$3', substr($rawPhone, 2));
+        } elseif (str_starts_with($rawPhone, '0') && strlen($rawPhone) >= 9) {
+            $phoneFormatted = preg_replace('/(\d{4})(\d{4})(\d+)/', '$1-$2-$3', $rawPhone);
+        } else {
+            $phoneFormatted = trim((string) ($row['phone_number'] ?? '')) ?: '—';
+        }
+
+        // Format periode sewa agar tidak redundan jika tanggal mulai = selesai
+        $sDate = (string) ($row['start_date'] ?: $row['date']);
+        $eDate = (string) ($row['end_date'] ?: $row['date']);
+        $sTs = strtotime($sDate);
+        $eTs = strtotime($eDate);
+        $days = ($sTs && $eTs && $eTs >= $sTs) ? (int) round(($eTs - $sTs) / 86400) + 1 : 1;
+        if ($sDate === $eDate || $eDate === '') {
+            $periodeDisplay = tanggal_indo($sDate) . ' (' . $days . ' Hari)';
+        } else {
+            $periodeDisplay = tanggal_indo($sDate) . ' s/d ' . tanggal_indo($eDate) . ' (' . $days . ' Hari)';
+        }
     }
 }
 
@@ -128,7 +150,7 @@ if ($pdf) {
         .tk-doc { color: #777; font-size: 7.5pt; letter-spacing: .4px; text-transform: uppercase; white-space: nowrap; }
         .tk-v { font-weight: 700; font-size: 9pt; line-height: 14pt; }
         .tk-body { font-size: 9pt; line-height: 13pt; }
-        .tk-sub { font-size: 10.5pt; font-weight: 700; line-height: 12pt; }
+        .tk-sub { font-size: 10.5pt; font-weight: 700; line-height: 15pt; color: #1a1a1a; }
         .tk-addr { font-size: 9pt; font-weight: 700; }
         .tk-foot { font-size: 9pt; }
         .tk-ver { font-size: 7.5pt; color: #777; }
@@ -163,6 +185,20 @@ if ($pdf) {
         /* Tata cetak berbasis tabel: didukung semua renderer & printer (tanpa flexbox). */
         table.tk-lay { border-collapse: collapse; table-layout: fixed; width: 100%; }
         table.tk-lay > tbody > tr > td { border: 0; padding: 0; vertical-align: top; }
+        table.tk-lay > tbody > tr > td.tk-split-left { width: 43%; padding-right: 18pt; vertical-align: top; }
+        table.tk-lay > tbody > tr > td.tk-split-right { width: 57%; padding-left: 18pt; border-left: 1px solid #e2e5e9; vertical-align: top; }
+        .tk-sect-lbl { color: #888; font-size: 7pt; font-weight: 700; letter-spacing: .6px; text-transform: uppercase; margin-bottom: 5pt; }
+        .tk-hr { border: 0; border-top: 1px solid #dee2e6; margin: 10pt 0 14pt 0; opacity: 1; }
+        table.tk-kv { width: 100%; border-collapse: collapse; table-layout: fixed; }
+        table.tk-kv td { padding: 3.5pt 0; vertical-align: middle; border-bottom: 1px dashed #eceff2; }
+        table.tk-kv tr:last-child td { border-bottom: 0; padding-bottom: 0; }
+        table.tk-kv tr:first-child td { padding-top: 0; }
+        table.tk-kv td.tk-kv-k { width: 105pt; color: #6c757d; font-size: 7.5pt; font-weight: 700; letter-spacing: .3px; text-transform: uppercase; white-space: nowrap; }
+        table.tk-kv td.tk-kv-v { color: #111; font-size: 9pt; font-weight: 700; line-height: 13pt; }
+        table.tk-kv td.tk-kv-k-sm { width: 52pt; color: #6c757d; font-size: 7.5pt; font-weight: 700; letter-spacing: .3px; text-transform: uppercase; white-space: nowrap; border-bottom: 0; padding: 2pt 0; vertical-align: top; }
+        table.tk-kv td.tk-kv-v-sm { color: #495057; font-size: 8.5pt; font-weight: 400; line-height: 12.5pt; border-bottom: 0; padding: 2pt 0; vertical-align: top; word-break: break-word; }
+        .tk-doc-badge { display: inline-block; background: #f1f3f5; border: 1px solid #dee2e6; border-radius: 3px; padding: 1pt 5pt; font-family: Consolas, "Courier New", monospace; font-size: 9pt; font-weight: 700; color: #111; letter-spacing: .5px; }
+        .tk-price-val { color: #0a58ca; font-size: 9.8pt; font-weight: 700; }
         .tk-card {
             min-height: 820px;
             display: flex;
@@ -244,37 +280,91 @@ if ($pdf) {
                 </td>
                 <td class="text-end align-top"><h1 class="tk-eti" style="margin:0">E-TIKET</h1></td>
             </tr></table>
-            <hr>
+            <hr class="tk-hr">
 
             <table class="tk-lay w-100"><tr>
-                <td style="width:42%;padding-right:22px">
-                    <div class="tk-doc">Perusahaan</div>
-                    <div class="tk-sub"><?= e($row['company_name']) ?></div>
-                    <div class="tk-body text-muted"><?= e((string) $row['address']) ?></div>
-                    <div class="tk-body text-muted"><?= e((string) $row['phone_number']) ?> &middot; <?= e((string) $row['email']) ?></div>
-                    <?php if (!empty($row['website'])): ?>
-                        <div class="tk-body text-muted"><?= e((string) $row['website']) ?></div>
-                    <?php endif; ?>
+                <td class="tk-split-left">
+                    <div class="tk-sect-lbl">Penerbit / Perusahaan</div>
+                    <div class="tk-sub mb-1"><?= e($row['company_name']) ?></div>
+                    <div class="tk-body text-muted" style="margin-bottom: 6pt; line-height: 13.5pt;">
+                        <?= e((string) $row['address']) ?>
+                    </div>
+                    <table class="tk-kv">
+                        <tr>
+                            <td class="tk-kv-k-sm">Telepon</td>
+                            <td class="tk-kv-v-sm"><?= e($phoneFormatted) ?></td>
+                        </tr>
+                        <tr>
+                            <td class="tk-kv-k-sm">Email</td>
+                            <td class="tk-kv-v-sm"><?= e((string) $row['email']) ?></td>
+                        </tr>
+                        <?php if (!empty($row['website'])): ?>
+                        <tr>
+                            <td class="tk-kv-k-sm">Website</td>
+                            <td class="tk-kv-v-sm"><?= e((string) $row['website']) ?></td>
+                        </tr>
+                        <?php endif; ?>
+                    </table>
                 </td>
-                <td style="width:58%">
-                    <table class="tk-lay w-100">
+                <td class="tk-split-right">
+                    <div class="tk-sect-lbl"><?= $type === 'rental' ? 'Detail Pemesanan Sewa' : 'Detail Tiket Perjalanan' ?></div>
+                    <table class="tk-kv">
                         <?php if ($type === 'rental'): ?>
-                            <tr><td class="tk-doc" style="width:117px">Layanan</td><td class="tk-v">Sewa Kendaraan<?= !empty($row['category_name']) ? ' · ' . e($row['category_name']) : '' ?></td></tr>
-                            <tr><td class="tk-doc">Nomor Dokumen</td><td class="tk-v"><?= e($row['document_number']) ?></td></tr>
-                            <tr><td class="tk-doc">Periode Sewa</td><td class="tk-v"><?= e(tanggal_indo((string) ($row['start_date'] ?: $row['date']))) ?> s/d <?= e(tanggal_indo((string) ($row['end_date'] ?: $row['date']))) ?></td></tr>
-                            <tr><td class="tk-doc">Jam Mulai</td><td class="tk-v"><?= e(substr((string) $row['time'], 0, 5)) ?> WIB</td></tr>
+                            <tr>
+                                <td class="tk-kv-k">Nomor Dokumen</td>
+                                <td class="tk-kv-v"><span class="tk-doc-badge"><?= e($row['document_number']) ?></span></td>
+                            </tr>
+                            <tr>
+                                <td class="tk-kv-k">Layanan</td>
+                                <td class="tk-kv-v">Sewa Kendaraan<?= !empty($row['category_name']) ? ' &middot; ' . e($row['category_name']) : '' ?></td>
+                            </tr>
+                            <tr>
+                                <td class="tk-kv-k">Periode Sewa</td>
+                                <td class="tk-kv-v"><?= e($periodeDisplay) ?></td>
+                            </tr>
+                            <tr>
+                                <td class="tk-kv-k">Jam Mulai</td>
+                                <td class="tk-kv-v"><?= e(substr((string) $row['time'], 0, 5)) ?> WIB</td>
+                            </tr>
                             <?php if (!empty($vehicleDisplay) && $vehicleDisplay !== '—'): ?>
-                                <tr><td class="tk-doc">Unit Armada</td><td class="tk-v"><?= e($vehicleDisplay) ?></td></tr>
+                            <tr>
+                                <td class="tk-kv-k">Unit Armada</td>
+                                <td class="tk-kv-v"><?= e($vehicleDisplay) ?></td>
+                            </tr>
                             <?php endif; ?>
-                            <tr><td class="tk-doc">Total Biaya</td><td class="tk-v"><?= e(rupiah((float) ($row['invoice_total'] ?? $row['total_price']))) ?></td></tr>
-                            <tr><td class="tk-doc">Penyewa</td><td class="tk-v"><?= count($passengers) ?> orang</td></tr>
+                            <tr>
+                                <td class="tk-kv-k">Jumlah Penyewa</td>
+                                <td class="tk-kv-v"><?= count($passengers) ?> orang</td>
+                            </tr>
+                            <tr>
+                                <td class="tk-kv-k">Total Biaya</td>
+                                <td class="tk-kv-v tk-price-val"><?= e(rupiah((float) ($row['invoice_total'] ?? $row['total_price']))) ?></td>
+                            </tr>
                         <?php else: ?>
-                            <tr><td class="tk-doc" style="width:117px">Rute</td><td class="tk-v"><?= e(trim(($row['city_from'] ?? '') . ' - ' . ($row['city_to'] ?? ''), ' -') ?: '—') ?></td></tr>
-                            <tr><td class="tk-doc">Nomor Tiket</td><td class="tk-v"><?= e($row['document_number']) ?></td></tr>
-                            <tr><td class="tk-doc">Tanggal</td><td class="tk-v"><?= e(tanggal_indo((string) $row['date'])) ?></td></tr>
-                            <tr><td class="tk-doc">Jam</td><td class="tk-v"><?= e(substr((string) $row['time'], 0, 5)) ?> WIB</td></tr>
-                            <tr><td class="tk-doc">Harga</td><td class="tk-v"><?= e(rupiah((float) ($row['invoice_total'] ?? $row['total_price']))) ?></td></tr>
-                            <tr><td class="tk-doc">Total Tiket</td><td class="tk-v"><?= count($passengers) ?> orang</td></tr>
+                            <tr>
+                                <td class="tk-kv-k">Nomor Tiket</td>
+                                <td class="tk-kv-v"><span class="tk-doc-badge"><?= e($row['document_number']) ?></span></td>
+                            </tr>
+                            <tr>
+                                <td class="tk-kv-k">Rute Perjalanan</td>
+                                <td class="tk-kv-v"><?= e(trim(($row['city_from'] ?? '') . ' - ' . ($row['city_to'] ?? ''), ' -') ?: '—') ?></td>
+                            </tr>
+                            <tr>
+                                <td class="tk-kv-k">Tanggal Berangkat</td>
+                                <td class="tk-kv-v"><?= e(tanggal_indo((string) $row['date'])) ?></td>
+                            </tr>
+                            <tr>
+                                <td class="tk-kv-k">Jam Berangkat</td>
+                                <td class="tk-kv-v"><?= e(substr((string) $row['time'], 0, 5)) ?> WIB</td>
+                            </tr>
+                            <tr>
+                                <td class="tk-kv-k">Total Penumpang</td>
+                                <td class="tk-kv-v"><?= count($passengers) ?> orang</td>
+                            </tr>
+                            <tr>
+                                <td class="tk-kv-k">Total Harga</td>
+                                <td class="tk-kv-v tk-price-val"><?= e(rupiah((float) ($row['invoice_total'] ?? $row['total_price']))) ?></td>
+                            </tr>
                         <?php endif; ?>
                     </table>
                 </td>
