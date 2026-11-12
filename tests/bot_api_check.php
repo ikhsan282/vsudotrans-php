@@ -75,6 +75,9 @@ $otherPhone = '6281399990000';
 $adminPhone = '081200000002'; // seeded admin for company 1
 
 $db = db();
+// Simpan konfigurasi payment_channels company 1 sebelum dimodifikasi test, agar selalu pulih setelah selesai
+$origCh1 = $db->query("SELECT merchant_id, api_key, is_active FROM payment_channels WHERE company_id = 1 AND provider = 'gopay' LIMIT 1")->fetch_assoc() ?: null;
+
 // Setup active QRIS GoPay channel & route for Company 1 (MTM)
 gateway_ensure_company_channels(1);
 $sampleStatic = qris_build_tlv([
@@ -91,6 +94,13 @@ $stCh = $db->prepare("UPDATE payment_channels SET merchant_id = ?, api_key = '[\
 $stCh->bind_param('s', $sampleStatic);
 $stCh->execute();
 $stCh->close();
+
+$bkId = 0;
+$invId = 0;
+$orderId = '';
+$eventId = '';
+
+try {
 
 // Ensure city, district, category_vehicle, and rute exist for Company 1
 $db->query("INSERT IGNORE INTO countries (id, code, name) VALUES (1, 'ID', 'Indonesia')");
@@ -214,17 +224,37 @@ check_bot(
     'Dedicated MTM bot_secret rejects ?company=LIZ with 403 FORBIDDEN_COMPANY_MISMATCH',
     json_encode($crossMismatch)
 );
-
-// Cleanup test rows
-$db->query("DELETE FROM wa_outbox WHERE event_id = '{$eventId}'");
-$db->query("DELETE FROM payment_gateway_orders WHERE order_id = '{$orderId}'");
-$db->query("DELETE FROM booking_cost_lines WHERE booking_type = 'travel' AND booking_id = {$bkId}");
-$db->query("DELETE FROM booking_status_history WHERE booking_type = 'travel' AND booking_id = {$bkId}");
-$db->query("DELETE FROM booking_passengers WHERE booking_type = 'travel' AND booking_id = {$bkId}");
-$db->query("DELETE FROM invoices WHERE id = {$invId}");
-$db->query("DELETE FROM travel_ticket_bookings WHERE id = {$bkId}");
-$db->query("DELETE FROM passengers WHERE phone_number = '081377778888'");
-$db->query("DELETE FROM bot_request_logs WHERE phone IN ('6281377778888', '6281399990000', '6281200000002')");
+} finally {
+    // Cleanup test rows & restore live GoPay channel configuration
+    if ($eventId !== '') {
+        $evEsc = $db->real_escape_string($eventId);
+        $db->query("DELETE FROM wa_outbox WHERE event_id = '{$evEsc}'");
+    }
+    if ($orderId !== '') {
+        $ordEsc = $db->real_escape_string($orderId);
+        $db->query("DELETE FROM payment_gateway_orders WHERE order_id = '{$ordEsc}'");
+    }
+    if ($bkId > 0) {
+        $db->query("DELETE FROM booking_cost_lines WHERE booking_type = 'travel' AND booking_id = {$bkId}");
+        $db->query("DELETE FROM booking_status_history WHERE booking_type = 'travel' AND booking_id = {$bkId}");
+        $db->query("DELETE FROM booking_passengers WHERE booking_type = 'travel' AND booking_id = {$bkId}");
+    }
+    if ($invId > 0) {
+        $db->query("DELETE FROM invoices WHERE id = {$invId}");
+    }
+    if ($bkId > 0) {
+        $db->query("DELETE FROM travel_ticket_bookings WHERE id = {$bkId}");
+    }
+    $db->query("DELETE FROM passengers WHERE phone_number = '081377778888'");
+    $db->query("DELETE FROM bot_request_logs WHERE phone IN ('6281377778888', '6281399990000', '6281200000002')");
+    if ($origCh1 !== null) {
+        $stRestore = $db->prepare("UPDATE payment_channels SET merchant_id = ?, api_key = ?, is_active = ? WHERE company_id = 1 AND provider = 'gopay'");
+        $origAct = (int) $origCh1['is_active'];
+        $stRestore->bind_param('ssi', $origCh1['merchant_id'], $origCh1['api_key'], $origAct);
+        $stRestore->execute();
+        $stRestore->close();
+    }
+}
 
 echo "\nSummary: {$pass} passed, {$fail} failed.\n";
 exit($fail > 0 ? 1 : 0);

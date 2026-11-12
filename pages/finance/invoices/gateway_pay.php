@@ -90,23 +90,19 @@ $uniqueCode = max(0.0, round($total - $charge, 2));
 
 $payloadArr = !empty($order['payload']) ? (json_decode((string) $order['payload'], true) ?: []) : [];
 $qrisString = (string) ($payloadArr['qris_string'] ?? '');
-$qrisImgUrl = trim((string) ($order['qris_url'] ?? ''));
-if ($qrisImgUrl === '' || $qrisImgUrl === '0') {
-    $qrisImgUrl = trim((string) ($payloadArr['qris_url'] ?? ''));
-    if (($qrisImgUrl === '' || $qrisImgUrl === '0') && $qrisString !== '') {
-        $qrisImgUrl = gq_qr_url($qrisString);
-    }
-    if ($qrisImgUrl !== '' && $qrisImgUrl !== '0') {
-        $upQr = $db->prepare('UPDATE payment_gateway_orders SET qris_url = ? WHERE id = ?');
-        $ordRowId = (int) $order['id'];
-        $upQr->bind_param('si', $qrisImgUrl, $ordRowId);
-        $upQr->execute();
-        $upQr->close();
-        $order['qris_url'] = $qrisImgUrl;
-    }
+$qrisImgUrl = $qrisString !== ''
+    ? gq_qr_url($qrisString)
+    : trim((string) ($order['qris_url'] ?? ($payloadArr['qris_url'] ?? '')));
+if ($qrisImgUrl !== '' && $qrisImgUrl !== trim((string) ($order['qris_url'] ?? ''))) {
+    $upQr = $db->prepare('UPDATE payment_gateway_orders SET qris_url = ? WHERE id = ?');
+    $ordRowId = (int) $order['id'];
+    $upQr->bind_param('si', $qrisImgUrl, $ordRowId);
+    $upQr->execute();
+    $upQr->close();
+    $order['qris_url'] = $qrisImgUrl;
 }
 $fallbackQrUrl = $qrisString !== ''
-    ? ('https://quickchart.io/qr?size=300&margin=1&text=' . rawurlencode($qrisString))
+    ? ('https://quickchart.io/qr?size=300&margin=4&text=' . rawurlencode($qrisString))
     : '';
 
 $stComp = $db->prepare('SELECT name, code, logo FROM companies WHERE id = ? LIMIT 1');

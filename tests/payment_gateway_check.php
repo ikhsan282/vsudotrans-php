@@ -52,6 +52,13 @@ check_pg(($tagMap['01'] ?? '') === '12', 'Dynamic QRIS updates Tag 01 to 12');
 check_pg(($tagMap['54'] ?? '') === '150234', 'Dynamic QRIS injects Tag 54 with exact integer amount 150234');
 $expectedCrc = qris_crc16(substr((string) $dynamic, 0, -4));
 check_pg(($tagMap['63'] ?? '') === $expectedCrc, 'Dynamic QRIS Tag 63 matches recalculated CRC16-CCITT (' . $expectedCrc . ')');
+check_pg(qris_validate_static($sampleStatic) !== null, 'qris_validate_static rejects dummy sample MPAN 936009143123456789');
+
+$realStaticSample = '00020101021126610014COM.GO-JEK.WWW01189360091439066772990210G9066772990303UMI51440014ID.CO.QRIS.WWW0215ID10265478591690303UMI5204478953033605802ID5919Maura Trans Mandiri6009TANGERANG61051513362140703A011103621630406CD';
+check_pg(qris_validate_static($realStaticSample) === null, 'qris_validate_static accepts valid real GoPay QRIS with NMID & CRC');
+$realDynamic = qris_make_dynamic($realStaticSample, 500369);
+check_pg($realDynamic !== null && qris_merchant_fingerprint($realDynamic) === qris_merchant_fingerprint($realStaticSample), 'Dynamic QRIS preserves exact Tag 26–51 merchant fingerprint');
+check_pg(str_contains(gq_qr_url((string) $realDynamic), '&qzone=4&data='), 'gq_qr_url includes qzone=4 quiet zone');
 
 // 2. Multi-tenant channel & unique code collision avoidance + atomic finalize
 $db = db();

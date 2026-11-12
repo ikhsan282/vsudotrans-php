@@ -294,8 +294,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $errors[] = 'Nama channel wajib diisi.';
             }
             if (in_array($prov, ['gopay', 'shopeepay'], true) && $chMerchant !== '') {
-                if (qris_make_dynamic($chMerchant, 10000) === null) {
+                $staticErr = qris_validate_static($chMerchant);
+                if ($staticErr !== null) {
+                    $errors[] = $staticErr;
+                } elseif (qris_make_dynamic($chMerchant, 10000) === null) {
                     $errors[] = 'String QRIS Statis tidak valid (bukan format EMVCo/QRIS standar).';
+                } else {
+                    $chMerchant = preg_replace('/[\r\n\t]+/', '', $chMerchant) ?? $chMerchant;
                 }
             }
             if ($isActive && ($effectiveKey === '' || $chMerchant === '')) {
@@ -598,7 +603,14 @@ require __DIR__ . '/../../includes/header.php';
                         <textarea class="form-control font-monospace small" name="merchant_id" rows="3"
                                   placeholder="<?= $activeProv === 'klikqris' ? 'ID Merchant KlikQRIS' : '000201010211... (Hasil scan teks QRIS cetak/statis toko milik ' . e($row['name']) . ')' ?>"><?= e((string) ($curChannel['merchant_id'] ?? '')) ?></textarea>
                         <?php if ($activeProv !== 'klikqris'): ?>
-                            <small class="text-muted">Sistem akan otomatis mengubah Tag <code>01</code> menjadi <code>12</code> (Dinamis), menyisipkan nominal tagihan + kode unik 3 digit ke Tag <code>54</code>, dan menghitung ulang checksum CRC16-CCITT Tag <code>63</code>.</small>
+                            <small class="text-muted d-block">Sistem akan otomatis mengubah Tag <code>01</code> menjadi <code>12</code> (Dinamis), menyisipkan nominal tagihan + kode unik 3 digit ke Tag <code>54</code>, dan menghitung ulang checksum CRC16-CCITT Tag <code>63</code>.</small>
+                            <?php
+                            $storedStatic = trim((string) ($curChannel['merchant_id'] ?? ''));
+                            if ($storedStatic !== '' && ($storedErr = qris_validate_static($storedStatic)) !== null): ?>
+                                <div class="alert alert-danger py-1 px-2 small mt-2 mb-0">
+                                    <i class="bi bi-exclamation-triangle-fill me-1"></i><?= e($storedErr) ?>
+                                </div>
+                            <?php endif; ?>
                         <?php endif; ?>
                     </div>
 

@@ -92,10 +92,13 @@ function qris_build_tlv(array $tlvs): string
     return $body . qris_crc16($body);
 }
 
-/** Sisipkan nominal (tag 54) dan ubah Point of Initiation (tag 01) menjadi dinamis ('12'). */
+/**
+ * Sisipkan nominal (tag 54) dan ubah Point of Initiation (tag 01) menjadi dinamis ('12').
+ * Menghapus whitespace baris agar hasil salin-tempel tetap terbaca rapi.
+ */
 function qris_make_dynamic(string $staticQris, int $amount): ?string
 {
-    $staticQris = trim($staticQris);
+    $staticQris = preg_replace('/[\r\n\t]+/', '', trim($staticQris)) ?? '';
     if ($amount <= 0 || $staticQris === '') return null;
     $tlvs = qris_parse_tlv($staticQris);
     if (!$tlvs || $tlvs[0][0] !== '00') return null;
@@ -117,7 +120,7 @@ function qris_make_dynamic(string $staticQris, int $amount): ?string
             $inserted54 = true;
             continue;
         }
-        if (!$inserted54 && in_array($tag, ['55', '56', '57', '58'], true)) {
+        if (!$inserted54 && in_array($tag, ['55', '56', '57', '58', '59', '60', '61', '62'], true)) {
             $out[] = ['54', $amtVal];
             $inserted54 = true;
         }
@@ -133,10 +136,65 @@ function qris_make_dynamic(string $staticQris, int $amount): ?string
     return qris_build_tlv($out);
 }
 
-/** URL gambar QR untuk string EMVCo. */
+/** Validasi kelengkapan EMVCo, checksum CRC Tag 63, dan tolak data contoh dummy pada string QRIS Statis. */
+function qris_validate_static(string $staticQris): ?string
+{
+    $clean = preg_replace('/[\r\n\t]+/', '', trim($staticQris)) ?? '';
+    if ($clean === '') {
+        return 'String QRIS Statis belum diisi.';
+    }
+    $tlvs = qris_parse_tlv($clean);
+    if (!$tlvs || $tlvs[0][0] !== '00') {
+        return 'String QRIS Statis tidak valid (bukan format EMVCo/QRIS standar).';
+    }
+    $hasMerchantTag = false;
+    $crcVal = null;
+    $bodyBeforeCrc = '';
+    foreach ($tlvs as [$tag, $val]) {
+        $num = (int) $tag;
+        if ($num >= 26 && $num <= 51 && $val !== '') {
+            $hasMerchantTag = true;
+        }
+        if ($tag === '63') {
+            $crcVal = strtoupper($val);
+            continue;
+        }
+        $bodyBeforeCrc .= $tag . sprintf('%02d', strlen($val)) . $val;
+    }
+    if (!$hasMerchantTag) {
+        return 'String QRIS Statis tidak memiliki data merchant (Tag 26–51).';
+    }
+    if ($crcVal !== null && strlen($crcVal) === 4 && $crcVal !== qris_crc16($bodyBeforeCrc . '6304')) {
+        return 'Checksum CRC16 (Tag 63) pada String QRIS Statis tidak cocok — pastikan tidak terpotong saat disalin.';
+    }
+    if (str_contains($clean, '936009143123456789')) {
+        return 'String QRIS Statis masih berisi data contoh/dummy (936009143123456789). Tempel string hasil scan QRIS toko asli.';
+    }
+    return null;
+}
+
+/** Ekstrak sidik jari tag informasi merchant (Tag 26–51) untuk mendeteksi order stale bila QRIS statis diganti. */
+function qris_merchant_fingerprint(string $qris): string
+{
+    $clean = preg_replace('/[\r\n\t]+/', '', trim($qris)) ?? '';
+    $tlvs = $clean !== '' ? qris_parse_tlv($clean) : null;
+    if (!$tlvs) {
+        return '';
+    }
+    $parts = [];
+    foreach ($tlvs as [$tag, $val]) {
+        $num = (int) $tag;
+        if ($num >= 26 && $num <= 51) {
+            $parts[] = $tag . ':' . $val;
+        }
+    }
+    return implode('|', $parts);
+}
+
+/** URL gambar QR untuk string EMVCo dengan quiet zone 4 modul agar mudah dipindai kamera. */
 function gq_qr_url(string $qrisString): string
 {
-    return 'https://api.qrserver.com/v1/create-qr-code/?size=300x300&data=' . rawurlencode($qrisString);
+    return 'https://api.qrserver.com/v1/create-qr-code/?size=300x300&qzone=4&data=' . rawurlencode($qrisString);
 }
 
 /**

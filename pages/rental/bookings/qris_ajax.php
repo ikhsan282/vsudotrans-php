@@ -54,22 +54,21 @@ function rental_qris_extract_order_visuals(array $order): array
         $payloadArr = [];
     }
     $qrisString = (string) ($payloadArr['qris_string'] ?? '');
-    $qrisImgUrl = trim((string) ($order['qris_url'] ?? ''));
-    if ($qrisImgUrl === '' || $qrisImgUrl === '0') {
-        $qrisImgUrl = trim((string) ($payloadArr['qris_url'] ?? ''));
-        if (($qrisImgUrl === '' || $qrisImgUrl === '0') && $qrisString !== '') {
-            $qrisImgUrl = gq_qr_url($qrisString);
-        }
-        if ($qrisImgUrl !== '' && $qrisImgUrl !== '0' && !empty($order['id'])) {
-            $upQr = $db->prepare('UPDATE payment_gateway_orders SET qris_url = ? WHERE id = ?');
-            $ordRowId = (int) $order['id'];
-            $upQr->bind_param('si', $qrisImgUrl, $ordRowId);
-            $upQr->execute();
-            $upQr->close();
-        }
+    $qrisImgUrl = '';
+    if ($qrisString !== '') {
+        $qrisImgUrl = gq_qr_url($qrisString);
+    } else {
+        $qrisImgUrl = trim((string) ($order['qris_url'] ?? ($payloadArr['qris_url'] ?? '')));
+    }
+    if ($qrisImgUrl !== '' && $qrisImgUrl !== trim((string) ($order['qris_url'] ?? '')) && !empty($order['id'])) {
+        $upQr = $db->prepare('UPDATE payment_gateway_orders SET qris_url = ? WHERE id = ?');
+        $ordRowId = (int) $order['id'];
+        $upQr->bind_param('si', $qrisImgUrl, $ordRowId);
+        $upQr->execute();
+        $upQr->close();
     }
     $fallbackQrUrl = $qrisString !== ''
-        ? ('https://quickchart.io/qr?size=300&margin=1&text=' . rawurlencode($qrisString))
+        ? ('https://quickchart.io/qr?size=300&margin=4&text=' . rawurlencode($qrisString))
         : '';
 
     return [$payloadArr, $qrisImgUrl, $fallbackQrUrl, $qrisString];
@@ -344,3 +343,4 @@ rental_qris_reply(200, [
     'has_pending'          => $hasPending,
     'payments'             => $payments,
 ]);
+

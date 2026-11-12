@@ -243,6 +243,30 @@ function gateway_store_order(
     $s->close();
 }
 
+/** Pastikan order QRIS lokal PENDING masih cocok dengan QRIS Statis channel terkini (Tag 26–51). */
+function gateway_order_matches_channel(array $order): bool
+{
+    $prov = (string) ($order['provider'] ?? '');
+    if (!in_array($prov, ['gopay', 'shopeepay'], true)) {
+        return true;
+    }
+    $chanStatic = (string) ($order['merchant_id'] ?? '');
+    if ($chanStatic === '') {
+        return false;
+    }
+    $payloadArr = !empty($order['payload']) ? json_decode((string) $order['payload'], true) : [];
+    $qrisStr = is_array($payloadArr) ? (string) ($payloadArr['qris_string'] ?? '') : '';
+    if ($qrisStr === '') {
+        return false;
+    }
+    if (str_contains($qrisStr, '936009143123456789') && !str_contains($chanStatic, '936009143123456789')) {
+        return false;
+    }
+    $fpOrd  = qris_merchant_fingerprint($qrisStr);
+    $fpChan = qris_merchant_fingerprint($chanStatic);
+    return $fpOrd !== '' && $fpChan !== '' && $fpOrd === $fpChan;
+}
+
 function gateway_pending_for_invoice(int $invoiceId, ?string $provider = null): ?array
 {
     $db = db();
@@ -251,18 +275,25 @@ function gateway_pending_for_invoice(int $invoiceId, ?string $provider = null): 
               JOIN payment_channels c ON c.id = o.channel_id
              WHERE o.invoice_id = ? AND o.status = 'PENDING'";
     if ($provider !== null && $provider !== '') {
-        $sql .= ' AND c.provider = ? ORDER BY o.id DESC LIMIT 1';
+        $sql .= ' AND c.provider = ? ORDER BY o.id DESC LIMIT 5';
         $s = $db->prepare($sql);
         $s->bind_param('is', $invoiceId, $provider);
     } else {
-        $sql .= ' ORDER BY o.id DESC LIMIT 1';
+        $sql .= ' ORDER BY o.id DESC LIMIT 5';
         $s = $db->prepare($sql);
         $s->bind_param('i', $invoiceId);
     }
     $s->execute();
-    $row = $s->get_result()->fetch_assoc() ?: null;
+    $rows = $s->get_result()->fetch_all(MYSQLI_ASSOC);
     $s->close();
-    return $row;
+    foreach ($rows as $row) {
+        if (!gateway_order_matches_channel($row)) {
+            gateway_mark_expired((string) $row['order_id']);
+            continue;
+        }
+        return $row;
+    }
+    return null;
 }
 
 function gateway_find_order(string $orderId): ?array
