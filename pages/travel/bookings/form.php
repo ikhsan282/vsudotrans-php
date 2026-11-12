@@ -5,12 +5,59 @@ require_once __DIR__ . '/../_helpers.php';
 require_once __DIR__ . '/../../../includes/booking_service.php';
 
 $cid = require_active_company();
+$id  = (int) ($_GET['id'] ?? $_POST['id'] ?? 0);
+$is_edit = $id > 0;
+$b   = null;
+
+if ($is_edit) {
+    $b = booking_find('travel', $id);
+    if (!$b) {
+        flash('error', 'Booking travel tidak ditemukan.');
+        redirect('pages/travel/bookings/index.php');
+    }
+    assert_company_access((int) $b['company_id']);
+    $cid = (int) $b['company_id'];
+}
+
 $in = ['date' => date('Y-m-d'), 'time' => date('H:i'), 'branch_id' => '', 'passenger_id' => '',
     'category_vehicle_id' => '', 'vehicle_id' => '', 'total_price' => '0',
     'pickup_address' => '', 'pickup_point_city_id' => '', 'pickup_point_district_id' => '',
     'delivery_address' => '', 'delivery_point_city_id' => '', 'delivery_point_district_id' => '', 'note' => ''];
 
 $in_passengers = []; // penumpang tambahan (selain primary)
+
+if ($is_edit && $_SERVER['REQUEST_METHOD'] !== 'POST') {
+    $in = [
+        'date'                       => (string) $b['date'],
+        'time'                       => substr((string) $b['time'], 0, 5),
+        'branch_id'                  => (string) $b['branch_id'],
+        'passenger_id'               => (string) $b['passenger_id'],
+        'category_vehicle_id'        => (string) ($b['category_vehicle_id'] ?? ''),
+        'vehicle_id'                 => (string) ($b['vehicle_id'] ?? ''),
+        'total_price'                => (string) (float) ($b['total_price'] ?? 0),
+        'pickup_address'             => (string) ($b['pickup_address'] ?? ''),
+        'pickup_point_city_id'       => (string) ($b['pickup_point_city_id'] ?? ''),
+        'pickup_point_district_id'   => (string) ($b['pickup_point_district_id'] ?? ''),
+        'delivery_address'           => (string) ($b['delivery_address'] ?? ''),
+        'delivery_point_city_id'     => (string) ($b['delivery_point_city_id'] ?? ''),
+        'delivery_point_district_id' => (string) ($b['delivery_point_district_id'] ?? ''),
+        'note'                       => (string) ($b['note'] ?? ''),
+    ];
+    if (empty($in['pickup_point_city_id']) && !empty($in['pickup_point_district_id'])) {
+        $stc = db()->query('SELECT city_id FROM districts WHERE id = ' . (int) $in['pickup_point_district_id'])->fetch_assoc();
+        if ($stc) $in['pickup_point_city_id'] = (string) $stc['city_id'];
+    }
+    if (empty($in['delivery_point_city_id']) && !empty($in['delivery_point_district_id'])) {
+        $stc = db()->query('SELECT city_id FROM districts WHERE id = ' . (int) $in['delivery_point_district_id'])->fetch_assoc();
+        if ($stc) $in['delivery_point_city_id'] = (string) $stc['city_id'];
+    }
+    $bp_list = booking_passengers_list('travel', $id, (int) $b['passenger_id']);
+    foreach ($bp_list as $bp) {
+        if ((int) $bp['passenger_id'] !== (int) $b['passenger_id']) {
+            $in_passengers[] = (int) $bp['passenger_id'];
+        }
+    }
+}
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     verify_csrf();
@@ -37,42 +84,110 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     }
 
     if ($err === '') {
-        // Kota diturunkan dari kecamatan terpilih (konsisten asal & tujuan).
+        // Kota diturunkan dari kecamatan terpilih
         $st = db()->prepare('SELECT city_id FROM districts WHERE id = ?');
         $st->bind_param('i', $in['pickup_point_district_id']);
         $st->execute();
         $row_city = $st->get_result()->fetch_assoc();
         $st->close();
         $city_id = $row_city ? (int) $row_city['city_id'] : null;
+
+        $st = db()->prepare('SELECT city_id FROM districts WHERE id = ?');
+        $st->bind_param('i', $in['delivery_point_district_id']);
+        $st->execute();
+        $row_del_city = $st->get_result()->fetch_assoc();
+        $st->close();
+        $del_city_id = $row_del_city ? (int) $row_del_city['city_id'] : $city_id;
+
         $vehicle_id = (int) $in['vehicle_id'] ?: null;
-        $data = [
-            'company_id' => $cid,
-            'branch_id' => (int) $in['branch_id'],
-            'date' => $in['date'],
-            'time' => $in['time'] . ':00',
-            'pickup_address' => $in['pickup_address'],
-            'pickup_point_city_id' => $city_id,
-            'pickup_point_district_id' => (int) $in['pickup_point_district_id'],
-            'delivery_address' => $in['delivery_address'],
-            'delivery_point_city_id' => $city_id,
-            'delivery_point_district_id' => (int) $in['delivery_point_district_id'],
-            'total_price' => (float) $in['total_price'],
-            'category_vehicle_id' => (int) $in['category_vehicle_id'] ?: null,
-            'vehicle_id' => $vehicle_id,
-            'passenger_id' => (int) $in['passenger_id'],
-            'passenger_ids' => array_values(array_merge([(int) $in['passenger_id']], $in_passengers)),
-            'note' => $in['note'],
-            'created_user' => $_SESSION['username'] ?? null,
-        ];
-        try {
-            $res = booking_create('travel', $data);
-            audit('booking.travel.create', "Booking #{$res['id']} {$res['document_number']}");
-            require_once __DIR__ . '/../../../includes/wa.php';
-            wa_notify_booking('travel', (int) $res['id']); // gagal WA tidak membatalkan booking
-            flash('success', "Booking {$res['document_number']} berhasil dibuat.");
-            redirect('pages/travel/bookings/detail.php?id=' . $res['id']);
-        } catch (mysqli_sql_exception $ex) {
-            throw $ex;
+        $category_vehicle_id = (int) $in['category_vehicle_id'] ?: null;
+        $time_val = $in['time'] . ':00';
+        $tot_price = (float) $in['total_price'];
+        $user = $_SESSION['username'] ?? null;
+
+        if ($is_edit) {
+            $db = db();
+            $db->begin_transaction();
+            try {
+                $pass_id  = (int) $in['passenger_id'];
+                $br_id    = (int) $in['branch_id'];
+                $pk_dist  = (int) $in['pickup_point_district_id'];
+                $dl_dist  = (int) $in['delivery_point_district_id'];
+                $note_val = $in['note'];
+
+                $st = $db->prepare('UPDATE travel_ticket_bookings SET
+                    branch_id = ?, date = ?, time = ?, pickup_address = ?, pickup_point_city_id = ?, pickup_point_district_id = ?,
+                    delivery_address = ?, delivery_point_city_id = ?, delivery_point_district_id = ?, total_price = ?,
+                    category_vehicle_id = ?, vehicle_id = ?, passenger_id = ?, note = ?,
+                    modified_user = ?, modified_date = NOW()
+                    WHERE id = ? AND company_id = ?');
+                $st->bind_param('isssiisisiiisssii',
+                    $br_id, $in['date'], $time_val, $in['pickup_address'], $city_id, $pk_dist,
+                    $in['delivery_address'], $del_city_id, $dl_dist, $tot_price,
+                    $category_vehicle_id, $vehicle_id, $pass_id, $note_val,
+                    $user, $id, $b['company_id']
+                );
+                $st->execute();
+                $st->close();
+
+                // Sinkronkan daftar penumpang
+                $all_pass = array_values(array_merge([$pass_id], $in_passengers));
+                booking_passengers_set('travel', $id, (int) $b['company_id'], $all_pass, $pass_id, $user);
+
+                // Sinkronkan total harga invoice jika masih berstatus draft/sent
+                $stInv = $db->prepare("SELECT id, status, tax_percent FROM invoices WHERE booking_type = 'travel' AND booking_id = ? LIMIT 1");
+                $stInv->bind_param('i', $id);
+                $stInv->execute();
+                $inv = $stInv->get_result()->fetch_assoc();
+                $stInv->close();
+                if ($inv && in_array($inv['status'], ['draft', 'sent'], true)) {
+                    $tax_p = (float) $inv['tax_percent'];
+                    $tax_amt = round($tot_price * ($tax_p / 100), 2);
+                    $total_inv = round($tot_price + $tax_amt, 2);
+                    $stUpInv = $db->prepare('UPDATE invoices SET branch_id = ?, subtotal = ?, tax_amount = ?, total = ?, modified_user = ?, modified_date = NOW() WHERE id = ?');
+                    $stUpInv->bind_param('idddsi', $br_id, $tot_price, $tax_amt, $total_inv, $user, $inv['id']);
+                    $stUpInv->execute();
+                    $stUpInv->close();
+                }
+
+                $db->commit();
+                audit('booking.travel.update', "Booking #{$id} {$b['document_number']}");
+                flash('success', "Booking travel {$b['document_number']} berhasil diperbarui.");
+                redirect('pages/travel/bookings/detail.php?id=' . $id);
+            } catch (Throwable $ex) {
+                $db->rollback();
+                throw $ex;
+            }
+        } else {
+            $data = [
+                'company_id' => $cid,
+                'branch_id' => (int) $in['branch_id'],
+                'date' => $in['date'],
+                'time' => $time_val,
+                'pickup_address' => $in['pickup_address'],
+                'pickup_point_city_id' => $city_id,
+                'pickup_point_district_id' => (int) $in['pickup_point_district_id'],
+                'delivery_address' => $in['delivery_address'],
+                'delivery_point_city_id' => $del_city_id,
+                'delivery_point_district_id' => (int) $in['delivery_point_district_id'],
+                'total_price' => $tot_price,
+                'category_vehicle_id' => $category_vehicle_id,
+                'vehicle_id' => $vehicle_id,
+                'passenger_id' => (int) $in['passenger_id'],
+                'passenger_ids' => array_values(array_merge([(int) $in['passenger_id']], $in_passengers)),
+                'note' => $in['note'],
+                'created_user' => $user,
+            ];
+            try {
+                $res = booking_create('travel', $data);
+                audit('booking.travel.create', "Booking #{$res['id']} {$res['document_number']}");
+                require_once __DIR__ . '/../../../includes/wa.php';
+                wa_notify_booking('travel', (int) $res['id']); // gagal WA tidak membatalkan booking
+                flash('success', "Booking {$res['document_number']} berhasil dibuat.");
+                redirect('pages/travel/bookings/detail.php?id=' . $res['id']);
+            } catch (mysqli_sql_exception $ex) {
+                throw $ex;
+            }
         }
     }
     flash('error', $err);
@@ -94,11 +209,26 @@ $delivery_districts = !empty($in['delivery_point_city_id'])
     : (!empty($in['delivery_point_district_id']) ? db()->query('SELECT id, name FROM districts WHERE id = ' . (int) $in['delivery_point_district_id'])->fetch_all(MYSQLI_ASSOC) : []);
 
 $active = 'travel';
-$title  = 'Booking Travel Baru';
+$title  = $is_edit ? 'Ubah Booking Travel - ' . $b['document_number'] : 'Booking Travel Baru';
 require __DIR__ . '/../../../includes/header.php';
 ?>
 <main class="col-12 col-md-9 col-lg-10 p-3 p-md-4">
-    <h1 class="h4 fw-bold mb-3"><?= e($title) ?></h1>
+    <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-3">
+        <div>
+            <h1 class="h4 fw-bold mb-0 text-break d-flex align-items-center gap-2">
+                <span><i class="bi bi-ticket-perforated-fill text-primary me-2"></i><?= e($title) ?></span>
+                <?php if ($is_edit): ?>
+                    <?= status_badge(booking_current_status('travel', $id)) ?>
+                <?php endif; ?>
+            </h1>
+            <div class="small text-muted">Perusahaan: <strong><?= e(active_company_name()) ?></strong></div>
+        </div>
+        <div class="d-flex gap-2">
+            <a class="btn btn-outline-secondary btn-sm" href="<?= e(APP_URL) ?>/<?= $is_edit ? 'pages/travel/bookings/detail.php?id=' . $id : 'pages/travel/bookings/index.php' ?>">
+                <i class="bi bi-arrow-left me-1"></i>Kembali
+            </a>
+        </div>
+    </div>
     <?php
     $ai_endpoint = APP_URL . '/pages/travel/bookings/ai_parse.php';
     require __DIR__ . '/../../../includes/ai_panel.php';
@@ -106,6 +236,9 @@ require __DIR__ . '/../../../includes/header.php';
     <div class="card shadow-sm border-0"><div class="card-body">
     <form method="post" action="">
         <?= csrf_field() ?>
+        <?php if ($is_edit): ?>
+            <input type="hidden" name="id" value="<?= $id ?>">
+        <?php endif; ?>
         <div class="row g-3">
             <div class="col-md-3"><label class="form-label">Tanggal</label>
                 <input type="date" class="form-control" name="date" required value="<?= e($in['date']) ?>"></div>
@@ -152,8 +285,12 @@ require __DIR__ . '/../../../includes/header.php';
                 <textarea class="form-control" name="note" rows="2" maxlength="2000"><?= e($in['note']) ?></textarea></div>
         </div>
         <div class="mt-4 d-flex flex-wrap gap-2">
-            <button class="btn btn-primary" type="submit">Simpan</button>
-            <a class="btn btn-outline-secondary" href="<?= e(APP_URL) ?>/pages/travel/bookings/index.php">Batal</a>
+            <button class="btn btn-primary btn-sm px-4 fw-semibold" type="submit">
+                <i class="bi bi-check2-circle me-1"></i><?= $is_edit ? 'Simpan Perubahan' : 'Simpan Booking' ?>
+            </button>
+            <a class="btn btn-outline-secondary btn-sm px-3" href="<?= e(APP_URL) ?>/<?= $is_edit ? 'pages/travel/bookings/detail.php?id=' . $id : 'pages/travel/bookings/index.php' ?>">
+                Batal
+            </a>
         </div>
     </form>
     </div></div>

@@ -7,6 +7,7 @@
  */
 require_once __DIR__ . '/../../../config/config.php';
 require_once __DIR__ . '/../../../includes/payment_gateway.php';
+require_once __DIR__ . '/../../../includes/booking.php';
 
 $db = db();
 $no = strtoupper(trim((string) ($_GET['no'] ?? '')));
@@ -14,7 +15,7 @@ $invoiceId = (int) ($_GET['invoice_id'] ?? 0);
 $provider = trim((string) ($_GET['provider'] ?? ''));
 
 $inv = null;
-if ($no !== '' && preg_match('/^(TRV|RNT)-[A-Z2-9]{8}$/', $no)) {
+if ($no !== '' && booking_doc_valid($no)) {
     $st = $db->prepare('SELECT * FROM invoices WHERE document_number = ? LIMIT 1');
     $st->bind_param('s', $no);
     $st->execute();

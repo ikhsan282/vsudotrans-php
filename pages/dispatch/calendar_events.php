@@ -73,7 +73,7 @@ $sql = "SELECT 'travel' AS kind, b.id, b.company_id, b.document_number, b.date A
         WHERE {$rentalVisibility} AND b.start_date < ? AND b.end_date >= ?{$companySql}
         ORDER BY starts_on, starts_at";
 $st = db()->prepare($sql);
-$types = 'ssss' . $companyTypes . 'ss' . $companyTypes;
+$types = 'ss' . $companyTypes . 'ss' . $companyTypes;
 $params = $companyId === null ? [$from, $to, $to, $from] : [$from, $to, $companyId, $to, $from, $companyId];
 $st->bind_param($types, ...$params);
 $st->execute();

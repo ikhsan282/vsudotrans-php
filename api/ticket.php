@@ -49,17 +49,17 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') !== 'GET') {
 $no = strtoupper(trim((string) ($_GET['no'] ?? ($_GET['ticket'] ?? ''))));
 $companyFilter = strtoupper(trim((string) ($_GET['company'] ?? '')));
 
-if ($no === '' || !preg_match('/^(TRV|RNT)-[A-Z2-9]{8}$/', $no)) {
+if ($no === '' || !booking_doc_valid($no)) {
     ticket_api_reply(400, [
         'ok'    => false,
         'error' => [
             'code'    => 'INVALID_TICKET_FORMAT',
-            'message' => 'Format nomor tiket tidak valid. Contoh: TRV-8K4M9P2X atau RNT-8K4M9P2X.',
+            'message' => 'Format nomor tiket tidak valid. Contoh: 10000720261110.',
         ],
     ]);
 }
 
-$type  = str_starts_with($no, 'RNT') ? 'rental' : 'travel';
+$type  = booking_resolve_type_by_doc($no, $companyFilter);
 $table = $type === 'rental' ? 'rental_car_bookings' : 'travel_ticket_bookings';
 $extraCols = $type === 'rental' ? 'b.start_date, b.end_date, b.trip,' : 'NULL AS start_date, NULL AS end_date, 0 AS trip,';
 

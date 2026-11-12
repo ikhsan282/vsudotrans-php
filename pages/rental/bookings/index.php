@@ -22,10 +22,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['act'] ?? '') === 'delete')
             throw new RuntimeException('Anda tidak memiliki hak akses pada perusahaan ini.');
         }
         $doc_no = booking_delete('rental', $del_id, $del_cid);
-        audit('booking.rental.delete', "Hapus booking {$doc_no} (#{$del_id})");
-        flash('success', "Booking rental {$doc_no} berhasil dihapus.");
+        audit('booking.rental.delete', "Hapus pemesanan {$doc_no} (#{$del_id})");
+        flash('success', "Pemesanan sewa kendaraan {$doc_no} berhasil dihapus.");
     } catch (Throwable $ex) {
-        flash('error', $ex->getMessage() ?: 'Gagal menghapus booking rental.');
+        flash('error', $ex->getMessage() ?: 'Gagal menghapus pemesanan sewa kendaraan.');
     }
     redirect('pages/rental/bookings/index.php');
 }
@@ -159,7 +159,7 @@ if (in_array($export_format, ['xlsx', 'pdf'], true)) {
     $sub = $sub_parts ? implode(' | ', $sub_parts) : 'Semua Data';
 
     grid_export_send(
-        'Daftar Booking Rental',
+        'Daftar Pemesanan Sewa Kendaraan',
         ['No Resi / Dokumen', 'Perusahaan', 'Tgl Mulai', 'Tgl Selesai', 'Penyewa', 'Biaya BBM', 'Total Biaya', 'Status'],
         $row_stream,
         $export_format,
@@ -199,14 +199,16 @@ $query_base = http_build_query($query_params);
 $has_active_filter = ($q !== '' || $status !== '' || $start_date !== '' || $end_date !== '' || (isset($_GET['company_id']) && (int) $_GET['company_id'] !== ($active_cid ?? 0)));
 
 $active = 'rental';
-$title  = 'Booking Rental';
+$title  = 'Daftar Pemesanan Sewa Kendaraan';
 require __DIR__ . '/../../../includes/header.php';
 ?>
+
 <main class="p-3 p-lg-4 w-100 flex-grow-1">
+
     <?= ui_page_header(
-        'Booking Rental',
-        ['Dashboard' => 'pages/dashboard/index.php', 'Rental' => null, 'Booking' => null],
-        [['text' => number_format($total, 0, ',', '.') . ' Booking', 'class' => 'bg-light text-secondary border']],
+        'Daftar Pemesanan Sewa Kendaraan',
+        ['Dashboard' => 'pages/dashboard/index.php', 'Rental' => null, 'Pemesanan' => null],
+        [['text' => number_format($total, 0, ',', '.') . ' Pemesanan', 'class' => 'bg-light text-secondary border']],
         $header_actions
     ) ?>
 
@@ -296,9 +298,14 @@ require __DIR__ . '/../../../includes/header.php';
                         <td class="text-end"><?= e(rupiah((float) $r['total_price'])) ?></td>
                         <td><?= status_badge($r['status']) ?></td>
                         <td class="text-end text-nowrap">
-                            <a class="btn btn-sm btn-outline-primary" href="<?= e(APP_URL) ?>/pages/rental/bookings/detail.php?id=<?= (int) $r['id'] ?>">
-                                <i class="bi bi-pencil-square me-1"></i>Detail / Ubah
+                            <a class="btn btn-sm btn-outline-secondary" href="<?= e(APP_URL) ?>/pages/rental/bookings/detail.php?id=<?= (int) $r['id'] ?>">
+                                <i class="bi bi-eye me-1"></i>Detail
                             </a>
+                            <?php if (can('rental.manage')): ?>
+                                <a class="btn btn-sm btn-outline-primary" href="<?= e(APP_URL) ?>/pages/rental/bookings/detail.php?id=<?= (int) $r['id'] ?>">
+                                    <i class="bi bi-pencil-square me-1"></i>Ubah
+                                </a>
+                            <?php endif; ?>
                             <?php if (can('rental.manage')): ?>
                                 <form method="post" action="" class="d-inline" onsubmit="return confirm('Yakin ingin menghapus permanen booking <?= e($r['document_number']) ?> beserta invoice dan riwayat pembayarannya?');">
                                     <?= csrf_field() ?>
@@ -314,7 +321,7 @@ require __DIR__ . '/../../../includes/header.php';
                     </tr>
                 <?php endforeach; ?>
                 <?php if (!$rows): ?>
-                    <tr><td colspan="9" class="text-center text-muted py-4">Belum ada booking rental yang cocok dengan filter yang dipilih.</td></tr>
+                    <tr><td colspan="9" class="text-center text-muted py-4">Belum ada pemesanan sewa kendaraan yang cocok dengan filter yang dipilih.</td></tr>
                 <?php endif; ?>
                 </tbody>
             </table>

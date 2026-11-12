@@ -142,50 +142,7 @@ require __DIR__ . '/../../../includes/header.php';
     overflow: hidden;
     font-size: 0.84rem;
 }
-.reg-doc-tabs {
-    background: #e9ecef;
-    border-bottom: 1px solid #ced4da;
-    padding: 6px 8px 0;
-    display: flex;
-    gap: 3px;
-    flex-wrap: wrap;
-    align-items: flex-end;
-}
-.reg-doc-tab {
-    background: #dee2e6;
-    color: #495057;
-    border: 1px solid #ced4da;
-    border-bottom: none;
-    border-radius: 3px 3px 0 0;
-    padding: 4px 11px;
-    font-size: 0.79rem;
-    text-decoration: none;
-    display: inline-flex;
-    align-items: center;
-    gap: 6px;
-    cursor: pointer;
-}
-.reg-doc-tab:hover { background: #e2e6ea; color: #212529; }
-.reg-doc-tab.active {
-    background: #fff;
-    color: #212529;
-    font-weight: 600;
-    margin-bottom: -1px;
-    padding-bottom: 5px;
-    border-top: 2px solid #0078d4;
-}
-.reg-doc-tab .tab-close {
-    font-size: 0.72rem;
-    margin-left: 6px;
-    color: #6c757d;
-    cursor: pointer;
-    border-radius: 50%;
-    padding: 0 3px;
-}
-.reg-doc-tab .tab-close:hover {
-    color: #dc3545;
-    background: #f8d7da;
-}
+
 .reg-inner-tabs {
     background: #fff;
     border-bottom: 1px solid #dee2e6;
@@ -279,41 +236,34 @@ require __DIR__ . '/../../../includes/header.php';
 
 <main class="p-2 p-lg-3 w-100 flex-grow-1">
     <div class="reg-workspace shadow-sm">
-        <!-- Top Document Tabs (Persis seperti Desktop ERP pada Screenshot) -->
-        <div class="reg-doc-tabs">
-            <a href="<?= e(APP_URL) ?>/pages/rental/bookings/index.php" class="reg-doc-tab">
-                Daftar Pemesanan Sewa Kendaraan
-            </a>
-            <?php
-            // Ambil nomor booking rental terakhir jika ada untuk tab referensi
-            $lastBooking = db()->query("SELECT id, document_number FROM rental_car_bookings ORDER BY id DESC LIMIT 1")->fetch_assoc();
-            $lastBkNum   = $lastBooking['document_number'] ?? '10000120261110';
-            $lastBkId    = $lastBooking['id'] ?? 0;
-            ?>
-            <a href="<?= e(APP_URL) ?>/pages/rental/bookings/detail.php?id=<?= $lastBkId ?>" class="reg-doc-tab text-secondary">
-                Detail Pemesanan Sewa Kendaraan (<?= e($lastBkNum) ?>)
-            </a>
-            <a href="<?= e(APP_URL) ?>/pages/rental/regulations/index.php" class="reg-doc-tab">
-                Daftar Peraturan Komisi Karyawan
-            </a>
-            <span class="reg-doc-tab active">
-                <?= e($tabTitle) ?>
-                <a href="<?= e(APP_URL) ?>/pages/rental/regulations/index.php" class="tab-close text-decoration-none" title="Tutup Tab">&times;</a>
-            </span>
-            <div class="ms-auto d-flex align-items-center gap-1 pb-1">
+        <!-- Header Toolbar Halaman -->
+        <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 p-2 px-3 border-bottom bg-white">
+            <div>
+                <h1 class="h5 fw-bold mb-0 text-break d-flex align-items-center gap-2">
+                    <span><i class="bi bi-sliders text-primary me-1"></i><?= e($title) ?></span>
+                </h1>
+                <div class="small text-muted">Perusahaan: <strong><?= e($reg ? ($reg['company_code'] . ' - ' . $reg['company_name']) : active_company_name()) ?></strong></div>
+            </div>
+            <div class="d-flex align-items-center gap-2">
+                <button type="submit" form="formRegulation" class="btn btn-sm btn-primary px-3">
+                    <i class="bi bi-check2-circle me-1"></i>Simpan Peraturan
+                </button>
                 <?php if ($canManage && $id > 0): ?>
-                    <a href="<?= e(APP_URL) ?>/pages/rental/regulations/form.php" class="btn btn-sm btn-outline-primary py-0 px-2" style="font-size: 0.78rem;">
+                    <a href="<?= e(APP_URL) ?>/pages/rental/regulations/form.php" class="btn btn-sm btn-outline-primary">
                         <i class="bi bi-plus-lg me-1"></i>Buat Baru
                     </a>
                     <form method="post" action="" class="d-inline" onsubmit="return confirm('Hapus Peraturan Komisi Karyawan ini?');">
                         <?= csrf_field() ?>
                         <input type="hidden" name="id" value="<?= $id ?>">
                         <input type="hidden" name="act" value="delete">
-                        <button type="submit" class="btn btn-sm btn-outline-danger py-0 px-2" style="font-size: 0.78rem;">
+                        <button type="submit" class="btn btn-sm btn-outline-danger">
                             <i class="bi bi-trash me-1"></i>Hapus
                         </button>
                     </form>
                 <?php endif; ?>
+                <a href="<?= e(APP_URL) ?>/pages/rental/regulations/index.php" class="btn btn-sm btn-outline-secondary">
+                    <i class="bi bi-arrow-left me-1"></i>Kembali
+                </a>
             </div>
         </div>
 

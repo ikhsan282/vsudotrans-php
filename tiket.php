@@ -9,6 +9,7 @@
  */
 require_once __DIR__ . '/config/config.php';
 require_once __DIR__ . '/includes/booking_service.php';
+require_once __DIR__ . '/includes/invoice_service.php';
 require_once __DIR__ . '/includes/payment_gateway.php';
 
 $no = strtoupper(trim((string) ($_GET['no'] ?? '')));
@@ -18,22 +19,30 @@ $pdf   = ($_GET['format'] ?? '') === 'pdf';
 $row = null;
 $passengers = [];
 $canPayQris = false;
-if (preg_match('/^(TRV|RNT)-[A-Z2-9]{8}$/', $no)) {
-    $type = str_starts_with($no, 'RNT') ? 'rental' : 'travel';
+if (booking_doc_valid($no)) {
+    $type = booking_resolve_type_by_doc($no, $companyCode);
     $table = $type === 'rental' ? 'rental_car_bookings' : 'travel_ticket_bookings';
+    $extraCols = $type === 'rental'
+        ? 'b.start_date, b.end_date, b.trip,'
+        : 'NULL AS start_date, NULL AS end_date, 0 AS trip,';
     // Rute dicetak dari nama kota asal -> tujuan (booking tidak menyimpan nama rute).
     $sql = "SELECT b.id, b.company_id, b.document_number, b.date, b.time, b.pickup_address, b.delivery_address,
-            b.total_price, b.total_payment, b.created_user, b.passenger_id,
+            b.total_price, b.total_payment, b.created_user, b.passenger_id, {$extraCols}
             c.code AS company_code, c.name AS company_name, c.address, c.phone_number, c.email, c.website, c.logo, c.stamp,
             i.id AS invoice_id, i.status AS invoice_status, i.total AS invoice_total, i.invoice_no,
             cp1.name AS city_from, cp2.name AS city_to,
-            p.name AS passenger_name, p.phone_number AS passenger_phone
+            p.name AS passenger_name, p.phone_number AS passenger_phone,
+            v.vehicle_number, CONCAT_WS(' ', bv.name, mu.name) AS vehicle_name, cv.name AS category_name
         FROM {$table} b
         JOIN companies c ON c.id = b.company_id
         LEFT JOIN invoices i ON i.document_number = b.document_number
         LEFT JOIN cities cp1 ON cp1.id = b.pickup_point_city_id
         LEFT JOIN cities cp2 ON cp2.id = b.delivery_point_city_id
         LEFT JOIN passengers p ON p.id = b.passenger_id
+        LEFT JOIN vehicles v ON v.id = b.vehicle_id
+        LEFT JOIN brand_vehicles bv ON bv.id = v.brand_id
+        LEFT JOIN model_units mu ON mu.id = v.model_unit_id
+        LEFT JOIN category_vehicles cv ON cv.id = b.category_vehicle_id
         WHERE b.document_number = ?";
     if ($companyCode !== '') {
         $sql .= ' AND c.code = ? LIMIT 1';
@@ -175,17 +184,29 @@ if ($pdf) {
                 </td>
                 <td style="width:58%">
                     <table class="tk-lay w-100">
-                        <tr><td class="tk-doc" style="width:117px">Rute</td><td class="tk-v"><?= e(trim(($row['city_from'] ?? '') . ' - ' . ($row['city_to'] ?? ''), ' -') ?: '—') ?></td></tr>
-                        <tr><td class="tk-doc">Nomor Tiket</td><td class="tk-v"><?= e($row['document_number']) ?></td></tr>
-                        <tr><td class="tk-doc">Tanggal</td><td class="tk-v"><?= e(tanggal_indo((string) $row['date'])) ?></td></tr>
-                        <tr><td class="tk-doc">Jam</td><td class="tk-v"><?= e(substr((string) $row['time'], 0, 5)) ?></td></tr>
-                        <tr><td class="tk-doc">Harga</td><td class="tk-v"><?= e(rupiah((float) ($row['invoice_total'] ?? $row['total_price']))) ?></td></tr>
-                        <tr><td class="tk-doc">Total Tiket</td><td class="tk-v"><?= count($passengers) ?> orang</td></tr>
+                        <?php if ($type === 'rental'): ?>
+                            <tr><td class="tk-doc" style="width:117px">Layanan</td><td class="tk-v">Sewa Kendaraan<?= !empty($row['category_name']) ? ' · ' . e($row['category_name']) : '' ?></td></tr>
+                            <tr><td class="tk-doc">Nomor Dokumen</td><td class="tk-v"><?= e($row['document_number']) ?></td></tr>
+                            <tr><td class="tk-doc">Periode Sewa</td><td class="tk-v"><?= e(tanggal_indo((string) ($row['start_date'] ?: $row['date']))) ?> s/d <?= e(tanggal_indo((string) ($row['end_date'] ?: $row['date']))) ?></td></tr>
+                            <tr><td class="tk-doc">Jam Mulai</td><td class="tk-v"><?= e(substr((string) $row['time'], 0, 5)) ?> WIB</td></tr>
+                            <?php if (!empty($row['vehicle_name']) || !empty($row['vehicle_number'])): ?>
+                                <tr><td class="tk-doc">Unit Armada</td><td class="tk-v"><?= e(trim(($row['vehicle_name'] ?? '') . ' ' . ($row['vehicle_number'] ? '(' . $row['vehicle_number'] . ')' : ''))) ?></td></tr>
+                            <?php endif; ?>
+                            <tr><td class="tk-doc">Total Biaya</td><td class="tk-v"><?= e(rupiah((float) ($row['invoice_total'] ?? $row['total_price']))) ?></td></tr>
+                            <tr><td class="tk-doc">Penyewa</td><td class="tk-v"><?= count($passengers) ?> orang</td></tr>
+                        <?php else: ?>
+                            <tr><td class="tk-doc" style="width:117px">Rute</td><td class="tk-v"><?= e(trim(($row['city_from'] ?? '') . ' - ' . ($row['city_to'] ?? ''), ' -') ?: '—') ?></td></tr>
+                            <tr><td class="tk-doc">Nomor Tiket</td><td class="tk-v"><?= e($row['document_number']) ?></td></tr>
+                            <tr><td class="tk-doc">Tanggal</td><td class="tk-v"><?= e(tanggal_indo((string) $row['date'])) ?></td></tr>
+                            <tr><td class="tk-doc">Jam</td><td class="tk-v"><?= e(substr((string) $row['time'], 0, 5)) ?> WIB</td></tr>
+                            <tr><td class="tk-doc">Harga</td><td class="tk-v"><?= e(rupiah((float) ($row['invoice_total'] ?? $row['total_price']))) ?></td></tr>
+                            <tr><td class="tk-doc">Total Tiket</td><td class="tk-v"><?= count($passengers) ?> orang</td></tr>
+                        <?php endif; ?>
                     </table>
                 </td>
             </tr></table>
 
-            <div class="tk-sect mt-4 mb-1">Detail Penumpang</div>
+            <div class="tk-sect mt-4 mb-1"><?= $type === 'rental' ? 'Detail Penyewa / Penumpang' : 'Detail Penumpang' ?></div>
             <table class="table table-bordered tk-tbl mb-0">
                 <thead><tr><th style="width:25px">#</th><th style="width:76px">Tipe</th><th>Nama</th><th style="width:140px">Nomor Telepon</th></tr></thead>
                 <tbody>

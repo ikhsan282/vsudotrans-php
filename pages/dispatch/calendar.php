@@ -15,7 +15,7 @@ $eventsUrl = APP_URL . '/pages/dispatch/calendar_events.php';
         </div>
         <div class="d-flex gap-2">
             <?php if (can('travel.manage')): ?><a class="btn btn-sm btn-outline-primary" href="<?= e(APP_URL) ?>/pages/travel/bookings/form.php">Booking Travel</a><?php endif; ?>
-            <?php if (can('rental.manage')): ?><a class="btn btn-sm btn-outline-success" href="<?= e(APP_URL) ?>/pages/rental/bookings/form.php">Booking Rental</a><?php endif; ?>
+            <?php if (can('rental.manage')): ?><a class="btn btn-sm btn-outline-success" href="<?= e(APP_URL) ?>/pages/rental/bookings/form.php">Pemesanan Sewa Kendaraan</a><?php endif; ?>
         </div>
     </div>
     <div class="card shadow-sm border-0"><div class="card-body"><div id="ops-calendar" aria-label="Kalender booking travel dan rental"></div></div></div>

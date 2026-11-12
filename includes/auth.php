@@ -37,6 +37,22 @@ function active_company_id(): ?int
     return $id === null ? null : (int) $id;
 }
 
+/** Label perusahaan aktif user saat ini (Kode - Nama). */
+function active_company_name(): string
+{
+    $cid = active_company_id();
+    if ($cid === null) {
+        return 'Semua Perusahaan';
+    }
+    $comps = accessible_companies();
+    foreach ($comps as $c) {
+        if ((int) $c['id'] === $cid) {
+            return (!empty($c['code']) ? $c['code'] . ' - ' : '') . ($c['name'] ?? '');
+        }
+    }
+    return '';
+}
+
 /** Izin user: dari role + override per user. Super Admin selalu lolos. */
 function can(string $permission): bool
 {

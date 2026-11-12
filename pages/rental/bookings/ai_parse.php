@@ -5,7 +5,7 @@
  * setiap balasan divalidasi ulang di PHP (ai_sanitize_candidate).
  */
 require_once __DIR__ . '/../../../config/config.php';
-require_permission('travel.manage'); // fitur AI mengikuti hak kelola modul
+require_permission('rental.manage');
 require_once __DIR__ . '/../../travel/_helpers.php';
 require_once __DIR__ . '/../../../includes/ai.php';
 

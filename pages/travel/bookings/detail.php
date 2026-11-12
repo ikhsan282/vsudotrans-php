@@ -100,6 +100,9 @@ require __DIR__ . '/../../../includes/header.php';
     <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-3">
         <h1 class="h4 fw-bold mb-0 text-break"><?= e($b['document_number']) ?> <?= status_badge($status) ?></h1>
         <div class="d-flex flex-wrap gap-2">
+            <?php if (can('travel.manage')): ?>
+                <a class="btn btn-outline-primary btn-sm" href="<?= e(APP_URL) ?>/pages/travel/bookings/form.php?id=<?= (int) $b['id'] ?>"><i class="bi bi-pencil-square me-1"></i>Ubah</a>
+            <?php endif; ?>
             <?php if (can('dispatch.manage')): ?>
                 <a class="btn btn-primary btn-sm" href="<?= e(APP_URL) ?>/pages/dispatch/assign.php"><i class="bi bi-person-badge"></i> Tugaskan Driver</a>
             <?php endif; ?>

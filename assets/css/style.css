@@ -238,3 +238,263 @@ body { background: var(--page-bg); color: var(--text-color); font-size: .9rem; }
   .topbar h6 { font-size: .9rem; }
   .flash-wrap { padding: .5rem .75rem 0; }
 }
+
+/* ─── Desktop ERP Tabbed & Grouped Interface (DevExpress / Desktop Style) ─── */
+.erp-window-card {
+  background: #ffffff;
+  border: 1px solid #ced4da;
+  border-radius: 4px;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.06);
+  margin-bottom: 1.5rem;
+  overflow: hidden;
+}
+
+/* Document Tabs Bar (Top level) */
+.erp-doc-tabbar {
+  display: flex;
+  align-items: flex-end;
+  background: #f1f3f5;
+  border-bottom: 1px solid #ced4da;
+  padding: 6px 8px 0 8px;
+  gap: 3px;
+  position: relative;
+}
+
+.erp-doc-tab {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 5px 14px;
+  font-size: 0.82rem;
+  font-weight: 500;
+  color: #495057;
+  background: #e9ecef;
+  border: 1px solid #ced4da;
+  border-bottom: none;
+  border-top-left-radius: 4px;
+  border-top-right-radius: 4px;
+  text-decoration: none;
+  transition: all 0.15s ease-in-out;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.erp-doc-tab:hover {
+  background: #f8f9fa;
+  color: #212529;
+}
+
+.erp-doc-tab.active {
+  background: #ffffff;
+  color: #212529;
+  font-weight: 600;
+  border-bottom: 1px solid #ffffff;
+  margin-bottom: -1px;
+  z-index: 2;
+}
+
+.erp-doc-tab-close {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 15px;
+  height: 15px;
+  border-radius: 50%;
+  font-size: 13px;
+  line-height: 1;
+  color: #6c757d;
+  text-decoration: none;
+  margin-left: 4px;
+  cursor: pointer;
+}
+
+.erp-doc-tab-close:hover {
+  background: #dee2e6;
+  color: #dc3545;
+}
+
+.erp-doc-window-close {
+  margin-left: auto;
+  color: #6c757d;
+  font-size: 18px;
+  line-height: 1;
+  padding: 2px 8px 6px 8px;
+  text-decoration: none;
+  cursor: pointer;
+}
+
+.erp-doc-window-close:hover {
+  color: #dc3545;
+}
+
+/* Sub-Tabs (Detail, Sopir/Kernet/Montir, Pembayaran, etc.) */
+.erp-sub-tabs {
+  display: flex;
+  background: #f8f9fa;
+  border-bottom: 1px solid #ced4da;
+  padding: 6px 12px 0 12px;
+  gap: 3px;
+  margin-bottom: 0;
+}
+
+.erp-sub-tabs .nav-link {
+  color: #495057;
+  background: #e9ecef;
+  border: 1px solid #ced4da;
+  border-bottom: 1px solid #ced4da;
+  font-size: 0.81rem;
+  font-weight: 500;
+  padding: 5px 14px;
+  border-top-left-radius: 3px;
+  border-top-right-radius: 3px;
+  margin-bottom: -1px;
+  text-decoration: none;
+  transition: all 0.15s ease-in-out;
+}
+
+.erp-sub-tabs .nav-link:hover {
+  background: #ffffff;
+  color: #212529;
+}
+
+.erp-sub-tabs .nav-link.active {
+  background: #ffffff;
+  color: #000000;
+  font-weight: 600;
+  border-bottom: 1px solid #ffffff;
+  z-index: 2;
+}
+
+/* Content Body */
+.erp-content-body {
+  background: #ffffff;
+  padding: 14px 16px;
+  border-top: none;
+}
+
+/* ERP Panels / Group Boxes */
+.rnt-panel {
+  border: 1px solid #ced4da;
+  border-radius: 2px;
+  background: #ffffff;
+  margin-bottom: 10px;
+}
+
+.rnt-panel-header {
+  background: #f1f3f5;
+  border-bottom: 1px solid #ced4da;
+  padding: 5px 10px;
+  font-size: 0.82rem;
+  font-weight: 600;
+  color: #343a40;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.rnt-panel-body {
+  padding: 10px;
+}
+
+/* Form Rows & Labels */
+.rnt-row {
+  display: flex;
+  align-items: center;
+  margin-bottom: 6px;
+}
+
+.rnt-row:last-child {
+  margin-bottom: 0;
+}
+
+.rnt-label {
+  width: 165px;
+  flex-shrink: 0;
+  font-size: 0.82rem;
+  color: #212529;
+  font-weight: 500;
+  padding-right: 8px;
+}
+
+.rnt-field {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.rnt-field .form-control-sm,
+.rnt-field .form-select-sm {
+  font-size: 0.82rem;
+  height: calc(1.5em + 0.5rem + 2px);
+  padding: 0.25rem 0.5rem;
+  border-radius: 2px;
+  border: 1px solid #ced4da;
+}
+
+.rnt-field .form-control-sm:focus,
+.rnt-field .form-select-sm:focus {
+  border-color: #80bdff;
+  box-shadow: 0 0 0 0.15rem rgba(13, 110, 253, 0.2);
+}
+
+.rnt-field .ts-control {
+  min-height: calc(1.5em + 0.5rem + 2px);
+  padding: 0.2rem 0.5rem;
+  font-size: 0.82rem;
+  border-radius: 2px;
+  border: 1px solid #ced4da;
+}
+
+/* ERP Grid Table */
+.erp-grid-table {
+  width: 100%;
+  font-size: 0.81rem;
+  border: 1px solid #ced4da;
+  border-collapse: collapse;
+}
+
+.erp-grid-table th {
+  background: #f8f9fa;
+  font-weight: 600;
+  color: #343a40;
+  border: 1px solid #ced4da;
+  padding: 5px 8px;
+  vertical-align: middle;
+}
+
+.erp-grid-table td {
+  border: 1px solid #ced4da;
+  padding: 4px 6px;
+  vertical-align: middle;
+}
+
+.erp-grid-table tr:hover {
+  background-color: #f1f8ff;
+}
+
+.erp-grid-quick-add {
+  background: #ffffff;
+  color: #6c757d;
+  cursor: pointer;
+  font-style: italic;
+  font-size: 0.8rem;
+}
+
+.erp-grid-quick-add:hover {
+  background: #eef5fc;
+  color: #0d6efd;
+}
+
+/* Bottom status bar */
+.erp-statusbar {
+  border-top: 1px solid #ced4da;
+  background: #f8f9fa;
+  padding: 3px 12px;
+  font-size: 0.76rem;
+  color: #495057;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 16px;
+  width: 100%;
+}
+

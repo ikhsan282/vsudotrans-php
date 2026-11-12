@@ -5,13 +5,14 @@
  * Tanpa login untuk publik. Cek tiket tetap valid & diteruskan ke tiket.php.
  */
 require_once __DIR__ . '/config/config.php';
+require_once __DIR__ . '/includes/booking.php';
 
 // Cek tiket dari landing: validasi format, lalu teruskan ke tiket.php (publik).
 $cek_no = strtoupper(trim((string) ($_POST['no'] ?? '')));
 $cek_err = '';
 if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
-    if (!preg_match('/^(TRV|RNT)-[A-Z2-9]{8}$/', $cek_no)) {
-        $cek_err = 'Format nomor tiket tidak dikenal. Contoh: TRV-AB23CD45 atau RNT-W44J89Z3.';
+    if (!booking_doc_valid($cek_no)) {
+        $cek_err = 'Format nomor tiket tidak dikenal. Contoh: 10000720261110.';
     } else {
         redirect('tiket.php?no=' . urlencode($cek_no));
     }
@@ -279,8 +280,8 @@ try {
                                     <i class="bi bi-hash"></i>
                                 </span>
                                 <input class="form-control text-uppercase fw-bold border-start-0 ps-0" id="ticket_no" name="no"
-                                       pattern="(TRV|RNT)-[A-Z2-9]{8}"
-                                       placeholder="TRV-AB23CD45" maxlength="12" required
+                                       pattern="(\d{10,20}|(TRV|RNT)-[A-Z2-9]{8})"
+                                       placeholder="10000720261110" maxlength="20" required
                                        value="<?= e($cek_no) ?>" style="letter-spacing: 0.05em;">
                             </div>
                             <?php if ($cek_err !== ''): ?>
@@ -290,7 +291,7 @@ try {
                                 </div>
                             <?php endif; ?>
                             <div class="form-text small mt-1">
-                                Contoh: <code>TRV-XXXXXXXX</code> (Travel Antar-Kota) atau <code>RNT-XXXXXXXX</code> (Rental Mobil).
+                                Contoh nomor dokumen: <code>10000720261110</code> (Travel / Rental Mobil).
                             </div>
                         </div>
 
@@ -594,7 +595,7 @@ try {
                         </h2>
                         <div id="faq1" class="accordion-collapse collapse" data-bs-parent="#accordionFaq">
                             <div class="accordion-body text-secondary small">
-                                Masukkan kode tiket berformat <code>TRV-XXXXXXXX</code> (untuk Travel Shuttle) atau <code>RNT-XXXXXXXX</code> (untuk Rental Kendaraan) pada form <strong>Cek Tiket</strong> di atas. Anda akan langsung melihat detail jadwal, kendaraan, nama sopir, dan status pembayaran secara real-time.
+                                Masukkan nomor dokumen tiket (contoh: <code>10000720261110</code>) pada form <strong>Cek E-Tiket</strong> di atas. Anda akan langsung melihat detail jadwal, kendaraan, nama sopir, dan status pembayaran secara real-time.
                             </div>
                         </div>
                     </div>

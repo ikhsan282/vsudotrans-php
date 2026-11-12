@@ -8,16 +8,17 @@ require_permission('rental.view');
 
 header('Content-Type: application/json; charset=utf-8');
 
-$cid        = active_company_id();
+$cid        = (int) ($_GET['company_id'] ?? (active_company_id() ?? 0));
 $vehicle_id = (int) ($_GET['vehicle_id'] ?? 0);
 $start_date = trim((string) ($_GET['start_date'] ?? ''));
 $end_date   = trim((string) ($_GET['end_date'] ?? ''));
 $exclude_id = (int) ($_GET['exclude_id'] ?? 0);
 
-if ($cid === null || $vehicle_id <= 0 || !preg_match('/^\d{4}-\d{2}-\d{2}$/', $start_date) || !preg_match('/^\d{4}-\d{2}-\d{2}$/', $end_date)) {
+if ($cid <= 0 || $vehicle_id <= 0 || !preg_match('/^\d{4}-\d{2}-\d{2}$/', $start_date) || !preg_match('/^\d{4}-\d{2}-\d{2}$/', $end_date)) {
     echo json_encode(['available' => true, 'checked' => false]);
     exit;
 }
+assert_company_access($cid);
 
 if ($start_date > $end_date) {
     echo json_encode(['available' => false, 'message' => 'Tanggal selesai tidak boleh lebih awal dari tanggal mulai.']);

@@ -23,7 +23,7 @@ $canManage = can('rental.manage');
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     verify_csrf();
     if (!$canManage) {
-        flash('error', 'Anda tidak memiliki izin mengelola booking rental.');
+        flash('error', 'Anda tidak memiliki izin mengelola pemesanan sewa kendaraan.');
         redirect('pages/rental/bookings/detail.php?id=' . $id);
     }
     $act  = (string) ($_POST['act'] ?? '');
@@ -147,7 +147,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         modified_user = ?, modified_date = NOW()
                     WHERE id = ? AND company_id = ?');
                 $up->bind_param(
-                    'issssddsiisiiisdiiissii',
+                    'issssddsiiisiiidiiissii',
                     $branch_id, $start_date, $time_sql, $start_date, $end_date, $trip, $bbm,
                     $p_addr, $p_prov, $p_city, $p_dist,
                     $d_addr, $d_prov, $d_city, $d_dist,
@@ -217,16 +217,16 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 throw $e;
             }
             audit('booking.rental.update', "Booking #{$id} {$b['document_number']} diperbarui");
-            flash('success', 'Data booking rental berhasil disimpan.');
+            flash('success', 'Data pemesanan sewa kendaraan berhasil disimpan.');
         } elseif ($act === 'status') {
             $to = (string) ($_POST['to_status'] ?? '');
             booking_change_status('rental', $id, $cid, $to, $note === '' ? 'Ubah status' : $note, $user);
             audit('booking.rental.status', "Booking #{$id} -> {$to}");
-            flash('success', 'Status booking diperbarui.');
+            flash('success', 'Status pemesanan diperbarui.');
         } elseif ($act === 'cancel') {
             booking_change_status('rental', $id, $cid, 'cancelled', $note === '' ? null : $note, $user);
             audit('booking.rental.cancel', "Booking #{$id}");
-            flash('success', 'Booking dibatalkan.');
+            flash('success', 'Pemesanan sewa kendaraan dibatalkan.');
         } elseif ($act === 'reschedule') {
             $date = (string) ($_POST['date'] ?? '');
             $time = (string) ($_POST['time'] ?? '');
@@ -235,7 +235,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             }
             booking_reschedule('rental', $id, $cid, $date, $time . ':00', $note === '' ? 'Reschedule' : $note, $user);
             audit('booking.rental.reschedule', "Booking #{$id} -> {$date} {$time}");
-            flash('success', 'Booking dijadwalkan ulang.');
+            flash('success', 'Pemesanan sewa kendaraan dijadwalkan ulang.');
         } elseif ($act === 'driver') {
             $emp = (int) ($_POST['employee_id'] ?? 0);
             $veh = (int) ($_POST['vehicle_id'] ?? 0);
@@ -245,7 +245,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         } elseif ($act === 'delete') {
             $doc_no = booking_delete('rental', $id, $cid);
             audit('booking.rental.delete', "Hapus booking {$doc_no} (#{$id})");
-            flash('success', "Booking rental {$doc_no} berhasil dihapus.");
+            flash('success', "Pemesanan sewa kendaraan {$doc_no} berhasil dihapus.");
             redirect('pages/rental/bookings/index.php');
         }
     } catch (Throwable $ex) {
@@ -366,10 +366,12 @@ $d2 = new DateTime((string) $b['end_date']);
 $duration_days = max(1, (int) $d1->diff($d2)->days + 1);
 
 $active = 'rental';
-$title  = 'Detail Booking Rental - ' . $b['document_number'];
+$title  = 'Detail Pemesanan Sewa Kendaraan - ' . $b['document_number'];
 require __DIR__ . '/../../../includes/header.php';
 ?>
 <style>
+
+
     /* Styling Nav Tabs */
     .rnt-tabs {
         border-bottom: 1px solid #dee2e6;
@@ -451,16 +453,15 @@ require __DIR__ . '/../../../includes/header.php';
     }
 </style>
 
-<main class="p-3 p-md-4">
-    <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-3">
-        <div>
-            <h1 class="h4 fw-bold mb-0 text-break d-flex align-items-center gap-2">
-                <span><i class="bi bi-car-front text-primary me-1"></i>Booking Rental: <?= e($b['document_number']) ?></span>
-                <?= status_badge($status) ?>
-            </h1>
-            <div class="small text-muted">Perusahaan: <strong><?= e($curCompany['label']) ?></strong></div>
+<main class="p-2 p-md-3">
+    <!-- Top Action Toolbar -->
+    <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-2">
+        <div class="d-flex align-items-center gap-2">
+            <span class="badge bg-primary text-white"><i class="bi bi-car-front me-1"></i>Pemesanan Sewa Kendaraan</span>
+            <?= status_badge($status) ?>
+            <span class="small text-muted d-none d-md-inline">Akses: <strong><?= e($curCompany['label']) ?></strong></span>
         </div>
-        <div class="d-flex flex-wrap gap-2">
+        <div class="d-flex flex-wrap gap-2 ms-auto">
             <?php if ($canManage): ?>
                 <button type="submit" form="rentalDetailForm" class="btn btn-primary btn-sm px-3">
                     <i class="bi bi-check2-circle me-1"></i>Simpan Perubahan
@@ -482,54 +483,61 @@ require __DIR__ . '/../../../includes/header.php';
                     <?= csrf_field() ?>
                     <input type="hidden" name="id" value="<?= $id ?>">
                     <input type="hidden" name="act" value="delete">
-                    <button type="submit" class="btn btn-danger btn-sm" title="Hapus Booking">
+                    <button type="submit" class="btn btn-outline-danger btn-sm" title="Hapus Booking">
                         <i class="bi bi-trash me-1"></i>Hapus
                     </button>
                 </form>
             <?php endif; ?>
             <a class="btn btn-outline-secondary btn-sm" href="<?= e(APP_URL) ?>/pages/rental/bookings/index.php">
-                <i class="bi bi-arrow-left me-1"></i>Kembali
+                <i class="bi bi-arrow-left me-1"></i>Daftar
             </a>
         </div>
     </div>
 
-    <!-- Navigasi 5 Tab sesuai standar UI Rental -->
-    <ul class="nav nav-tabs rnt-tabs border-bottom-0" id="rentalDetailTabs" role="tablist">
-        <li class="nav-item" role="presentation">
-            <button class="nav-link active" id="tab-detail-btn" data-bs-toggle="tab" data-bs-target="#tab-detail" type="button" role="tab">
-                Detail
-            </button>
-        </li>
-        <li class="nav-item" role="presentation">
-            <button class="nav-link" id="tab-crew-btn" data-bs-toggle="tab" data-bs-target="#tab-crew" type="button" role="tab">
-                Sopir/Kernet/Montir
-                <?php if (!empty($assignment['employee'])): ?>
-                    <span class="badge bg-success ms-1"><?= e($assignment['employee']) ?></span>
-                <?php endif; ?>
-            </button>
-        </li>
-        <li class="nav-item" role="presentation">
-            <button class="nav-link" id="tab-payment-btn" data-bs-toggle="tab" data-bs-target="#tab-payment" type="button" role="tab">
-                Pembayaran Sewa
-                <?php if ($invoice): ?>
-                    <?= invoice_pay_badge($invoice['pay_status']) ?>
-                <?php endif; ?>
-            </button>
-        </li>
-        <li class="nav-item" role="presentation">
-            <button class="nav-link" id="tab-note-btn" data-bs-toggle="tab" data-bs-target="#tab-note" type="button" role="tab">
-                Keterangan
-            </button>
-        </li>
-        <li class="nav-item" role="presentation">
-            <button class="nav-link" id="tab-audit-btn" data-bs-toggle="tab" data-bs-target="#tab-audit" type="button" role="tab">
-                Audit Trail
-            </button>
-        </li>
-    </ul>
+    <!-- ERP Window Container -->
+    <div class="erp-window-card">
+        <!-- TOP DOCUMENT TABS (Exact match to screenshot) -->
+        <div class="erp-doc-tabbar">
+            <a href="<?= e(APP_URL) ?>/pages/rental/bookings/index.php" class="erp-doc-tab">
+                Daftar Pemesanan Sewa Kendaraan
+            </a>
+            <div class="erp-doc-tab active">
+                <span>Detail Pemesanan Sewa Kendaraan (<?= e($b['document_number']) ?>)</span>
+                <a href="<?= e(APP_URL) ?>/pages/rental/bookings/index.php" class="erp-doc-tab-close" title="Tutup">&times;</a>
+            </div>
+            <a href="<?= e(APP_URL) ?>/pages/rental/bookings/index.php" class="erp-doc-window-close" title="Tutup">&times;</a>
+        </div>
 
-    <div class="card shadow-sm border-top-0 rounded-0 rounded-bottom">
-        <div class="card-body p-3">
+        <!-- 5 SUB-TABS (Exact match to screenshot) -->
+        <ul class="nav nav-tabs erp-sub-tabs" id="rentalDetailTabs" role="tablist">
+            <li class="nav-item" role="presentation">
+                <button class="nav-link active" id="tab-detail-btn" data-bs-toggle="tab" data-bs-target="#tab-detail" type="button" role="tab">
+                    Detail
+                </button>
+            </li>
+            <li class="nav-item" role="presentation">
+                <button class="nav-link" id="tab-crew-btn" data-bs-toggle="tab" data-bs-target="#tab-crew" type="button" role="tab">
+                    Sopir/Kernet/Montir
+                </button>
+            </li>
+            <li class="nav-item" role="presentation">
+                <button class="nav-link" id="tab-payment-btn" data-bs-toggle="tab" data-bs-target="#tab-payment" type="button" role="tab">
+                    Pembayaran Sewa
+                </button>
+            </li>
+            <li class="nav-item" role="presentation">
+                <button class="nav-link" id="tab-note-btn" data-bs-toggle="tab" data-bs-target="#tab-note" type="button" role="tab">
+                    Keterangan
+                </button>
+            </li>
+            <li class="nav-item" role="presentation">
+                <button class="nav-link" id="tab-audit-btn" data-bs-toggle="tab" data-bs-target="#tab-audit" type="button" role="tab">
+                    Audit Trail
+                </button>
+            </li>
+        </ul>
+
+        <div class="erp-content-body">
             <!-- Form Utama untuk Update Detail + Kru + Pembayaran + Keterangan -->
             <form method="post" action="" id="rentalDetailForm" enctype="multipart/form-data">
                 <?= csrf_field() ?>
@@ -1178,12 +1186,12 @@ require __DIR__ . '/../../../includes/header.php';
                                     <?php if ($status === 'cancelled'): ?>
                                         <p class="text-muted mb-0 small">Booking sudah dibatalkan.</p>
                                     <?php else: ?>
-                                    <form method="post" action="" class="d-flex flex-column gap-2" onsubmit="return confirm('Batalkan booking rental ini?')">
+                                    <form method="post" action="" class="d-flex flex-column gap-2" onsubmit="return confirm('Batalkan pemesanan sewa kendaraan ini?')">
                                         <?= csrf_field() ?>
                                         <input type="hidden" name="id" value="<?= $id ?>">
                                         <input type="hidden" name="act" value="cancel">
                                         <input class="form-control form-control-sm" name="reason" placeholder="Alasan pembatalan" maxlength="2000" required>
-                                        <button class="btn btn-sm btn-outline-danger" type="submit">Batalkan Booking</button>
+                                        <button class="btn btn-sm btn-outline-danger" type="submit">Batalkan Pemesanan</button>
                                     </form>
                                     <?php endif; ?>
                                 </div>
@@ -1489,7 +1497,7 @@ document.addEventListener('DOMContentLoaded', () => {
     if (btnApplyReg && crewTbody) {
         btnApplyReg.addEventListener('click', async () => {
             const regId = regSelect ? parseInt(regSelect.value || '0', 10) : 0;
-            const catEl = document.getElementById('categorySelect');
+            const catEl = document.getElementById('categoryVehicleSelect');
             const trpEl = document.querySelector('input[name="trip"]');
             const stEl  = document.getElementById('startDateInput');
             const prEl  = document.getElementById('totalPriceValue');

@@ -15,10 +15,11 @@ function ok(bool $c, string $msg): void { global $fails; echo ($c ? '  ok  ' : '
 $probe = __DIR__ . '/_roles_level_probe.php';
 $php   = PHP_BINARY;
 $ini   = php_ini_loaded_file();
+$nullDev = DIRECTORY_SEPARATOR === '\\' ? '2>NUL' : '2>/dev/null';
 // Jalankan probe; true bila konten memuat ALLOWED (lolos), false bila 403 (ditolak).
-$run = function (int $target_level) use ($probe, $php, $ini): bool {
+$run = function (int $target_level) use ($probe, $php, $ini, $nullDev): bool {
     $cmd = escapeshellarg($php) . ($ini ? ' -c ' . escapeshellarg($ini) : '')
-        . ' ' . escapeshellarg($probe) . ' ' . $target_level . ' 2>/dev/null';
+        . ' ' . escapeshellarg($probe) . ' ' . $target_level . ' ' . $nullDev;
     return str_contains((string) shell_exec($cmd), 'ALLOWED');
 };
 

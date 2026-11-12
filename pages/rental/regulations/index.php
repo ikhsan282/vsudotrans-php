@@ -81,7 +81,7 @@ $st->execute();
 $total = (int) $st->get_result()->fetch_row()[0];
 $st->close();
 
-$p = paginate($total);
+$p = paginate($total, (int) ($_GET['page'] ?? 1));
 $st = db()->prepare(
     "SELECT r.*,
             c.code AS company_code, c.name AS company_name,
@@ -120,7 +120,7 @@ $categories = $filter_company_id > 0
     : db()->query("SELECT id, CONCAT(code, ' - ', name) AS label FROM category_vehicles ORDER BY code, name")->fetch_all(MYSQLI_ASSOC);
 
 $header_actions = [
-    ['label' => 'Booking Rental', 'icon' => 'car-front', 'href' => 'pages/rental/bookings/index.php', 'class' => 'btn btn-outline-secondary btn-sm'],
+    ['label' => 'Pemesanan Sewa Kendaraan', 'icon' => 'car-front', 'href' => 'pages/rental/bookings/index.php', 'class' => 'btn btn-outline-secondary btn-sm'],
 ];
 if ($canManage) {
     $header_actions[] = ['label' => 'Tambah Peraturan Komisi', 'icon' => 'plus-lg', 'href' => 'pages/rental/regulations/form.php', 'class' => 'btn btn-primary btn-sm'];
@@ -138,7 +138,9 @@ $active = 'rental';
 $title  = 'Daftar Peraturan Komisi Karyawan';
 require __DIR__ . '/../../../includes/header.php';
 ?>
+
 <main class="p-3 p-lg-4 w-100 flex-grow-1">
+
     <?= ui_page_header(
         'Daftar Peraturan Komisi Karyawan',
         [

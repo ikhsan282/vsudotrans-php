@@ -145,7 +145,7 @@ function render_flash(): string
 }
 
 /** Pagination sederhana: kembalikan offset & info halaman. */
-function paginate(int $total, int $page, int $per_page = PER_PAGE): array
+function paginate(int $total, int $page = 1, int $per_page = PER_PAGE): array
 {
     $total_pages = max(1, (int) ceil($total / $per_page));
     $page = max(1, min($page, $total_pages));

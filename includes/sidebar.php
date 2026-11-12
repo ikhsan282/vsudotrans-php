@@ -58,8 +58,8 @@ $menu = [
         ['label' => 'Rute',           'href' => 'pages/travel/rutes/index.php',     'perms' => 'travel.view'],
     ]],
     ['key' => 'rental', 'section' => 'Operasional & Armada', 'label' => 'Rental Mobil', 'icon' => 'car-front', 'perm' => 'rental.view', 'sub' => [
-        ['label' => 'Booking Rental',   'href' => 'pages/rental/bookings/index.php',    'perms' => 'rental.view'],
-        ['label' => 'Peraturan Komisi', 'href' => 'pages/rental/regulations/index.php', 'perms' => 'rental.view'],
+        ['label' => 'Pemesanan Sewa Kendaraan', 'href' => 'pages/rental/bookings/index.php',    'perms' => 'rental.view'],
+        ['label' => 'Peraturan Komisi',         'href' => 'pages/rental/regulations/index.php', 'perms' => 'rental.view'],
     ]],
     ['key' => 'passengers', 'section' => 'Operasional & Armada', 'label' => 'Penumpang',    'icon' => 'people-fill', 'href' => 'pages/travel/passengers/index.php', 'perm' => ['travel.view', 'rental.view']],
     ['key' => 'dispatch',   'section' => 'Operasional & Armada', 'label' => 'Penjadwalan',  'icon' => 'calendar2-check', 'perm' => null, 'sub' => [

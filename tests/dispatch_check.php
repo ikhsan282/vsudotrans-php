@@ -209,9 +209,10 @@ ok($vid_stored === null, 'assign tanpa kendaraan menyimpan vehicle_id NULL, buka
 
 /* ---------- 15. regresi: detail.php tidak fatal untuk type ngawur ---------- */
 // pernah bug: dispatch_assert_type() throw tak tertangkap di halaman → HTTP 500.
-$out = shell_exec('/opt/data/bin/php -d mysqli.default_socket=/opt/data/cache/scratch/localdb/mysql.sock -r '
-    . escapeshellarg('require "' . dirname(__DIR__) . '/includes/dispatch_service.php"; '
-        . '$bad = "bogus"; var_export(in_array($bad, DISPATCH_TYPES, true));') . ' 2>&1');
+$tmp = sys_get_temp_dir() . '/vsudo_dt_' . getmypid() . '.php';
+file_put_contents($tmp, '<?php require ' . var_export(dirname(__DIR__) . '/includes/dispatch_service.php', true) . '; var_export(in_array("bogus", DISPATCH_TYPES, true));');
+$out = (string) shell_exec('"' . PHP_BINARY . '" "' . $tmp . '" 2>&1');
+@unlink($tmp);
 ok(trim((string) $out) === 'false',
     'type ngawur tidak lolos whitelist DISPATCH_TYPES — halaman bisa guard tanpa fatal (' . trim((string) $out) . ')');
 

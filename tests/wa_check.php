@@ -14,8 +14,7 @@ $fails = 0;
 function ok(bool $c, string $msg): void { global $fails; echo ($c ? '  ok  ' : '  FAIL') . "  $msg\n"; if (!$c) $fails++; }
 
 $c = db();
-$B = 'http://127.0.0.1:8090/vsudotrans-notifwa'; // SYMLINK ke worktree ini, bukan MASTER:
-// server dev menyajikan /opt/data/projects, dan master belum punya wa.php/wa_settings (403).
+$B = 'http://127.0.0.1:8080/vsudotrans-php';
 $DEAD = 'http://127.0.0.1:9/x';            // port tertutup -> koneksi ditolak
 
 // ---- Fixture (DB fresh kosong): wilayah, 2 perusahaan, cabang, penumpang ----

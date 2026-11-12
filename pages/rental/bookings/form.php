@@ -7,6 +7,13 @@ require_once __DIR__ . '/../../../includes/invoice_service.php';
 require_once __DIR__ . '/../../../includes/regulation_service.php';
 
 $cid = require_active_company();
+$id  = (int) ($_GET['id'] ?? $_POST['id'] ?? 0);
+$is_edit = $id > 0;
+
+if ($is_edit) {
+    redirect('pages/rental/bookings/detail.php?id=' . $id);
+}
+
 $in  = [
     'date'                       => date('Y-m-d'),
     'time'                       => '05:00',
@@ -40,6 +47,94 @@ $in_crew = [
 $in_payments = [
     ['pay_type' => 'Down Payment (DP)', 'pay_method' => 'Transfer', 'pay_date' => date('Y-m-d'), 'amount' => '0'],
 ];
+
+if ($is_edit && $_SERVER['REQUEST_METHOD'] !== 'POST') {
+    $d1 = new DateTime((string) $b['start_date']);
+    $d2 = new DateTime((string) $b['end_date']);
+    $duration_days = max(1, (int) $d1->diff($d2)->days + 1);
+
+    $in = [
+        'date'                       => (string) ($b['date'] ?: $b['start_date']),
+        'time'                       => substr((string) $b['time'], 0, 5),
+        'start_date'                 => (string) $b['start_date'],
+        'end_date'                   => (string) $b['end_date'],
+        'duration_days'              => (string) $duration_days,
+        'trip'                       => (string) (float) ($b['trip'] ?? 1),
+        'bbm'                        => (string) (float) ($b['bbm'] ?? 0),
+        'branch_id'                  => (string) $b['branch_id'],
+        'passenger_id'               => (string) $b['passenger_id'],
+        'category_vehicle_id'        => (string) ($b['category_vehicle_id'] ?? ''),
+        'vehicle_id'                 => (string) ($b['vehicle_id'] ?? ''),
+        'employee_id'                => '',
+        'total_price'                => (string) (float) ($b['total_price'] ?? 0),
+        'pickup_point_province_id'   => (string) ($b['pickup_point_province_id'] ?? ''),
+        'pickup_point_city_id'       => (string) ($b['pickup_point_city_id'] ?? ''),
+        'pickup_point_district_id'   => (string) ($b['pickup_point_district_id'] ?? ''),
+        'pickup_address'             => (string) ($b['pickup_address'] ?? ''),
+        'delivery_point_province_id' => (string) ($b['delivery_point_province_id'] ?? ''),
+        'delivery_point_city_id'     => (string) ($b['delivery_point_city_id'] ?? ''),
+        'delivery_point_district_id' => (string) ($b['delivery_point_district_id'] ?? ''),
+        'delivery_address'           => (string) ($b['delivery_address'] ?? ''),
+        'note'                       => (string) ($b['note'] ?? ''),
+    ];
+
+    if (empty($in['pickup_point_city_id']) && !empty($in['pickup_point_district_id'])) {
+        $stc = db()->query('SELECT city_id, province_id FROM districts WHERE id = ' . (int)$in['pickup_point_district_id'])->fetch_assoc();
+        if ($stc) {
+            $in['pickup_point_city_id'] = (string)$stc['city_id'];
+            if (empty($in['pickup_point_province_id'])) $in['pickup_point_province_id'] = (string)$stc['province_id'];
+        }
+    }
+    if (empty($in['delivery_point_city_id']) && !empty($in['delivery_point_district_id'])) {
+        $stc = db()->query('SELECT city_id, province_id FROM districts WHERE id = ' . (int)$in['delivery_point_district_id'])->fetch_assoc();
+        if ($stc) {
+            $in['delivery_point_city_id'] = (string)$stc['city_id'];
+            if (empty($in['delivery_point_province_id'])) $in['delivery_point_province_id'] = (string)$stc['province_id'];
+        }
+    }
+
+    $bp_list = booking_passengers_list('rental', $id, (int) $b['passenger_id']);
+    foreach ($bp_list as $bp) {
+        if ((int) $bp['passenger_id'] !== (int) $b['passenger_id']) {
+            $in_passengers[] = (int) $bp['passenger_id'];
+        }
+    }
+
+    $c_list = booking_rental_crew_list($id);
+    if ($c_list) {
+        $in_crew = [];
+        foreach ($c_list as $cl) {
+            $in_crew[] = [
+                'type'        => $cl['cost_type'],
+                'employee_id' => (string) ($cl['employee_id'] ?? ''),
+                'amount'      => (string) (float) ($cl['amount'] ?? 0),
+            ];
+        }
+    }
+
+    $stInvId = db()->prepare("SELECT id FROM invoices WHERE booking_type = 'rental' AND booking_id = ? LIMIT 1");
+    $stInvId->bind_param('i', $id);
+    $stInvId->execute();
+    $invRowId = $stInvId->get_result()->fetch_assoc();
+    $stInvId->close();
+    $invId = $invRowId ? (int) $invRowId['id'] : 0;
+    if ($invId > 0) {
+        $p_list = invoice_payments($invId);
+        if ($p_list) {
+            $in_payments = [];
+            foreach ($p_list as $pl) {
+                $in_payments[] = [
+                    'id'              => (int) ($pl['id'] ?? 0),
+                    'pay_type'        => (string) ($pl['pay_type'] ?? 'Down Payment (DP)'),
+                    'pay_method'      => (string) ($pl['pay_method'] ?? 'Transfer'),
+                    'pay_date'        => (string) (substr($pl['created_date'] ?? date('Y-m-d'), 0, 10)),
+                    'amount'          => (string) (float) ($pl['amount'] ?? 0),
+                    'proof_blob_path' => (string) ($pl['proof_blob_path'] ?? ''),
+                ];
+            }
+        }
+    }
+}
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     verify_csrf();
@@ -244,16 +339,20 @@ $delivery_districts = !empty($in['delivery_point_city_id'])
     : (!empty($in['delivery_point_district_id']) ? db()->query('SELECT id, name FROM districts WHERE id = ' . (int) $in['delivery_point_district_id'])->fetch_all(MYSQLI_ASSOC) : []);
 
 $active = 'rental';
-$title  = 'Booking Rental Baru';
+$title  = $is_edit ? 'Ubah Pemesanan Sewa Kendaraan - ' . $b['document_number'] : 'Pemesanan Sewa Kendaraan Baru';
 require __DIR__ . '/../../../includes/header.php';
 ?>
 <style>
+
+
+    /* Sub Tabs & Panels */
     .rnt-tabs .nav-link {
         color: #495057;
         background: #f8f9fa;
         border: 1px solid #dee2e6;
-        border-bottom: none;
+        border-bottom: 1px solid #dee2e6;
         margin-right: 4px;
+        margin-bottom: -1px;
         font-size: .875rem;
         font-weight: 500;
         padding: .5rem 1rem;
@@ -265,7 +364,7 @@ require __DIR__ . '/../../../includes/header.php';
         background: #fff;
         font-weight: 600;
         border-bottom: 2px solid #fff;
-        margin-bottom: -1px;
+        z-index: 2;
     }
     .rnt-panel {
         border: 1px solid #dee2e6;
@@ -321,292 +420,320 @@ require __DIR__ . '/../../../includes/header.php';
     }
 </style>
 
-<main class="p-3 p-md-4">
-    <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-3">
-        <div>
-            <h1 class="h4 fw-bold mb-0"><i class="bi bi-car-front-fill text-primary me-2"></i><?= e($title) ?></h1>
-            <div class="text-muted small">Formulir pemesanan sewa kendaraan / bus pariwisata</div>
+<main class="p-2 p-md-3">
+    <!-- Header Toolbar Halaman -->
+    <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-2">
+        <div class="d-flex align-items-center gap-2">
+            <span class="badge bg-primary text-white"><i class="bi bi-car-front-fill me-1"></i>Pemesanan Sewa Kendaraan</span>
+            <span class="badge bg-secondary-subtle text-secondary border">Draft Baru</span>
+            <span class="small text-muted d-none d-md-inline">Akses: <strong><?= e($curCompany['label']) ?></strong></span>
         </div>
-        <div class="d-flex gap-2">
+        <div class="d-flex flex-wrap gap-2 ms-auto">
+            <button type="submit" form="formRentalBooking" class="btn btn-primary btn-sm px-3">
+                <i class="bi bi-check2-circle me-1"></i>Simpan Pemesanan
+            </button>
             <a class="btn btn-outline-secondary btn-sm" href="<?= e(APP_URL) ?>/pages/rental/bookings/index.php">
-                <i class="bi bi-arrow-left me-1"></i>Kembali ke Daftar
+                <i class="bi bi-arrow-left me-1"></i>Batal / Kembali
             </a>
         </div>
     </div>
 
-    <?php
-    $ai_endpoint = APP_URL . '/pages/rental/bookings/ai_parse.php';
-    require __DIR__ . '/../../../includes/ai_panel.php';
-    ?>
+    <!-- ERP Window Container -->
+    <div class="erp-window-card">
+        <!-- TOP DOCUMENT TABS (Exact match to screenshot) -->
+        <div class="erp-doc-tabbar">
+            <a href="<?= e(APP_URL) ?>/pages/rental/bookings/index.php" class="erp-doc-tab">
+                Daftar Pemesanan Sewa Kendaraan
+            </a>
+            <div class="erp-doc-tab active">
+                <span>Pemesanan Sewa Kendaraan Baru</span>
+                <a href="<?= e(APP_URL) ?>/pages/rental/bookings/index.php" class="erp-doc-tab-close" title="Tutup">&times;</a>
+            </div>
+            <a href="<?= e(APP_URL) ?>/pages/rental/bookings/index.php" class="erp-doc-window-close" title="Tutup">&times;</a>
+        </div>
 
-    <form method="post" action="" id="formRentalBooking" enctype="multipart/form-data">
-        <?= csrf_field() ?>
-        <input type="hidden" name="date" id="rental_booking_date" value="<?= e($in['date']) ?>">
-        <input type="hidden" name="redirect_qris" id="redirect_qris_flag" value="">
-
-        <!-- Navigasi 5 Tab (Detail | Sopir/Kernet/Montir | Pembayaran Sewa | Keterangan | Audit Trail) -->
-        <ul class="nav nav-tabs rnt-tabs border-bottom-0" id="rentalTabs" role="tablist">
+        <!-- 5 SUB-TABS (Exact match to screenshot) -->
+        <ul class="nav nav-tabs erp-sub-tabs" id="rentalTabs" role="tablist">
             <li class="nav-item" role="presentation">
                 <button class="nav-link active" id="tab-detail-btn" data-bs-toggle="tab" data-bs-target="#tab-detail" type="button" role="tab">
-                    <i class="bi bi-card-list me-1"></i>Detail
+                    Detail
                 </button>
             </li>
             <li class="nav-item" role="presentation">
                 <button class="nav-link" id="tab-crew-btn" data-bs-toggle="tab" data-bs-target="#tab-crew" type="button" role="tab">
-                    <i class="bi bi-person-badge me-1"></i>Sopir/Kernet/Montir
+                    Sopir/Kernet/Montir
                 </button>
             </li>
             <li class="nav-item" role="presentation">
                 <button class="nav-link" id="tab-payment-btn" data-bs-toggle="tab" data-bs-target="#tab-payment" type="button" role="tab">
-                    <i class="bi bi-cash-coin me-1"></i>Pembayaran Sewa
+                    Pembayaran Sewa
                 </button>
             </li>
             <li class="nav-item" role="presentation">
                 <button class="nav-link" id="tab-note-btn" data-bs-toggle="tab" data-bs-target="#tab-note" type="button" role="tab">
-                    <i class="bi bi-journal-text me-1"></i>Keterangan
+                    Keterangan
                 </button>
             </li>
             <li class="nav-item" role="presentation">
                 <button class="nav-link" id="tab-audit-btn" data-bs-toggle="tab" data-bs-target="#tab-audit" type="button" role="tab">
-                    <i class="bi bi-clock-history me-1"></i>Audit Trail
+                    Audit Trail
                 </button>
             </li>
         </ul>
 
-        <div class="tab-content border rounded-bottom rounded-end bg-white p-3 shadow-sm">
-            <!-- ========================================================== -->
-            <!-- TAB 1: DETAIL                                              -->
-            <!-- ========================================================== -->
-            <div class="tab-pane fade show active" id="tab-detail" role="tabpanel">
-                <div class="mb-3">
-                    <!-- Resi -->
-                    <div class="rnt-row">
-                        <label class="rnt-label">Resi</label>
-                        <div class="rnt-field">
-                            <input type="text" class="form-control form-control-sm fw-bold bg-light font-monospace" readonly value="OTOMATIS (RNT-XXXXXXXX)">
-                        </div>
-                    </div>
+        <div class="erp-content-body">
+            <form method="post" action="" id="formRentalBooking" enctype="multipart/form-data">
+                <?= csrf_field() ?>
+                <input type="hidden" name="date" id="rental_booking_date" value="<?= e($in['date']) ?>">
+                <input type="hidden" name="trip" id="rental_trip" value="<?= e($in['trip'] !== '' && (float)$in['trip'] > 0 ? $in['trip'] : '1') ?>">
+                <input type="hidden" name="redirect_qris" id="redirect_qris_flag" value="">
 
-                    <!-- Perusahaan -->
-                    <div class="rnt-row">
-                        <label class="rnt-label">Perusahaan</label>
-                        <div class="rnt-field">
-                            <input type="text" class="form-control form-control-sm bg-light fw-semibold" readonly value="<?= e($curCompany['label']) ?>">
-                        </div>
-                    </div>
-
-                    <!-- Cabang -->
-                    <div class="rnt-row">
-                        <label class="rnt-label">Cabang <span class="text-danger">*</span></label>
-                        <div class="rnt-field">
-                            <select class="form-select form-select-sm ts-select" name="branch_id" required>
-                                <option value="">-- Pilih Cabang --</option>
-                                <?= select_options($branches, $in['branch_id']) ?>
-                            </select>
-                        </div>
-                    </div>
-
-                    <!-- Tanggal Keberangkatan (Mulai | Selesai | Durasi Hari) -->
-                    <div class="rnt-row">
-                        <label class="rnt-label">Tanggal Keberangkatan <span class="text-danger">*</span></label>
-                        <div class="rnt-field">
-                            <div class="row g-2 align-items-center">
-                                <div class="col-sm-5">
-                                    <input type="text" class="form-control form-control-sm bg-white flatpickr-date" id="rental_start_date" name="start_date" required value="<?= e($in['start_date']) ?>" placeholder="dd-MMM-yyyy">
+                <div class="tab-content" id="rentalTabContent">
+                    <!-- ========================================================== -->
+                    <!-- TAB 1: DETAIL                                              -->
+                    <!-- ========================================================== -->
+                    <div class="tab-pane fade show active" id="tab-detail" role="tabpanel">
+                        <div class="rnt-panel">
+                            <div class="rnt-panel-body">
+                                <!-- Resi -->
+                                <div class="rnt-row">
+                                    <label class="rnt-label">Resi</label>
+                                    <div class="rnt-field">
+                                        <input type="text" class="form-control form-control-sm fw-bold bg-light font-monospace" readonly value="OTOMATIS (100009<?= date('Ymd') ?>)">
+                                    </div>
                                 </div>
-                                <div class="col-sm-5">
-                                    <input type="text" class="form-control form-control-sm bg-white flatpickr-date" id="rental_end_date" name="end_date" required value="<?= e($in['end_date']) ?>" placeholder="dd-MMM-yyyy">
+
+                                <!-- Perusahaan -->
+                                <div class="rnt-row">
+                                    <label class="rnt-label">Perusahaan</label>
+                                    <div class="rnt-field">
+                                        <select class="form-select form-select-sm bg-light" disabled>
+                                            <option value="<?= (int) $curCompany['id'] ?>" selected><?= e($curCompany['label']) ?></option>
+                                        </select>
+                                    </div>
                                 </div>
-                                <div class="col-sm-2">
-                                    <div class="input-group input-group-sm">
-                                        <input type="number" min="1" max="365" class="form-control form-control-sm text-center fw-semibold" id="rental_duration_days" name="duration_days" value="<?= e($in['duration_days']) ?>" title="Durasi Sewa (Hari)">
-                                        <span class="input-group-text">hr</span>
+
+                                <!-- Cabang -->
+                                <div class="rnt-row">
+                                    <label class="rnt-label">Cabang <span class="text-danger">*</span></label>
+                                    <div class="rnt-field">
+                                        <select class="form-select form-select-sm ts-select" name="branch_id" required>
+                                            <option value="">-- Pilih Cabang --</option>
+                                            <?= select_options($branches, $in['branch_id']) ?>
+                                        </select>
+                                    </div>
+                                </div>
+
+                                <!-- Tanggal Keberangkatan (Mulai | Selesai | Durasi Hari) -->
+                                <div class="rnt-row">
+                                    <label class="rnt-label">Tanggal Keberangkatan <span class="text-danger">*</span></label>
+                                    <div class="rnt-field">
+                                        <div class="row g-2 align-items-center">
+                                            <div class="col-12 col-sm-5">
+                                                <input type="text" class="form-control form-control-sm bg-white flatpickr-date" id="rental_start_date" name="start_date" required value="<?= e($in['start_date']) ?>" placeholder="dd-MMM-yyyy">
+                                            </div>
+                                            <div class="col-12 col-sm-5">
+                                                <input type="text" class="form-control form-control-sm bg-white flatpickr-date" id="rental_end_date" name="end_date" required value="<?= e($in['end_date']) ?>" placeholder="dd-MMM-yyyy">
+                                            </div>
+                                            <div class="col-12 col-sm-2">
+                                                <div class="input-group input-group-sm">
+                                                    <input type="number" min="1" max="365" class="form-control form-control-sm text-end fw-semibold" id="rental_duration_days" name="duration_days" value="<?= e($in['duration_days']) ?>" title="Durasi Sewa (Hari)">
+                                                    <span class="input-group-text">hr</span>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <!-- Jam -->
+                                <div class="rnt-row">
+                                    <label class="rnt-label">Jam <span class="text-danger">*</span></label>
+                                    <div class="rnt-field">
+                                        <div class="input-group input-group-sm" style="max-width: 260px;">
+                                            <input type="time" class="form-control form-control-sm" name="time" id="rental_time_input" required value="<?= e($in['time']) ?>">
+                                            <span class="input-group-text bg-light text-muted fw-semibold" id="rental_time_period_badge"><?= time_period_label($in['time']) ?></span>
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <!-- Harga -->
+                                <div class="rnt-row">
+                                    <label class="rnt-label">Harga <span class="text-danger">*</span></label>
+                                    <div class="rnt-field">
+                                        <div class="input-group input-group-sm">
+                                            <span class="input-group-text bg-light fw-semibold">Rp</span>
+                                            <input type="text" inputmode="numeric" class="form-control form-control-sm fw-bold" id="rental_price_display" placeholder="0" value="<?= format_nominal((float) $in['total_price']) ?>">
+                                            <input type="hidden" id="rental_total_price" name="total_price" value="<?= e($in['total_price']) ?>">
+                                        </div>
+                                        <div id="rental_calc_hint" class="form-text small" style="display: none;"></div>
                                     </div>
                                 </div>
                             </div>
                         </div>
-                    </div>
 
-                    <!-- Jam -->
-                    <div class="rnt-row">
-                        <label class="rnt-label">Jam <span class="text-danger">*</span></label>
-                        <div class="rnt-field">
-                            <div class="input-group input-group-sm" style="max-width: 260px;">
-                                <input type="time" class="form-control form-control-sm" name="time" id="rental_time_input" required value="<?= e($in['time']) ?>">
-                                <span class="input-group-text bg-light text-muted fw-semibold" id="rental_time_period_badge"><?= time_period_label($in['time']) ?></span>
-                            </div>
-                        </div>
-                    </div>
-
-                    <!-- Harga -->
-                    <div class="rnt-row">
-                        <label class="rnt-label">Harga <span class="text-danger">*</span></label>
-                        <div class="rnt-field">
-                            <div class="input-group input-group-sm">
-                                <span class="input-group-text bg-light fw-semibold">Rp</span>
-                                <input type="text" inputmode="numeric" class="form-control form-control-sm fw-bold" id="rental_price_display" placeholder="0" value="<?= format_nominal((float) $in['total_price']) ?>">
-                                <input type="hidden" id="rental_total_price" name="total_price" value="<?= e($in['total_price']) ?>">
-                            </div>
-                            <div id="rental_calc_hint" class="form-text small" style="display: none;"></div>
-                        </div>
-                    </div>
-                </div>
-
-                <!-- PANEL KENDARAAN -->
-                <div class="rnt-panel">
-                    <div class="rnt-panel-header">
-                        <span><i class="bi bi-bus-front me-1 text-primary"></i>Kendaraan</span>
-                        <a href="<?= e(APP_URL) ?>/pages/vehicles/form.php" target="_blank" class="text-primary text-decoration-none small fw-semibold">
-                            <i class="bi bi-plus-circle me-1"></i>Tambah Kendaraan Baru
-                        </a>
-                    </div>
-                    <div class="rnt-panel-body">
-                        <div class="rnt-row">
-                            <label class="rnt-label">Kategori</label>
-                            <div class="rnt-field">
-                                <select class="form-select form-select-sm ts-select" id="rental_category_select" name="category_vehicle_id">
-                                    <option value="">-- Semua Kategori Kendaraan --</option>
-                                    <?= select_options($cats, $in['category_vehicle_id']) ?>
-                                </select>
-                            </div>
-                        </div>
-                        <div class="rnt-row">
-                            <label class="rnt-label">Kendaraan</label>
-                            <div class="rnt-field">
-                                <select class="form-select form-select-sm ts-select" id="rental_vehicle_select" name="vehicle_id">
-                                    <option value="">-- Pilih Unit Kendaraan --</option>
-                                    <?php foreach ($vehicles as $v):
-                                        $sel = ((string) $v['id'] === (string) $in['vehicle_id']) ? ' selected' : '';
-                                    ?>
-                                        <option value="<?= (int) $v['id'] ?>" data-category="<?= (int) ($v['category_vehicle_id'] ?? 0) ?>"<?= $sel ?>><?= e($v['name']) ?></option>
-                                    <?php endforeach; ?>
-                                </select>
-                                <div id="rental_vehicle_alert" style="display:none;"></div>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-
-                <!-- PANEL PELANGGAN -->
-                <div class="rnt-panel">
-                    <div class="rnt-panel-header">
-                        <span><i class="bi bi-person-vcard me-1 text-primary"></i>Pelanggan</span>
-                        <a href="#" data-bs-toggle="modal" data-bs-target="#modalQuickPassenger" class="text-primary text-decoration-none small fw-semibold">
-                            <i class="bi bi-person-plus-fill me-1"></i>Tambah Pelanggan Baru
-                        </a>
-                    </div>
-                    <div class="rnt-panel-body">
-                        <div class="rnt-row">
-                            <label class="rnt-label">Pelanggan <span class="text-danger">*</span></label>
-                            <div class="rnt-field">
-                                <select class="form-select form-select-sm ts-select" id="select_passenger_id" name="passenger_id" required>
-                                    <option value="">-- Pilih Pelanggan --</option>
-                                    <?= select_options($passengers, $in['passenger_id']) ?>
-                                </select>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-
-                <!-- PANEL PENJEMPUTAN & PENGANTARAN (2 KOLOM BERDAMPINGAN) -->
-                <div class="row g-3">
-                    <!-- Kolom Kiri: Penjemputan -->
-                    <div class="col-lg-6">
-                        <div class="rnt-panel h-100 mb-0">
+                        <!-- PANEL KENDARAAN -->
+                        <div class="rnt-panel">
                             <div class="rnt-panel-header">
-                                <span><i class="bi bi-geo-alt-fill text-success me-1"></i>Penjemputan</span>
+                                <span><i class="bi bi-bus-front me-1 text-primary"></i>Kendaraan</span>
+                                <a href="<?= e(APP_URL) ?>/pages/vehicles/form.php" target="_blank" class="text-primary text-decoration-none small fw-semibold">
+                                    <i class="bi bi-plus-circle me-1"></i>Tambah Kendaraan Baru
+                                </a>
                             </div>
                             <div class="rnt-panel-body">
                                 <div class="rnt-row">
-                                    <label class="rnt-label" style="width:120px;">Provinsi</label>
+                                    <label class="rnt-label">Kategori</label>
                                     <div class="rnt-field">
-                                        <select class="form-select form-select-sm ts-select" id="rental_pickup_province" name="pickup_point_province_id">
-                                            <option value="">-- Pilih Provinsi --</option>
-                                            <?= select_options($provinces, $in['pickup_point_province_id']) ?>
+                                        <select class="form-select form-select-sm ts-select" id="rental_category_select" name="category_vehicle_id">
+                                            <option value="">-- Semua Kategori Kendaraan --</option>
+                                            <?= select_options($cats, $in['category_vehicle_id']) ?>
                                         </select>
                                     </div>
                                 </div>
                                 <div class="rnt-row">
-                                    <label class="rnt-label" style="width:120px;">Kota/Kab <span class="text-danger">*</span></label>
+                                    <label class="rnt-label">Kendaraan</label>
                                     <div class="rnt-field">
-                                        <select class="form-select form-select-sm ts-select" id="rental_pickup_city" name="pickup_point_city_id">
-                                            <option value="">-- Pilih Kota/Kab --</option>
-                                            <?php foreach ($cities as $c):
-                                                $sel = ((string) $c['id'] === (string) $in['pickup_point_city_id']) ? ' selected' : '';
+                                        <select class="form-select form-select-sm ts-select" id="rental_vehicle_select" name="vehicle_id">
+                                            <option value="">-- Pilih Unit Kendaraan --</option>
+                                            <?php foreach ($vehicles as $v):
+                                                $sel = ((string) $v['id'] === (string) $in['vehicle_id']) ? ' selected' : '';
                                             ?>
-                                                <option value="<?= (int) $c['id'] ?>" data-province="<?= (int) $c['province_id'] ?>"<?= $sel ?>><?= e($c['name']) ?></option>
+                                                <option value="<?= (int) $v['id'] ?>" data-category="<?= (int) ($v['category_vehicle_id'] ?? 0) ?>"<?= $sel ?>><?= e($v['name']) ?></option>
                                             <?php endforeach; ?>
                                         </select>
-                                    </div>
-                                </div>
-                                <div class="rnt-row">
-                                    <label class="rnt-label" style="width:120px;">Kecamatan <span class="text-danger">*</span></label>
-                                    <div class="rnt-field">
-                                        <select class="form-select form-select-sm ts-select" id="rental_pickup_district" name="pickup_point_district_id" required>
-                                            <option value="">-- Pilih Kecamatan --</option>
-                                            <?= select_options($pickup_districts, $in['pickup_point_district_id']) ?>
-                                        </select>
-                                    </div>
-                                </div>
-                                <div class="rnt-row align-items-start mt-2">
-                                    <label class="rnt-label pt-1" style="width:120px;">Detail Alamat</label>
-                                    <div class="rnt-field">
-                                        <textarea class="form-control form-control-sm" name="pickup_address" rows="5" maxlength="2000" placeholder="Titik penjemputan lengkap..."><?= e($in['pickup_address']) ?></textarea>
+                                        <div id="rental_vehicle_alert" style="display:none;"></div>
                                     </div>
                                 </div>
                             </div>
                         </div>
-                    </div>
 
-                    <!-- Kolom Kanan: Pengantaran -->
-                    <div class="col-lg-6">
-                        <div class="rnt-panel h-100 mb-0">
+                        <!-- PANEL PELANGGAN -->
+                        <div class="rnt-panel">
                             <div class="rnt-panel-header">
-                                <span><i class="bi bi-pin-map-fill text-danger me-1"></i>Pengantaran</span>
+                                <span><i class="bi bi-person-vcard me-1 text-primary"></i>Pelanggan</span>
+                                <a href="#" data-bs-toggle="modal" data-bs-target="#modalQuickPassenger" class="text-primary text-decoration-none small fw-semibold">
+                                    <i class="bi bi-person-plus-fill me-1"></i>Tambah Pelanggan Baru
+                                </a>
                             </div>
                             <div class="rnt-panel-body">
                                 <div class="rnt-row">
-                                    <label class="rnt-label" style="width:120px;">Provinsi</label>
+                                    <label class="rnt-label">Pelanggan <span class="text-danger">*</span></label>
                                     <div class="rnt-field">
-                                        <select class="form-select form-select-sm ts-select" id="rental_delivery_province" name="delivery_point_province_id">
-                                            <option value="">-- Pilih Provinsi --</option>
-                                            <?= select_options($provinces, $in['delivery_point_province_id']) ?>
+                                        <select class="form-select form-select-sm ts-select" id="select_passenger_id" name="passenger_id" required>
+                                            <option value="">-- Pilih Pelanggan --</option>
+                                            <?= select_options($passengers, $in['passenger_id']) ?>
                                         </select>
                                     </div>
                                 </div>
                                 <div class="rnt-row">
-                                    <label class="rnt-label" style="width:120px;">Kota/Kab <span class="text-danger">*</span></label>
+                                    <label class="rnt-label">Penumpang Tambahan</label>
                                     <div class="rnt-field">
-                                        <select class="form-select form-select-sm ts-select" id="rental_delivery_city" name="delivery_point_city_id">
-                                            <option value="">-- Pilih Kota/Kab --</option>
-                                            <?php foreach ($cities as $c):
-                                                $sel = ((string) $c['id'] === (string) $in['delivery_point_city_id']) ? ' selected' : '';
-                                            ?>
-                                                <option value="<?= (int) $c['id'] ?>" data-province="<?= (int) $c['province_id'] ?>"<?= $sel ?>><?= e($c['name']) ?></option>
-                                            <?php endforeach; ?>
+                                        <select class="form-select form-select-sm ts-select" name="passenger_ids[]" id="extraPassengersSelect" multiple data-placeholder="Opsional: pilih penumpang pendamping...">
+                                            <?= select_options($passengers, $in_passengers) ?>
                                         </select>
                                     </div>
                                 </div>
-                                <div class="rnt-row">
-                                    <label class="rnt-label" style="width:120px;">Kecamatan <span class="text-danger">*</span></label>
-                                    <div class="rnt-field">
-                                        <select class="form-select form-select-sm ts-select" id="rental_delivery_district" name="delivery_point_district_id" required>
-                                            <option value="">-- Pilih Kecamatan --</option>
-                                            <?= select_options($delivery_districts, $in['delivery_point_district_id']) ?>
-                                        </select>
+                            </div>
+                        </div>
+
+                        <!-- PANEL PENJEMPUTAN & PENGANTARAN (2 KOLOM BERDAMPINGAN) -->
+                        <div class="row g-3">
+                            <!-- Kolom Kiri: Penjemputan -->
+                            <div class="col-12 col-lg-6">
+                                <div class="rnt-panel h-100 mb-0">
+                                    <div class="rnt-panel-header">
+                                        <span><i class="bi bi-geo-alt-fill text-success me-1"></i>Penjemputan</span>
+                                    </div>
+                                    <div class="rnt-panel-body">
+                                        <div class="rnt-row">
+                                            <label class="rnt-label">Provinsi</label>
+                                            <div class="rnt-field">
+                                                <select class="form-select form-select-sm ts-select" id="rental_pickup_province" name="pickup_point_province_id">
+                                                    <option value="">-- Pilih Provinsi --</option>
+                                                    <?= select_options($provinces, $in['pickup_point_province_id']) ?>
+                                                </select>
+                                            </div>
+                                        </div>
+                                        <div class="rnt-row">
+                                            <label class="rnt-label">Kota/Kab <span class="text-danger">*</span></label>
+                                            <div class="rnt-field">
+                                                <select class="form-select form-select-sm ts-select" id="rental_pickup_city" name="pickup_point_city_id">
+                                                    <option value="">-- Pilih Kota/Kab --</option>
+                                                    <?php foreach ($cities as $c):
+                                                        $sel = ((string) $c['id'] === (string) $in['pickup_point_city_id']) ? ' selected' : '';
+                                                    ?>
+                                                        <option value="<?= (int) $c['id'] ?>" data-province="<?= (int) $c['province_id'] ?>"<?= $sel ?>><?= e($c['name']) ?></option>
+                                                    <?php endforeach; ?>
+                                                </select>
+                                            </div>
+                                        </div>
+                                        <div class="rnt-row">
+                                            <label class="rnt-label">Kecamatan <span class="text-danger">*</span></label>
+                                            <div class="rnt-field">
+                                                <select class="form-select form-select-sm ts-select" id="rental_pickup_district" name="pickup_point_district_id" required>
+                                                    <option value="">-- Pilih Kecamatan --</option>
+                                                    <?= select_options($pickup_districts, $in['pickup_point_district_id']) ?>
+                                                </select>
+                                            </div>
+                                        </div>
+                                        <div class="rnt-row align-items-start mt-2">
+                                            <label class="rnt-label pt-1">Detail Alamat</label>
+                                            <div class="rnt-field">
+                                                <textarea class="form-control form-control-sm" name="pickup_address" rows="5" maxlength="2000" placeholder="Titik penjemputan lengkap..."><?= e($in['pickup_address']) ?></textarea>
+                                            </div>
+                                        </div>
                                     </div>
                                 </div>
-                                <div class="rnt-row align-items-start mt-2">
-                                    <label class="rnt-label pt-1" style="width:120px;">Detail Alamat</label>
-                                    <div class="rnt-field">
-                                        <textarea class="form-control form-control-sm" name="delivery_address" rows="5" maxlength="2000" placeholder="Tujuan pengantaran lengkap..."><?= e($in['delivery_address']) ?></textarea>
+                            </div>
+
+                            <!-- Kolom Kanan: Pengantaran -->
+                            <div class="col-12 col-lg-6">
+                                <div class="rnt-panel h-100 mb-0">
+                                    <div class="rnt-panel-header">
+                                        <span><i class="bi bi-pin-map-fill text-danger me-1"></i>Pengantaran</span>
+                                    </div>
+                                    <div class="rnt-panel-body">
+                                        <div class="rnt-row">
+                                            <label class="rnt-label">Provinsi</label>
+                                            <div class="rnt-field">
+                                                <select class="form-select form-select-sm ts-select" id="rental_delivery_province" name="delivery_point_province_id">
+                                                    <option value="">-- Pilih Provinsi --</option>
+                                                    <?= select_options($provinces, $in['delivery_point_province_id']) ?>
+                                                </select>
+                                            </div>
+                                        </div>
+                                        <div class="rnt-row">
+                                            <label class="rnt-label">Kota/Kab <span class="text-danger">*</span></label>
+                                            <div class="rnt-field">
+                                                <select class="form-select form-select-sm ts-select" id="rental_delivery_city" name="delivery_point_city_id">
+                                                    <option value="">-- Pilih Kota/Kab --</option>
+                                                    <?php foreach ($cities as $c):
+                                                        $sel = ((string) $c['id'] === (string) $in['delivery_point_city_id']) ? ' selected' : '';
+                                                    ?>
+                                                        <option value="<?= (int) $c['id'] ?>" data-province="<?= (int) $c['province_id'] ?>"<?= $sel ?>><?= e($c['name']) ?></option>
+                                                    <?php endforeach; ?>
+                                                </select>
+                                            </div>
+                                        </div>
+                                        <div class="rnt-row">
+                                            <label class="rnt-label">Kecamatan <span class="text-danger">*</span></label>
+                                            <div class="rnt-field">
+                                                <select class="form-select form-select-sm ts-select" id="rental_delivery_district" name="delivery_point_district_id" required>
+                                                    <option value="">-- Pilih Kecamatan --</option>
+                                                    <?= select_options($delivery_districts, $in['delivery_point_district_id']) ?>
+                                                </select>
+                                            </div>
+                                        </div>
+                                        <div class="rnt-row align-items-start mt-2">
+                                            <label class="rnt-label pt-1">Detail Alamat</label>
+                                            <div class="rnt-field">
+                                                <textarea class="form-control form-control-sm" name="delivery_address" rows="5" maxlength="2000" placeholder="Tujuan pengantaran lengkap..."><?= e($in['delivery_address']) ?></textarea>
+                                            </div>
+                                        </div>
                                     </div>
                                 </div>
                             </div>
                         </div>
                     </div>
-                </div>
-            </div>
 
             <!-- ========================================================== -->
             <!-- TAB 2: SOPIR / KERNET / MONTIR                             -->
@@ -873,14 +1000,14 @@ require __DIR__ . '/../../../includes/header.php';
                         <div class="rnt-row">
                             <label class="rnt-label">Dibuat Oleh</label>
                             <div class="rnt-field">
-                                <input type="text" class="form-control form-control-sm bg-light" value="<?= e($_SESSION['username'] ?? '-') ?>" readonly>
+                                <input type="text" class="form-control form-control-sm bg-light" value="<?= e($is_edit ? ($b['created_user'] ?? '-') : ($_SESSION['username'] ?? '-')) ?>" readonly>
                             </div>
                         </div>
                         <div class="rnt-row">
                             <label class="rnt-label">Dibuat Tanggal</label>
                             <div class="rnt-field">
                                 <div class="input-group input-group-sm">
-                                    <input type="text" class="form-control form-control-sm bg-light" value="<?= date('d-M-Y H:i') ?>" readonly>
+                                    <input type="text" class="form-control form-control-sm bg-light" value="<?= $is_edit ? (!empty($b['created_date']) ? date('d-M-Y H:i', strtotime($b['created_date'])) : '-') : date('d-M-Y H:i') ?>" readonly>
                                     <span class="input-group-text bg-white"><i class="bi bi-chevron-down text-muted"></i></span>
                                 </div>
                             </div>
@@ -888,14 +1015,14 @@ require __DIR__ . '/../../../includes/header.php';
                         <div class="rnt-row">
                             <label class="rnt-label">Diubah Oleh</label>
                             <div class="rnt-field">
-                                <input type="text" class="form-control form-control-sm bg-light" value="-" readonly>
+                                <input type="text" class="form-control form-control-sm bg-light" value="<?= e($is_edit ? ($b['modified_user'] ?? '-') : '-') ?>" readonly>
                             </div>
                         </div>
                         <div class="rnt-row">
                             <label class="rnt-label">Diubah Tanggal</label>
                             <div class="rnt-field">
                                 <div class="input-group input-group-sm">
-                                    <input type="text" class="form-control form-control-sm bg-light" value="-" readonly>
+                                    <input type="text" class="form-control form-control-sm bg-light" value="<?= $is_edit ? (!empty($b['modified_date']) ? date('d-M-Y H:i', strtotime($b['modified_date'])) : '-') : '-' ?>" readonly>
                                     <span class="input-group-text bg-white"><i class="bi bi-chevron-down text-muted"></i></span>
                                 </div>
                             </div>
@@ -903,22 +1030,24 @@ require __DIR__ . '/../../../includes/header.php';
                     </div>
                 </div>
             </div>
+        </div><!-- /tab-content -->
 
-            <!-- Tombol Simpan Bawah -->
-            <div class="mt-3 pt-3 border-top d-flex justify-content-between align-items-center flex-wrap gap-2">
-                <div class="small text-muted">
-                    <span id="rental_duration_badge" class="badge bg-primary-subtle text-primary border me-1">1 Hari Sewa</span>
-                    Pastikan data penjemputan, pengantaran, dan harga sewa sudah sesuai.
-                </div>
-                <div class="d-flex gap-2">
-                    <a class="btn btn-outline-secondary btn-sm px-3" href="<?= e(APP_URL) ?>/pages/rental/bookings/index.php">Batal</a>
-                    <button class="btn btn-primary btn-sm px-4 fw-semibold" type="submit">
-                        <i class="bi bi-check2-circle me-1"></i>Simpan Booking Rental
-                    </button>
-                </div>
+        <!-- Tombol Simpan Bawah -->
+        <div class="mt-3 pt-3 border-top d-flex justify-content-between align-items-center flex-wrap gap-2">
+            <div class="small text-muted">
+                <span id="rental_duration_badge" class="badge bg-primary-subtle text-primary border me-1">1 Hari Sewa</span>
+                Pastikan data penjemputan, pengantaran, dan harga sewa sudah sesuai.
+            </div>
+            <div class="d-flex gap-2">
+                <a class="btn btn-outline-secondary btn-sm px-3" href="<?= e(APP_URL) ?>/pages/rental/bookings/index.php">Batal</a>
+                <button class="btn btn-primary btn-sm px-4 fw-semibold" type="submit">
+                    <i class="bi bi-check2-circle me-1"></i>Simpan Pemesanan
+                </button>
             </div>
         </div>
     </form>
+    </div><!-- /.erp-content-body -->
+</div><!-- /.erp-window-card -->
 </main>
 
 <!-- Modal Quick-Add Pelanggan Baru -->
@@ -1359,6 +1488,18 @@ document.addEventListener('DOMContentLoaded', function () {
                     }
                 }
 
+                var extraSel = document.getElementById('extraPassengersSelect');
+                if (extraSel) {
+                    if (extraSel.tomselect) {
+                        extraSel.tomselect.addOption({ value: p.id, text: labelText });
+                    } else {
+                        var opt2 = document.createElement('option');
+                        opt2.value = p.id;
+                        opt2.textContent = labelText;
+                        extraSel.appendChild(opt2);
+                    }
+                }
+
                 qpForm.reset();
                 var bsModal = bootstrap.Modal.getInstance(modalEl);
                 if (bsModal) bsModal.hide();
@@ -1529,7 +1670,7 @@ document.addEventListener('DOMContentLoaded', function () {
         var catEl = document.getElementById('rental_category_select');
         var trpEl = document.getElementById('rental_trip');
         var stEl  = document.getElementById('rental_start_date');
-        var prEl  = document.getElementById('total_price_hidden');
+        var prEl  = document.getElementById('rental_total_price');
 
         var regId = typeof manualRegId !== 'undefined' ? parseInt(manualRegId || '0', 10) : (regSelect ? parseInt(regSelect.value || '0', 10) : 0);
         var catId = catEl ? parseInt(catEl.value || '0', 10) : 0;
@@ -1781,6 +1922,19 @@ document.addEventListener('DOMContentLoaded', function () {
             if (form) form.requestSubmit();
         });
     }
+    // Handler auto-switch tab bila ada field required yang belum diisi di tab lain
+    document.querySelectorAll('#formRentalBooking [required]').forEach(function (el) {
+        el.addEventListener('invalid', function () {
+            var pane = el.closest('.tab-pane');
+            if (pane) {
+                var tabBtn = document.querySelector('[data-bs-target="#' + pane.id + '"]');
+                if (tabBtn) {
+                    bootstrap.Tab.getOrCreateInstance(tabBtn).show();
+                }
+            }
+        });
+    });
+
     recalcPayTotals();
 });
 </script>

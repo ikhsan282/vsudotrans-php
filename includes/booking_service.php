@@ -21,14 +21,74 @@ function booking_table(string $type): string
     return $type === 'rental' ? 'rental_car_bookings' : 'travel_ticket_bookings';
 }
 
-/** Resi acak unik per perusahaan (dicek ke tabel booking). */
-function booking_unique_doc(string $type, int $company_id): string
+/**
+ * Deteksi tipe booking ('rental' | 'travel') berdasarkan nomor dokumen.
+ * Mendukung format numerik ERP (10000720261110) maupun prefix legacy (RNT-/TRV-).
+ */
+function booking_resolve_type_by_doc(string $no, string $company_code = ''): string
+{
+    $no = strtoupper(trim($no));
+    if (str_starts_with($no, 'RNT-')) {
+        return 'rental';
+    }
+    if (str_starts_with($no, 'TRV-')) {
+        return 'travel';
+    }
+    $db = db();
+    foreach (['rental' => 'rental_car_bookings', 'travel' => 'travel_ticket_bookings'] as $t => $tbl) {
+        if ($company_code !== '') {
+            $st = $db->prepare("SELECT 1 FROM {$tbl} b JOIN companies c ON c.id = b.company_id WHERE b.document_number = ? AND c.code = ? LIMIT 1");
+            $st->bind_param('ss', $no, $company_code);
+        } else {
+            $st = $db->prepare("SELECT 1 FROM {$tbl} WHERE document_number = ? LIMIT 1");
+            $st->bind_param('s', $no);
+        }
+        $st->execute();
+        $found = $st->get_result()->num_rows > 0;
+        $st->close();
+        if ($found) {
+            return $t;
+        }
+    }
+    return 'travel';
+}
+
+/**
+ * Nomor dokumen numerik unik (14 digit: 6 digit urutan mulai 100001 + YYYYMMDD),
+ * contoh: 10000720261110. Dicek agar unik di tabel travel maupun rental.
+ */
+function booking_unique_doc(string $type, int $company_id, ?string $date = null): string
 {
     $table = booking_table($type);
-    for ($i = 0; $i < 12; $i++) {
-        $doc = booking_doc_number(booking_prefix($type));
-        $st = db()->prepare("SELECT 1 FROM {$table} WHERE company_id = ? AND document_number = ? LIMIT 1");
-        $st->bind_param('is', $company_id, $doc);
+    $db = db();
+
+    $stMax = $db->prepare(
+        "SELECT COALESCE(MAX(seq), 100000) AS max_seq FROM (
+            SELECT CAST(LEFT(document_number, 6) AS UNSIGNED) AS seq
+              FROM rental_car_bookings
+             WHERE company_id = ? AND document_number REGEXP '^[0-9]{14}$'
+            UNION ALL
+            SELECT CAST(LEFT(document_number, 6) AS UNSIGNED) AS seq
+              FROM travel_ticket_bookings
+             WHERE company_id = ? AND document_number REGEXP '^[0-9]{14}$'
+        ) u"
+    );
+    $stMax->bind_param('ii', $company_id, $company_id);
+    $stMax->execute();
+    $maxSeq = (int) ($stMax->get_result()->fetch_assoc()['max_seq'] ?? 100000);
+    $stMax->close();
+
+    $baseSeq = max(100000, $maxSeq) + 1;
+
+    for ($i = 0; $i < 50; $i++) {
+        $doc = booking_numeric_doc_number($baseSeq + $i, $date);
+        $st = $db->prepare(
+            "SELECT 1 FROM rental_car_bookings WHERE document_number = ?
+             UNION ALL
+             SELECT 1 FROM travel_ticket_bookings WHERE document_number = ?
+             LIMIT 1"
+        );
+        $st->bind_param('ss', $doc, $doc);
         $st->execute();
         $exists = $st->get_result()->num_rows > 0;
         $st->close();
@@ -36,7 +96,7 @@ function booking_unique_doc(string $type, int $company_id): string
             return $doc;
         }
     }
-    throw new RuntimeException('Gagal membuat nomor resi unik.');
+    throw new RuntimeException('Gagal membuat nomor dokumen unik.');
 }
 
 /** Status terkini booking (history terakhir; default 'draft'). */
@@ -194,7 +254,8 @@ function booking_create(string $type, array $data): array
     $db = db();
     $table = booking_table($type);
     $company_id = (int) $data['company_id'];
-    $doc = booking_unique_doc($type, $company_id);
+    $doc_date = (string) ($data['date'] ?? $data['start_date'] ?? date('Y-m-d'));
+    $doc = booking_unique_doc($type, $company_id, $doc_date);
 
     $db->begin_transaction();
     try {
@@ -523,6 +584,15 @@ function booking_rental_crew_sync(int $booking_id, int $company_id, float $bbm, 
         $amt    = max(0.0, (float) ($r['amount'] ?? 0));
         if ($emp_id <= 0 && $amt <= 0) {
             continue;
+        }
+        if ($emp_id > 0) {
+            $chkEmp = $db->prepare('SELECT 1 FROM employees WHERE id = ? AND company_id = ? LIMIT 1');
+            $chkEmp->bind_param('ii', $emp_id, $company_id);
+            $chkEmp->execute();
+            if ($chkEmp->get_result()->num_rows === 0) {
+                $emp_id = 0;
+            }
+            $chkEmp->close();
         }
         $emp_null = $emp_id > 0 ? $emp_id : null;
         $desc     = $ctype;
