@@ -184,7 +184,7 @@ if ($pdf) {
         table.tk-lay { border-collapse: collapse; table-layout: fixed; width: 100%; }
         table.tk-lay > tbody > tr > td { border: 0; padding: 0; vertical-align: top; }
         table.tk-lay > tbody > tr > td.tk-split-left { width: 43%; padding-right: 18pt; vertical-align: top; }
-        table.tk-lay > tbody > tr > td.tk-split-right { width: 57%; padding-left: 18pt; border-left: 1px solid #e2e5e9; vertical-align: top; }
+        table.tk-lay > tbody > tr > td.tk-split-right { width: 57%; padding-left: 18pt; vertical-align: top; }
         .tk-sect-lbl { color: #888; font-size: 7pt; font-weight: 700; letter-spacing: .6px; text-transform: uppercase; margin-bottom: 4pt; }
         .tk-hr { border: 0; border-top: 1px solid #dee2e6; margin: 6pt 0 10pt 0; opacity: 1; }
         table.tk-kv { width: 100%; border-collapse: collapse; table-layout: fixed; }
