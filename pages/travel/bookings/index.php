@@ -82,8 +82,10 @@ $st->close();
 
 $export_format = strtolower(trim((string) ($_GET['export'] ?? '')));
 if (in_array($export_format, ['xlsx', 'pdf'], true)) {
+    $extra_pax_sql = booking_extra_passengers_export_sql('travel');
     $sql_export = "SELECT b.document_number, b.date, b.time,
                           p.name AS passenger_name, p.phone_number AS passenger_phone,
+                          {$extra_pax_sql} AS extra_passengers,
                           bv.name AS brand_name, mu.name AS model_name,
                           v.vehicle_number, cv.name AS category_name,
                           pc.name AS pickup_city_name, dc.name AS delivery_city_name,
@@ -110,9 +112,11 @@ if (in_array($export_format, ['xlsx', 'pdf'], true)) {
                 $r['vehicle_number'] ?? '',
                 trim(implode(' ', array_filter([$r['brand_name'] ?? '', $r['model_name'] ?? '']))),
             ])));
+            $extraPax = trim((string) ($r['extra_passengers'] ?? ''));
             return [
                 $r['document_number'],
                 trim($r['passenger_name'] . ($r['passenger_phone'] ? ' (' . $r['passenger_phone'] . ')' : '')),
+                $extraPax !== '' ? $extraPax : '-',
                 $vehLabel !== '' ? $vehLabel : ($r['category_name'] ?: '-'),
                 !empty($r['time']) ? substr($r['time'], 0, 5) : '-',
                 !empty($r['date']) ? date('d-M-Y', strtotime($r['date'])) : '-',
@@ -134,7 +138,7 @@ if (in_array($export_format, ['xlsx', 'pdf'], true)) {
 
     grid_export_send(
         'Daftar Booking Travel',
-        ['Resi', 'Penumpang (Nama & HP)', 'Kendaraan', 'Jam', 'Tanggal', 'Penjemputan', 'Pengantaran', 'Total Harga', 'Total Pembayaran', 'Status'],
+        ['Resi', 'Penumpang (Nama & HP)', 'Penumpang Tambahan', 'Kendaraan', 'Jam', 'Tanggal', 'Penjemputan', 'Pengantaran', 'Total Harga', 'Total Pembayaran', 'Status'],
         $row_stream,
         $export_format,
         'landscape',

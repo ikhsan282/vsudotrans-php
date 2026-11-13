@@ -241,6 +241,8 @@ CREATE TABLE `employees` (
   KEY `ix_employees_branch` (`branch_id`),
   KEY `ix_employees_status` (`status`),
   KEY `ix_employees_company_phone` (`company_id`, `phone_number`),
+  KEY `ix_employees_company_status_name` (`company_id`, `status`, `name`),
+  KEY `ix_employees_company_pos_status_name` (`company_id`, `job_position`, `status`, `name`),
   CONSTRAINT `fk_employees_company` FOREIGN KEY (`company_id`) REFERENCES `companies` (`id`) ON DELETE RESTRICT,
   CONSTRAINT `fk_employees_branch` FOREIGN KEY (`branch_id`) REFERENCES `branches` (`id`) ON DELETE SET NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;

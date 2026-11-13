@@ -334,7 +334,8 @@ $vehicles = opts_vehicles_detailed(
     !empty($in['category_vehicle_id']) ? (int) $in['category_vehicle_id'] : null,
     50
 );
-$employees  = opts_employees($cid);
+$crewEmpIds = array_values(array_unique(array_filter(array_map(static fn($cr) => (int) ($cr['employee_id'] ?? 0), $in_crew))));
+$employees  = opts_employees($cid, $crewEmpIds, 50);
 
 $p_form_dist = resolve_district_id($in['pickup_point_district_id'] ?? 0);
 $d_form_dist = resolve_district_id($in['delivery_point_district_id'] ?? 0);
@@ -767,7 +768,11 @@ require __DIR__ . '/../../../includes/header.php';
                                         </select>
                                     </td>
                                     <td>
-                                        <select class="form-select form-select-sm crew-emp-select" name="crew_employee_id[]">
+                                        <select class="form-select form-select-sm ts-select crew-emp-select" name="crew_employee_id[]"
+                                            data-ts-url="<?= e(APP_URL) ?>/pages/employees/options.php"
+                                            data-ts-company="<?= (int) $cid ?>"
+                                            data-ts-limit="30"
+                                            data-ts-dropdown-parent="body">
                                             <option value="">-- Pilih Karyawan --</option>
                                             <?php foreach ($employees as $emp): ?>
                                                 <option value="<?= (int) $emp['id'] ?>"
@@ -1515,12 +1520,29 @@ document.addEventListener('DOMContentLoaded', function () {
 
         function syncEmpMeta() {
             if (!empSel) return;
-            var opt = empSel.options[empSel.selectedIndex];
-            if (orgInp) orgInp.value = opt ? (opt.getAttribute('data-org') || '') : '';
-            if (posInp) posInp.value = opt ? (opt.getAttribute('data-pos') || '') : '';
+            var curVal = empSel.tomselect ? String(empSel.tomselect.getValue() || '') : String(empSel.value || '');
+            var orgVal = '';
+            var posVal = '';
+            if (curVal && empSel.tomselect && empSel.tomselect.options[curVal]) {
+                orgVal = empSel.tomselect.options[curVal].job_title || '';
+                posVal = empSel.tomselect.options[curVal].job_position || '';
+            } else if (empSel.selectedIndex >= 0 && empSel.options[empSel.selectedIndex]) {
+                var opt = empSel.options[empSel.selectedIndex];
+                orgVal = opt.getAttribute('data-org') || '';
+                posVal = opt.getAttribute('data-pos') || '';
+            }
+            if (orgInp) orgInp.value = orgVal;
+            if (posInp) posInp.value = posVal;
         }
         if (empSel) {
-            empSel.addEventListener('change', syncEmpMeta);
+            if (window.initTsSelect && !empSel.tomselect) {
+                window.initTsSelect(empSel);
+            }
+            if (window.bindTsChange) {
+                window.bindTsChange(empSel, syncEmpMeta);
+            } else {
+                empSel.addEventListener('change', syncEmpMeta);
+            }
             syncEmpMeta();
         }
         if (amtDisp && amtVal) {
@@ -1556,7 +1578,11 @@ document.addEventListener('DOMContentLoaded', function () {
                 </select>
             </td>
             <td>
-                <select class="form-select form-select-sm crew-emp-select" name="crew_employee_id[]">${empOptionsHtml}</select>
+                <select class="form-select form-select-sm ts-select crew-emp-select" name="crew_employee_id[]"
+                    data-ts-url="<?= e(APP_URL) ?>/pages/employees/options.php"
+                    data-ts-company="<?= (int) $cid ?>"
+                    data-ts-limit="30"
+                    data-ts-dropdown-parent="body">${empOptionsHtml}</select>
             </td>
             <td><input type="text" class="form-control form-control-sm bg-light crew-org-input" value="" readonly placeholder="-"></td>
             <td><input type="text" class="form-control form-control-sm bg-light crew-pos-input" value="" readonly placeholder="-"></td>

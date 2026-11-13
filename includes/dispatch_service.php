@@ -33,18 +33,43 @@ function dispatch_assert_type(string $booking_type): void
 
 /**
  * Karyawan yang bisa ditugaskan sebagai driver, scoped perusahaan.
- * Kriteria: status aktif AND job_position = 'Driver'.
+ * Kriteria: status aktif AND job_position = 'Driver', dibatasi LIMIT agar aman untuk jutaan baris.
  */
-function driver_list(int $company_id): array
+function driver_list(int $company_id, array $include_ids = [], int $limit = 50): array
 {
+    $limit = max(1, min(200, $limit));
     $st = db()->prepare("SELECT id, code, name, job_position, phone_number
         FROM employees
         WHERE company_id = ? AND status = 'aktif' AND job_position = 'Driver'
-        ORDER BY name");
-    $st->bind_param('i', $company_id);
+        ORDER BY name ASC
+        LIMIT ?");
+    $st->bind_param('ii', $company_id, $limit);
     $st->execute();
     $rows = $st->get_result()->fetch_all(MYSQLI_ASSOC);
     $st->close();
+
+    $need = [];
+    $seen = [];
+    foreach ($rows as $r) {
+        $seen[(int) $r['id']] = true;
+    }
+    foreach ($include_ids as $rawId) {
+        $id = (int) $rawId;
+        if ($id > 0 && !isset($seen[$id])) {
+            $seen[$id] = true;
+            $need[] = $id;
+        }
+    }
+    if ($need) {
+        $ph = implode(',', array_fill(0, count($need), '?'));
+        $st2 = db()->prepare("SELECT id, code, name, job_position, phone_number
+            FROM employees WHERE company_id = ? AND id IN ({$ph}) ORDER BY name ASC");
+        $st2->bind_param('i' . str_repeat('i', count($need)), $company_id, ...$need);
+        $st2->execute();
+        $extra = $st2->get_result()->fetch_all(MYSQLI_ASSOC);
+        $st2->close();
+        $rows = array_merge($extra, $rows);
+    }
     return $rows;
 }
 

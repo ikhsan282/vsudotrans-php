@@ -372,7 +372,8 @@ if ($cur_veh_id > 0) {
 }
 $cur_category_id = (int) ($b['category_vehicle_id'] ?: ($cur_veh['category_vehicle_id'] ?? 0));
 
-$employees  = opts_employees((int) $b['company_id']);
+$crewEmpIds = array_values(array_unique(array_filter(array_map(static fn($cr) => (int) ($cr['employee_id'] ?? 0), $crew_rows))));
+$employees  = opts_employees((int) $b['company_id'], $crewEmpIds, 50);
 $company_regulations = regulation_list_by_company((int) $b['company_id']);
 $matched_regulation  = regulation_match(
     (int) $b['company_id'],
@@ -873,7 +874,12 @@ require __DIR__ . '/../../../includes/header.php';
                                             </select>
                                         </td>
                                         <td>
-                                            <select class="form-select form-select-sm crew-emp-select" name="crew_employee_id[]" form="rentalDetailForm" <?= $canManage ? '' : 'disabled' ?>>
+                                            <select class="form-select form-select-sm ts-select crew-emp-select" name="crew_employee_id[]" form="rentalDetailForm"
+                                                data-ts-url="<?= e(APP_URL) ?>/pages/employees/options.php"
+                                                data-ts-company="<?= (int) $b['company_id'] ?>"
+                                                data-ts-limit="30"
+                                                data-ts-dropdown-parent="body"
+                                                <?= $canManage ? '' : 'disabled' ?>>
                                                 <option value="">-- Pilih Karyawan --</option>
                                                 <?php foreach ($employees as $emp): ?>
                                                     <option value="<?= (int) $emp['id'] ?>"
@@ -1295,12 +1301,29 @@ document.addEventListener('DOMContentLoaded', () => {
 
         function syncEmpMeta() {
             if (!empSel) return;
-            const opt = empSel.options[empSel.selectedIndex];
-            if (orgInp) orgInp.value = opt ? (opt.getAttribute('data-org') || '') : '';
-            if (posInp) posInp.value = opt ? (opt.getAttribute('data-pos') || '') : '';
+            const curVal = empSel.tomselect ? String(empSel.tomselect.getValue() || '') : String(empSel.value || '');
+            let orgVal = '';
+            let posVal = '';
+            if (curVal && empSel.tomselect && empSel.tomselect.options[curVal]) {
+                orgVal = empSel.tomselect.options[curVal].job_title || '';
+                posVal = empSel.tomselect.options[curVal].job_position || '';
+            } else if (empSel.selectedIndex >= 0 && empSel.options[empSel.selectedIndex]) {
+                const opt = empSel.options[empSel.selectedIndex];
+                orgVal = opt.getAttribute('data-org') || '';
+                posVal = opt.getAttribute('data-pos') || '';
+            }
+            if (orgInp) orgInp.value = orgVal;
+            if (posInp) posInp.value = posVal;
         }
         if (empSel) {
-            empSel.addEventListener('change', syncEmpMeta);
+            if (window.initTsSelect && !empSel.tomselect) {
+                window.initTsSelect(empSel);
+            }
+            if (window.bindTsChange) {
+                window.bindTsChange(empSel, syncEmpMeta);
+            } else {
+                empSel.addEventListener('change', syncEmpMeta);
+            }
             syncEmpMeta();
         }
         if (amtDisp && amtVal) {
@@ -1334,7 +1357,11 @@ document.addEventListener('DOMContentLoaded', () => {
                 </select>
             </td>
             <td>
-                <select class="form-select form-select-sm crew-emp-select" name="crew_employee_id[]" form="rentalDetailForm">${empOptionsHtml}</select>
+                <select class="form-select form-select-sm ts-select crew-emp-select" name="crew_employee_id[]" form="rentalDetailForm"
+                    data-ts-url="${appUrl}/pages/employees/options.php"
+                    data-ts-company="<?= (int) $b['company_id'] ?>"
+                    data-ts-limit="30"
+                    data-ts-dropdown-parent="body">${empOptionsHtml}</select>
             </td>
             <td><input type="text" class="form-control form-control-sm bg-light crew-org-input" value="" readonly placeholder="-"></td>
             <td><input type="text" class="form-control form-control-sm bg-light crew-pos-input" value="" readonly placeholder="-"></td>

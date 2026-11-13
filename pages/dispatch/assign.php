@@ -58,7 +58,10 @@ require __DIR__ . '/../../includes/header.php';
                 <?= csrf_field() ?>
                 <div class="col-md-6">
                     <label class="form-label small mb-1">Booking (belum ada penugasan aktif, 50 terbaru per tipe)</label>
-                    <select class="form-select form-select-sm ts-select" name="booking" required>
+                    <select class="form-select form-select-sm ts-select" name="booking" required
+                        data-ts-url="<?= e(APP_URL) ?>/pages/dispatch/booking_options.php"
+                        data-ts-company="<?= (int) $cid ?>"
+                        data-ts-limit="30">
                         <option value="">— pilih booking —</option>
                         <?php foreach ($bookings as $b): ?>
                             <option value="<?= e($b['booking_type'] . ':' . $b['booking_id']) ?>"><?= e($b['label']) ?></option>
@@ -68,7 +71,10 @@ require __DIR__ . '/../../includes/header.php';
                 </div>
                 <div class="col-md-6">
                     <label class="form-label small mb-1" for="dispatch-driver">Driver</label>
-                    <select id="dispatch-driver" class="form-select form-select-sm ts-select" name="employee_id" required>
+                    <select id="dispatch-driver" class="form-select form-select-sm ts-select" name="employee_id" required
+                        data-ts-url="<?= e(APP_URL) ?>/pages/employees/options.php?job_position=Driver"
+                        data-ts-company="<?= (int) $cid ?>"
+                        data-ts-limit="30">
                         <option value="">— pilih driver —</option>
                         <?= select_options($drivers, '') ?>
                     </select>

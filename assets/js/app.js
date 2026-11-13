@@ -238,7 +238,9 @@ window._collectSelectMeta = function (el) {
       seat: d.seat ? parseInt(d.seat, 10) || 0 : 0,
       category_name: d.categoryName || '',
       code: d.code || '',
-      phone: d.phone || ''
+      phone: d.phone || '',
+      job_title: d.org || d.jobTitle || '',
+      job_position: d.pos || d.jobPosition || ''
     };
   });
   return metaMap;
@@ -262,6 +264,11 @@ window.initTsSelect = function (el, overrides) {
     valueField: 'value',
     labelField: 'text'
   };
+  if (el.dataset.tsDropdownParent) {
+    opts.dropdownParent = el.dataset.tsDropdownParent;
+  } else if (el.closest && el.closest('.table-responsive')) {
+    opts.dropdownParent = 'body';
+  }
 
   if (remoteUrl) {
     opts.loadThrottle = 250;

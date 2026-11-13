@@ -88,25 +88,57 @@ function attendance_range(array $src): array
     return [$from, $to];
 }
 
-/** Karyawan milik perusahaan aktif (non-Super Admin). Super Admin: semua bila $cid null. */
-function attendance_employee_options(?int $cid): array
+/** Karyawan milik perusahaan aktif (non-Super Admin), dibatasi LIMIT + sertakan $include_ids. */
+function attendance_employee_options(?int $cid, array $include_ids = [], int $limit = 50): array
 {
-    $sql = 'SELECT id, code, name FROM employees WHERE status = \'aktif\'';
+    $limit = max(1, min(500, $limit));
+    $sql = "SELECT id, code, name FROM employees WHERE status = 'aktif'";
     $types = '';
     $params = [];
     if ($cid !== null) {
         $sql .= ' AND company_id = ?';
-        $types = 'i';
-        $params = [$cid];
+        $types .= 'i';
+        $params[] = $cid;
     }
-    $sql .= ' ORDER BY code';
+    $sql .= ' ORDER BY name ASC LIMIT ?';
+    $types .= 'i';
+    $params[] = $limit;
     $stmt = db()->prepare($sql);
-    if ($types !== '') {
-        $stmt->bind_param($types, ...$params);
-    }
+    $stmt->bind_param($types, ...$params);
     $stmt->execute();
     $rows = $stmt->get_result()->fetch_all(MYSQLI_ASSOC);
     $stmt->close();
+
+    $need = [];
+    $seen = [];
+    foreach ($rows as $r) {
+        $seen[(int) $r['id']] = true;
+    }
+    foreach ($include_ids as $rawId) {
+        $eid = (int) $rawId;
+        if ($eid > 0 && !isset($seen[$eid])) {
+            $seen[$eid] = true;
+            $need[] = $eid;
+        }
+    }
+    if ($need) {
+        $ph = implode(',', array_fill(0, count($need), '?'));
+        $sql2 = "SELECT id, code, name FROM employees WHERE id IN ({$ph})";
+        $t2 = str_repeat('i', count($need));
+        $p2 = $need;
+        if ($cid !== null) {
+            $sql2 .= ' AND company_id = ?';
+            $t2 .= 'i';
+            $p2[] = $cid;
+        }
+        $sql2 .= ' ORDER BY name ASC';
+        $stmt2 = db()->prepare($sql2);
+        $stmt2->bind_param($t2, ...$p2);
+        $stmt2->execute();
+        $extra = $stmt2->get_result()->fetch_all(MYSQLI_ASSOC);
+        $stmt2->close();
+        $rows = array_merge($extra, $rows);
+    }
     return $rows;
 }
 
@@ -114,7 +146,7 @@ function attendance_employee_options(?int $cid): array
 function attendance_employee_map(?int $cid): array
 {
     $map = [];
-    foreach (attendance_employee_options($cid) as $e) {
+    foreach (attendance_employee_options($cid, [], 500) as $e) {
         $map[(int) $e['id']] = $e['code'] . ' - ' . $e['name'];
     }
     return $map;

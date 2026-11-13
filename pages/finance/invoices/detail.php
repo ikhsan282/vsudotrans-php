@@ -21,10 +21,11 @@ $errors = [];
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     verify_csrf();
+    require_permission('invoices.manage');
     $act = (string) ($_POST['act'] ?? '');
     try {
         if ($act === 'pay') {
-            $amount = (float) str_replace(['.', ','], ['', '.'], (string) ($_POST['amount'] ?? '0'));
+            $amount = parse_rupiah_input($_POST['amount'] ?? 0);
             $method = (int) ($_POST['payment_method_id'] ?? 0);
             $note   = trim((string) ($_POST['note'] ?? ''));
             $proof_path = null;
@@ -151,8 +152,9 @@ require __DIR__ . '/../../../includes/header.php';
             <input type="hidden" name="act" value="pay">
             <div class="col-md-3">
                 <label class="form-label small mb-1">Nominal</label>
-                <input class="form-control form-control-sm" id="invPayAmount" name="amount" inputmode="numeric" required
-                       value="<?= e(number_format($remaining, 0, ',', '.')) ?>" placeholder="0">
+                <input type="hidden" id="invPayAmountValue" name="amount" value="<?= (int) round($remaining) ?>">
+                <input class="form-control form-control-sm" id="invPayAmount" inputmode="numeric" required autocomplete="off"
+                       value="<?= e(format_nominal((float) round($remaining))) ?>" placeholder="0">
                 <div class="invalid-feedback" id="invPayAmountErr">Nominal melebihi sisa tagihan.</div>
             </div>
             <div class="col-md-3">
@@ -234,9 +236,10 @@ require __DIR__ . '/../../../includes/header.php';
 </main>
 <script>
 document.addEventListener('DOMContentLoaded', function () {
-    const form = document.getElementById('invPayForm');
-    const inp  = document.getElementById('invPayAmount');
-    const err  = document.getElementById('invPayAmountErr');
+    const form   = document.getElementById('invPayForm');
+    const inp    = document.getElementById('invPayAmount');
+    const hidden = document.getElementById('invPayAmountValue');
+    const err    = document.getElementById('invPayAmountErr');
     if (!form || !inp || !err) return;
 
     const remaining = parseFloat(form.getAttribute('data-remaining') || '0');
@@ -248,8 +251,9 @@ document.addEventListener('DOMContentLoaded', function () {
     function formatId(n) {
         return Math.round(n).toLocaleString('id-ID');
     }
-    function validateAmount() {
-        const val = parseIndoAmount(inp.value);
+    function validateAmount(num) {
+        const val = typeof num === 'number' ? num : parseIndoAmount(inp.value);
+        if (hidden) hidden.value = String(Math.round(val));
         if (val <= 0) {
             inp.classList.add('is-invalid');
             err.textContent = 'Nominal pembayaran harus lebih dari Rp 0.';
@@ -263,9 +267,14 @@ document.addEventListener('DOMContentLoaded', function () {
         inp.classList.remove('is-invalid');
         return true;
     }
-    inp.addEventListener('input', validateAmount);
+    if (typeof window.attachRupiahInput === 'function') {
+        window.attachRupiahInput(inp, hidden, validateAmount);
+    } else {
+        inp.addEventListener('input', function () { validateAmount(); });
+    }
     form.addEventListener('submit', function (e) {
-        if (!validateAmount()) {
+        const val = parseIndoAmount(inp.value);
+        if (!validateAmount(val)) {
             e.preventDefault();
             inp.focus();
             return false;

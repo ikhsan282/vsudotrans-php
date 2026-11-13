@@ -481,7 +481,7 @@ function master_form_select_options(array $f, array $row, string $table, int $id
         }
         $st->close();
     } else {
-        $map = master_lookup($source, $cid, 200);
+        $map = master_lookup($source, $cid, $source === 'employees' ? 50 : 200);
     }
 
     if ($selected_id > 0 && !isset($map[$selected_id])) {
@@ -957,7 +957,11 @@ function master_form(string $key): void
                                 <select class="form-select ts-select" id="<?= e($col) ?>" name="<?= e($col) ?>"
                                     data-ts-placeholder="— pilih —"
                                     <?= isset($f['child']) ? 'data-child="' . e($f['child']) . '"' : '' ?>
-                                    <?= isset($f['endpoint']) ? 'data-endpoint="' . e(APP_URL . '/' . $f['endpoint']) . '" data-param="' . e($f['param']) . '" data-ts-url="' . e(APP_URL . '/' . $f['endpoint']) . '" data-ts-parent="#' . e($f['param']) . '" data-ts-param="' . e($f['param']) . '" data-ts-limit="50"' : '' ?>>
+                                    <?php if (isset($f['endpoint'])): ?>
+                                        data-endpoint="<?= e(APP_URL . '/' . $f['endpoint']) ?>" data-param="<?= e($f['param']) ?>" data-ts-url="<?= e(APP_URL . '/' . $f['endpoint']) ?>" data-ts-parent="#<?= e($f['param']) ?>" data-ts-param="<?= e($f['param']) ?>" data-ts-limit="50"
+                                    <?php elseif (($f['source'] ?? '') === 'employees'): ?>
+                                        data-ts-url="<?= e(APP_URL . '/pages/employees/options.php?status=all') ?>" data-ts-limit="50"<?= $cid ? ' data-ts-company="' . (int) $cid . '"' : '' ?>
+                                    <?php endif; ?>>
                                     <option value="">— pilih —</option>
                                     <?php foreach ($options[$col] as $oid => $oname):
                                         $m = $option_meta[$col][(int) $oid] ?? [];

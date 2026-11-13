@@ -14,7 +14,7 @@ $status = (string) ($_GET['status'] ?? '');
 $page = max(1, (int) ($_GET['page'] ?? 1));
 
 [$rows, $p] = attendance_list($from, $to, $emp_filter, $status, $page);
-$employees = attendance_employee_options($cid);
+$employees = attendance_employee_options($cid, $emp_filter > 0 ? [$emp_filter] : [], 50);
 $query_base = http_build_query(array_filter([
     'from' => $from, 'to' => $to,
     'employee_id' => $emp_filter ?: '', 'status' => $status,
@@ -51,7 +51,10 @@ require __DIR__ . '/../../includes/header.php';
                 </div>
                 <div class="col-6 col-lg-3">
                     <label class="form-label small mb-1">Karyawan</label>
-                    <select class="form-select form-select-sm ts-select" name="employee_id">
+                    <select class="form-select form-select-sm ts-select" name="employee_id"
+                        data-ts-url="<?= e(APP_URL) ?>/pages/employees/options.php"
+                        <?= $cid !== null ? 'data-ts-company="' . (int) $cid . '"' : '' ?>
+                        data-ts-limit="30">
                         <option value="">Semua karyawan</option>
                         <?php foreach ($employees as $emp): ?>
                             <option value="<?= (int) $emp['id'] ?>"<?= $emp_filter === (int) $emp['id'] ? ' selected' : '' ?>>

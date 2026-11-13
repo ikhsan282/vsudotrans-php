@@ -353,17 +353,29 @@ function resolve_city_province_id(int $city_id): int
     return $val !== false ? (int) $val : 0;
 }
 
-/** Karyawan aktif perusahaan (calon driver/kernet/montir/agen). */
-function opts_employees(int $company_id): array
+/** Karyawan aktif perusahaan (dibatasi LIMIT + wajib sertakan $include_ids, aman jutaan data). */
+function opts_employees(int $company_id, array $include_ids = [], int $limit = 50): array
 {
+    $limit = max(1, min(200, $limit));
     $st = db()->prepare("SELECT id, code, name AS raw_name, CONCAT(code, ' - ', name) AS name,
             COALESCE(job_title, '') AS job_title, COALESCE(job_position, '') AS job_position
-        FROM employees WHERE company_id = ? AND status = 'aktif' ORDER BY code, name");
-    $st->bind_param('i', $company_id);
+        FROM employees WHERE company_id = ? AND status = 'aktif' ORDER BY name ASC LIMIT ?");
+    $st->bind_param('ii', $company_id, $limit);
     $st->execute();
     $rows = $st->get_result()->fetch_all(MYSQLI_ASSOC);
     $st->close();
-    return $rows;
+
+    return _merge_included_rows($rows, $include_ids, static function (array $ids) use ($company_id): array {
+        $ph = implode(',', array_fill(0, count($ids), '?'));
+        $st2 = db()->prepare("SELECT id, code, name AS raw_name, CONCAT(code, ' - ', name) AS name,
+                COALESCE(job_title, '') AS job_title, COALESCE(job_position, '') AS job_position
+            FROM employees WHERE company_id = ? AND id IN ({$ph}) ORDER BY name ASC");
+        $st2->bind_param('i' . str_repeat('i', count($ids)), $company_id, ...$ids);
+        $st2->execute();
+        $out = $st2->get_result()->fetch_all(MYSQLI_ASSOC);
+        $st2->close();
+        return $out;
+    });
 }
 
 /** Regulasi tarif premi karyawan rental per kategori kendaraan & tipe kru. */
@@ -477,4 +489,27 @@ function booking_extra_passenger_counts(string $booking_type, array $booking_ids
     }
     $st->close();
     return $out;
+}
+
+/**
+ * Ekspresi SQL subquery berkorelasi untuk mengekspor daftar penumpang tambahan (is_primary = 0)
+ * tanpa N+1 query dan tetap kompatibel dengan streaming unbuffered cursor (MYSQLI_USE_RESULT).
+ * Menggunakan index ix_bp_booking (booking_type, booking_id) -> eq_ref passengers(id).
+ */
+function booking_extra_passengers_export_sql(string $booking_type): string
+{
+    if (!in_array($booking_type, ['rental', 'travel'], true)) {
+        return 'NULL';
+    }
+    $bt = $booking_type === 'rental' ? 'rental' : 'travel';
+    return "(SELECT GROUP_CONCAT(
+                CASE WHEN px.phone_number IS NOT NULL AND px.phone_number <> ''
+                     THEN CONCAT(px.name, ' (', px.phone_number, ')')
+                     ELSE px.name
+                END
+                ORDER BY bp.id ASC SEPARATOR ', '
+            )
+            FROM booking_passengers bp
+            JOIN passengers px ON px.id = bp.passenger_id
+            WHERE bp.booking_type = '{$bt}' AND bp.booking_id = b.id AND bp.is_primary = 0)";
 }

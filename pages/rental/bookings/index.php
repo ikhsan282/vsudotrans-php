@@ -109,8 +109,10 @@ $st->close();
 // Export XLSX / PDF
 $export_format = strtolower(trim((string) ($_GET['export'] ?? '')));
 if (in_array($export_format, ['xlsx', 'pdf'], true)) {
+    $extra_pax_sql = booking_extra_passengers_export_sql('rental');
     $sql_export = "SELECT b.document_number, c.code AS company_code,
                           p.name AS passenger_name, p.phone_number AS passenger_phone,
+                          {$extra_pax_sql} AS extra_passengers,
                           bv.name AS brand_name, mu.name AS model_name,
                           v.vehicle_number, cv.name AS category_name,
                           b.time, b.start_date, b.end_date,
@@ -142,9 +144,11 @@ if (in_array($export_format, ['xlsx', 'pdf'], true)) {
             if (!empty($r['end_date']) && $r['end_date'] !== $r['start_date']) {
                 $tgl .= ' s/d ' . date('d-M-Y', strtotime($r['end_date']));
             }
+            $extraPax = trim((string) ($r['extra_passengers'] ?? ''));
             return [
                 $r['document_number'],
                 $r['passenger_name'] . ($r['passenger_phone'] ? ' (' . $r['passenger_phone'] . ')' : ''),
+                $extraPax !== '' ? $extraPax : '-',
                 $veh,
                 $jam,
                 $tgl,
@@ -184,7 +188,7 @@ if (in_array($export_format, ['xlsx', 'pdf'], true)) {
 
     grid_export_send(
         'Pemesanan Sewa Kendaraan',
-        ['Resi', 'Penumpang (Nama & HP)', 'Kendaraan', 'Jam', 'Tanggal', 'Penjemputan', 'Pengantaran', 'Total Harga', 'Total Pembayaran', 'Status'],
+        ['Resi', 'Penumpang (Nama & HP)', 'Penumpang Tambahan', 'Kendaraan', 'Jam', 'Tanggal', 'Penjemputan', 'Pengantaran', 'Total Harga', 'Total Pembayaran', 'Status'],
         $row_stream,
         $export_format,
         'landscape',

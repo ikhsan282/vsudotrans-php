@@ -7,6 +7,8 @@ require_once __DIR__ . '/../config/config.php';
 require_once __DIR__ . '/../pages/travel/_helpers.php';
 require_once __DIR__ . '/../includes/booking_service.php';
 require_once __DIR__ . '/../includes/invoice_service.php';
+require_once __DIR__ . '/../includes/dispatch_service.php';
+require_once __DIR__ . '/../pages/attendance/_helpers.php';
 
 $pass = 0;
 $fail = 0;
@@ -41,6 +43,8 @@ $expectedIndexes = [
     ['villages', 'ix_villages_name'],
     ['rutes', 'ix_rutes_lookup'],
     ['booking_passengers', 'ix_bp_booking'],
+    ['employees', 'ix_employees_company_status_name'],
+    ['employees', 'ix_employees_company_pos_status_name'],
 ];
 foreach ($expectedIndexes as [$tbl, $idxName]) {
     $st = $db->prepare("SELECT 1 FROM information_schema.STATISTICS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = ? AND INDEX_NAME = ? LIMIT 1");
@@ -55,10 +59,14 @@ foreach ($expectedIndexes as [$tbl, $idxName]) {
 $createdPaxIds = [];
 $createdVehIds = [];
 $createdRuteIds = [];
+$createdEmpIds = [];
 $createdOrders = [];
 $tempBookingId = 0;
 $tempTravelId = 0;
+$tempTravelInvId = 0;
+$tempViewerUserId = 0;
 $jar = tempnam(sys_get_temp_dir(), 'ts_jar_');
+$viewerJar = tempnam(sys_get_temp_dir(), 'ts_vjar_');
 
 try {
     $brandId = (int) $db->query('SELECT id FROM brand_vehicles LIMIT 1')->fetch_column();
@@ -517,6 +525,318 @@ try {
         $tIdx['code'] === 200 && str_contains($tIdx['body'], (string) $tbk['document_number']) && str_contains($tIdx['body'], '+2 tambahan') && str_contains($tIdx['body'], 'Total Pembayaran') && str_contains($tIdx['body'], 'ZZ 0070 SC'),
         'travel/bookings/index.php finds booking via extra passenger, shows +2 tambahan badge & Rental-parity columns'
     );
+
+    // 11. Point 4 — Employees & Dispatch Scalability (Composite Index, EXPLAIN, Bounded Options, Remote Search & UI Hooks)
+    $stEmpIns = $db->prepare("INSERT INTO employees (company_id, branch_id, code, name, phone_number, join_date, job_title, job_position, status, created_user, created_date) VALUES (1, ?, ?, ?, ?, '2026-01-01', 'Staff Operasional', ?, 'aktif', 'test', NOW())");
+    for ($e = 1; $e <= 65; $e++) {
+        $eCode  = sprintf('EMPZ%04d-%d', $e, random_int(10, 99));
+        $eName  = sprintf('ZZZScale Test Employee %03d', $e);
+        $ePhone = sprintf('0888%07d', $e);
+        $ePos   = $e > 50 ? 'Driver' : 'Staff';
+        $stEmpIns->bind_param('issss', $branchId, $eCode, $eName, $ePhone, $ePos);
+        $stEmpIns->execute();
+        $createdEmpIds[] = (int) $db->insert_id;
+    }
+    $stEmpIns->close();
+    $lastEmpId = (int) $createdEmpIds[49]; // 050 Staff (outside first 50 with default real rows)
+    $lastDrvId = (int) end($createdEmpIds); // 065 Driver
+
+    $expEmpAll = $db->query("EXPLAIN SELECT id, code, name FROM employees FORCE INDEX (ix_employees_company_status_name) WHERE company_id = 1 AND status = 'aktif' ORDER BY name ASC LIMIT 50")->fetch_assoc();
+    ts_check(($expEmpAll['key'] ?? '') === 'ix_employees_company_status_name' && !str_contains((string) ($expEmpAll['Extra'] ?? ''), 'Using filesort'), 'EXPLAIN employees list uses ix_employees_company_status_name without filesort');
+
+    $expEmpDrv = $db->query("EXPLAIN SELECT id, code, name FROM employees FORCE INDEX (ix_employees_company_pos_status_name) WHERE company_id = 1 AND job_position = 'Driver' AND status = 'aktif' ORDER BY name ASC LIMIT 50")->fetch_assoc();
+    ts_check(($expEmpDrv['key'] ?? '') === 'ix_employees_company_pos_status_name' && !str_contains((string) ($expEmpDrv['Extra'] ?? ''), 'Using filesort'), 'EXPLAIN employees drivers uses ix_employees_company_pos_status_name without filesort');
+
+    $optsEmp = opts_employees(1, [$lastEmpId], 50);
+    $optsEmpIds = array_map(static fn($r) => (int) ($r['id'] ?? 0), $optsEmp);
+    ts_check(count($optsEmp) <= 51 && in_array($lastEmpId, $optsEmpIds, true), 'opts_employees() caps at 50 + preserved include_ids');
+
+    $drvOpts = driver_list(1, [$lastDrvId], 50);
+    $drvOptIds = array_map(static fn($r) => (int) ($r['id'] ?? 0), $drvOpts);
+    ts_check(count($drvOpts) <= 51 && in_array($lastDrvId, $drvOptIds, true), 'driver_list() caps at 50 + preserved include_ids');
+
+    $attOpts = attendance_employee_options(1, [$lastEmpId], 50);
+    $attOptIds = array_map(static fn($r) => (int) ($r['id'] ?? 0), $attOpts);
+    ts_check(count($attOpts) <= 51 && in_array($lastEmpId, $attOptIds, true), 'attendance_employee_options() caps at 50 + preserved include_ids');
+
+    $empSearch = $httpGet('/pages/employees/options.php?company_id=1&q=ZZZScale');
+    ts_check(
+        $empSearch['code'] === 200 && is_array($empSearch['json']) && count($empSearch['json']) > 0 && count($empSearch['json']) <= 30 && isset($empSearch['json'][0]['value'], $empSearch['json'][0]['text'], $empSearch['json'][0]['job_position']),
+        'employees/options.php remote search returns bounded JSON metadata'
+    );
+
+    $drvSearch = $httpGet('/pages/employees/options.php?company_id=1&job_position=Driver&q=ZZZScale');
+    $onlyDrivers = is_array($drvSearch['json']) && count($drvSearch['json']) === 15;
+    if ($onlyDrivers) {
+        foreach ($drvSearch['json'] as $dr) {
+            if (($dr['job_position'] ?? '') !== 'Driver') {
+                $onlyDrivers = false;
+                break;
+            }
+        }
+    }
+    ts_check($drvSearch['code'] === 200 && $onlyDrivers, 'employees/options.php job_position=Driver filters strictly to 15 seeded drivers');
+
+    $dispDocSearch = $httpGet('/pages/dispatch/booking_options.php?company_id=1&q=' . urlencode((string) $tbk['document_number']));
+    $foundTravelKey = false;
+    foreach ((array) ($dispDocSearch['json'] ?? []) as $di) {
+        if (($di['value'] ?? '') === 'travel:' . $tempTravelId) {
+            $foundTravelKey = true;
+            break;
+        }
+    }
+    ts_check($dispDocSearch['code'] === 200 && $foundTravelKey, 'dispatch/booking_options.php finds unassigned travel booking by doc prefix');
+
+    $dispPaxSearch = $httpGet('/pages/dispatch/booking_options.php?company_id=1&q=ZZZScale');
+    $foundDispPax = false;
+    foreach ((array) ($dispPaxSearch['json'] ?? []) as $di) {
+        if (in_array((string) ($di['value'] ?? ''), ['rental:' . $tempBookingId, 'travel:' . $tempTravelId], true)) {
+            $foundDispPax = true;
+            break;
+        }
+    }
+    ts_check($dispPaxSearch['code'] === 200 && $foundDispPax, 'dispatch/booking_options.php finds unassigned bookings via passenger name prefix');
+
+    foreach ([
+        ['/pages/attendance/form.php', 'pages/employees/options.php', 'attendance/form.php'],
+        ['/pages/attendance/index.php', 'pages/employees/options.php', 'attendance/index.php'],
+        ['/pages/dispatch/assign.php', 'pages/dispatch/booking_options.php', 'dispatch/assign.php (booking)'],
+        ['/pages/dispatch/assign.php', 'pages/employees/options.php?job_position=Driver', 'dispatch/assign.php (driver)'],
+        ['/pages/hr/employee_recognitions/form.php', 'pages/employees/options.php?status=all', 'hr/employee_recognitions/form.php'],
+        ['/pages/travel/bookings/detail.php?id=' . $tempTravelId, 'pages/employees/options.php', 'travel/detail.php #tab-ops'],
+        ['/pages/rental/bookings/detail.php?id=' . $tempBookingId, 'crew-emp-select', 'rental/detail.php crew'],
+        ['/pages/rental/bookings/form.php', 'crew-emp-select', 'rental/form.php crew'],
+    ] as [$chkUrl, $needle, $chkLbl]) {
+        $pg = $httpGet($chkUrl);
+        ts_check($pg['code'] === 200 && str_contains($pg['body'], $needle), "{$chkLbl} renders remote Tom Select hook ({$needle})");
+    }
+
+    // 12. Point 1 — Finance Invoice Detail RBAC POST Guard & attachRupiahInput
+    $adminInvPg = $httpGet('/pages/finance/invoices/detail.php?id=' . $tempTravelInvId);
+    ts_check(
+        $adminInvPg['code'] === 200 && str_contains($adminInvPg['body'], 'id="invPayAmountValue"') && str_contains($adminInvPg['body'], 'window.attachRupiahInput'),
+        'finance/invoices/detail.php renders #invPayAmountValue hidden input & window.attachRupiahInput'
+    );
+
+    $vUser = 'zzzviewer_' . random_int(1000, 9999);
+    $vPass = 'ViewerPass123!';
+    $vHash = password_hash($vPass, PASSWORD_BCRYPT);
+    $vEmail = $vUser . '@example.test';
+    $stV = $db->prepare("INSERT INTO users (username, email, password, full_name, role_id, company_id, is_active, created_date, updated_date) VALUES (?, ?, ?, 'ZZZ Test Viewer', 5, 1, 1, NOW(), NOW())");
+    $stV->bind_param('sss', $vUser, $vEmail, $vHash);
+    $stV->execute();
+    $tempViewerUserId = (int) $db->insert_id;
+    $stV->close();
+    $db->query("INSERT INTO user_companies (user_id, company_id, created_date) VALUES ({$tempViewerUserId}, 1, NOW())");
+
+    $vLoginPg = (string) shell_exec('curl.exe -s -c ' . escapeshellarg($viewerJar) . ' -b ' . escapeshellarg($viewerJar) . ' ' . escapeshellarg($base . '/pages/auth/login.php'));
+    $vOk = false;
+    if (preg_match('/name="csrf_token"\s+value="([^"]+)"/', $vLoginPg, $vM)) {
+        $vBodyF = tempnam(sys_get_temp_dir(), 'ts_vl_');
+        file_put_contents($vBodyF, http_build_query(['username' => $vUser, 'password' => $vPass, 'csrf_token' => $vM[1]]));
+        $nullDev = DIRECTORY_SEPARATOR === '\\' ? 'nul' : '/dev/null';
+        $vCode = trim((string) shell_exec('curl.exe -s -c ' . escapeshellarg($viewerJar) . ' -b ' . escapeshellarg($viewerJar) . ' -o ' . $nullDev . ' -w "%{http_code}" --data-binary @' . escapeshellarg($vBodyF) . ' ' . escapeshellarg($base . '/pages/auth/login.php')));
+        @unlink($vBodyF);
+        $vOk = ($vCode === '302');
+    }
+    ts_check($vOk, 'HTTP Viewer (role 5, no invoices.manage) login succeeded');
+
+    $vGetInv = (string) shell_exec('curl.exe -s -b ' . escapeshellarg($viewerJar) . ' -D ' . escapeshellarg($viewerJar . '.hdr') . ' ' . escapeshellarg($base . '/pages/finance/invoices/detail.php?id=' . $tempTravelInvId));
+    $vGetHdr = (string) @file_get_contents($viewerJar . '.hdr');
+    @unlink($viewerJar . '.hdr');
+    $vGetCode = preg_match('/HTTP\/\S+\s+(\d{3})/', $vGetHdr, $vhm) ? (int) $vhm[1] : 0;
+    ts_check($vGetCode === 200 && !str_contains($vGetInv, 'id="invPayForm"'), 'Viewer GET finance/invoices/detail.php returns HTTP 200 & hides payment form');
+
+    if (preg_match('/name="csrf_token"\s+value="([^"]+)"/', $vGetInv, $vCsrfM)) {
+        $vPost = static function (array $fields) use ($base, $viewerJar, $tempTravelInvId): int {
+            $tmpB = tempnam(sys_get_temp_dir(), 'ts_vp_');
+            $tmpH = tempnam(sys_get_temp_dir(), 'ts_vh_');
+            file_put_contents($tmpB, http_build_query($fields));
+            shell_exec('curl.exe -s -b ' . escapeshellarg($viewerJar) . ' -D ' . escapeshellarg($tmpH) . ' -o ' . (DIRECTORY_SEPARATOR === '\\' ? 'nul' : '/dev/null') . ' --data-binary @' . escapeshellarg($tmpB) . ' ' . escapeshellarg($base . '/pages/finance/invoices/detail.php?id=' . $tempTravelInvId));
+            $h = (string) @file_get_contents($tmpH);
+            @unlink($tmpB);
+            @unlink($tmpH);
+            return preg_match('/HTTP\/\S+\s+(\d{3})/', $h, $m) ? (int) $m[1] : 0;
+        };
+        $paidBefore = invoice_paid_total($tempTravelInvId);
+        $codePay = $vPost(['csrf_token' => $vCsrfM[1], 'id' => $tempTravelInvId, 'act' => 'pay', 'amount' => '10000']);
+        $codeCancel = $vPost(['csrf_token' => $vCsrfM[1], 'id' => $tempTravelInvId, 'act' => 'cancel', 'reason' => 'unauthorized']);
+        $invAfterV = invoice_find($tempTravelInvId);
+        ts_check(
+            $codePay === 403 && $codeCancel === 403 && abs(invoice_paid_total($tempTravelInvId) - $paidBefore) < 0.01 && ($invAfterV['status'] ?? '') !== 'cancelled',
+            'Viewer POST act=pay & act=cancel rejected with HTTP 403 and zero state mutation'
+        );
+    } else {
+        ts_check(false, 'Viewer header CSRF token extracted for RBAC POST test');
+    }
+
+    // 13. Point 2 — Travel Detail Inline Edit, Route Estimation Hook, Quick Modal & Invoice/ExtraPax Sync
+    $tdDetail = $httpGet('/pages/travel/bookings/detail.php?id=' . $tempTravelId);
+    foreach (['id="travelDetailForm"', 'id="primaryPassengerSelect"', 'id="extraPassengersSelect"', 'id="quickPassengerModal"', 'id="seatCapacityWarning"', 'rutes/lookup.php'] as $tdNeedle) {
+        ts_check(str_contains($tdDetail['body'], $tdNeedle), "travel/bookings/detail.php contains {$tdNeedle}");
+    }
+    if (preg_match('/name="csrf_token"\s+value="([^"]+)"/', $tdDetail['body'], $tdCsrfM)) {
+        $tdCsrf = $tdCsrfM[1];
+        $updOk = $httpPostForm('/pages/travel/bookings/detail.php?id=' . $tempTravelId, [
+            'csrf_token'                 => $tdCsrf,
+            'id'                         => $tempTravelId,
+            'act'                        => 'update_detail',
+            'active_tab'                 => 'detail',
+            'branch_id'                  => $branchId,
+            'date'                       => date('Y-m-d'),
+            'time'                       => '11:30',
+            'passenger_id'               => $lastPaxId,
+            'passenger_ids'              => [$createdPaxIds[0], $createdPaxIds[1], $createdPaxIds[2]],
+            'category_vehicle_id'        => $catId,
+            'vehicle_id'                 => $lastVehId,
+            'total_price'                => '600.000',
+            'pickup_point_district_id'   => (int) $distRow['id'],
+            'delivery_point_district_id' => (int) $distRow['id'],
+            'pickup_address'             => 'Jl. Jemput Baru 123',
+            'delivery_address'           => 'Jl. Antar Baru 456',
+            'note'                       => 'Catatan detail travel updated',
+        ]);
+        $bkRowUp = $db->query("SELECT total_price, time, note, pickup_address FROM travel_ticket_bookings WHERE id = {$tempTravelId}")->fetch_assoc();
+        $invSynced = invoice_find($tempTravelInvId);
+        $bpCnt3 = (int) $db->query("SELECT COUNT(*) FROM booking_passengers WHERE booking_type = 'travel' AND booking_id = {$tempTravelId} AND is_primary = 0")->fetch_column();
+        ts_check(
+            $updOk['code'] === 200 && abs((float) ($bkRowUp['total_price'] ?? 0) - 600000.0) < 0.01 && ($bkRowUp['time'] ?? '') === '11:30:00' && ($bkRowUp['note'] ?? '') === 'Catatan detail travel updated' && abs((float) ($invSynced['total'] ?? 0) - 600000.0) < 0.01 && $bpCnt3 === 3,
+            'travel/detail.php act=update_detail updates booking, syncs 3 extra passengers & invoice total=600000'
+        );
+
+        // Reject lowering price < paid_total (100k < 150k)
+        $updLow = $httpPostForm('/pages/travel/bookings/detail.php?id=' . $tempTravelId, [
+            'csrf_token'                 => $tdCsrf,
+            'id'                         => $tempTravelId,
+            'act'                        => 'update_detail',
+            'active_tab'                 => 'detail',
+            'branch_id'                  => $branchId,
+            'date'                       => date('Y-m-d'),
+            'time'                       => '11:30',
+            'passenger_id'               => $lastPaxId,
+            'passenger_ids'              => [$createdPaxIds[0], $createdPaxIds[1]],
+            'category_vehicle_id'        => $catId,
+            'vehicle_id'                 => $lastVehId,
+            'total_price'                => '100000',
+            'pickup_point_district_id'   => (int) $distRow['id'],
+            'delivery_point_district_id' => (int) $distRow['id'],
+            'note'                       => 'Should rollback',
+        ]);
+        $priceAfterLow = (float) $db->query("SELECT total_price FROM travel_ticket_bookings WHERE id = {$tempTravelId}")->fetch_column();
+        ts_check(abs($priceAfterLow - 600000.0) < 0.01 && stripos($updLow['body'], 'sudah dibayar') !== false, 'travel/detail.php act=update_detail rejects total_price < paid_total cleanly');
+
+        // Verify extra passenger reduction 3 -> 2 -> 0
+        $httpPostForm('/pages/travel/bookings/detail.php?id=' . $tempTravelId, [
+            'csrf_token'                 => $tdCsrf,
+            'id'                         => $tempTravelId,
+            'act'                        => 'update_detail',
+            'active_tab'                 => 'detail',
+            'branch_id'                  => $branchId,
+            'date'                       => date('Y-m-d'),
+            'time'                       => '11:30',
+            'passenger_id'               => $lastPaxId,
+            'passenger_ids'              => [$createdPaxIds[0], $createdPaxIds[1]],
+            'category_vehicle_id'        => $catId,
+            'vehicle_id'                 => $lastVehId,
+            'total_price'                => '600000',
+            'pickup_point_district_id'   => (int) $distRow['id'],
+            'delivery_point_district_id' => (int) $distRow['id'],
+            'note'                       => '2 extra left',
+        ]);
+        $bpCnt2 = (int) $db->query("SELECT COUNT(*) FROM booking_passengers WHERE booking_type = 'travel' AND booking_id = {$tempTravelId} AND is_primary = 0")->fetch_column();
+
+        $httpPostForm('/pages/travel/bookings/detail.php?id=' . $tempTravelId, [
+            'csrf_token'                 => $tdCsrf,
+            'id'                         => $tempTravelId,
+            'act'                        => 'update_detail',
+            'active_tab'                 => 'detail',
+            'branch_id'                  => $branchId,
+            'date'                       => date('Y-m-d'),
+            'time'                       => '11:30',
+            'passenger_id'               => $lastPaxId,
+            'category_vehicle_id'        => $catId,
+            'vehicle_id'                 => $lastVehId,
+            'total_price'                => '600000',
+            'pickup_point_district_id'   => (int) $distRow['id'],
+            'delivery_point_district_id' => (int) $distRow['id'],
+            'note'                       => '0 extra left',
+        ]);
+        $bpCnt0 = (int) $db->query("SELECT COUNT(*) FROM booking_passengers WHERE booking_type = 'travel' AND booking_id = {$tempTravelId} AND is_primary = 0")->fetch_column();
+        ts_check($bpCnt2 === 2 && $bpCnt0 === 0, 'travel/detail.php act=update_detail cleanly removes extra passengers (3 -> 2 -> 0)');
+    }
+
+    // 14. Point 3 — Export XLSX & PDF Includes Penumpang Tambahan on Travel & Rental Index
+    booking_passengers_set('travel', $tempTravelId, 1, [$lastPaxId, $createdPaxIds[0], $createdPaxIds[1]], $lastPaxId, 'test');
+    booking_passengers_set('rental', $tempBookingId, 1, [$lastPaxId, $createdPaxIds[0]], $lastPaxId, 'test');
+
+    $downloadExport = static function (string $path) use ($base, $jar): array {
+        $outF = tempnam(sys_get_temp_dir(), 'ts_exp_');
+        $hdrF = tempnam(sys_get_temp_dir(), 'ts_eh_');
+        shell_exec('curl.exe -s -b ' . escapeshellarg($jar) . ' -D ' . escapeshellarg($hdrF) . ' -o ' . escapeshellarg($outF) . ' ' . escapeshellarg($base . $path));
+        $hdr = (string) @file_get_contents($hdrF);
+        @unlink($hdrF);
+        $code = preg_match('/HTTP\/\S+\s+(\d{3})/', $hdr, $m) ? (int) $m[1] : 0;
+        $bytes = (string) @file_get_contents($outF);
+        $size = is_file($outF) ? (int) filesize($outF) : 0;
+        return ['code' => $code, 'file' => $outF, 'size' => $size, 'bytes' => $bytes];
+    };
+
+    $readXlsxXml = static function (string $bin): array {
+        $eocd = strrpos($bin, "PK\x05\x06");
+        if ($eocd === false || strlen($bin) < $eocd + 22) {
+            return [false, ''];
+        }
+        $cdCount  = unpack('v', substr($bin, $eocd + 10, 2))[1];
+        $cdOffset = unpack('V', substr($bin, $eocd + 16, 4))[1];
+        $pos = $cdOffset;
+        $xml = '';
+        for ($i = 0; $i < $cdCount; $i++) {
+            if (substr($bin, $pos, 4) !== "PK\x01\x02") {
+                return [false, $xml];
+            }
+            $method   = unpack('v', substr($bin, $pos + 10, 2))[1];
+            $compSize = unpack('V', substr($bin, $pos + 20, 4))[1];
+            $nameLen  = unpack('v', substr($bin, $pos + 28, 2))[1];
+            $extraLen = unpack('v', substr($bin, $pos + 30, 2))[1];
+            $commLen  = unpack('v', substr($bin, $pos + 32, 2))[1];
+            $locOff   = unpack('V', substr($bin, $pos + 42, 4))[1];
+            $name     = substr($bin, $pos + 46, $nameLen);
+            $pos     += 46 + $nameLen + $extraLen + $commLen;
+            if (substr($bin, $locOff, 4) !== "PK\x03\x04") {
+                continue;
+            }
+            $lLens = unpack('vn/ve', substr($bin, $locOff + 26, 4));
+            $data  = substr($bin, $locOff + 30 + $lLens['n'] + $lLens['e'], $compSize);
+            if ($method === 8) {
+                $data = (string) @gzinflate($data);
+            }
+            if (str_ends_with($name, '.xml')) {
+                $xml .= $data;
+            }
+        }
+        return [true, $xml];
+    };
+
+    foreach ([
+        ['travel', '/pages/travel/bookings/index.php'],
+        ['rental', '/pages/rental/bookings/index.php'],
+    ] as [$expType, $expPath]) {
+        $qStr = '?company_id=1&q=' . urlencode('ZZZScale Test Passenger 001');
+        $xRes = $downloadExport($expPath . $qStr . '&export=xlsx');
+        [$zipOk, $xText] = $xRes['size'] > 0 ? $readXlsxXml($xRes['bytes']) : [false, ''];
+        @unlink($xRes['file']);
+        ts_check(
+            $xRes['code'] === 200 && $zipOk && str_contains($xText, 'Penumpang Tambahan') && str_contains($xText, 'ZZZScale Test Passenger 001'),
+            "{$expType}/bookings/index.php export=xlsx includes Penumpang Tambahan column & extra passenger name"
+        );
+
+        $pRes = $downloadExport($expPath . $qStr . '&export=pdf');
+        @unlink($pRes['file']);
+        ts_check(
+            $pRes['code'] === 200 && str_starts_with($pRes['bytes'], '%PDF-') && $pRes['size'] > 1000,
+            "{$expType}/bookings/index.php export=pdf returns valid PDF (>1KB)"
+        );
+    }
 } finally {
     foreach ($createdOrders as $oid) {
         $esc = $db->real_escape_string($oid);
@@ -529,6 +849,14 @@ try {
     }
     if ($tempBookingId > 0) {
         try { booking_delete('rental', $tempBookingId, 1); } catch (Throwable $ex) {}
+    }
+    if (!empty($tempViewerUserId) && $tempViewerUserId > 0) {
+        $db->query("DELETE FROM user_companies WHERE user_id = {$tempViewerUserId}");
+        $db->query("DELETE FROM users WHERE id = {$tempViewerUserId}");
+    }
+    if (!empty($createdEmpIds)) {
+        $inE = implode(',', array_map('intval', $createdEmpIds));
+        $db->query("DELETE FROM employees WHERE id IN ({$inE})");
     }
     if ($createdRuteIds) {
         $inR = implode(',', array_map('intval', $createdRuteIds));
@@ -543,6 +871,7 @@ try {
         $db->query("DELETE FROM passengers WHERE id IN ({$inP})");
     }
     @unlink($jar);
+    @unlink($viewerJar);
 }
 
 echo "\nSummary: {$pass} passed, {$fail} failed.\n";

@@ -54,7 +54,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
 $v = fn(string $k): string => (string) ($input[$k] ?? '');
 $field = static fn(string $k): string => $v($k) !== '' ? $v($k) : ($k === 'date' ? date('Y-m-d') : '');
-$employees = attendance_employee_options($cid);
+$selEmp = (int) $v('employee_id');
+$employees = attendance_employee_options($cid, $selEmp > 0 ? [$selEmp] : [], 50);
 $title = $id > 0 ? 'Ubah Absensi' : 'Input Absensi';
 $active = 'attendance';
 require __DIR__ . '/../../includes/header.php';
@@ -89,7 +90,10 @@ require __DIR__ . '/../../includes/header.php';
             <div class="row g-3">
                 <div class="col-md-4">
                     <label class="form-label">Karyawan <span class="text-danger">*</span></label>
-                    <select name="employee_id" class="form-select ts-select" required>
+                    <select name="employee_id" class="form-select ts-select" required
+                        data-ts-url="<?= e(APP_URL) ?>/pages/employees/options.php"
+                        <?= $cid !== null ? 'data-ts-company="' . (int) $cid . '"' : '' ?>
+                        data-ts-limit="30">
                         <option value="">— pilih karyawan —</option>
                         <?php foreach ($employees as $emp): ?>
                             <option value="<?= (int) $emp['id'] ?>"<?= (int) $v('employee_id') === (int) $emp['id'] ? ' selected' : '' ?>>
