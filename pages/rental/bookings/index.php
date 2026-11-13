@@ -1,7 +1,7 @@
 <?php
 require_once __DIR__ . '/../../../config/config.php';
 require_permission('rental.view');
-require_once __DIR__ . '/../../../pages/travel/_helpers.php';
+require_once __DIR__ . '/../../../includes/transport_helpers.php';
 require_once __DIR__ . '/../../../includes/booking_service.php';
 
 $status_sql = "(SELECT h.to_status FROM booking_status_history h

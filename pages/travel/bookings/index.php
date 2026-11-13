@@ -2,6 +2,27 @@
 require_once __DIR__ . '/../../../config/config.php';
 require_permission('travel.view');
 require_once __DIR__ . '/../_helpers.php';
+require_once __DIR__ . '/../../../includes/booking_service.php';
+
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['act'] ?? '') === 'delete') {
+    require_permission('travel.manage');
+    verify_csrf();
+    $delId = (int) ($_POST['id'] ?? 0);
+    $delBk = $delId > 0 ? booking_find('travel', $delId) : null;
+    if (!$delBk) {
+        flash('error', 'Pemesanan tiket perjalanan tidak ditemukan.');
+        redirect('pages/travel/bookings/index.php');
+    }
+    assert_company_access((int) $delBk['company_id']);
+    try {
+        $docNum = booking_delete('travel', $delId, (int) $delBk['company_id']);
+        audit('booking.travel.delete', "Pemesanan #{$delId} ({$docNum})");
+        flash('success', "Pemesanan tiket perjalanan {$docNum} berhasil dihapus.");
+    } catch (Throwable $e) {
+        flash('error', $e->getMessage());
+    }
+    redirect('pages/travel/bookings/index.php');
+}
 
 $status_sql = "(SELECT h.to_status FROM booking_status_history h
     WHERE h.booking_type = 'travel' AND h.booking_id = b.id ORDER BY h.id DESC LIMIT 1)";
@@ -137,7 +158,7 @@ if (in_array($export_format, ['xlsx', 'pdf'], true)) {
     $sub = $subParts ? implode(' | ', $subParts) : 'Semua Data';
 
     grid_export_send(
-        'Daftar Booking Travel',
+        'Pemesanan Tiket Perjalanan',
         ['Resi', 'Penumpang (Nama & HP)', 'Penumpang Tambahan', 'Kendaraan', 'Jam', 'Tanggal', 'Penjemputan', 'Pengantaran', 'Total Harga', 'Total Pembayaran', 'Status'],
         $row_stream,
         $export_format,
@@ -189,14 +210,14 @@ $query_base = http_build_query($query_params);
 $has_active_filter = ($q !== '' || $status !== '' || $start_date !== '' || $end_date !== '' || (isset($_GET['company_id']) && (int) $_GET['company_id'] !== ($active_cid ?? 0)));
 
 $active = 'travel';
-$title  = 'Booking Travel';
+$title  = 'Pemesanan Tiket Perjalanan';
 require __DIR__ . '/../../../includes/header.php';
 ?>
 <main class="p-3 p-lg-4 w-100 flex-grow-1">
     <?= ui_page_header(
-        'Booking Travel',
-        ['Dashboard' => 'pages/dashboard/index.php', 'Travel' => null, 'Booking' => null],
-        [['text' => number_format($total, 0, ',', '.') . ' Booking', 'class' => 'bg-light text-secondary border']],
+        'Pemesanan Tiket Perjalanan',
+        ['Dashboard' => 'pages/dashboard/index.php', 'Travel' => null, 'Pemesanan Tiket Perjalanan' => null],
+        [['text' => number_format($total, 0, ',', '.') . ' Pemesanan', 'class' => 'bg-light text-secondary border']],
         $header_actions
     ) ?>
     <div class="card shadow-sm border-0 mb-3">
@@ -321,15 +342,23 @@ require __DIR__ . '/../../../includes/header.php';
                                 <i class="bi bi-eye"></i>
                             </a>
                             <?php if (can('travel.manage')): ?>
-                                <a class="btn btn-sm btn-outline-primary" href="<?= e(APP_URL) ?>/pages/travel/bookings/form.php?id=<?= (int) $r['id'] ?>" title="Ubah Booking">
+                                <a class="btn btn-sm btn-outline-primary" href="<?= e(APP_URL) ?>/pages/travel/bookings/detail.php?id=<?= (int) $r['id'] ?>" title="Ubah Pemesanan">
                                     <i class="bi bi-pencil-square"></i>
                                 </a>
+                                <form method="post" class="d-inline" onsubmit="return confirm('Hapus pemesanan <?= e($r['document_number']) ?>?');">
+                                    <?= csrf_field() ?>
+                                    <input type="hidden" name="act" value="delete">
+                                    <input type="hidden" name="id" value="<?= (int) $r['id'] ?>">
+                                    <button type="submit" class="btn btn-sm btn-outline-danger" title="Hapus Pemesanan">
+                                        <i class="bi bi-trash"></i>
+                                    </button>
+                                </form>
                             <?php endif; ?>
                         </td>
                     </tr>
                 <?php endforeach; ?>
                 <?php if (!$rows): ?>
-                    <tr><td colspan="12" class="text-center text-muted py-4">Belum ada booking travel yang cocok dengan filter yang dipilih.</td></tr>
+                    <tr><td colspan="12" class="text-center text-muted py-4">Belum ada pemesanan tiket perjalanan yang cocok dengan filter yang dipilih.</td></tr>
                 <?php endif; ?>
                 </tbody>
             </table>

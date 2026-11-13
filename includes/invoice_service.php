@@ -213,12 +213,15 @@ function invoice_payments(int $invoice_id): array
  * - Menyimpan baris pembayaran manual (beserta upload bukti lampiran bila ada)
  * - Menghitung ulang total_payment pada rental_car_bookings & invoices
  *
+ * @param string $type 'rental' atau 'travel'
  * @param array<int, array{id?:int, pay_type:string, pay_method:string, pay_date:string, amount:float, proof_blob_path?:?string}> $pay_rows
  */
-function booking_rental_payments_sync(int $booking_id, int $invoice_id, int $company_id, array $pay_rows, ?string $user): float
+function booking_payments_sync(string $type, int $booking_id, int $invoice_id, int $company_id, array $pay_rows, ?string $user): float
 {
-    $db   = db();
-    $desc = 'INV#' . $invoice_id;
+    $type   = ($type === 'travel') ? 'travel' : 'rental';
+    $bTable = ($type === 'travel') ? 'travel_ticket_bookings' : 'rental_car_bookings';
+    $db     = db();
+    $desc   = 'INV#' . $invoice_id;
 
     // Ambil baris eksisting agar proof_blob_path lama & baris QRIS otomatis tidak hilang
     $existing = [];
@@ -269,16 +272,16 @@ function booking_rental_payments_sync(int $booking_id, int $invoice_id, int $com
 
     // Hapus baris manual lama (pertahankan baris yang berasal dari webhook QRIS otomatis)
     $del = $db->prepare("DELETE FROM booking_cost_lines
-        WHERE booking_type = 'rental' AND booking_id = ? AND company_id = ?
+        WHERE booking_type = ? AND booking_id = ? AND company_id = ?
           AND cost_type = 'payment' AND description = ?
           AND (created_user IS NULL OR created_user NOT LIKE '%qris%')");
-    $del->bind_param('iis', $booking_id, $company_id, $desc);
+    $del->bind_param('siis', $type, $booking_id, $company_id, $desc);
     $del->execute();
     $del->close();
 
     $ins = $db->prepare("INSERT INTO booking_cost_lines
         (company_id, booking_type, booking_id, cost_type, description, amount, note, proof_blob_path, created_user, created_date)
-        VALUES (?, 'rental', ?, 'payment', ?, ?, ?, ?, ?, ?)");
+        VALUES (?, ?, ?, 'payment', ?, ?, ?, ?, ?, ?)");
 
     foreach ($pay_rows as $r) {
         $rowId = (int) ($r['id'] ?? 0);
@@ -300,13 +303,13 @@ function booking_rental_payments_sync(int $booking_id, int $invoice_id, int $com
         $noteStr     = $pType . ' | ' . $pMethod;
         $proofPath   = $r['proof_blob_path'] ?? ($rowId > 0 ? ($existing[$rowId]['proof_blob_path'] ?? null) : null);
 
-        $ins->bind_param('iisdssss', $company_id, $booking_id, $desc, $amt, $noteStr, $proofPath, $user, $createdDate);
+        $ins->bind_param('isisdssss', $company_id, $type, $booking_id, $desc, $amt, $noteStr, $proofPath, $user, $createdDate);
         $ins->execute();
     }
     $ins->close();
 
     $total_paid = invoice_paid_total($invoice_id);
-    $upB = $db->prepare('UPDATE rental_car_bookings SET total_payment = ?, modified_user = ?, modified_date = NOW() WHERE id = ? AND company_id = ?');
+    $upB = $db->prepare("UPDATE {$bTable} SET total_payment = ?, modified_user = ?, modified_date = NOW() WHERE id = ? AND company_id = ?");
     $upB->bind_param('dsii', $total_paid, $user, $booking_id, $company_id);
     $upB->execute();
     $upB->close();
@@ -317,4 +320,14 @@ function booking_rental_payments_sync(int $booking_id, int $invoice_id, int $com
     $upI->close();
 
     return $total_paid;
+}
+
+/**
+ * Wrapper backward-compatible untuk sinkronisasi pembayaran booking rental.
+ *
+ * @param array<int, array{id?:int, pay_type:string, pay_method:string, pay_date:string, amount:float, proof_blob_path?:?string}> $pay_rows
+ */
+function booking_rental_payments_sync(int $booking_id, int $invoice_id, int $company_id, array $pay_rows, ?string $user): float
+{
+    return booking_payments_sync('rental', $booking_id, $invoice_id, $company_id, $pay_rows, $user);
 }

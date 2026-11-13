@@ -8,6 +8,7 @@
 require_once __DIR__ . '/../../../config/config.php';
 require_once __DIR__ . '/../../../includes/payment_gateway.php';
 require_once __DIR__ . '/../../../includes/booking.php';
+require_once __DIR__ . '/../../../includes/qr_svg.php';
 
 $db = db();
 $no = strtoupper(trim((string) ($_GET['no'] ?? '')));
@@ -63,6 +64,11 @@ if ($order && !empty($order['expired_at']) && strtotime((string) $order['expired
 
 $fee    = gateway_fee($channel, $remaining);
 $charge = gateway_charge_total($channel, $remaining);
+$sessUser = $_SESSION['username'] ?? 'public-web';
+$payCsrf  = csrf_token();
+if (session_status() === PHP_SESSION_ACTIVE) {
+    session_write_close();
+}
 
 if (!$order) {
     $orderId = gateway_make_order_id((int) $inv['id']);
@@ -80,7 +86,7 @@ if (!$order) {
         $charge,
         $data,
         'web',
-        $_SESSION['username'] ?? 'public-web'
+        $sessUser
     );
     $order = gateway_find_order($orderId);
 }
@@ -104,6 +110,9 @@ if ($qrisImgUrl !== '' && $qrisImgUrl !== trim((string) ($order['qris_url'] ?? '
 $fallbackQrUrl = $qrisString !== ''
     ? ('https://quickchart.io/qr?size=300&margin=4&text=' . rawurlencode($qrisString))
     : '';
+$localQrDataUri = $qrisString !== '' ? qr_svg_data_uri($qrisString, 4, 260) : '';
+$primaryQrSrc   = $localQrDataUri !== '' ? $localQrDataUri : $qrisImgUrl;
+$primaryFallback = $localQrDataUri !== '' ? $qrisImgUrl : $fallbackQrUrl;
 
 $stComp = $db->prepare('SELECT name, code, logo FROM companies WHERE id = ? LIMIT 1');
 $stComp->bind_param('i', $companyId);
@@ -136,8 +145,8 @@ $backUrl = $no !== ''
             <div class="text-muted small mb-3">No. Tiket: <strong><?= e($inv['document_number']) ?></strong> · Invoice: <?= e($inv['invoice_no']) ?></div>
 
             <div class="p-3 bg-white border rounded-3 d-inline-block mb-3">
-                <img src="<?= e($qrisImgUrl) ?>" alt="QRIS Dinamis" width="260" height="260" class="img-fluid"
-                     <?php if ($fallbackQrUrl !== ''): ?>onerror="if(this.src!==<?= e(json_encode($fallbackQrUrl)) ?>)this.src=<?= e(json_encode($fallbackQrUrl)) ?>;"<?php endif; ?>>
+                <img src="<?= e($primaryQrSrc) ?>" alt="QRIS Dinamis" width="260" height="260" class="img-fluid"
+                     <?php if ($primaryFallback !== ''): ?>onerror="if(this.src!==<?= e(json_encode($primaryFallback)) ?>)this.src=<?= e(json_encode($primaryFallback)) ?>;"<?php endif; ?>>
             </div>
 
             <div class="border rounded bg-light p-3 text-start mb-3 small">
@@ -183,7 +192,7 @@ $backUrl = $no !== ''
 const cfg = {
     url: 'gateway_status.php',
     orderId: <?= json_encode($order['order_id']) ?>,
-    csrf: <?= json_encode(csrf_token()) ?>,
+    csrf: <?= json_encode($payCsrf) ?>,
     redirectUrl: <?= json_encode($backUrl) ?>
 };
 const label = document.getElementById('payStatus');

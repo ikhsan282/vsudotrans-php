@@ -1,10 +1,9 @@
 <?php
 require_once __DIR__ . '/../../../config/config.php';
-if (!can('travel.view') && !can('rental.view')) {
-    require_permission('travel.view');
-}
-$can_manage = can('travel.manage') || can('rental.manage');
 require_once __DIR__ . '/../_helpers.php';
+transport_require_view();
+
+$can_manage = transport_can_manage();
 
 $scope = company_filter_scope('p.company_id');
 $filter_company_id = $scope['filter_company_id'];
@@ -54,7 +53,7 @@ if (in_array($export_format, ['xlsx', 'pdf'], true)) {
 
     $sub = $q !== '' ? 'Pencarian: "' . $q . '"' : 'Semua Data';
     grid_export_send(
-        'Daftar Penumpang Travel',
+        'Daftar Penumpang',
         ['Kode', 'Nama Penumpang', 'Telepon', 'Email'],
         $row_stream,
         $export_format,
@@ -74,7 +73,7 @@ $st->close();
 
 $header_actions = ui_export_actions();
 if ($can_manage && active_company_id() !== null) {
-    $header_actions[] = ['label' => 'Tambah', 'icon' => 'plus-lg', 'href' => 'pages/travel/passengers/form.php', 'class' => 'btn btn-primary btn-sm'];
+    $header_actions[] = ['label' => 'Tambah', 'icon' => 'plus-lg', 'href' => 'pages/transport/passengers/form.php', 'class' => 'btn btn-primary btn-sm'];
 }
 
 $has_explicit_company = isset($_GET['company_id']);
@@ -91,7 +90,7 @@ require __DIR__ . '/../../../includes/header.php';
 <main class="col-12 col-md-9 col-lg-10 p-3 p-lg-4">
     <?= ui_page_header(
         'Data Penumpang',
-        ['Dashboard' => 'pages/dashboard/index.php', 'Operasional' => null, 'Penumpang' => null],
+        ['Dashboard' => 'pages/dashboard/index.php', 'Transportasi' => null, 'Penumpang' => null],
         [['text' => number_format($total, 0, ',', '.') . ' Orang', 'class' => 'bg-light text-secondary border']],
         $header_actions
     ) ?>
@@ -112,7 +111,7 @@ require __DIR__ . '/../../../includes/header.php';
                 <div class="col-auto d-flex gap-1">
                     <button type="submit" class="btn btn-sm btn-secondary">Filter</button>
                     <?php if ($has_active_filter): ?>
-                        <a href="<?= e(APP_URL) ?>/pages/travel/passengers/index.php" class="btn btn-sm btn-outline-danger" title="Reset"><i class="bi bi-x-lg"></i> Reset</a>
+                        <a href="<?= e(APP_URL) ?>/pages/transport/passengers/index.php" class="btn btn-sm btn-outline-danger" title="Reset"><i class="bi bi-x-lg"></i> Reset</a>
                     <?php endif; ?>
                 </div>
             </form>
@@ -132,8 +131,8 @@ require __DIR__ . '/../../../includes/header.php';
                         <td><?= e($r['email'] ?: '-') ?></td>
                         <td class="text-end">
                             <?php if ($can_manage): ?>
-                                <a class="btn btn-sm btn-outline-primary" href="<?= e(APP_URL) ?>/pages/travel/passengers/form.php?id=<?= (int) $r['id'] ?>">Ubah</a>
-                                <form method="post" action="<?= e(APP_URL) ?>/pages/travel/passengers/delete.php" class="d-inline" onsubmit="return confirm('Hapus penumpang ini?')">
+                                <a class="btn btn-sm btn-outline-primary" href="<?= e(APP_URL) ?>/pages/transport/passengers/form.php?id=<?= (int) $r['id'] ?>">Ubah</a>
+                                <form method="post" action="<?= e(APP_URL) ?>/pages/transport/passengers/delete.php" class="d-inline" onsubmit="return confirm('Hapus penumpang ini?')">
                                     <?= csrf_field() ?>
                                     <input type="hidden" name="id" value="<?= (int) $r['id'] ?>">
                                     <button type="submit" class="btn btn-sm btn-outline-danger">Hapus</button>

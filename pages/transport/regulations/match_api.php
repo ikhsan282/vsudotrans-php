@@ -1,11 +1,12 @@
 <?php
 /**
  * Endpoint JSON untuk mencocokkan & menghitung Peraturan Komisi Karyawan
- * terhadap Booking Rental (berdasarkan regulation_id spesifik atau auto-match
+ * terhadap Booking Travel maupun Rental (berdasarkan regulation_id spesifik atau auto-match
  * company_id + category_vehicle_id + trip + start_date + total_price).
  */
 require_once __DIR__ . '/../../../config/config.php';
-require_permission('rental.view');
+require_once __DIR__ . '/../_helpers.php';
+transport_require_view(true);
 require_once __DIR__ . '/../../../includes/regulation_service.php';
 
 header('Content-Type: application/json; charset=utf-8');

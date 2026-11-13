@@ -1,21 +1,21 @@
 <?php
 require_once __DIR__ . '/../../../config/config.php';
-require_permission('rental.view');
-require_once __DIR__ . '/../../travel/_helpers.php';
+require_once __DIR__ . '/../_helpers.php';
+transport_require_view();
 require_once __DIR__ . '/../../../includes/regulation_service.php';
 
 regulation_ensure_schema();
 
 $companies  = accessible_companies();
 $active_cid = active_company_id();
-$canManage  = can('rental.manage');
+$canManage  = transport_can_manage();
 $user       = $_SESSION['username'] ?? null;
 
 $id  = (int) ($_GET['id'] ?? $_POST['id'] ?? 0);
 $reg = $id > 0 ? regulation_find($id) : null;
 if ($id > 0 && !$reg) {
     flash('error', 'Peraturan Komisi Karyawan tidak ditemukan.');
-    redirect('pages/rental/regulations/index.php');
+    redirect('pages/transport/regulations/index.php');
 }
 if ($reg) {
     assert_company_access((int) $reg['company_id']);
@@ -25,7 +25,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     verify_csrf();
     if (!$canManage) {
         flash('error', 'Anda tidak memiliki izin mengelola Peraturan Komisi Karyawan.');
-        redirect('pages/rental/regulations/index.php');
+        redirect('pages/transport/regulations/index.php');
     }
     $act = (string) ($_POST['act'] ?? 'save');
 
@@ -34,7 +34,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             regulation_delete($id, (int) $reg['company_id']);
             audit('rental.regulation.delete', "Hapus Peraturan Komisi Karyawan #{$id}");
             flash('success', 'Peraturan Komisi Karyawan berhasil dihapus.');
-            redirect('pages/rental/regulations/index.php');
+            redirect('pages/transport/regulations/index.php');
         }
 
         $companyId  = (int) ($_POST['company_id'] ?? ($reg['company_id'] ?? $active_cid ?? 0));
@@ -94,11 +94,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             "Peraturan Komisi Karyawan #{$savedId} (Company #{$companyId}, Category #{$categoryId})"
         );
         flash('success', 'Peraturan Komisi Karyawan berhasil disimpan.');
-        redirect('pages/rental/regulations/form.php?id=' . $savedId);
+        redirect('pages/transport/regulations/form.php?id=' . $savedId);
     } catch (Throwable $ex) {
         flash('error', $ex->getMessage() ?: 'Gagal menyimpan Peraturan Komisi Karyawan.');
         if ($id > 0) {
-            redirect('pages/rental/regulations/form.php?id=' . $id);
+            redirect('pages/transport/regulations/form.php?id=' . $id);
         }
     }
 }
@@ -143,7 +143,7 @@ $tabTitle = $reg
     ? 'Detail Peraturan Komisi Karyawan (' . $reg['company_code'] . ' - ' . ($reg['note'] ?: ($reg['category_code'] . ' Trip ' . $reg['trip'])) . ')'
     : 'Tambah Peraturan Komisi Karyawan Baru';
 
-$active = 'rental';
+$active = 'regulations';
 $title  = $tabTitle;
 require __DIR__ . '/../../../includes/header.php';
 ?>
@@ -182,7 +182,7 @@ require __DIR__ . '/../../../includes/header.php';
             <span class="small text-muted d-none d-md-inline">Akses: <strong><?= e($reg ? ($reg['company_code'] . ' - ' . $reg['company_name']) : active_company_name()) ?></strong></span>
         </div>
         <div class="d-flex flex-wrap gap-2 ms-auto">
-            <a href="<?= e(APP_URL) ?>/pages/rental/regulations/index.php" class="btn btn-sm btn-outline-secondary">
+            <a href="<?= e(APP_URL) ?>/pages/transport/regulations/index.php" class="btn btn-sm btn-outline-secondary">
                 <i class="bi bi-arrow-left me-1"></i>Kembali
             </a>
             <?php if ($canManage): ?>
@@ -190,7 +190,7 @@ require __DIR__ . '/../../../includes/header.php';
                     <i class="bi bi-check2-circle me-1"></i>Simpan Peraturan
                 </button>
                 <?php if ($id > 0): ?>
-                    <a href="<?= e(APP_URL) ?>/pages/rental/regulations/form.php" class="btn btn-sm btn-outline-primary">
+                    <a href="<?= e(APP_URL) ?>/pages/transport/regulations/form.php" class="btn btn-sm btn-outline-primary">
                         <i class="bi bi-plus-lg me-1"></i>Buat Baru
                     </a>
                     <form method="post" action="" class="d-inline" onsubmit="return confirm('Hapus Peraturan Komisi Karyawan ini?');">

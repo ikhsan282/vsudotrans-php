@@ -11,6 +11,7 @@
 
 require_once __DIR__ . '/../config/config.php';
 require_once __DIR__ . '/../includes/payment_gateway.php';
+require_once __DIR__ . '/../includes/qr_svg.php';
 
 $pass = 0;
 $fail = 0;
@@ -59,6 +60,19 @@ check_pg(qris_validate_static($realStaticSample) === null, 'qris_validate_static
 $realDynamic = qris_make_dynamic($realStaticSample, 500369);
 check_pg($realDynamic !== null && qris_merchant_fingerprint($realDynamic) === qris_merchant_fingerprint($realStaticSample), 'Dynamic QRIS preserves exact Tag 26–51 merchant fingerprint');
 check_pg(str_contains(gq_qr_url((string) $realDynamic), '&qzone=4&data='), 'gq_qr_url includes qzone=4 quiet zone');
+$qrT0 = hrtime(true);
+$localSvgUri = qr_svg_data_uri((string) $realDynamic, 4, 230);
+$qrElapsedMs = (hrtime(true) - $qrT0) / 1e6;
+$localSvgDecoded = str_starts_with($localSvgUri, 'data:image/svg+xml;base64,')
+    ? (string) base64_decode(substr($localSvgUri, strlen('data:image/svg+xml;base64,')), true)
+    : '';
+check_pg(
+    str_starts_with($localSvgUri, 'data:image/svg+xml;base64,')
+        && str_contains($localSvgDecoded, '<svg ')
+        && str_contains($localSvgDecoded, '<path d="M')
+        && $qrElapsedMs < 250.0,
+    'qr_svg_data_uri generates local crisp SVG Data URI cleanly (' . round($qrElapsedMs, 1) . ' ms)'
+);
 
 // 2. Multi-tenant channel & unique code collision avoidance + atomic finalize
 $db = db();

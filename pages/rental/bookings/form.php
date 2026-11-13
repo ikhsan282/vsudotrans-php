@@ -1,7 +1,7 @@
 <?php
 require_once __DIR__ . '/../../../config/config.php';
 require_permission('rental.manage');
-require_once __DIR__ . '/../../travel/_helpers.php';
+require_once __DIR__ . '/../../../includes/transport_helpers.php';
 require_once __DIR__ . '/../../../includes/booking_service.php';
 require_once __DIR__ . '/../../../includes/invoice_service.php';
 require_once __DIR__ . '/../../../includes/regulation_service.php';
@@ -569,7 +569,7 @@ require __DIR__ . '/../../../includes/header.php';
                                     <label class="rnt-label">Pelanggan Utama <span class="text-danger">*</span></label>
                                     <div class="rnt-field">
                                         <select class="form-select form-select-sm ts-select" id="select_passenger_id" name="passenger_id" required
-                                            data-ts-url="<?= e(APP_URL) ?>/pages/travel/passengers/options.php"
+                                            data-ts-url="<?= e(APP_URL) ?>/pages/transport/passengers/options.php"
                                             data-ts-company="<?= (int) $cid ?>"
                                             data-ts-limit="30"
                                             data-ts-placeholder="-- Pilih Pelanggan Utama --">
@@ -582,7 +582,7 @@ require __DIR__ . '/../../../includes/header.php';
                                     <label class="rnt-label pt-1">Penumpang Tambahan</label>
                                     <div class="rnt-field">
                                         <select class="form-select form-select-sm ts-select" id="extraPassengersSelect" name="passenger_ids[]" multiple
-                                            data-ts-url="<?= e(APP_URL) ?>/pages/travel/passengers/options.php"
+                                            data-ts-url="<?= e(APP_URL) ?>/pages/transport/passengers/options.php"
                                             data-ts-company="<?= (int) $cid ?>"
                                             data-ts-limit="30"
                                             placeholder="Pilih penumpang tambahan (opsional)...">
@@ -1392,7 +1392,7 @@ document.addEventListener('DOMContentLoaded', function () {
             payload.append('phone_number', phoneVal);
             payload.append('email', document.getElementById('qp_email').value);
 
-            fetch('<?= e(APP_URL) ?>/pages/travel/passengers/quick_create.php', {
+            fetch('<?= e(APP_URL) ?>/pages/transport/passengers/quick_create.php', {
                 method: 'POST',
                 body: payload
             })
@@ -1666,7 +1666,7 @@ document.addEventListener('DOMContentLoaded', function () {
                 start_date: sDate,
                 total_price: String(price)
             });
-            var res = await fetch('<?= e(APP_URL) ?>/pages/rental/regulations/match_api.php?' + qs.toString(), {
+            var res = await fetch('<?= e(APP_URL) ?>/pages/transport/regulations/match_api.php?' + qs.toString(), {
                 headers: { 'Accept': 'application/json' }
             });
             var data = await res.json();

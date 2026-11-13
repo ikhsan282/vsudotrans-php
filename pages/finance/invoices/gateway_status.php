@@ -21,6 +21,10 @@ if (($_SERVER['REQUEST_METHOD'] ?? '') !== 'POST') {
 if (!hash_equals(csrf_token(), (string) ($_POST['csrf_token'] ?? ''))) {
     gw_reply(403, ['status' => 'FORBIDDEN']);
 }
+// Lepas session lock segera agar request lain (seperti Buat QRIS) tidak ikut tertahan saat polling API mutasi
+if (session_status() === PHP_SESSION_ACTIVE) {
+    session_write_close();
+}
 
 $orderId = trim((string) ($_POST['order_id'] ?? ''));
 $order = $orderId !== '' ? gateway_find_order($orderId) : null;

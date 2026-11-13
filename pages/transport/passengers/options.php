@@ -14,7 +14,7 @@ if (empty($_SESSION['user_id'])) {
     exit;
 }
 
-if (!can('travel.view') && !can('rental.view') && !can('travel.manage') && !can('rental.manage')) {
+if (!transport_can_view()) {
     http_response_code(403);
     echo json_encode([]);
     exit;

@@ -6,7 +6,7 @@
  */
 require_once __DIR__ . '/../../../config/config.php';
 require_permission('rental.manage');
-require_once __DIR__ . '/../../travel/_helpers.php';
+require_once __DIR__ . '/../../../includes/transport_helpers.php';
 require_once __DIR__ . '/../../../includes/ai.php';
 
 header('Content-Type: application/json; charset=utf-8');

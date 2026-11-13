@@ -306,12 +306,12 @@ try {
     cs_check($vo5['code'] === 200 && str_contains($vo5Json, $v5Plate) && !str_contains($vo5Json, $v1Plate),
         'vehicles/options.php?company_id=5 returns ONLY Company 5 vehicle');
 
-    $po1 = $httpGet($jarAdmin, "/pages/travel/passengers/options.php?q={$uniq}");
+    $po1 = $httpGet($jarAdmin, "/pages/transport/passengers/options.php?q={$uniq}");
     $po1Json = is_array($po1['json']) ? json_encode($po1['json']) : '';
     cs_check($po1['code'] === 200 && str_contains($po1Json, $p1Name) && !str_contains($po1Json, $p5Name),
         'passengers/options.php returns ONLY Company 1 passenger when active=1');
 
-    $po5 = $httpGet($jarAdmin, "/pages/travel/passengers/options.php?q={$uniq}&company_id=5");
+    $po5 = $httpGet($jarAdmin, "/pages/transport/passengers/options.php?q={$uniq}&company_id=5");
     $po5Json = is_array($po5['json']) ? json_encode($po5['json']) : '';
     cs_check($po5['code'] === 200 && str_contains($po5Json, $p5Name) && !str_contains($po5Json, $p1Name),
         'passengers/options.php?company_id=5 returns ONLY Company 5 passenger');
@@ -333,8 +333,8 @@ try {
         'rutes/lookup.php isolates MTM (310k) vs LIZ (590k) prices cleanly'
     );
 
-    $maValid = $httpGet($jarAdmin, "/pages/rental/regulations/match_api.php?company_id=5&category_vehicle_id={$cat5}&trip=99&date=2026-06-01");
-    $maCross = $httpGet($jarAdmin, "/pages/rental/regulations/match_api.php?company_id=1&regulation_id={$reg5Id}");
+    $maValid = $httpGet($jarAdmin, "/pages/transport/regulations/match_api.php?company_id=5&category_vehicle_id={$cat5}&trip=99&date=2026-06-01");
+    $maCross = $httpGet($jarAdmin, "/pages/transport/regulations/match_api.php?company_id=1&regulation_id={$reg5Id}");
     cs_check(
         !empty($maValid['json']['ok']) && (int) ($maValid['json']['regulation']['id'] ?? 0) === $reg5Id,
         'regulations/match_api.php matches Company 5 regulation when company_id=5'
@@ -347,7 +347,7 @@ try {
     // Quick create passenger scoped to requested company_id=5
     $tfPage1 = $httpGet($jarAdmin, '/pages/travel/bookings/form.php');
     $csrf1   = $extractCsrf($tfPage1['body']);
-    $qc5     = $httpPost($jarAdmin, '/pages/travel/passengers/quick_create.php', [
+    $qc5     = $httpPost($jarAdmin, '/pages/transport/passengers/quick_create.php', [
         'csrf_token' => $csrf1,
         'company_id' => 5,
         'name'       => "CSCOPE Quick LIZ {$uniq}",
@@ -396,9 +396,9 @@ try {
     );
 
     // Travel & Rental List Pages default to Company 5
-    $paxIdx5 = $httpGet($jarAdmin, '/pages/travel/passengers/index.php');
+    $paxIdx5 = $httpGet($jarAdmin, '/pages/transport/passengers/index.php');
     cs_check($paxIdx5['code'] === 200 && str_contains($paxIdx5['body'], $p5Name) && !str_contains($paxIdx5['body'], $p1Name),
-        'travel/passengers/index.php defaults to active Company 5');
+        'transport/passengers/index.php defaults to active Company 5');
 
     $ruteIdx5 = $httpGet($jarAdmin, '/pages/travel/rutes/index.php');
     cs_check($ruteIdx5['code'] === 200 && str_contains($ruteIdx5['body'], $r5Name) && !str_contains($ruteIdx5['body'], $r1Name),
@@ -408,23 +408,23 @@ try {
     cs_check($schedIdx5['code'] === 200 && str_contains($schedIdx5['body'], '21:43') && !str_contains($schedIdx5['body'], '04:17'),
         'travel/schedules/index.php defaults to active Company 5');
 
-    $regIdx5 = $httpGet($jarAdmin, '/pages/rental/regulations/index.php');
+    $regIdx5 = $httpGet($jarAdmin, '/pages/transport/regulations/index.php');
     cs_check(
         $regIdx5['code'] === 200
         && !str_contains($regIdx5['body'], 'Undefined array key')
         && str_contains($regIdx5['body'], 'INNOVA - Toyota Innova Reborn')
         && str_contains($regIdx5['body'], "CSCOPE Reg LIZ {$uniq}")
         && !str_contains($regIdx5['body'], "CSCOPE Reg MTM {$uniq}"),
-        'rental/regulations/index.php defaults to Company 5 with valid category labels & zero PHP warnings'
+        'transport/regulations/index.php defaults to Company 5 with valid category labels & zero PHP warnings'
     );
 
-    $regForm5 = $httpGet($jarAdmin, '/pages/rental/regulations/form.php');
+    $regForm5 = $httpGet($jarAdmin, '/pages/transport/regulations/form.php');
     cs_check(
         $regForm5['code'] === 200
         && (bool) preg_match('/<select[^>]*id="regCategorySelect"[^>]*>([\s\S]*?)<\/select>/', $regForm5['body'], $mRegCat)
         && str_contains($mRegCat[1], 'INNOVA - Toyota Innova Reborn')
         && !str_contains($mRegCat[1], 'Bus Besar'),
-        'rental/regulations/form.php (active=5) renders ONLY Company 5 category options'
+        'transport/regulations/form.php (active=5) renders ONLY Company 5 category options'
     );
 
     // Crucial Detail Page Check: while active session = 5, viewing MTM booking #1 MUST stay strictly scoped to MTM ($booking_cid = 1)!
@@ -575,10 +575,10 @@ try {
     );
 
     // Regulation & Rute form POST cross-company category
-    $regF1 = $httpGet($jarAdmin, '/pages/rental/regulations/form.php');
+    $regF1 = $httpGet($jarAdmin, '/pages/transport/regulations/form.php');
     $csrfReg1 = $extractCsrf($regF1['body']);
     $beforeRegCnt = (int) $db->query('SELECT COUNT(*) FROM rental_car_regulation_employees')->fetch_row()[0];
-    $pRegCross = $httpPost($jarAdmin, '/pages/rental/regulations/form.php', [
+    $pRegCross = $httpPost($jarAdmin, '/pages/transport/regulations/form.php', [
         'csrf_token'          => $csrfReg1,
         'id'                  => 0,
         'act'                 => 'save',
@@ -590,7 +590,7 @@ try {
     ]);
     $afterRegCnt = (int) $db->query('SELECT COUNT(*) FROM rental_car_regulation_employees')->fetch_row()[0];
     cs_check($pRegCross['code'] === 200 && $beforeRegCnt === $afterRegCnt,
-        'rental/regulations/form.php rejects Company 5 category for Company 1');
+        'transport/regulations/form.php rejects Company 5 category for Company 1');
 
     $rtF1 = $httpGet($jarAdmin, '/pages/travel/rutes/form.php');
     $csrfRt1 = $extractCsrf($rtF1['body']);
@@ -625,11 +625,11 @@ try {
     $restrVo5Json = is_array($restrVo5['json']) ? json_encode($restrVo5['json']) : '';
     cs_check($restrVo5['code'] === 200 && str_contains($restrVo5Json, $v1Plate) && !str_contains($restrVo5Json, $v5Plate),
         'Restricted Company-1 user requesting vehicles/options.php?company_id=5 falls back to Company 1 and never leaks Company 5');
-    $restrPax5 = $httpGet($jarRestricted, '/pages/travel/passengers/index.php?company_id=5');
+    $restrPax5 = $httpGet($jarRestricted, '/pages/transport/passengers/index.php?company_id=5');
     cs_check($restrPax5['code'] === 200 && !str_contains($restrPax5['body'], $p5Name),
         'Restricted Company-1 user requesting passengers/index.php?company_id=5 never sees Company 5 data');
     $restrTf = $httpGet($jarRestricted, '/pages/travel/bookings/form.php');
-    $restrQc5 = $httpPost($jarRestricted, '/pages/travel/passengers/quick_create.php', [
+    $restrQc5 = $httpPost($jarRestricted, '/pages/transport/passengers/quick_create.php', [
         'csrf_token'   => $extractCsrf($restrTf['body']),
         'company_id'   => 5,
         'name'         => "CSCOPE RestrQuick {$uniq}",

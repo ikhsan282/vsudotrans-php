@@ -296,7 +296,7 @@ function gq_split(string $raw): array
 }
 
 /** HTTP GET/POST helper (cURL). */
-function gq_http_request(string $method, string $url, array $headers, ?string $body = null, int $timeout = 20): array
+function gq_http_request(string $method, string $url, array $headers, ?string $body = null, int $timeout = 10): array
 {
     if (function_exists('curl_init')) {
         $ch = curl_init();
@@ -307,7 +307,7 @@ function gq_http_request(string $method, string $url, array $headers, ?string $b
             CURLOPT_CUSTOMREQUEST  => $method,
             CURLOPT_HTTPHEADER     => $headers,
             CURLOPT_TIMEOUT        => $timeout,
-            CURLOPT_CONNECTTIMEOUT => 10,
+            CURLOPT_CONNECTTIMEOUT => 4,
             CURLOPT_SSL_VERIFYPEER => true,
             CURLOPT_SSL_VERIFYHOST => 2,
         ];
@@ -410,11 +410,11 @@ function gq_check_gopay(array $channel, array $order): array
     $base = getenv('GOPAY_API_URL') ?: 'https://api.gojekapi.com';
     $url  = $base . '/merchant-analytics/v2/merchants/transactions?' . http_build_query($q);
 
-    $res = gq_http_request('GET', $url, $headers, null, 20);
+    $res = gq_http_request('GET', $url, $headers, null, 10);
     if (in_array((int) $res['code'], [401, 403], true) && !empty($channel['id'])) {
         $ref = gopay_refresh_channel((int) $channel['id']);
         if ($ref['ok']) {
-            $res = gq_http_request('GET', $url, gq_split($ref['api_key']), null, 20);
+            $res = gq_http_request('GET', $url, gq_split($ref['api_key']), null, 10);
         }
     }
     if ($res['raw'] === false) {
@@ -494,7 +494,7 @@ function gq_check_shopeepay(array $channel, array $order): array
         'X-Timestamp-Ms: ' . (string) (time() * 1000),
     ];
 
-    $res = gq_http_request('POST', $url, $headers, $body, 20);
+    $res = gq_http_request('POST', $url, $headers, $body, 10);
     if ($res['raw'] === false) return ['ok' => false, 'error' => 'ShopeePay cURL: ' . $res['error']];
     $json = json_decode((string) $res['raw'], true);
     $code = $json['code'] ?? null;

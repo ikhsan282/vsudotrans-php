@@ -13,7 +13,7 @@ if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
     exit;
 }
 
-if (!can('travel.manage') && !can('rental.manage')) {
+if (!transport_can_manage()) {
     http_response_code(403);
     echo json_encode(['ok' => false, 'error' => 'Anda tidak memiliki hak akses menambah penumpang.']);
     exit;

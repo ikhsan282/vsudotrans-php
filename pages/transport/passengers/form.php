@@ -1,9 +1,7 @@
 <?php
 require_once __DIR__ . '/../../../config/config.php';
-if (!can('travel.manage') && !can('rental.manage')) {
-    require_permission('travel.manage');
-}
 require_once __DIR__ . '/../_helpers.php';
+transport_require_manage();
 
 $cid = require_active_company();
 $id  = (int) ($_GET['id'] ?? $_POST['id'] ?? 0);
@@ -17,7 +15,7 @@ if ($id > 0) {
     $st->close();
     if (!$found) {
         flash('error', 'Penumpang tidak ditemukan.');
-        redirect('pages/travel/passengers/index.php');
+        redirect('pages/transport/passengers/index.php');
     }
     assert_company_access((int) $found['company_id']);
     $cid = (int) $found['company_id'];
@@ -68,7 +66,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 audit('penumpang.create', "Penumpang #{$id} {$in['code']}");
             }
             flash('success', 'Penumpang berhasil disimpan.');
-            redirect('pages/travel/passengers/index.php');
+            redirect('pages/transport/passengers/index.php');
         } catch (mysqli_sql_exception $ex) {
             if ((int) $ex->getCode() !== 1062) {
                 throw $ex;
@@ -88,14 +86,14 @@ require __DIR__ . '/../../../includes/header.php';
 <main class="col-12 col-md-9 col-lg-10 p-3 p-lg-4">
     <?= ui_page_header(
         $title,
-        ['Dashboard' => 'pages/dashboard/index.php', 'Operasional' => null, 'Penumpang' => 'pages/travel/passengers/index.php', ($id > 0 ? $row['name'] : 'Tambah Baru') => null],
+        ['Dashboard' => 'pages/dashboard/index.php', 'Transportasi' => null, 'Penumpang' => 'pages/transport/passengers/index.php', ($id > 0 ? $row['name'] : 'Tambah Baru') => null],
         $id > 0 ? array_values(array_filter([
             !empty($row['code']) ? ['text' => $row['code'], 'class' => 'bg-primary-subtle text-primary border border-primary-subtle font-monospace'] : null,
             ['text' => 'ID #' . $id, 'class' => 'bg-light text-secondary border'],
             !empty($row['phone_number']) ? ['text' => $row['phone_number'], 'class' => 'bg-light text-secondary border'] : null,
         ])) : [],
         [
-            ['label' => 'Batal', 'icon' => 'arrow-left', 'href' => 'pages/travel/passengers/index.php', 'class' => 'btn btn-sm btn-outline-secondary'],
+            ['label' => 'Batal', 'icon' => 'arrow-left', 'href' => 'pages/transport/passengers/index.php', 'class' => 'btn btn-sm btn-outline-secondary'],
             ['label' => 'Simpan', 'icon' => 'check2', 'type' => 'submit', 'form' => 'formPassenger', 'class' => 'btn btn-sm btn-primary'],
         ]
     ) ?>

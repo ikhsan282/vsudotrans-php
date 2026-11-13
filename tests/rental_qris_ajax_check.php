@@ -115,7 +115,10 @@ try {
     rq_check($resDp['code'] === 200 && !empty($jDp['ok']), 'qris_ajax act=create succeeded (HTTP 200)');
     rq_check(($jDp['pay_type'] ?? '') === 'Down Payment (DP)', 'pay_type persisted as Down Payment (DP)');
     rq_check((int) round((float) ($jDp['bill_amount'] ?? 0)) === 400000, 'bill_amount matches 400000');
-    rq_check(!empty($jDp['order_id']) && !empty($jDp['qris_image_url']), 'QRIS order_id & qris_image_url returned');
+    rq_check(
+        !empty($jDp['order_id']) && !empty($jDp['qris_image_url']) && str_starts_with((string) ($jDp['qris_data_uri'] ?? ''), 'data:image/svg+xml;base64,') && !empty($jDp['qris_string']),
+        'QRIS order_id, qris_image_url, qris_data_uri (instant local SVG) & qris_string returned'
+    );
     $ordId1 = (string) ($jDp['order_id'] ?? '');
     if ($ordId1 !== '') $createdOrders[] = $ordId1;
 

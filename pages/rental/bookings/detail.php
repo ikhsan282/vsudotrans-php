@@ -1,7 +1,7 @@
 <?php
 require_once __DIR__ . '/../../../config/config.php';
 require_permission('rental.view');
-require_once __DIR__ . '/../../travel/_helpers.php';
+require_once __DIR__ . '/../../../includes/transport_helpers.php';
 require_once __DIR__ . '/../../../includes/booking_service.php';
 require_once __DIR__ . '/../../../includes/dispatch_service.php';
 require_once __DIR__ . '/../../../includes/invoice_service.php';
@@ -640,7 +640,7 @@ require __DIR__ . '/../../../includes/header.php';
                                 <div class="rnt-label">Pelanggan Utama <span class="text-danger">*</span></div>
                                 <div class="rnt-field">
                                     <select class="form-select form-select-sm ts-select" name="passenger_id" id="primaryPassengerSelect" form="rentalDetailForm"
-                                        data-ts-url="<?= e(APP_URL) ?>/pages/travel/passengers/options.php"
+                                        data-ts-url="<?= e(APP_URL) ?>/pages/transport/passengers/options.php"
                                         data-ts-company="<?= (int) $b['company_id'] ?>"
                                         data-ts-limit="30"
                                         data-ts-placeholder="-- Pilih Pelanggan Utama --"
@@ -654,7 +654,7 @@ require __DIR__ . '/../../../includes/header.php';
                                 <div class="rnt-label pt-1">Penumpang Tambahan</div>
                                 <div class="rnt-field">
                                     <select class="form-select form-select-sm ts-select" name="passenger_ids[]" id="extraPassengersSelect" form="rentalDetailForm" multiple
-                                        data-ts-url="<?= e(APP_URL) ?>/pages/travel/passengers/options.php"
+                                        data-ts-url="<?= e(APP_URL) ?>/pages/transport/passengers/options.php"
                                         data-ts-company="<?= (int) $b['company_id'] ?>"
                                         data-ts-limit="30"
                                         placeholder="Pilih penumpang tambahan (opsional)..." <?= $canManage ? '' : 'disabled' ?>>
@@ -1413,7 +1413,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     start_date: sDate,
                     total_price: String(price)
                 });
-                const res = await fetch(`${appUrl}/pages/rental/regulations/match_api.php?` + qs.toString(), {
+                const res = await fetch(`${appUrl}/pages/transport/regulations/match_api.php?` + qs.toString(), {
                     headers: { 'Accept': 'application/json' }
                 });
                 const data = await res.json();
@@ -1794,7 +1794,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 fd.append('name', document.getElementById('qpName').value.trim());
                 fd.append('phone_number', document.getElementById('qpPhone').value.trim());
 
-                const res = await fetch(`${appUrl}/pages/travel/passengers/quick_create.php`, {
+                const res = await fetch(`${appUrl}/pages/transport/passengers/quick_create.php`, {
                     method: 'POST',
                     body: fd
                 });
@@ -2180,10 +2180,11 @@ document.addEventListener('DOMContentLoaded', () => {
             fd.append('booking_id', String(qrisBookingId));
             if (targetOrderId) fd.append('order_id', targetOrderId);
 
-            const res = await fetch(`${appUrl}/pages/rental/bookings/qris_ajax.php`, {
-                method: 'POST',
-                body: fd
-            });
+            const fetchOpts = { method: 'POST', body: fd };
+            if (typeof AbortSignal !== 'undefined' && typeof AbortSignal.timeout === 'function') {
+                fetchOpts.signal = AbortSignal.timeout(10000);
+            }
+            const res = await fetch(`${appUrl}/pages/rental/bookings/qris_ajax.php`, fetchOpts);
             const data = await res.json();
             if (!res.ok || !data || !data.ok) return data;
 
@@ -2242,7 +2243,7 @@ document.addEventListener('DOMContentLoaded', () => {
     function refreshBgQrisPoller() {
         const tabPayPane = document.getElementById('tab-payment');
         const tabActive = tabPayPane && tabPayPane.classList.contains('active');
-        const shouldPoll = !document.hidden && (qrisHasPending || tabActive);
+        const shouldPoll = !document.hidden && !qrisCurrentOrderId && (qrisHasPending || tabActive);
 
         if (shouldPoll && !qrisBgPollTimer) {
             qrisBgPollTimer = setInterval(() => {
@@ -2390,8 +2391,8 @@ document.addEventListener('DOMContentLoaded', () => {
 
                 const imgEl = document.getElementById('qrisShowImg');
                 if (imgEl) {
-                    const primarySrc  = data.qris_image_url || data.fallback_qr_url || '';
-                    const fallbackSrc = data.fallback_qr_url || '';
+                    const primarySrc  = data.qris_data_uri || data.qris_image_url || data.fallback_qr_url || '';
+                    const fallbackSrc = data.qris_image_url || data.fallback_qr_url || '';
                     imgEl.onerror = function () {
                         if (fallbackSrc && this.src !== fallbackSrc) this.src = fallbackSrc;
                     };

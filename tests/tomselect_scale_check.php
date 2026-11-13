@@ -193,7 +193,7 @@ try {
     ts_check(!str_contains($tf['body'], 'var allVehicles =') && !str_contains($tf['body'], 'var allCitiesData ='), 'travel/form.php no longer embeds full allVehicles/allCitiesData JSON dumps');
 
     // Check Remote Endpoints
-    $pAjax = $httpGet('/pages/travel/passengers/options.php?q=ZZZScale&limit=30');
+    $pAjax = $httpGet('/pages/transport/passengers/options.php?q=ZZZScale&limit=30');
     ts_check($pAjax['code'] === 200 && is_array($pAjax['json']) && count($pAjax['json']) === 30, 'passengers/options.php?q=ZZZScale caps at LIMIT 30 with HTTP 200');
     ts_check(!empty($pAjax['json'][0]['code']) && !empty($pAjax['json'][0]['phone']), 'passengers/options.php returns code & phone metadata');
 
@@ -351,7 +351,7 @@ try {
     foreach ([
         'pages/rental/bookings/form.php',
         'pages/rental/bookings/detail.php',
-        'pages/rental/regulations/form.php',
+        'pages/transport/regulations/form.php',
         'pages/travel/bookings/form.php',
         'pages/travel/bookings/detail.php',
     ] as $cssCheckFile) {
@@ -418,11 +418,24 @@ try {
     $td = $httpGet('/pages/travel/bookings/detail.php?id=' . $tempTravelId);
     ts_check($td['code'] === 200, 'travel/bookings/detail.php returns HTTP 200');
     ts_check(str_contains($td['body'], 'erp-window-card') && str_contains($td['body'], 'erp-sub-tabs'), 'travel/bookings/detail.php uses ERP window card & sub-tabs UI');
-    foreach (['#tab-detail', '#tab-ops', '#tab-cost', '#tab-note', '#tab-audit'] as $tabHref) {
-        ts_check(str_contains($td['body'], $tabHref), "travel/bookings/detail.php renders tab {$tabHref}");
+    foreach (['#tab-detail', '#tab-crew', '#tab-payment', '#tab-note', '#tab-audit'] as $tabHref) {
+        ts_check(str_contains($td['body'], $tabHref), "travel/bookings/detail.php renders Rental-parity tab {$tabHref}");
+        ts_check(str_contains($tf['body'], $tabHref), "travel/bookings/form.php renders Rental-parity tab {$tabHref}");
     }
+    ts_check(str_contains($td['body'], 'Pemesanan Tiket Perjalanan') && str_contains($tf['body'], 'Pemesanan Tiket Perjalanan'), 'travel form & detail use Pemesanan Tiket Perjalanan label');
     ts_check(str_contains($td['body'], '3 Penumpang') && str_contains($td['body'], 'ZZZScale Test Passenger 120') && str_contains($td['body'], 'ZZZScale Test Passenger 001') && str_contains($td['body'], 'ZZZScale Test Passenger 002'), 'travel/bookings/detail.php displays primary + 2 extra passengers + count badge');
-    ts_check(str_contains($td['body'], 'id="travelManualPayForm"') && str_contains($td['body'], 'id="btnPayQrisAuto"') && str_contains($td['body'], 'id="qrisAutoModal"'), 'travel/bookings/detail.php #tab-cost renders manual payment form & QRIS auto modal');
+    ts_check(
+        str_contains($td['body'], 'id="payTableBody"') && str_contains($td['body'], 'name="pay_sync_present"')
+        && str_contains($td['body'], 'name="crew_sync_present"') && str_contains($td['body'], 'id="btnPayQrisAuto"')
+        && str_contains($td['body'], 'id="qrisAutoModal"') && str_contains($td['body'], 'booking_erp.js')
+        && !str_contains($td['body'], 'Bahan Bakar Minyak (BBM)') && !str_contains($td['body'], 'id="bbmDisplay"')
+        && !str_contains($tf['body'], 'Bahan Bakar Minyak (BBM)') && !str_contains($tf['body'], 'id="bbmDisplay"')
+        && str_contains($td['body'], '>Lampiran<') && str_contains($td['body'], 'id="paySubtotalDisplay"')
+        && str_contains($td['body'], 'Record 0 of 0')
+        && str_contains($tf['body'], 'No image data') && str_contains($tf['body'], 'flatpickr-date pay-date-input')
+        && str_contains($tf['body'], 'Record 1 of 1'),
+        'travel/bookings/detail.php & form.php omit BBM and render Rental-parity Tab 2/Tab 3 grids & QRIS auto modal'
+    );
 
     // HTTP POST Helper
     $httpPostForm = static function (string $path, array $fields) use ($base, $jar): array {
@@ -493,8 +506,8 @@ try {
         $qTOrd = (string) ($qTOk['json']['order_id'] ?? '');
         if ($qTOrd !== '') $createdOrders[] = $qTOrd;
         ts_check(
-            $qTOk['code'] === 200 && !empty($qTOk['json']['ok']) && $qTOrd !== '' && abs((float) ($qTOk['json']['remaining'] ?? 0) - 200000.0) < 0.01,
-            'qris_ajax.php (booking_type=travel) creates dynamic QRIS order cleanly'
+            $qTOk['code'] === 200 && !empty($qTOk['json']['ok']) && $qTOrd !== '' && str_starts_with((string) ($qTOk['json']['qris_data_uri'] ?? ''), 'data:image/svg+xml;base64,') && abs((float) ($qTOk['json']['remaining'] ?? 0) - 200000.0) < 0.01,
+            'qris_ajax.php (booking_type=travel) creates dynamic QRIS order + instant SVG data URI cleanly'
         );
 
         $qTPoll = $httpPostForm('/pages/rental/bookings/qris_ajax.php', [
@@ -524,6 +537,18 @@ try {
     ts_check(
         $tIdx['code'] === 200 && str_contains($tIdx['body'], (string) $tbk['document_number']) && str_contains($tIdx['body'], '+2 tambahan') && str_contains($tIdx['body'], 'Total Pembayaran') && str_contains($tIdx['body'], 'ZZ 0070 SC'),
         'travel/bookings/index.php finds booking via extra passenger, shows +2 tambahan badge & Rental-parity columns'
+    );
+
+    // 10b. Menu Transportasi & struktur pages/transport/*
+    $tpIdx = $httpGet('/pages/transport/passengers/index.php');
+    $trIdx = $httpGet('/pages/transport/regulations/index.php');
+    ts_check(
+        $tpIdx['code'] === 200 && str_contains($tpIdx['body'], 'Data Penumpang') && str_contains($tpIdx['body'], 'Transportasi') && str_contains($tpIdx['body'], 'pages/transport/regulations/index.php'),
+        'pages/transport/passengers/index.php renders HTTP 200 under Transportasi menu'
+    );
+    ts_check(
+        $trIdx['code'] === 200 && str_contains($trIdx['body'], 'Daftar Peraturan Komisi Karyawan') && !str_contains($trIdx['body'], 'pages/rental/regulations/') && !str_contains($trIdx['body'], 'pages/travel/passengers/'),
+        'pages/transport/regulations/index.php renders HTTP 200 with zero legacy passenger/regulation menu URLs'
     );
 
     // 11. Point 4 — Employees & Dispatch Scalability (Composite Index, EXPLAIN, Bounded Options, Remote Search & UI Hooks)
@@ -603,7 +628,8 @@ try {
         ['/pages/dispatch/assign.php', 'pages/dispatch/booking_options.php', 'dispatch/assign.php (booking)'],
         ['/pages/dispatch/assign.php', 'pages/employees/options.php?job_position=Driver', 'dispatch/assign.php (driver)'],
         ['/pages/hr/employee_recognitions/form.php', 'pages/employees/options.php?status=all', 'hr/employee_recognitions/form.php'],
-        ['/pages/travel/bookings/detail.php?id=' . $tempTravelId, 'pages/employees/options.php', 'travel/detail.php #tab-ops'],
+        ['/pages/travel/bookings/detail.php?id=' . $tempTravelId, 'pages/employees/options.php', 'travel/detail.php #tab-crew'],
+        ['/pages/travel/bookings/form.php', 'crew-emp-select', 'travel/form.php crew'],
         ['/pages/rental/bookings/detail.php?id=' . $tempBookingId, 'crew-emp-select', 'rental/detail.php crew'],
         ['/pages/rental/bookings/form.php', 'crew-emp-select', 'rental/form.php crew'],
     ] as [$chkUrl, $needle, $chkLbl]) {
@@ -763,6 +789,49 @@ try {
         ]);
         $bpCnt0 = (int) $db->query("SELECT COUNT(*) FROM booking_passengers WHERE booking_type = 'travel' AND booking_id = {$tempTravelId} AND is_primary = 0")->fetch_column();
         ts_check($bpCnt2 === 2 && $bpCnt0 === 0, 'travel/detail.php act=update_detail cleanly removes extra passengers (3 -> 2 -> 0)');
+
+        // Point 5: Travel #tab-crew (tanpa BBM) & #tab-payment inline sync via act=update_detail
+        $empSampleId = (int) $db->query("SELECT id FROM employees WHERE company_id = 1 AND status = 'aktif' ORDER BY id LIMIT 1")->fetch_column();
+        if ($empSampleId > 0) {
+            $updCrewPay = $httpPostForm('/pages/travel/bookings/detail.php?id=' . $tempTravelId, [
+                'csrf_token'                 => $tdCsrf,
+                'id'                         => $tempTravelId,
+                'act'                        => 'update_detail',
+                'active_tab'                 => 'crew',
+                'crew_sync_present'          => '1',
+                'pay_sync_present'           => '1',
+                'branch_id'                  => $branchId,
+                'date'                       => date('Y-m-d'),
+                'time'                       => '11:30',
+                'passenger_id'               => $lastPaxId,
+                'category_vehicle_id'        => $catId,
+                'vehicle_id'                 => $lastVehId,
+                'total_price'                => '600000',
+                'pickup_point_district_id'   => (int) $distRow['id'],
+                'delivery_point_district_id' => (int) $distRow['id'],
+                'bbm'                        => '75.000',
+                'crew_type'                  => ['Sopir', 'Kernet'],
+                'crew_employee_id'           => [$empSampleId, 0],
+                'crew_amount'                => ['125.000', '25.000'],
+                'pay_id'                     => [0],
+                'pay_type'                   => ['Down Payment (DP)'],
+                'pay_method'                 => ['Transfer'],
+                'pay_date'                   => [date('Y-m-d')],
+                'pay_amount'                 => ['200.000'],
+                'note'                       => 'Crew + Payment inline sync',
+            ]);
+            $tOpsRow = $db->query("SELECT total_operational_cost, total_payment FROM travel_ticket_bookings WHERE id = {$tempTravelId}")->fetch_assoc();
+            $tBbmSum = (float) $db->query("SELECT COALESCE(SUM(amount),0) FROM booking_cost_lines WHERE booking_type = 'travel' AND booking_id = {$tempTravelId} AND cost_type = 'BBM'")->fetch_column();
+            $tCrewSum = (float) $db->query("SELECT COALESCE(SUM(amount),0) FROM booking_cost_lines WHERE booking_type = 'travel' AND booking_id = {$tempTravelId} AND cost_type IN ('Sopir','Kernet')")->fetch_column();
+            ts_check(
+                $updCrewPay['code'] === 200
+                && abs($tBbmSum - 0.0) < 0.01
+                && abs($tCrewSum - 150000.0) < 0.01
+                && abs((float) ($tOpsRow['total_operational_cost'] ?? 0) - 150000.0) < 0.01
+                && abs((float) ($tOpsRow['total_payment'] ?? 0) - 200000.0) < 0.01,
+                'travel/detail.php act=update_detail ignores BBM (0), syncs crew lines (150k), total_operational_cost (150k) & inline payment (200k)'
+            );
+        }
     }
 
     // 14. Point 3 — Export XLSX & PDF Includes Penumpang Tambahan on Travel & Rental Index

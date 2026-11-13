@@ -1,17 +1,17 @@
 <?php
 require_once __DIR__ . '/../../../config/config.php';
-require_permission('rental.view');
-require_once __DIR__ . '/../../travel/_helpers.php';
+require_once __DIR__ . '/../_helpers.php';
+transport_require_view();
 require_once __DIR__ . '/../../../includes/regulation_service.php';
 
 regulation_ensure_schema();
 
 $companies  = accessible_companies();
 $active_cid = active_company_id();
-$canManage  = can('rental.manage');
+$canManage  = transport_can_manage();
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['act'] ?? '') === 'delete') {
-    require_permission('rental.manage');
+    transport_require_manage();
     verify_csrf();
     $del_id  = (int) ($_POST['id'] ?? 0);
     $del_cid = (int) ($_POST['company_id'] ?? ($active_cid ?? 0));
@@ -26,7 +26,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['act'] ?? '') === 'delete')
     } catch (Throwable $ex) {
         flash('error', $ex->getMessage() ?: 'Gagal menghapus Peraturan Komisi Karyawan.');
     }
-    redirect('pages/rental/regulations/index.php');
+    redirect('pages/transport/regulations/index.php');
 }
 
 $q = trim((string) ($_GET['q'] ?? ''));
@@ -140,11 +140,15 @@ if ($filter_company_id > 0) {
     }
 }
 
-$header_actions = [
-    ['label' => 'Pemesanan Sewa Kendaraan', 'icon' => 'car-front', 'href' => 'pages/rental/bookings/index.php', 'class' => 'btn btn-outline-secondary btn-sm'],
-];
+$header_actions = [];
+if (can('travel.view')) {
+    $header_actions[] = ['label' => 'Pemesanan Tiket', 'icon' => 'bus-front', 'href' => 'pages/travel/bookings/index.php', 'class' => 'btn btn-outline-secondary btn-sm'];
+}
+if (can('rental.view')) {
+    $header_actions[] = ['label' => 'Pemesanan Sewa', 'icon' => 'car-front', 'href' => 'pages/rental/bookings/index.php', 'class' => 'btn btn-outline-secondary btn-sm'];
+}
 if ($canManage) {
-    $header_actions[] = ['label' => 'Tambah Peraturan Komisi', 'icon' => 'plus-lg', 'href' => 'pages/rental/regulations/form.php', 'class' => 'btn btn-primary btn-sm'];
+    $header_actions[] = ['label' => 'Tambah Peraturan Komisi', 'icon' => 'plus-lg', 'href' => 'pages/transport/regulations/form.php', 'class' => 'btn btn-primary btn-sm'];
 }
 
 $query_params = [];
@@ -155,7 +159,7 @@ $query_base = http_build_query($query_params);
 
 $has_active_filter = ($q !== '' || $filter_category_id > 0 || (isset($_GET['company_id']) && (int) $_GET['company_id'] !== ($active_cid ?? 0)));
 
-$active = 'rental';
+$active = 'regulations';
 $title  = 'Daftar Peraturan Komisi Karyawan';
 require __DIR__ . '/../../../includes/header.php';
 ?>
@@ -166,7 +170,7 @@ require __DIR__ . '/../../../includes/header.php';
         'Daftar Peraturan Komisi Karyawan',
         [
             'Dashboard'        => 'pages/dashboard/index.php',
-            'Rental Mobil'     => 'pages/rental/bookings/index.php',
+            'Transportasi'     => null,
             'Peraturan Komisi' => null,
         ],
         [['text' => number_format($total, 0, ',', '.') . ' Peraturan', 'class' => 'bg-light text-secondary border']],
@@ -203,7 +207,7 @@ require __DIR__ . '/../../../includes/header.php';
                         <i class="bi bi-funnel-fill me-1"></i>Filter
                     </button>
                     <?php if ($has_active_filter): ?>
-                        <a href="<?= e(APP_URL) ?>/pages/rental/regulations/index.php" class="btn btn-sm btn-outline-danger" title="Reset filter">
+                        <a href="<?= e(APP_URL) ?>/pages/transport/regulations/index.php" class="btn btn-sm btn-outline-danger" title="Reset filter">
                             <i class="bi bi-x-lg"></i>
                         </a>
                     <?php endif; ?>
@@ -239,7 +243,7 @@ require __DIR__ . '/../../../includes/header.php';
                             <div class="small text-muted"><?= e($r['company_name']) ?></div>
                         </td>
                         <td>
-                            <a class="fw-semibold text-decoration-none" href="<?= e(APP_URL) ?>/pages/rental/regulations/form.php?id=<?= $rid ?>">
+                            <a class="fw-semibold text-decoration-none" href="<?= e(APP_URL) ?>/pages/transport/regulations/form.php?id=<?= $rid ?>">
                                 <?= e($r['category_code'] . ' - ' . $r['category_name']) ?>
                             </a>
                         </td>
@@ -274,7 +278,7 @@ require __DIR__ . '/../../../includes/header.php';
                             <?php endif; ?>
                         </td>
                         <td class="text-end text-nowrap">
-                            <a class="btn btn-sm btn-outline-primary" href="<?= e(APP_URL) ?>/pages/rental/regulations/form.php?id=<?= $rid ?>">
+                            <a class="btn btn-sm btn-outline-primary" href="<?= e(APP_URL) ?>/pages/transport/regulations/form.php?id=<?= $rid ?>">
                                 <i class="bi bi-pencil-square me-1"></i>Detail / Ubah
                             </a>
                             <?php if ($canManage): ?>

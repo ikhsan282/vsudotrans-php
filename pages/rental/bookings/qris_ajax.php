@@ -7,11 +7,12 @@
  * Parameter wajib: booking_id, booking_type ('rental'|'travel', default 'rental').
  */
 require_once __DIR__ . '/../../../config/config.php';
-require_once __DIR__ . '/../../travel/_helpers.php';
+require_once __DIR__ . '/../../../includes/transport_helpers.php';
 require_once __DIR__ . '/../../../includes/booking_service.php';
 require_once __DIR__ . '/../../../includes/invoice_service.php';
 require_once __DIR__ . '/../../../includes/payment_gateway.php';
 require_once __DIR__ . '/../../../includes/azure_blob.php';
+require_once __DIR__ . '/../../../includes/qr_svg.php';
 
 header('Content-Type: application/json; charset=utf-8');
 
@@ -71,8 +72,9 @@ function rental_qris_extract_order_visuals(array $order): array
     $fallbackQrUrl = $qrisString !== ''
         ? ('https://quickchart.io/qr?size=300&margin=4&text=' . rawurlencode($qrisString))
         : '';
+    $qrisDataUri = $qrisString !== '' ? qr_svg_data_uri($qrisString, 4, 230) : '';
 
-    return [$payloadArr, $qrisImgUrl, $fallbackQrUrl, $qrisString];
+    return [$payloadArr, $qrisImgUrl, $fallbackQrUrl, $qrisString, $qrisDataUri];
 }
 
 if (($_SERVER['REQUEST_METHOD'] ?? '') !== 'POST') {
@@ -102,9 +104,14 @@ if (!is_super_admin() && (int) $b['company_id'] !== active_company_id()) {
     rental_qris_reply(403, ['ok' => false, 'error' => 'Akses perusahaan ditolak.']);
 }
 
-$db        = db();
-$companyId = (int) $b['company_id'];
-$user      = $_SESSION['username'] ?? null;
+$db               = db();
+$companyId        = (int) $b['company_id'];
+$user             = $_SESSION['username'] ?? null;
+$canManageBooking = can($bookingType . '.manage');
+// Lepas session lock segera agar poll berkala tidak memblokir klik Buat QRIS Dinamis
+if (session_status() === PHP_SESSION_ACTIVE) {
+    session_write_close();
+}
 
 $stInv = $db->prepare('SELECT id FROM invoices WHERE booking_type = ? AND booking_id = ? AND company_id = ? LIMIT 1');
 $stInv->bind_param('sii', $bookingType, $bookingId, $companyId);
@@ -115,7 +122,7 @@ $stInv->close();
 $invoiceId = $invRow ? (int) $invRow['id'] : 0;
 
 if ($act === 'create') {
-    if (!can($bookingType . '.manage')) {
+    if (!$canManageBooking) {
         rental_qris_reply(403, ['ok' => false, 'error' => 'Anda tidak memiliki izin membuat pembayaran QRIS.']);
     }
 
@@ -218,7 +225,7 @@ if ($act === 'create') {
         rental_qris_reply(500, ['ok' => false, 'error' => 'Gagal memuat order QRIS yang baru dibuat.']);
     }
 
-    [$payloadArr, $qrisImgUrl, $fallbackQrUrl] = rental_qris_extract_order_visuals($order);
+    [$payloadArr, $qrisImgUrl, $fallbackQrUrl, $qrisString, $qrisDataUri] = rental_qris_extract_order_visuals($order);
     $totalAmount = (float) $order['total_amount'];
     $uniqueCode  = max(0, (int) round($totalAmount - (float) $order['amount']));
     $provVal     = (string) ($order['provider'] ?? ($channel['provider'] ?? ''));
@@ -237,6 +244,8 @@ if ($act === 'create') {
         'total_amount'    => $totalAmount,
         'expired_at'      => (string) ($order['expired_at'] ?? ''),
         'expired_ts'      => !empty($order['expired_at']) ? strtotime((string) $order['expired_at']) : null,
+        'qris_data_uri'   => $qrisDataUri,
+        'qris_string'     => $qrisString,
         'qris_image_url'  => $qrisImgUrl,
         'fallback_qr_url' => $fallbackQrUrl,
         'direct_url'      => (string) ($order['direct_url'] ?? ''),
@@ -254,15 +263,27 @@ $note        = '';
 
 if ($invoiceId > 0) {
     $pendingOrders = [];
-    $stPend = $db->prepare(
-        "SELECT o.*, c.api_key, c.merchant_id, c.mode, c.name AS channel_name, c.provider, c.config
-           FROM payment_gateway_orders o
-           JOIN payment_channels c ON c.id = o.channel_id
-          WHERE o.invoice_id = ? AND o.status = 'PENDING'
-          ORDER BY o.id DESC
-          LIMIT 5"
-    );
-    $stPend->bind_param('i', $invoiceId);
+    if ($orderId !== '') {
+        $stPend = $db->prepare(
+            "SELECT o.*, c.api_key, c.merchant_id, c.mode, c.name AS channel_name, c.provider, c.config
+               FROM payment_gateway_orders o
+               JOIN payment_channels c ON c.id = o.channel_id
+              WHERE o.invoice_id = ? AND o.status = 'PENDING'
+              ORDER BY (o.order_id = ?) DESC, o.id DESC
+              LIMIT 5"
+        );
+        $stPend->bind_param('is', $invoiceId, $orderId);
+    } else {
+        $stPend = $db->prepare(
+            "SELECT o.*, c.api_key, c.merchant_id, c.mode, c.name AS channel_name, c.provider, c.config
+               FROM payment_gateway_orders o
+               JOIN payment_channels c ON c.id = o.channel_id
+              WHERE o.invoice_id = ? AND o.status = 'PENDING'
+              ORDER BY o.id DESC
+              LIMIT 3"
+        );
+        $stPend->bind_param('i', $invoiceId);
+    }
     $stPend->execute();
     $pendingOrders = $stPend->get_result()->fetch_all(MYSQLI_ASSOC);
     $stPend->close();
@@ -274,6 +295,10 @@ if ($invoiceId > 0) {
             if ($orderId !== '' && $oid === $orderId) {
                 $orderStatus = 'EXPIRED';
             }
+            continue;
+        }
+        // Saat modal sedang terbuka memantau 1 order spesifik, hindari panggilan HTTP ganda untuk order lama
+        if ($orderId !== '' && $oid !== $orderId) {
             continue;
         }
         $channel = [
