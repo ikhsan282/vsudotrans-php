@@ -334,7 +334,7 @@ function master_find(array $spec, int $id): ?array
 // Lookup relasi (dropdown & nama kolom di list)
 // ---------------------------------------------------------------------
 
-function master_lookup(string $source, ?int $cid = null): array
+function master_lookup(string $source, ?int $cid = null, int $limit = 0): array
 {
     $sql = '';
     $types = '';
@@ -356,7 +356,8 @@ function master_lookup(string $source, ?int $cid = null): array
             $sql .= ' ORDER BY name';
             break;
         case 'job_positions':
-            $sql = 'SELECT id, name FROM job_positions';
+        case 'organization_structures':
+            $sql = "SELECT id, name FROM `{$source}`";
             if ($cid !== null) {
                 $sql .= ' WHERE company_id = ?';
                 $types = 'i';
@@ -376,6 +377,11 @@ function master_lookup(string $source, ?int $cid = null): array
         default:
             return [];
     }
+    if ($limit > 0) {
+        $sql .= ' LIMIT ?';
+        $types .= 'i';
+        $params[] = $limit;
+    }
     $stmt = db()->prepare($sql);
     if ($types !== '') {
         $stmt->bind_param($types, ...$params);
@@ -386,6 +392,60 @@ function master_lookup(string $source, ?int $cid = null): array
     $map = [];
     foreach ($rows as $r) {
         $map[(int) $r['id']] = $r['name'];
+    }
+    return $map;
+}
+
+/** Opsi select untuk master_form(): dibatasi & mengikuti parent agar aman untuk jutaan baris. */
+function master_form_select_options(array $f, array $row, string $table, int $id, ?int $cid): array
+{
+    $source = (string) ($f['source'] ?? '');
+    $col = (string) ($f['col'] ?? '');
+    $selected_id = (int) ($row[$col] ?? 0);
+    $map = [];
+
+    $allowed_geo = ['provinces', 'cities', 'districts'];
+    $allowed_params = ['country_id', 'province_id', 'city_id'];
+    if (
+        isset($f['endpoint'], $f['param'])
+        && in_array($source, $allowed_geo, true)
+        && in_array($f['param'], $allowed_params, true)
+    ) {
+        $parent_col = (string) $f['param'];
+        $parent_id = (int) ($row[$parent_col] ?? 0);
+        if ($parent_id > 0) {
+            $st = db()->prepare("SELECT id, name FROM `{$source}` WHERE `{$parent_col}` = ? ORDER BY name ASC LIMIT 200");
+            $st->bind_param('i', $parent_id);
+        } else {
+            $lim = 50;
+            $st = db()->prepare("SELECT id, name FROM `{$source}` ORDER BY name ASC LIMIT ?");
+            $st->bind_param('i', $lim);
+        }
+        $st->execute();
+        foreach ($st->get_result()->fetch_all(MYSQLI_ASSOC) as $r) {
+            $map[(int) $r['id']] = $r['name'];
+        }
+        $st->close();
+    } else {
+        $map = master_lookup($source, $cid, 200);
+    }
+
+    if ($selected_id > 0 && !isset($map[$selected_id])) {
+        $name_expr = $source === 'employees' ? "CONCAT(code, ' - ', name) AS name" : 'name';
+        if (in_array($source, ['countries', 'provinces', 'cities', 'districts', 'job_titles', 'job_positions', 'organization_structures', 'employees'], true)) {
+            $st = db()->prepare("SELECT id, {$name_expr} FROM `{$source}` WHERE id = ? LIMIT 1");
+            $st->bind_param('i', $selected_id);
+            $st->execute();
+            $one = $st->get_result()->fetch_assoc();
+            $st->close();
+            if ($one) {
+                $map[(int) $one['id']] = $one['name'];
+            }
+        }
+    }
+
+    if ($source === $table && $id > 0) {
+        unset($map[$id]); // tidak boleh jadi induk diri sendiri
     }
     return $map;
 }
@@ -760,10 +820,7 @@ function master_form(string $key): void
     $options = [];
     foreach ($spec['fields'] as $f) {
         if (($f['type'] ?? '') === 'select') {
-            $options[$f['col']] = master_lookup($f['source'], $cid);
-            if ($f['source'] === $table && $id > 0) {
-                unset($options[$f['col']][$id]); // tidak boleh jadi induk diri sendiri
-            }
+            $options[$f['col']] = master_form_select_options($f, $row, $table, $id, $cid);
         }
     }
     require __DIR__ . '/../../includes/header.php';
@@ -821,9 +878,10 @@ function master_form(string $key): void
                             <?php if (($f['type'] ?? '') === 'textarea'): ?>
                                 <textarea class="form-control" id="<?= e($col) ?>" name="<?= e($col) ?>" rows="2" maxlength="<?= (int) ($f['max'] ?? 2000) ?>"><?= e((string) $val) ?></textarea>
                             <?php elseif (($f['type'] ?? '') === 'select'): ?>
-                                <select class="form-select" id="<?= e($col) ?>" name="<?= e($col) ?>"
+                                <select class="form-select ts-select" id="<?= e($col) ?>" name="<?= e($col) ?>"
+                                    data-ts-placeholder="— pilih —"
                                     <?= isset($f['child']) ? 'data-child="' . e($f['child']) . '"' : '' ?>
-                                    <?= isset($f['endpoint']) ? 'data-endpoint="' . e(APP_URL . '/' . $f['endpoint']) . '" data-param="' . e($f['param']) . '"' : '' ?>>
+                                    <?= isset($f['endpoint']) ? 'data-endpoint="' . e(APP_URL . '/' . $f['endpoint']) . '" data-param="' . e($f['param']) . '" data-ts-url="' . e(APP_URL . '/' . $f['endpoint']) . '" data-ts-parent="#' . e($f['param']) . '" data-ts-param="' . e($f['param']) . '" data-ts-limit="50"' : '' ?>>
                                     <option value="">— pilih —</option>
                                     <?php foreach ($options[$col] as $oid => $oname): ?>
                                         <option value="<?= (int) $oid ?>" <?= (int) $val === (int) $oid ? 'selected' : '' ?>><?= e($oname) ?></option>
@@ -843,34 +901,52 @@ function master_form(string $key): void
         </div>
     </main>
     <script>
-    // Dropdown bertingkat: isi ulang select anak dari endpoint JSON.
-    document.querySelectorAll('select[data-endpoint]').forEach(function (el) {
-        function reload() {
-            var parent = el.getAttribute('data-child') && document.getElementById(el.getAttribute('data-child'));
-            var source = parent ? parent : el.parentElement.querySelector('select[data-child]');
-            return source;
+    // Dropdown bertingkat (Tom Select v2.3.1): isi ulang select anak dari endpoint JSON & sinkron cucu.
+    document.addEventListener('DOMContentLoaded', function () {
+        function getSelectVal(el) {
+            if (!el) return '';
+            return el.tomselect ? String(el.tomselect.getValue() || '') : String(el.value || '');
         }
-        var parentField = null;
-        var all = document.querySelectorAll('select[data-child], select[data-endpoint]');
-        for (var i = 0; i < all.length; i++) {
-            if (all[i].getAttribute('data-child') === el.id) { parentField = all[i]; break; }
-        }
-        if (!parentField) { return; }
-        parentField.addEventListener('change', function () {
-            var param = el.getAttribute('data-param');
-            var val = parentField.value;
-            var url = el.getAttribute('data-endpoint') + '?' + param + '=' + encodeURIComponent(val);
+        function reloadChild(childEl, preserveVal) {
+            if (!childEl) return;
+            var ep = childEl.getAttribute('data-endpoint');
+            var param = childEl.getAttribute('data-param');
+            if (!ep || !param) return;
+            var parentField = document.querySelector('select[data-child="' + childEl.id + '"]');
+            if (!parentField) return;
+            var val = getSelectVal(parentField);
+            var curVal = getSelectVal(childEl);
+            if (!val) {
+                if (window.setTsOptions) {
+                    window.setTsOptions(childEl, [], '', '— pilih —');
+                }
+                var gcId = childEl.getAttribute('data-child');
+                if (gcId) reloadChild(document.getElementById(gcId), false);
+                return;
+            }
+            var url = ep + '?' + encodeURIComponent(param) + '=' + encodeURIComponent(val) + '&limit=200';
             fetch(url).then(function (r) { return r.json(); }).then(function (rows) {
-                var keep = el.value;
-                el.innerHTML = '<option value="">— pilih —</option>';
-                rows.forEach(function (r) {
-                    var o = document.createElement('option');
-                    o.value = r.id;
-                    o.textContent = r.text;
-                    if (String(r.id) === String(keep)) { o.selected = true; }
-                    el.appendChild(o);
-                });
+                var keep = preserveVal ? curVal : '';
+                if (window.setTsOptions) {
+                    window.setTsOptions(childEl, rows, keep, '— pilih —');
+                }
+                var nextVal = getSelectVal(childEl);
+                var gcId = childEl.getAttribute('data-child');
+                if (gcId && nextVal !== curVal) {
+                    reloadChild(document.getElementById(gcId), false);
+                }
             });
+        }
+
+        document.querySelectorAll('select[data-endpoint]').forEach(function (el) {
+            var parentField = document.querySelector('select[data-child="' + el.id + '"]');
+            if (!parentField) return;
+            var onParentChange = function () { reloadChild(el, true); };
+            if (window.bindTsChange) {
+                window.bindTsChange(parentField, onParentChange);
+            } else {
+                parentField.addEventListener('change', onParentChange);
+            }
         });
     });
     </script>

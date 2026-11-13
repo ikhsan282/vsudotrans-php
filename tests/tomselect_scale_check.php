@@ -52,6 +52,7 @@ foreach ($expectedIndexes as [$tbl, $idxName]) {
 $createdPaxIds = [];
 $createdVehIds = [];
 $tempBookingId = 0;
+$tempTravelId = 0;
 $jar = tempnam(sys_get_temp_dir(), 'ts_jar_');
 
 try {
@@ -266,7 +267,71 @@ try {
     } else {
         ts_check(false, 'CSRF token found in rental/detail.php for HTTP passenger update check');
     }
+
+    // 5. Cache-busting (?v=filemtime) pada style.css & app.js
+    ts_check((bool) preg_match('/assets\/css\/style\.css\?v=\d+/', $tf['body']), 'includes/header.php appends ?v=<mtime> cache-buster on style.css');
+    ts_check((bool) preg_match('/assets\/js\/app\.js\?v=\d+/', $tf['body']), 'includes/footer.php appends ?v=<mtime> cache-buster on app.js');
+
+    // 6. Rute form: kota remote search + LIMIT 50
+    $ruteForm = $httpGet('/pages/travel/rutes/form.php');
+    ts_check($ruteForm['code'] === 200, 'travel/rutes/form.php returns HTTP 200');
+    ts_check(substr_count($ruteForm['body'], 'pages/masters/cities/options.php') >= 2, 'travel/rutes/form.php attaches cities/options.php remote search to pickup & delivery cities');
+    if (preg_match('/<select[^>]*name="pickup_point_city_id"[^>]*>([\s\S]*?)<\/select>/', $ruteForm['body'], $mRuteSel)) {
+        $optCnt = substr_count($mRuteSel[1], '<option');
+        ts_check($optCnt <= 52, "travel/rutes/form.php caps pickup_point_city_id initial options <= 52 (got {$optCnt})");
+    } else {
+        ts_check(false, 'travel/rutes/form.php renders pickup_point_city_id select');
+    }
+
+    // 7. Dispatch assign: booking dropdown menggunakan Tom Select
+    $dispForm = $httpGet('/pages/dispatch/assign.php');
+    ts_check($dispForm['code'] === 200, 'dispatch/assign.php returns HTTP 200');
+    ts_check((bool) preg_match('/<select[^>]*class="[^"]*ts-select[^"]*"[^>]*name="booking"/', $dispForm['body']), 'dispatch/assign.php booking dropdown uses ts-select');
+
+    // 8. Masters engine (villages/form.php): Tom Select bertingkat & tidak memuat 7.200+ district sekaligus
+    $vilForm = $httpGet('/pages/masters/villages/form.php');
+    ts_check($vilForm['code'] === 200, 'masters/villages/form.php returns HTTP 200');
+    ts_check((bool) preg_match('/<select[^>]*class="[^"]*ts-select[^"]*"[^>]*id="district_id"/', $vilForm['body']), 'masters/villages/form.php #district_id uses ts-select + remote search');
+    if (preg_match('/<select[^>]*id="district_id"[^>]*>([\s\S]*?)<\/select>/', $vilForm['body'], $mDistSel)) {
+        $distOptCnt = substr_count($mDistSel[1], '<option');
+        ts_check($distOptCnt <= 52, "masters/villages/form.php caps initial district options <= 52 instead of 7.200+ (got {$distOptCnt})");
+    } else {
+        ts_check(false, 'masters/villages/form.php renders #district_id select');
+    }
+    ts_check(str_contains($vilForm['body'], 'window.setTsOptions') && str_contains($vilForm['body'], 'window.bindTsChange'), 'masters/_engine.php cascading script uses window.bindTsChange + window.setTsOptions');
+
+    // 9. Travel Detail ERP UI + Multi-Penumpang + Duplicate-Passenger JS Guard
+    ts_check(str_contains($tf['body'], 'stripPrimaryFromExtra'), 'travel/bookings/form.php includes stripPrimaryFromExtra duplicate-passenger guard');
+    $extraTravelPax = [$createdPaxIds[0], $createdPaxIds[1]];
+    $tbk = booking_create('travel', [
+        'company_id'                 => 1,
+        'branch_id'                  => $branchId,
+        'date'                       => date('Y-m-d'),
+        'time'                       => '10:30:00',
+        'pickup_point_city_id'       => (int) $distRow['city_id'],
+        'pickup_point_district_id'   => (int) $distRow['id'],
+        'delivery_point_city_id'     => (int) $distRow['city_id'],
+        'delivery_point_district_id' => (int) $distRow['id'],
+        'total_price'                => 350000,
+        'category_vehicle_id'        => $catId,
+        'vehicle_id'                 => $lastVehId,
+        'passenger_id'               => $lastPaxId,
+        'passenger_ids'              => array_merge([$lastPaxId], $extraTravelPax),
+        'note'                       => 'Catatan travel multi-penumpang',
+        'created_user'               => 'test',
+    ]);
+    $tempTravelId = (int) $tbk['id'];
+    $td = $httpGet('/pages/travel/bookings/detail.php?id=' . $tempTravelId);
+    ts_check($td['code'] === 200, 'travel/bookings/detail.php returns HTTP 200');
+    ts_check(str_contains($td['body'], 'erp-window-card') && str_contains($td['body'], 'erp-sub-tabs'), 'travel/bookings/detail.php uses ERP window card & sub-tabs UI');
+    foreach (['#tab-detail', '#tab-ops', '#tab-cost', '#tab-note', '#tab-audit'] as $tabHref) {
+        ts_check(str_contains($td['body'], $tabHref), "travel/bookings/detail.php renders tab {$tabHref}");
+    }
+    ts_check(str_contains($td['body'], '3 Penumpang') && str_contains($td['body'], 'ZZZScale Test Passenger 120') && str_contains($td['body'], 'ZZZScale Test Passenger 001') && str_contains($td['body'], 'ZZZScale Test Passenger 002'), 'travel/bookings/detail.php displays primary + 2 extra passengers + count badge');
 } finally {
+    if (!empty($tempTravelId) && $tempTravelId > 0) {
+        try { booking_delete('travel', $tempTravelId, 1); } catch (Throwable $ex) {}
+    }
     if ($tempBookingId > 0) {
         try { booking_delete('rental', $tempBookingId, 1); } catch (Throwable $ex) {}
     }

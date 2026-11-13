@@ -962,13 +962,22 @@ document.addEventListener('DOMContentLoaded', function () {
     var priceHint    = document.getElementById('travel_price_hint');
     var btnApply     = document.getElementById('btn_apply_travel_calc');
 
-    function getMultiSelectCount(el) {
+    function getMultiSelectCount(el, excludeVal) {
         if (!el) return 0;
+        var ex = excludeVal ? String(excludeVal) : '';
         if (el.tomselect) {
             var v = el.tomselect.getValue();
-            return Array.isArray(v) ? v.filter(Boolean).length : (v ? 1 : 0);
+            var arr = Array.isArray(v) ? v : (v ? [v] : []);
+            return arr.filter(function (x) { return x && String(x) !== ex; }).length;
         }
-        return el.selectedOptions ? el.selectedOptions.length : 0;
+        var cnt = 0;
+        if (el.selectedOptions) {
+            for (var i = 0; i < el.selectedOptions.length; i++) {
+                var val = el.selectedOptions[i].value;
+                if (val && String(val) !== ex) cnt++;
+            }
+        }
+        return cnt;
     }
 
     function calculateTravelPrice(forceApply) {
@@ -1004,7 +1013,7 @@ document.addEventListener('DOMContentLoaded', function () {
         }
 
         var primVal = primPass ? (primPass.tomselect ? primPass.tomselect.getValue() : primPass.value) : '';
-        var passCount = (primVal ? 1 : 0) + getMultiSelectCount(addPass);
+        var passCount = (primVal ? 1 : 0) + getMultiSelectCount(addPass, primVal);
         if (passCount === 0) passCount = 1;
 
         var unitPrice = parseFloat(matchedRoute.price) || 0;
@@ -1027,8 +1036,40 @@ document.addEventListener('DOMContentLoaded', function () {
 
     var selectPassEl      = document.getElementById('select_passenger_id');
     var selectPassMultiEl = document.getElementById('select_passenger_ids');
-    if (selectPassEl) bindSelectChange(selectPassEl, function () { calculateTravelPrice(false); });
-    if (selectPassMultiEl) bindSelectChange(selectPassMultiEl, function () { calculateTravelPrice(false); });
+    function stripPrimaryFromExtra() {
+        if (!selectPassEl || !selectPassMultiEl) return;
+        var primVal = selectPassEl.tomselect ? selectPassEl.tomselect.getValue() : selectPassEl.value;
+        primVal = primVal ? String(primVal) : '';
+        if (!primVal) return;
+        if (selectPassMultiEl.tomselect) {
+            var cur = selectPassMultiEl.tomselect.getValue();
+            var arr = Array.isArray(cur) ? cur.map(String) : (cur ? [String(cur)] : []);
+            if (arr.indexOf(primVal) !== -1) {
+                selectPassMultiEl.tomselect.removeItem(primVal, true);
+                var after = selectPassMultiEl.tomselect.getValue();
+                selectPassMultiEl._tsLastVal = Array.isArray(after) ? after.join(',') : String(after || '');
+            }
+        } else {
+            for (var i = 0; i < selectPassMultiEl.options.length; i++) {
+                if (String(selectPassMultiEl.options[i].value) === primVal) {
+                    selectPassMultiEl.options[i].selected = false;
+                }
+            }
+        }
+    }
+    if (selectPassEl) {
+        bindSelectChange(selectPassEl, function () {
+            stripPrimaryFromExtra();
+            calculateTravelPrice(false);
+        });
+    }
+    if (selectPassMultiEl) {
+        bindSelectChange(selectPassMultiEl, function () {
+            stripPrimaryFromExtra();
+            calculateTravelPrice(false);
+        });
+    }
+    stripPrimaryFromExtra();
     if (btnApply) {
         btnApply.addEventListener('click', function (e) {
             e.preventDefault();

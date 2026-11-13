@@ -97,7 +97,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     ]);
 }
 
-$cities = opts_cities();
+$cities = opts_cities(null, array_filter([(int) $row['pickup_point_city_id'], (int) $row['delivery_point_city_id']]), 50);
 $cats   = opts_categories($cid);
 $active = 'travel';
 $title  = $id > 0 ? 'Ubah Rute' : 'Tambah Rute';
@@ -127,9 +127,15 @@ require __DIR__ . '/../../../includes/header.php';
             <div class="col-md-8"><label class="form-label">Nama</label>
                 <input class="form-control" name="name" maxlength="255" required value="<?= e($row['name']) ?>"></div>
             <div class="col-md-6"><label class="form-label">Kota Asal</label>
-                <select class="form-select ts-select" name="pickup_point_city_id" required><option value="">-- Pilih --</option><?= select_options($cities, $row['pickup_point_city_id']) ?></select></div>
+                <select class="form-select ts-select" name="pickup_point_city_id" required
+                    data-ts-url="<?= e(APP_URL) ?>/pages/masters/cities/options.php"
+                    data-ts-limit="50"
+                    data-ts-placeholder="-- Pilih --"><option value="">-- Pilih --</option><?= select_options($cities, $row['pickup_point_city_id']) ?></select></div>
             <div class="col-md-6"><label class="form-label">Kota Tujuan</label>
-                <select class="form-select ts-select" name="delivery_point_city_id" required><option value="">-- Pilih --</option><?= select_options($cities, $row['delivery_point_city_id']) ?></select></div>
+                <select class="form-select ts-select" name="delivery_point_city_id" required
+                    data-ts-url="<?= e(APP_URL) ?>/pages/masters/cities/options.php"
+                    data-ts-limit="50"
+                    data-ts-placeholder="-- Pilih --"><option value="">-- Pilih --</option><?= select_options($cities, $row['delivery_point_city_id']) ?></select></div>
             <div class="col-md-12"><label class="form-label">Kategori Kendaraan</label>
                 <select class="form-select ts-select" name="category_vehicle_id" required><option value="">-- Pilih --</option><?= select_options($cats, $row['category_vehicle_id']) ?></select></div>
             <div class="col-md-4"><label class="form-label">Harga Minimum</label>

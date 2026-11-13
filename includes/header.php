@@ -39,7 +39,7 @@ unset($comp);
     <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.13.2/font/bootstrap-icons.css" rel="stylesheet">
     <link href="https://cdn.jsdelivr.net/npm/tom-select@2.3.1/dist/css/tom-select.bootstrap5.min.css" rel="stylesheet">
     <link href="https://cdn.jsdelivr.net/npm/flatpickr/dist/flatpickr.min.css" rel="stylesheet">
-    <link href="<?= e(APP_URL) ?>/assets/css/style.css" rel="stylesheet">
+    <link href="<?= e(APP_URL) ?>/assets/css/style.css?v=<?= (int) @filemtime(dirname(__DIR__) . '/assets/css/style.css') ?>" rel="stylesheet">
 </head>
 <body>
 <div class="wrapper d-flex">

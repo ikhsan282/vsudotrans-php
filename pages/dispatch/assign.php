@@ -58,7 +58,7 @@ require __DIR__ . '/../../includes/header.php';
                 <?= csrf_field() ?>
                 <div class="col-md-6">
                     <label class="form-label small mb-1">Booking (belum ada penugasan aktif, 50 terbaru per tipe)</label>
-                    <select class="form-select form-select-sm" name="booking" required>
+                    <select class="form-select form-select-sm ts-select" name="booking" required>
                         <option value="">— pilih booking —</option>
                         <?php foreach ($bookings as $b): ?>
                             <option value="<?= e($b['booking_type'] . ':' . $b['booking_id']) ?>"><?= e($b['label']) ?></option>
