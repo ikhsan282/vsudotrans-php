@@ -396,13 +396,61 @@ function master_lookup(string $source, ?int $cid = null, int $limit = 0): array
     return $map;
 }
 
+/** Query SELECT standar (beserta parent geo metadata) untuk dropdown wilayah. */
+function master_geo_select_query(string $source, bool $with_code = false): string
+{
+    if ($source === 'provinces') {
+        $name_expr = $with_code ? "CONCAT(t.code, ' - ', t.name) AS name" : 't.name';
+        return "SELECT t.id, {$name_expr}, t.code, t.country_id, co.name AS country_name
+                  FROM provinces t
+                  LEFT JOIN countries co ON co.id = t.country_id";
+    }
+    if ($source === 'cities') {
+        return "SELECT t.id, t.name, t.province_id,
+                       COALESCE(t.country_id, p.country_id) AS country_id,
+                       p.name AS province_name, co.name AS country_name
+                  FROM cities t
+                  LEFT JOIN provinces p ON p.id = t.province_id
+                  LEFT JOIN countries co ON co.id = COALESCE(t.country_id, p.country_id)";
+    }
+    if ($source === 'districts') {
+        return "SELECT t.id, t.name, t.city_id,
+                       COALESCE(t.province_id, c.province_id) AS province_id,
+                       COALESCE(t.country_id, c.country_id, p.country_id) AS country_id,
+                       c.name AS city_name, p.name AS province_name, co.name AS country_name
+                  FROM districts t
+                  LEFT JOIN cities c ON c.id = t.city_id
+                  LEFT JOIN provinces p ON p.id = COALESCE(t.province_id, c.province_id)
+                  LEFT JOIN countries co ON co.id = COALESCE(t.country_id, c.country_id, p.country_id)";
+    }
+    return "SELECT t.id, t.name FROM `{$source}` t";
+}
+
+/** Ekstrak metadata parent geografis dari baris hasil query. */
+function master_geo_row_meta(array $r): array
+{
+    $meta = [];
+    foreach (['country_id', 'province_id', 'city_id'] as $fk) {
+        if (!empty($r[$fk])) {
+            $meta[$fk] = (int) $r[$fk];
+        }
+    }
+    foreach (['country_name', 'province_name', 'city_name'] as $lk) {
+        if (isset($r[$lk]) && $r[$lk] !== null && $r[$lk] !== '') {
+            $meta[$lk] = (string) $r[$lk];
+        }
+    }
+    return $meta;
+}
+
 /** Opsi select untuk master_form(): dibatasi & mengikuti parent agar aman untuk jutaan baris. */
-function master_form_select_options(array $f, array $row, string $table, int $id, ?int $cid): array
+function master_form_select_options(array $f, array $row, string $table, int $id, ?int $cid, ?array &$meta_map = null): array
 {
     $source = (string) ($f['source'] ?? '');
     $col = (string) ($f['col'] ?? '');
     $selected_id = (int) ($row[$col] ?? 0);
     $map = [];
+    $meta = [];
 
     $allowed_geo = ['provinces', 'cities', 'districts'];
     $allowed_params = ['country_id', 'province_id', 'city_id'];
@@ -413,17 +461,23 @@ function master_form_select_options(array $f, array $row, string $table, int $id
     ) {
         $parent_col = (string) $f['param'];
         $parent_id = (int) ($row[$parent_col] ?? 0);
+        $base_sql = master_geo_select_query($source, false);
         if ($parent_id > 0) {
-            $st = db()->prepare("SELECT id, name FROM `{$source}` WHERE `{$parent_col}` = ? ORDER BY name ASC LIMIT 200");
+            $st = db()->prepare("{$base_sql} WHERE t.`{$parent_col}` = ? ORDER BY t.name ASC LIMIT 200");
             $st->bind_param('i', $parent_id);
         } else {
             $lim = 50;
-            $st = db()->prepare("SELECT id, name FROM `{$source}` ORDER BY name ASC LIMIT ?");
+            $st = db()->prepare("{$base_sql} ORDER BY t.name ASC LIMIT ?");
             $st->bind_param('i', $lim);
         }
         $st->execute();
         foreach ($st->get_result()->fetch_all(MYSQLI_ASSOC) as $r) {
-            $map[(int) $r['id']] = $r['name'];
+            $rid = (int) $r['id'];
+            $map[$rid] = $r['name'];
+            $rm = master_geo_row_meta($r);
+            if ($rm) {
+                $meta[$rid] = $rm;
+            }
         }
         $st->close();
     } else {
@@ -431,8 +485,22 @@ function master_form_select_options(array $f, array $row, string $table, int $id
     }
 
     if ($selected_id > 0 && !isset($map[$selected_id])) {
-        $name_expr = $source === 'employees' ? "CONCAT(code, ' - ', name) AS name" : 'name';
-        if (in_array($source, ['countries', 'provinces', 'cities', 'districts', 'job_titles', 'job_positions', 'organization_structures', 'employees'], true)) {
+        if (in_array($source, $allowed_geo, true)) {
+            $base_sql = master_geo_select_query($source, false);
+            $st = db()->prepare("{$base_sql} WHERE t.id = ? LIMIT 1");
+            $st->bind_param('i', $selected_id);
+            $st->execute();
+            $one = $st->get_result()->fetch_assoc();
+            $st->close();
+            if ($one) {
+                $map[(int) $one['id']] = $one['name'];
+                $rm = master_geo_row_meta($one);
+                if ($rm) {
+                    $meta[(int) $one['id']] = $rm;
+                }
+            }
+        } elseif (in_array($source, ['countries', 'job_titles', 'job_positions', 'organization_structures', 'employees'], true)) {
+            $name_expr = $source === 'employees' ? "CONCAT(code, ' - ', name) AS name" : 'name';
             $st = db()->prepare("SELECT id, {$name_expr} FROM `{$source}` WHERE id = ? LIMIT 1");
             $st->bind_param('i', $selected_id);
             $st->execute();
@@ -445,7 +513,10 @@ function master_form_select_options(array $f, array $row, string $table, int $id
     }
 
     if ($source === $table && $id > 0) {
-        unset($map[$id]); // tidak boleh jadi induk diri sendiri
+        unset($map[$id], $meta[$id]); // tidak boleh jadi induk diri sendiri
+    }
+    if (func_num_args() >= 6) {
+        $meta_map = $meta;
     }
     return $map;
 }
@@ -818,9 +889,14 @@ function master_form(string $key): void
     $active = $spec['module'];
     $title  = ($id > 0 ? 'Ubah ' : 'Tambah ') . $spec['title'];
     $options = [];
+    $option_meta = [];
     foreach ($spec['fields'] as $f) {
         if (($f['type'] ?? '') === 'select') {
-            $options[$f['col']] = master_form_select_options($f, $row, $table, $id, $cid);
+            $meta = [];
+            $options[$f['col']] = master_form_select_options($f, $row, $table, $id, $cid, $meta);
+            if ($meta) {
+                $option_meta[$f['col']] = $meta;
+            }
         }
     }
     require __DIR__ . '/../../includes/header.php';
@@ -883,8 +959,16 @@ function master_form(string $key): void
                                     <?= isset($f['child']) ? 'data-child="' . e($f['child']) . '"' : '' ?>
                                     <?= isset($f['endpoint']) ? 'data-endpoint="' . e(APP_URL . '/' . $f['endpoint']) . '" data-param="' . e($f['param']) . '" data-ts-url="' . e(APP_URL . '/' . $f['endpoint']) . '" data-ts-parent="#' . e($f['param']) . '" data-ts-param="' . e($f['param']) . '" data-ts-limit="50"' : '' ?>>
                                     <option value="">— pilih —</option>
-                                    <?php foreach ($options[$col] as $oid => $oname): ?>
-                                        <option value="<?= (int) $oid ?>" <?= (int) $val === (int) $oid ? 'selected' : '' ?>><?= e($oname) ?></option>
+                                    <?php foreach ($options[$col] as $oid => $oname):
+                                        $m = $option_meta[$col][(int) $oid] ?? [];
+                                        $attrs = '';
+                                        foreach (['country_id' => 'data-country-id', 'country_name' => 'data-country-name', 'province_id' => 'data-province-id', 'province_name' => 'data-province-name', 'city_id' => 'data-city-id', 'city_name' => 'data-city-name'] as $mk => $attrName) {
+                                            if (!empty($m[$mk])) {
+                                                $attrs .= ' ' . $attrName . '="' . e((string) $m[$mk]) . '"';
+                                            }
+                                        }
+                                    ?>
+                                        <option value="<?= (int) $oid ?>"<?= $attrs ?> <?= (int) $val === (int) $oid ? 'selected' : '' ?>><?= e($oname) ?></option>
                                     <?php endforeach; ?>
                                 </select>
                             <?php elseif (($f['type'] ?? '') === 'money' || ($f['type'] ?? '') === 'number'): ?>
@@ -901,12 +985,79 @@ function master_form(string $key): void
         </div>
     </main>
     <script>
-    // Dropdown bertingkat (Tom Select v2.3.1): isi ulang select anak dari endpoint JSON & sinkron cucu.
+    // Dropdown bertingkat (Tom Select v2.3.1): isi ulang select anak dari endpoint JSON & sinkron cucu + auto-sync induk ke atas.
     document.addEventListener('DOMContentLoaded', function () {
         function getSelectVal(el) {
             if (!el) return '';
             return el.tomselect ? String(el.tomselect.getValue() || '') : String(el.value || '');
         }
+        function getSelectedMeta(el, val) {
+            if (!el || !val) return null;
+            if (el.tomselect && el.tomselect.options && el.tomselect.options[String(val)]) {
+                return el.tomselect.options[String(val)];
+            }
+            var optEl = Array.from(el.options || []).find(function (o) { return String(o.value) === String(val); });
+            if (!optEl || !optEl.dataset) return null;
+            return {
+                country_id: optEl.dataset.countryId || '',
+                country_name: optEl.dataset.countryName || '',
+                province_id: optEl.dataset.provinceId || '',
+                province_name: optEl.dataset.provinceName || '',
+                city_id: optEl.dataset.cityId || '',
+                city_name: optEl.dataset.cityName || ''
+            };
+        }
+        var UPWARD_PARENTS = {
+            province_id: ['country_id'],
+            city_id: ['country_id', 'province_id'],
+            district_id: ['country_id', 'province_id', 'city_id']
+        };
+        function syncParentsUpward(el, val) {
+            if (!el || !val) return;
+            var chain = UPWARD_PARENTS[el.id];
+            if (!chain) return;
+            var meta = getSelectedMeta(el, val);
+            if (!meta) return;
+            chain.forEach(function (ancId) {
+                var ancVal = meta[ancId] ? String(meta[ancId]) : '';
+                if (!ancVal || ancVal === '0') return;
+                var ancEl = document.getElementById(ancId);
+                if (!ancEl || getSelectVal(ancEl) === ancVal) return;
+
+                var labelKey = ancId.replace(/_id$/, '_name');
+                var ancLabel = (meta[labelKey] ? String(meta[labelKey]) : '') || ('#' + ancVal);
+                if (ancEl.tomselect) {
+                    if (!ancEl.tomselect.options[ancVal]) {
+                        var newOpt = { value: ancVal, id: ancVal, text: ancLabel, name: ancLabel };
+                        if (ancId === 'province_id' && meta.country_id) {
+                            newOpt.country_id = String(meta.country_id);
+                            newOpt.country_name = String(meta.country_name || '');
+                        } else if (ancId === 'city_id') {
+                            if (meta.country_id) {
+                                newOpt.country_id = String(meta.country_id);
+                                newOpt.country_name = String(meta.country_name || '');
+                            }
+                            if (meta.province_id) {
+                                newOpt.province_id = String(meta.province_id);
+                                newOpt.province_name = String(meta.province_name || '');
+                            }
+                        }
+                        ancEl.tomselect.addOption(newOpt);
+                    }
+                    if (window.setTsValueSilent) {
+                        window.setTsValueSilent(ancEl, ancVal);
+                    } else {
+                        ancEl.tomselect.setValue(ancVal, true);
+                    }
+                } else {
+                    if (!Array.from(ancEl.options || []).some(function (o) { return String(o.value) === ancVal; })) {
+                        ancEl.add(new Option(ancLabel, ancVal));
+                    }
+                    ancEl.value = ancVal;
+                }
+            });
+        }
+
         function reloadChild(childEl, preserveVal) {
             if (!childEl) return;
             var ep = childEl.getAttribute('data-endpoint');
@@ -940,12 +1091,21 @@ function master_form(string $key): void
 
         document.querySelectorAll('select[data-endpoint]').forEach(function (el) {
             var parentField = document.querySelector('select[data-child="' + el.id + '"]');
-            if (!parentField) return;
-            var onParentChange = function () { reloadChild(el, true); };
-            if (window.bindTsChange) {
-                window.bindTsChange(parentField, onParentChange);
-            } else {
-                parentField.addEventListener('change', onParentChange);
+            if (parentField) {
+                var onParentChange = function () { reloadChild(el, true); };
+                if (window.bindTsChange) {
+                    window.bindTsChange(parentField, onParentChange);
+                } else {
+                    parentField.addEventListener('change', onParentChange);
+                }
+            }
+            if (UPWARD_PARENTS[el.id]) {
+                var onSelfChange = function (val) { syncParentsUpward(el, val); };
+                if (window.bindTsChange) {
+                    window.bindTsChange(el, onSelfChange);
+                } else {
+                    el.addEventListener('change', function () { syncParentsUpward(el, getSelectVal(el)); });
+                }
             }
         });
     });
@@ -1694,15 +1854,8 @@ function master_options_json(string $source, string $parent_col, string $param):
         return;
     }
 
-    $nameExpr = ($source === 'provinces' && $withCode) ? "CONCAT(code, ' - ', name) AS name" : 'name';
-    $extraCols = '';
-    if ($source === 'cities') {
-        $extraCols = ', province_id';
-    } elseif ($source === 'districts') {
-        $extraCols = ', city_id, province_id';
-    } elseif ($source === 'provinces') {
-        $extraCols = ', code';
-    }
+    $baseSql   = master_geo_select_query($source, $withCode);
+    $parentSql = $parent > 0 ? "t.`{$parent_col}` = ?" : '1=1';
 
     $db   = db();
     $rows = [];
@@ -1721,11 +1874,9 @@ function master_options_json(string $source, string $parent_col, string $param):
         }
     };
 
-    $parentSql = $parent > 0 ? "`{$parent_col}` = ?" : '1=1';
-
     if (!$hasQuery) {
-        $orderBy = $source === 'provinces' ? 'code ASC, name ASC' : 'name ASC';
-        $sql = "SELECT id, {$nameExpr}{$extraCols} FROM `{$source}` WHERE {$parentSql} ORDER BY {$orderBy} LIMIT ?";
+        $orderBy = $source === 'provinces' ? 't.code ASC, t.name ASC' : 't.name ASC';
+        $sql = "{$baseSql} WHERE {$parentSql} ORDER BY {$orderBy} LIMIT ?";
         $st  = $db->prepare($sql);
         if ($parent > 0) {
             $st->bind_param('ii', $parent, $limit);
@@ -1739,15 +1890,15 @@ function master_options_json(string $source, string $parent_col, string $param):
         $escaped = addcslashes($q, '%_\\');
         $prefix  = $escaped . '%';
         $searchCond = ($source === 'provinces' && preg_match('/^[0-9]+$/', $q))
-            ? '(code LIKE ? OR name LIKE ?)'
-            : 'name LIKE ?';
+            ? '(t.code LIKE ? OR t.name LIKE ?)'
+            : 't.name LIKE ?';
         $searchParams = ($source === 'provinces' && preg_match('/^[0-9]+$/', $q))
             ? [$prefix, $prefix]
             : [$prefix];
         $searchTypes = str_repeat('s', count($searchParams));
 
         // Query 1: prefix match berbasis index ix_*_name
-        $sql = "SELECT id, {$nameExpr}{$extraCols} FROM `{$source}` WHERE {$parentSql} AND {$searchCond} ORDER BY name ASC LIMIT ?";
+        $sql = "{$baseSql} WHERE {$parentSql} AND {$searchCond} ORDER BY t.name ASC LIMIT ?";
         $st  = $db->prepare($sql);
         if ($parent > 0) {
             $st->bind_param('i' . $searchTypes . 'i', $parent, ...[...$searchParams, $limit]);
@@ -1762,7 +1913,7 @@ function master_options_json(string $source, string $parent_col, string $param):
         if (count($rows) < min(15, $limit) && mb_strlen($q) >= 2) {
             $rem  = $limit - count($rows);
             $like = '%' . $escaped . '%';
-            $sql2 = "SELECT id, {$nameExpr}{$extraCols} FROM `{$source}` WHERE {$parentSql} AND name LIKE ? ORDER BY name ASC LIMIT ?";
+            $sql2 = "{$baseSql} WHERE {$parentSql} AND t.name LIKE ? ORDER BY t.name ASC LIMIT ?";
             $st2  = $db->prepare($sql2);
             if ($parent > 0) {
                 $st2->bind_param('isi', $parent, $like, $rem);
@@ -1777,17 +1928,11 @@ function master_options_json(string $source, string $parent_col, string $param):
 
     $out = [];
     foreach ($rows as $r) {
-        $item = [
+        $item = array_merge([
             'value' => (string) (int) $r['id'],
             'id'    => (int) $r['id'],
             'text'  => (string) $r['name'],
-        ];
-        if (isset($r['province_id'])) {
-            $item['province_id'] = (int) $r['province_id'];
-        }
-        if (isset($r['city_id'])) {
-            $item['city_id'] = (int) $r['city_id'];
-        }
+        ], master_geo_row_meta($r));
         $out[] = $item;
     }
     echo json_encode($out, JSON_UNESCAPED_UNICODE);

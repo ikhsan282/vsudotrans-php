@@ -431,3 +431,50 @@ function resolve_district_id($val): int
     $info = resolve_district_info($val);
     return $info ? $info['id'] : (int) $val;
 }
+
+/**
+ * Kondisi WHERE pencarian resi, penumpang utama, maupun penumpang tambahan (booking_passengers).
+ * Membutuhkan 5 parameter string ($q_like diulang 5x).
+ */
+function booking_passenger_search_sql(string $booking_type): string
+{
+    $bt = $booking_type === 'travel' ? 'travel' : 'rental';
+    return "(b.document_number LIKE ? OR p.name LIKE ? OR p.phone_number LIKE ?
+        OR EXISTS (
+            SELECT 1 FROM booking_passengers bp
+            JOIN passengers px ON px.id = bp.passenger_id
+            WHERE bp.booking_type = '{$bt}' AND bp.booking_id = b.id
+              AND (px.name LIKE ? OR px.phone_number LIKE ?)
+        ))";
+}
+
+/**
+ * Hitung jumlah penumpang tambahan (is_primary = 0) secara batch untuk baris halaman index (maks 1 query IN).
+ * @param int[] $booking_ids
+ * @return array<int,int>
+ */
+function booking_extra_passenger_counts(string $booking_type, array $booking_ids): array
+{
+    if (!in_array($booking_type, ['rental', 'travel'], true)) {
+        return [];
+    }
+    $ids = array_values(array_unique(array_filter(array_map('intval', $booking_ids), static fn($x) => $x > 0)));
+    if (!$ids) {
+        return [];
+    }
+    $ph = implode(',', array_fill(0, count($ids), '?'));
+    $st = db()->prepare(
+        "SELECT booking_id, COUNT(*) AS cnt
+           FROM booking_passengers
+          WHERE booking_type = ? AND is_primary = 0 AND booking_id IN ({$ph})
+          GROUP BY booking_id"
+    );
+    $st->bind_param('s' . str_repeat('i', count($ids)), $booking_type, ...$ids);
+    $st->execute();
+    $out = [];
+    foreach ($st->get_result()->fetch_all(MYSQLI_ASSOC) as $r) {
+        $out[(int) $r['booking_id']] = (int) $r['cnt'];
+    }
+    $st->close();
+    return $out;
+}

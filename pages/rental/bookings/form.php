@@ -359,83 +359,6 @@ $active = 'rental';
 $title  = $is_edit ? 'Ubah Pemesanan Sewa Kendaraan - ' . $b['document_number'] : 'Pemesanan Sewa Kendaraan Baru';
 require __DIR__ . '/../../../includes/header.php';
 ?>
-<style>
-
-
-    /* Sub Tabs & Panels */
-    .rnt-tabs .nav-link {
-        color: #495057;
-        background: #f8f9fa;
-        border: 1px solid #dee2e6;
-        border-bottom: 1px solid #dee2e6;
-        margin-right: 4px;
-        margin-bottom: -1px;
-        font-size: .875rem;
-        font-weight: 500;
-        padding: .5rem 1rem;
-        border-top-left-radius: .375rem;
-        border-top-right-radius: .375rem;
-    }
-    .rnt-tabs .nav-link.active {
-        color: #0d6efd;
-        background: #fff;
-        font-weight: 600;
-        border-bottom: 2px solid #fff;
-        z-index: 2;
-    }
-    .rnt-panel {
-        border: 1px solid #dee2e6;
-        border-radius: .375rem;
-        background: #fff;
-        margin-bottom: 1rem;
-    }
-    .rnt-panel-header {
-        background: #f8f9fa;
-        border-bottom: 1px solid #dee2e6;
-        padding: .5rem .875rem;
-        font-size: .85rem;
-        font-weight: 600;
-        color: #343a40;
-        display: flex;
-        justify-content: space-between;
-        align-items: center;
-        border-top-left-radius: .375rem;
-        border-top-right-radius: .375rem;
-    }
-    .rnt-panel-body {
-        padding: .875rem;
-    }
-    .rnt-row {
-        display: flex;
-        align-items: center;
-        margin-bottom: .5rem;
-    }
-    .rnt-row:last-child {
-        margin-bottom: 0;
-    }
-    .rnt-label {
-        width: 165px;
-        flex-shrink: 0;
-        font-size: .84rem;
-        color: #343a40;
-        font-weight: 500;
-        padding-right: .5rem;
-    }
-    .rnt-field {
-        flex: 1 1 auto;
-        min-width: 0;
-    }
-    .rnt-field .ts-control {
-        min-height: calc(1.5em + 0.5rem + 2px);
-        padding: 0.25rem 0.5rem;
-        font-size: 0.875rem;
-        border-radius: 0.25rem;
-    }
-    @media (max-width: 767.98px) {
-        .rnt-row { flex-direction: column; align-items: stretch; }
-        .rnt-label { width: 100%; margin-bottom: .25rem; }
-    }
-</style>
 
 <main class="p-2 p-md-3">
     <!-- Header Toolbar Halaman -->
@@ -602,7 +525,8 @@ require __DIR__ . '/../../../includes/header.php';
                                             ?>
                                                 <option value="<?= (int) $v['id'] ?>"
                                                     data-category="<?= (int) ($v['category_vehicle_id'] ?? 0) ?>"
-                                                    data-plate="<?= e((string) ($v['vehicle_number'] ?? '')) ?>"<?= $sel ?>><?= e($v['name']) ?></option>
+                                                    data-plate="<?= e((string) ($v['vehicle_number'] ?? '')) ?>"
+                                                    data-seat="<?= (int) ($v['seat'] ?? 0) ?>"<?= $sel ?>><?= e($v['name']) ?></option>
                                             <?php endforeach; ?>
                                         </select>
                                     </div>
@@ -643,6 +567,7 @@ require __DIR__ . '/../../../includes/header.php';
                                             <?= select_options($passengers, $in_passengers) ?>
                                         </select>
                                         <div class="form-text small">Opsional — pilih penumpang lain yang ikut serta (ditampilkan pada E-Tiket).</div>
+                                        <div id="seatCapacityWarning" class="alert alert-warning py-1 px-2 small mt-2 mb-0 d-none" role="alert"></div>
                                     </div>
                                 </div>
                             </div>
@@ -1329,6 +1254,15 @@ document.addEventListener('DOMContentLoaded', function () {
     var onSelectChange = window.bindTsChange;
     var updateSelectOptions = window.setTsOptions;
 
+    var primPaxSel  = document.getElementById('select_passenger_id');
+    var extraPaxSel = document.getElementById('extraPassengersSelect');
+    var seatWarnEl  = document.getElementById('seatCapacityWarning');
+    function updateRentalSeatWarn() {
+        if (window.updateSeatCapacityWarning) {
+            window.updateSeatCapacityWarning(vehSelect, primPaxSel, extraPaxSel, seatWarnEl);
+        }
+    }
+
     if (catSelect && vehSelect) {
         bindTsChange(catSelect, function (cidVal) {
             var curVal = vehSelect.tomselect ? String(vehSelect.tomselect.getValue() || '') : String(vehSelect.value || '');
@@ -1344,6 +1278,7 @@ document.addEventListener('DOMContentLoaded', function () {
                     }
                     setTsOptions(vehSelect, data, keepVal, '-- Pilih Unit Kendaraan --');
                     if (keepVal !== curVal) checkVehicleAvailability();
+                    updateRentalSeatWarn();
                 });
         });
 
@@ -1354,6 +1289,7 @@ document.addEventListener('DOMContentLoaded', function () {
                 setTsValueSilent(catSelect, String(vOpt.category));
             }
             checkVehicleAvailability();
+            updateRentalSeatWarn();
         });
     }
 
@@ -1465,6 +1401,7 @@ document.addEventListener('DOMContentLoaded', function () {
                     if (extraSel.tomselect) {
                         extraSel.tomselect.addOption({ value: pidStr, text: labelText });
                         extraSel.tomselect.removeItem(pidStr, true);
+                        if (window.syncTsLastVal) window.syncTsLastVal(extraSel);
                     } else {
                         var opt2 = document.createElement('option');
                         opt2.value = pidStr;
@@ -1472,6 +1409,8 @@ document.addEventListener('DOMContentLoaded', function () {
                         extraSel.appendChild(opt2);
                     }
                 }
+                if (pSelect && window.syncTsLastVal) window.syncTsLastVal(pSelect);
+                updateRentalSeatWarn();
 
                 qpForm.reset();
                 var bsModal = bootstrap.Modal.getInstance(modalEl);
@@ -1486,21 +1425,11 @@ document.addEventListener('DOMContentLoaded', function () {
         });
     }
 
-    // Hindari pelanggan utama ikut terpilih ganda di daftar penumpang tambahan
-    var primPaxSel  = document.getElementById('select_passenger_id');
-    var extraPaxSel = document.getElementById('extraPassengersSelect');
-    if (primPaxSel && extraPaxSel) {
-        onSelectChange(primPaxSel, function (val) {
-            if (!val) return;
-            if (extraPaxSel.tomselect) {
-                extraPaxSel.tomselect.removeItem(String(val), true);
-            } else {
-                Array.from(extraPaxSel.options).forEach(function (o) {
-                    if (o.value === String(val)) o.selected = false;
-                });
-            }
-        });
+    // Hindari pelanggan utama ikut terpilih ganda di daftar penumpang tambahan + peringatan kapasitas kursi
+    if (window.bindExclusivePrimaryExtra) {
+        window.bindExclusivePrimaryExtra(primPaxSel, extraPaxSel, updateRentalSeatWarn);
     }
+    updateRentalSeatWarn();
 
     // 6. Pengecekan Ketersediaan Armada Real-Time (Anti Double-Booking)
     function checkVehicleAvailability() {

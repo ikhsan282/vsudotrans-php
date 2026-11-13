@@ -225,8 +225,12 @@ window._collectSelectMeta = function (el) {
       text: opt.textContent || '',
       name: opt.textContent || '',
       category: d.category || '',
+      country_id: d.country || d.countryId || '',
+      country_name: d.countryName || '',
       province_id: d.province || d.provinceId || '',
+      province_name: d.provinceName || '',
       city_id: d.city || d.cityId || '',
+      city_name: d.cityName || '',
       plate: d.plate || '',
       brand: d.brand || '',
       model: d.model || '',
@@ -433,6 +437,123 @@ window.bindTsChange = function (el, callback) {
     }
   }
   el._tsChangeCallbacks.push(callback);
+};
+
+window.syncTsLastVal = function (el) {
+  if (!el) return;
+  const v = el.tomselect
+    ? el.tomselect.getValue()
+    : (el.multiple ? Array.from(el.selectedOptions || []).map(o => o.value) : el.value);
+  el._tsLastVal = Array.isArray(v) ? v.join(',') : String(v == null ? '' : v);
+};
+
+/**
+ * Jaga agar pelanggan utama & penumpang tambahan saling eksklusif dua arah,
+ * sekaligus menjaga el._tsLastVal sinkron setelah removeItem().
+ */
+window.bindExclusivePrimaryExtra = function (primaryEl, extraEl, onAfterChange) {
+  if (!primaryEl || !extraEl) return;
+  let syncing = false;
+
+  const getPrimaryVal = () => {
+    const v = primaryEl.tomselect ? primaryEl.tomselect.getValue() : primaryEl.value;
+    return String(Array.isArray(v) ? (v[0] || '') : (v || ''));
+  };
+
+  const getExtraArr = () => {
+    const v = extraEl.tomselect
+      ? extraEl.tomselect.getValue()
+      : Array.from(extraEl.selectedOptions || []).map(o => o.value);
+    return (Array.isArray(v) ? v : (v ? [v] : [])).map(String).filter(Boolean);
+  };
+
+  const stripPrimaryFromExtra = () => {
+    const pVal = getPrimaryVal();
+    if (!pVal) return false;
+    const arr = getExtraArr();
+    if (arr.indexOf(pVal) === -1) return false;
+    if (extraEl.tomselect) {
+      extraEl.tomselect.removeItem(pVal, true);
+      window.syncTsLastVal(extraEl);
+    } else {
+      Array.from(extraEl.options || []).forEach(o => {
+        if (String(o.value) === pVal) o.selected = false;
+      });
+    }
+    return true;
+  };
+
+  stripPrimaryFromExtra();
+
+  const handle = (source) => {
+    if (syncing) return;
+    syncing = true;
+    try {
+      stripPrimaryFromExtra();
+    } finally {
+      syncing = false;
+    }
+    if (typeof onAfterChange === 'function') {
+      onAfterChange(source);
+    }
+  };
+
+  if (typeof window.bindTsChange === 'function') {
+    window.bindTsChange(primaryEl, () => handle('primary'));
+    window.bindTsChange(extraEl, () => handle('extra'));
+  } else {
+    primaryEl.addEventListener('change', () => handle('primary'));
+    extraEl.addEventListener('change', () => handle('extra'));
+  }
+};
+
+/**
+ * Tampilkan peringatan non-blocking bila jumlah total penumpang melebihi kursi kendaraan.
+ */
+window.updateSeatCapacityWarning = function (vehEl, primPaxEl, extraPaxEl, warnEl) {
+  if (!warnEl) return;
+  if (!vehEl) {
+    warnEl.classList.add('d-none');
+    warnEl.textContent = '';
+    return;
+  }
+
+  const vId = vehEl.tomselect ? String(vehEl.tomselect.getValue() || '') : String(vehEl.value || '');
+  let seat = 0;
+  if (vId) {
+    if (vehEl.tomselect && vehEl.tomselect.options && vehEl.tomselect.options[vId]) {
+      seat = parseInt(vehEl.tomselect.options[vId].seat || 0, 10) || 0;
+    }
+    if (!seat) {
+      const opt = Array.from(vehEl.options || []).find(o => String(o.value) === vId);
+      if (opt && opt.dataset && opt.dataset.seat) {
+        seat = parseInt(opt.dataset.seat, 10) || 0;
+      }
+    }
+  }
+
+  if (!vId || seat <= 0) {
+    warnEl.classList.add('d-none');
+    warnEl.textContent = '';
+    return;
+  }
+
+  const primVal = primPaxEl
+    ? String(primPaxEl.tomselect ? (primPaxEl.tomselect.getValue() || '') : (primPaxEl.value || ''))
+    : '';
+  const extraRaw = extraPaxEl
+    ? (extraPaxEl.tomselect ? extraPaxEl.tomselect.getValue() : Array.from(extraPaxEl.selectedOptions || []).map(o => o.value))
+    : [];
+  const extraSet = new Set((Array.isArray(extraRaw) ? extraRaw : (extraRaw ? [extraRaw] : [])).map(String).filter(x => x && x !== primVal));
+  const totalPax = (primVal ? 1 : 0) + extraSet.size;
+
+  if (totalPax > seat) {
+    warnEl.innerHTML = '<i class="bi bi-exclamation-triangle-fill me-1"></i><strong>Perhatian Kapasitas:</strong> Total <strong>' + totalPax + ' penumpang</strong> melebihi kapasitas kursi kendaraan terpilih (<strong>' + seat + ' kursi</strong>).';
+    warnEl.classList.remove('d-none');
+  } else {
+    warnEl.classList.add('d-none');
+    warnEl.textContent = '';
+  }
 };
 
 if (window.TomSelect) {

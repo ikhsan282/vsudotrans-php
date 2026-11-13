@@ -158,39 +158,6 @@ require __DIR__ . '/../../../includes/header.php';
 .reg-table tbody tr:hover td {
     background-color: #f8fbff;
 }
-.rnt-panel {
-    border: 1px solid #dee2e6;
-    border-radius: .375rem;
-    background: #fff;
-    margin-bottom: 1rem;
-}
-.rnt-panel-body {
-    padding: .875rem;
-}
-.rnt-row {
-    display: flex;
-    align-items: center;
-    margin-bottom: .5rem;
-}
-.rnt-row:last-child {
-    margin-bottom: 0;
-}
-.rnt-label {
-    width: 165px;
-    flex-shrink: 0;
-    font-size: .84rem;
-    color: #343a40;
-    font-weight: 500;
-    padding-right: .5rem;
-}
-.rnt-field {
-    flex: 1 1 auto;
-    min-width: 0;
-}
-@media (max-width: 767.98px) {
-    .rnt-row { flex-direction: column; align-items: stretch; }
-    .rnt-label { width: 100%; margin-bottom: .25rem; }
-}
 </style>
 
 <main class="p-2 p-md-3 w-100 flex-grow-1">

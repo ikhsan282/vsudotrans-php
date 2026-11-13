@@ -241,7 +241,6 @@ $p_form_dist = resolve_district_id($in['pickup_point_district_id'] ?? 0);
 $d_form_dist = resolve_district_id($in['delivery_point_district_id'] ?? 0);
 
 $provinces = opts_provinces([(int) ($in['pickup_point_province_id'] ?? 0), (int) ($in['delivery_point_province_id'] ?? 0)], 100);
-$rutes_data = db()->query("SELECT id, name, pickup_point_city_id, delivery_point_city_id, price FROM rutes WHERE company_id = {$cid} AND is_active = 1 LIMIT 500")->fetch_all(MYSQLI_ASSOC);
 
 $pickup_districts   = opts_districts_by_city((int) ($in['pickup_point_city_id'] ?? 0), [$p_form_dist], 100);
 $delivery_districts = opts_districts_by_city((int) ($in['delivery_point_city_id'] ?? 0), [$d_form_dist], 100);
@@ -261,80 +260,6 @@ $active = 'travel';
 $title  = $is_edit ? 'Ubah Pemesanan Travel - ' . $b['document_number'] : 'Pemesanan Travel Baru';
 require __DIR__ . '/../../../includes/header.php';
 ?>
-<style>
-    .rnt-tabs .nav-link {
-        color: #495057;
-        background: #f8f9fa;
-        border: 1px solid #dee2e6;
-        border-bottom: 1px solid #dee2e6;
-        margin-right: 4px;
-        margin-bottom: -1px;
-        font-size: .875rem;
-        font-weight: 500;
-        padding: .5rem 1rem;
-        border-top-left-radius: .375rem;
-        border-top-right-radius: .375rem;
-    }
-    .rnt-tabs .nav-link.active {
-        color: #0d6efd;
-        background: #fff;
-        font-weight: 600;
-        border-bottom: 2px solid #fff;
-        z-index: 2;
-    }
-    .rnt-panel {
-        border: 1px solid #dee2e6;
-        border-radius: .375rem;
-        background: #fff;
-        margin-bottom: 1rem;
-    }
-    .rnt-panel-header {
-        background: #f8f9fa;
-        border-bottom: 1px solid #dee2e6;
-        padding: .5rem .875rem;
-        font-size: .85rem;
-        font-weight: 600;
-        color: #343a40;
-        display: flex;
-        justify-content: space-between;
-        align-items: center;
-        border-top-left-radius: .375rem;
-        border-top-right-radius: .375rem;
-    }
-    .rnt-panel-body {
-        padding: .875rem;
-    }
-    .rnt-row {
-        display: flex;
-        align-items: center;
-        margin-bottom: .5rem;
-    }
-    .rnt-row:last-child {
-        margin-bottom: 0;
-    }
-    .rnt-label {
-        width: 165px;
-        flex-shrink: 0;
-        font-size: .84rem;
-        color: #343a40;
-        font-weight: 500;
-        padding-right: .5rem;
-    }
-    .rnt-field {
-        flex: 1 1 auto;
-        min-width: 0;
-    }
-    .rnt-field .ts-control {
-        min-height: calc(1.5em + 0.5rem + 2px);
-        padding: 0.25rem 0.5rem;
-        font-size: 0.875rem;
-        border-radius: 0.25rem;
-    }
-    @media (max-width: 767.98px) {
-        .rnt-row { flex-direction: column; align-items: stretch; }
-        .rnt-label { width: 100%; margin-bottom: .25rem; }
-    }
-</style>
 
 <main class="p-2 p-md-3 w-100 flex-grow-1">
     <!-- Header Toolbar Halaman -->
@@ -495,7 +420,8 @@ require __DIR__ . '/../../../includes/header.php';
                                             ?>
                                                 <option value="<?= (int) $v['id'] ?>"
                                                     data-category="<?= (int) ($v['category_vehicle_id'] ?? 0) ?>"
-                                                    data-plate="<?= e((string) ($v['vehicle_number'] ?? '')) ?>"<?= $sel ?>><?= e($v['name']) ?></option>
+                                                    data-plate="<?= e((string) ($v['vehicle_number'] ?? '')) ?>"
+                                                    data-seat="<?= (int) ($v['seat'] ?? 0) ?>"<?= $sel ?>><?= e($v['name']) ?></option>
                                             <?php endforeach; ?>
                                         </select>
                                     </div>
@@ -535,6 +461,7 @@ require __DIR__ . '/../../../includes/header.php';
                                             placeholder="Pilih penumpang tambahan (opsional)...">
                                             <?= select_options($passengers, $in_passengers) ?>
                                         </select>
+                                        <div id="seatCapacityWarning" class="alert alert-warning py-1 px-2 small mt-2 mb-0 d-none" role="alert"></div>
                                     </div>
                                 </div>
                             </div>
@@ -805,9 +732,18 @@ document.addEventListener('DOMContentLoaded', function () {
     var updateSelectOptions = window.setTsOptions;
     var bindSelectChange = window.bindTsChange;
 
-    // 4. Filter Kendaraan Berdasarkan Kategori (Tom Select + Server Remote Search)
-    var catSelect = document.getElementById('travel_category_select');
-    var vehSelect = document.getElementById('travel_vehicle_select');
+    // 4. Filter Kendaraan Berdasarkan Kategori (Tom Select + Server Remote Search) + Peringatan Kapasitas Kursi
+    var catSelect   = document.getElementById('travel_category_select');
+    var vehSelect   = document.getElementById('travel_vehicle_select');
+    var seatWarnEl  = document.getElementById('seatCapacityWarning');
+    var selectPassEl      = document.getElementById('select_passenger_id');
+    var selectPassMultiEl = document.getElementById('select_passenger_ids');
+
+    function updateTravelSeatWarn() {
+        if (window.updateSeatCapacityWarning) {
+            window.updateSeatCapacityWarning(vehSelect, selectPassEl, selectPassMultiEl, seatWarnEl);
+        }
+    }
 
     if (catSelect && vehSelect) {
         bindSelectChange(catSelect, function (cidVal) {
@@ -823,7 +759,9 @@ document.addEventListener('DOMContentLoaded', function () {
                         data.unshift(curOpt);
                     }
                     updateSelectOptions(vehSelect, data, keepVal, '-- Pilih Unit Kendaraan --');
+                    updateTravelSeatWarn();
                 });
+            calculateTravelPrice(false);
         });
         bindSelectChange(vehSelect, function (vId) {
             var vOpt = vehSelect.tomselect ? vehSelect.tomselect.options[String(vId)] : null;
@@ -831,6 +769,7 @@ document.addEventListener('DOMContentLoaded', function () {
             if (vOpt && vOpt.category && !curCat) {
                 setTsValueSilent(catSelect, String(vOpt.category));
             }
+            updateTravelSeatWarn();
         });
     }
 
@@ -925,24 +864,27 @@ document.addEventListener('DOMContentLoaded', function () {
                 var p = res.data;
                 var labelText = p.name + (phoneVal ? ' - ' + phoneVal : '');
                 var pSelect = document.getElementById('select_passenger_id');
+                var pMulti = document.getElementById('select_passenger_ids');
+                if (pMulti) {
+                    if (pMulti.tomselect) {
+                        pMulti.tomselect.addOption({ value: String(p.id), text: labelText });
+                        pMulti.tomselect.removeItem(String(p.id), true);
+                        if (window.syncTsLastVal) window.syncTsLastVal(pMulti);
+                    } else {
+                        pMulti.add(new Option(labelText, String(p.id)));
+                    }
+                }
                 if (pSelect) {
                     if (pSelect.tomselect) {
                         pSelect.tomselect.addOption({ value: String(p.id), text: labelText });
                         pSelect.tomselect.setValue(String(p.id));
+                        if (window.syncTsLastVal) window.syncTsLastVal(pSelect);
                     } else {
                         var opt = new Option(labelText, String(p.id), true, true);
                         pSelect.add(opt);
                     }
                 }
-
-                var pMulti = document.getElementById('select_passenger_ids');
-                if (pMulti) {
-                    if (pMulti.tomselect) {
-                        pMulti.tomselect.addOption({ value: String(p.id), text: labelText });
-                    } else {
-                        pMulti.add(new Option(labelText, String(p.id)));
-                    }
-                }
+                updateTravelSeatWarn();
 
                 qpForm.reset();
                 var bsModal = bootstrap.Modal.getInstance(modalEl);
@@ -957,8 +899,9 @@ document.addEventListener('DOMContentLoaded', function () {
         });
     }
 
-    // 7. Auto-Calculate Estimasi Total Harga Travel berdasarkan Rute Aktif
-    var activeRoutes = <?= json_encode($rutes_data, JSON_NUMERIC_CHECK) ?>;
+    // 7. Auto-Calculate Estimasi Total Harga Travel via Lookup Rute Terindeks (aman hingga jutaan rute)
+    var routeCache   = {};
+    var routeReqSeq  = 0;
     var priceHint    = document.getElementById('travel_price_hint');
     var btnApply     = document.getElementById('btn_apply_travel_calc');
 
@@ -980,28 +923,7 @@ document.addEventListener('DOMContentLoaded', function () {
         return cnt;
     }
 
-    function calculateTravelPrice(forceApply) {
-        var primPass = document.getElementById('select_passenger_id');
-        var addPass  = document.getElementById('select_passenger_ids');
-        if (!pCity || !dCity || !priceHidden) return;
-
-        var pcVal = parseInt(pCity.tomselect ? pCity.tomselect.getValue() : pCity.value, 10);
-        var dcVal = parseInt(dCity.tomselect ? dCity.tomselect.getValue() : dCity.value, 10);
-
-        if (!pcVal || !dcVal) {
-            if (priceHint) priceHint.style.display = 'none';
-            if (btnApply) btnApply.style.display = 'none';
-            return;
-        }
-
-        var matchedRoute = null;
-        for (var i = 0; i < activeRoutes.length; i++) {
-            if (activeRoutes[i].pickup_point_city_id === pcVal && activeRoutes[i].delivery_point_city_id === dcVal) {
-                matchedRoute = activeRoutes[i];
-                break;
-            }
-        }
-
+    function renderMatchedRouteEstimate(matchedRoute, forceApply) {
         if (!matchedRoute) {
             if (priceHint) {
                 priceHint.textContent = 'Tidak ditemukan tarif rute aktif untuk pasangan kota ini.';
@@ -1012,8 +934,8 @@ document.addEventListener('DOMContentLoaded', function () {
             return;
         }
 
-        var primVal = primPass ? (primPass.tomselect ? primPass.tomselect.getValue() : primPass.value) : '';
-        var passCount = (primVal ? 1 : 0) + getMultiSelectCount(addPass, primVal);
+        var primVal = selectPassEl ? (selectPassEl.tomselect ? selectPassEl.tomselect.getValue() : selectPassEl.value) : '';
+        var passCount = (primVal ? 1 : 0) + getMultiSelectCount(selectPassMultiEl, primVal);
         if (passCount === 0) passCount = 1;
 
         var unitPrice = parseFloat(matchedRoute.price) || 0;
@@ -1034,42 +956,48 @@ document.addEventListener('DOMContentLoaded', function () {
         }
     }
 
-    var selectPassEl      = document.getElementById('select_passenger_id');
-    var selectPassMultiEl = document.getElementById('select_passenger_ids');
-    function stripPrimaryFromExtra() {
-        if (!selectPassEl || !selectPassMultiEl) return;
-        var primVal = selectPassEl.tomselect ? selectPassEl.tomselect.getValue() : selectPassEl.value;
-        primVal = primVal ? String(primVal) : '';
-        if (!primVal) return;
-        if (selectPassMultiEl.tomselect) {
-            var cur = selectPassMultiEl.tomselect.getValue();
-            var arr = Array.isArray(cur) ? cur.map(String) : (cur ? [String(cur)] : []);
-            if (arr.indexOf(primVal) !== -1) {
-                selectPassMultiEl.tomselect.removeItem(primVal, true);
-                var after = selectPassMultiEl.tomselect.getValue();
-                selectPassMultiEl._tsLastVal = Array.isArray(after) ? after.join(',') : String(after || '');
-            }
-        } else {
-            for (var i = 0; i < selectPassMultiEl.options.length; i++) {
-                if (String(selectPassMultiEl.options[i].value) === primVal) {
-                    selectPassMultiEl.options[i].selected = false;
-                }
-            }
+    function calculateTravelPrice(forceApply) {
+        if (!pCity || !dCity || !priceHidden) return;
+
+        var pcVal  = parseInt(pCity.tomselect ? pCity.tomselect.getValue() : pCity.value, 10) || 0;
+        var dcVal  = parseInt(dCity.tomselect ? dCity.tomselect.getValue() : dCity.value, 10) || 0;
+        var catVal = catSelect ? (parseInt(catSelect.tomselect ? catSelect.tomselect.getValue() : catSelect.value, 10) || 0) : 0;
+
+        if (!pcVal || !dcVal) {
+            if (priceHint) priceHint.style.display = 'none';
+            if (btnApply) btnApply.style.display = 'none';
+            return;
         }
+
+        var cacheKey = pcVal + '-' + dcVal + '-' + catVal;
+        if (Object.prototype.hasOwnProperty.call(routeCache, cacheKey)) {
+            renderMatchedRouteEstimate(routeCache[cacheKey], forceApply);
+            return;
+        }
+
+        var reqId = ++routeReqSeq;
+        var u = '<?= e(APP_URL) ?>/pages/travel/rutes/lookup.php?company_id=<?= (int) $cid ?>'
+              + '&pickup_point_city_id=' + pcVal
+              + '&delivery_point_city_id=' + dcVal
+              + (catVal > 0 ? '&category_vehicle_id=' + catVal : '');
+        fetch(u, { headers: { 'Accept': 'application/json' } })
+            .then(function (r) { return r.ok ? r.json() : null; })
+            .then(function (res) {
+                var matched = (res && res.ok) ? (res.route || null) : null;
+                routeCache[cacheKey] = matched;
+                if (reqId !== routeReqSeq) return;
+                renderMatchedRouteEstimate(matched, forceApply);
+            })
+            .catch(function () {});
     }
-    if (selectPassEl) {
-        bindSelectChange(selectPassEl, function () {
-            stripPrimaryFromExtra();
+
+    if (window.bindExclusivePrimaryExtra) {
+        window.bindExclusivePrimaryExtra(selectPassEl, selectPassMultiEl, function () {
+            updateTravelSeatWarn();
             calculateTravelPrice(false);
         });
     }
-    if (selectPassMultiEl) {
-        bindSelectChange(selectPassMultiEl, function () {
-            stripPrimaryFromExtra();
-            calculateTravelPrice(false);
-        });
-    }
-    stripPrimaryFromExtra();
+    updateTravelSeatWarn();
     if (btnApply) {
         btnApply.addEventListener('click', function (e) {
             e.preventDefault();

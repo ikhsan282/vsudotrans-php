@@ -629,6 +629,7 @@ CREATE TABLE `rutes` (
   KEY `ix_rutes_company` (`company_id`),
   KEY `ix_rutes_pickup` (`pickup_point_city_id`),
   KEY `ix_rutes_delivery` (`delivery_point_city_id`),
+  KEY `ix_rutes_lookup` (`company_id`, `pickup_point_city_id`, `delivery_point_city_id`, `is_active`),
   KEY `ix_rutes_category_vehicle` (`category_vehicle_id`),
   CONSTRAINT `fk_rutes_company` FOREIGN KEY (`company_id`) REFERENCES `companies` (`id`) ON DELETE RESTRICT,
   CONSTRAINT `fk_rutes_pickup_city` FOREIGN KEY (`pickup_point_city_id`) REFERENCES `cities` (`id`) ON DELETE RESTRICT,

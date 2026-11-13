@@ -6,6 +6,7 @@
 require_once __DIR__ . '/../config/config.php';
 require_once __DIR__ . '/../pages/travel/_helpers.php';
 require_once __DIR__ . '/../includes/booking_service.php';
+require_once __DIR__ . '/../includes/invoice_service.php';
 
 $pass = 0;
 $fail = 0;
@@ -38,6 +39,8 @@ $expectedIndexes = [
     ['districts', 'ix_districts_name'],
     ['villages', 'ix_villages_district_name'],
     ['villages', 'ix_villages_name'],
+    ['rutes', 'ix_rutes_lookup'],
+    ['booking_passengers', 'ix_bp_booking'],
 ];
 foreach ($expectedIndexes as [$tbl, $idxName]) {
     $st = $db->prepare("SELECT 1 FROM information_schema.STATISTICS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = ? AND INDEX_NAME = ? LIMIT 1");
@@ -51,6 +54,8 @@ foreach ($expectedIndexes as [$tbl, $idxName]) {
 // 2. Seed sementara 120 passengers & 70 vehicles dulu, lalu uji EXPLAIN + LIMIT cap
 $createdPaxIds = [];
 $createdVehIds = [];
+$createdRuteIds = [];
+$createdOrders = [];
 $tempBookingId = 0;
 $tempTravelId = 0;
 $jar = tempnam(sys_get_temp_dir(), 'ts_jar_');
@@ -299,9 +304,89 @@ try {
         ts_check(false, 'masters/villages/form.php renders #district_id select');
     }
     ts_check(str_contains($vilForm['body'], 'window.setTsOptions') && str_contains($vilForm['body'], 'window.bindTsChange'), 'masters/_engine.php cascading script uses window.bindTsChange + window.setTsOptions');
+    ts_check(str_contains($vilForm['body'], 'UPWARD_PARENTS') && str_contains($vilForm['body'], 'syncParentsUpward'), 'masters/villages/form.php includes upward geo parent sync script');
 
-    // 9. Travel Detail ERP UI + Multi-Penumpang + Duplicate-Passenger JS Guard
-    ts_check(str_contains($tf['body'], 'stripPrimaryFromExtra'), 'travel/bookings/form.php includes stripPrimaryFromExtra duplicate-passenger guard');
+    // 8b. Poin 4 Geo Upward Metadata & EXPLAIN bebas filesort
+    ts_check(
+        !empty($cityGlobal['json'][0]['country_id']) && !empty($cityGlobal['json'][0]['province_name']) && !empty($cityGlobal['json'][0]['country_name']),
+        'cities/options.php returns full upward hierarchy (province_id/name + country_id/name)'
+    );
+    $distGlobal = $httpGet('/pages/masters/districts/options.php?q=Coblong&limit=20');
+    ts_check(
+        $distGlobal['code'] === 200 && is_array($distGlobal['json']) && count($distGlobal['json']) >= 1
+        && !empty($distGlobal['json'][0]['city_id']) && !empty($distGlobal['json'][0]['province_id']) && !empty($distGlobal['json'][0]['country_id']),
+        'districts/options.php global search returns full upward hierarchy (city + province + country)'
+    );
+    $expCitiesJoin = $db->query("EXPLAIN SELECT t.id, t.name, t.province_id, p.name AS province_name, p.country_id, cn.name AS country_name FROM cities t LEFT JOIN provinces p ON p.id = t.province_id LEFT JOIN countries cn ON cn.id = p.country_id WHERE t.name LIKE 'Bandung%' ORDER BY t.name ASC LIMIT 50")->fetch_all(MYSQLI_ASSOC);
+    ts_check(
+        ($expCitiesJoin[0]['key'] ?? '') === 'ix_cities_name' && !str_contains((string) ($expCitiesJoin[0]['Extra'] ?? ''), 'Using filesort'),
+        'EXPLAIN cities upward JOIN query uses ix_cities_name without filesort'
+    );
+    $expDistJoin = $db->query("EXPLAIN SELECT t.id, t.name, t.city_id, ct.name AS city_name, t.province_id, p.name AS province_name, p.country_id, cn.name AS country_name FROM districts t LEFT JOIN cities ct ON ct.id = t.city_id LEFT JOIN provinces p ON p.id = t.province_id LEFT JOIN countries cn ON cn.id = p.country_id WHERE t.name LIKE 'Coblong%' ORDER BY t.name ASC LIMIT 50")->fetch_all(MYSQLI_ASSOC);
+    ts_check(
+        ($expDistJoin[0]['key'] ?? '') === 'ix_districts_name' && !str_contains((string) ($expDistJoin[0]['Extra'] ?? ''), 'Using filesort'),
+        'EXPLAIN districts upward JOIN query uses ix_districts_name without filesort'
+    );
+
+    // 8c. Poin 2 & Poin 3: Shared 2-way guard, capacity warning, CSS consolidation & Route lookup endpoint
+    ts_check(
+        str_contains($appJsSrc, 'syncTsLastVal') && str_contains($appJsSrc, 'bindExclusivePrimaryExtra') && str_contains($appJsSrc, 'updateSeatCapacityWarning'),
+        'assets/js/app.js defines syncTsLastVal, bindExclusivePrimaryExtra & updateSeatCapacityWarning'
+    );
+    ts_check(str_contains($rf['body'], 'window.bindExclusivePrimaryExtra') && str_contains($rf['body'], 'id="seatCapacityWarning"') && str_contains($rf['body'], 'data-seat="'), 'rental/form.php uses shared 2-way guard, #seatCapacityWarning & data-seat');
+    ts_check(str_contains($rd['body'], 'window.bindExclusivePrimaryExtra') && str_contains($rd['body'], 'id="seatCapacityWarning"'), 'rental/detail.php uses shared 2-way guard & #seatCapacityWarning');
+    ts_check(str_contains($tf['body'], 'window.bindExclusivePrimaryExtra') && str_contains($tf['body'], 'id="seatCapacityWarning"') && str_contains($tf['body'], 'data-seat="'), 'travel/form.php uses shared 2-way guard, #seatCapacityWarning & data-seat');
+    ts_check(str_contains($tf['body'], 'pages/travel/rutes/lookup.php') && !str_contains($tf['body'], 'var activeRoutes ='), 'travel/form.php uses rutes/lookup.php instead of inline LIMIT 500 route JSON dump');
+
+    $styleCssSrc = (string) file_get_contents(__DIR__ . '/../assets/css/style.css');
+    ts_check(str_contains($styleCssSrc, '.rnt-tabs') && str_contains($styleCssSrc, '@media (max-width: 767.98px)'), 'assets/css/style.css consolidates .rnt-tabs & mobile .rnt-* rules');
+    foreach ([
+        'pages/rental/bookings/form.php',
+        'pages/rental/bookings/detail.php',
+        'pages/rental/regulations/form.php',
+        'pages/travel/bookings/form.php',
+        'pages/travel/bookings/detail.php',
+    ] as $cssCheckFile) {
+        $src = (string) file_get_contents(__DIR__ . '/../' . $cssCheckFile);
+        ts_check(!str_contains($src, '.rnt-panel-header'), "{$cssCheckFile} has no duplicate inline .rnt-panel* CSS");
+    }
+
+    // Seed 2 temporary routes on unused high city IDs & test EXPLAIN ix_rutes_lookup + HTTP rutes/lookup.php
+    $cityPair = $db->query('SELECT id FROM cities ORDER BY id DESC LIMIT 2')->fetch_all(MYSQLI_ASSOC);
+    $rCityA = (int) ($cityPair[0]['id'] ?? 1101);
+    $rCityB = (int) ($cityPair[1]['id'] ?? 1102);
+    $otherCatId = (int) $db->query("SELECT id FROM category_vehicles WHERE id <> {$catId} LIMIT 1")->fetch_column();
+    if ($otherCatId <= 0) {
+        $otherCatId = $catId;
+    }
+    $rCode1 = 'RT-' . random_int(1000, 9999);
+    $rCode2 = 'RT-' . random_int(1000, 9999);
+    $stRt = $db->prepare('INSERT INTO rutes (company_id, code, name, pickup_point_city_id, delivery_point_city_id, category_vehicle_id, min_price, price, max_price, is_active, created_user) VALUES (1, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?)');
+    $rtName1 = 'Test Lookup Route Fallback';
+    $p1Min = 200000.0; $p1Val = 275000.0; $p1Max = 350000.0; $uTest = 'test';
+    $stRt->bind_param('ssiiiddds', $rCode1, $rtName1, $rCityA, $rCityB, $otherCatId, $p1Min, $p1Val, $p1Max, $uTest);
+    $stRt->execute();
+    $createdRuteIds[] = (int) $db->insert_id;
+    $rtName2 = 'Test Lookup Route Exact Cat';
+    $p2Min = 300000.0; $p2Val = 425000.0; $p2Max = 500000.0;
+    $stRt->bind_param('ssiiiddds', $rCode2, $rtName2, $rCityA, $rCityB, $catId, $p2Min, $p2Val, $p2Max, $uTest);
+    $stRt->execute();
+    $createdRuteIds[] = (int) $db->insert_id;
+    $stRt->close();
+
+    $expRute = $db->query("EXPLAIN SELECT id, name, pickup_point_city_id, delivery_point_city_id, category_vehicle_id, price FROM rutes FORCE INDEX (ix_rutes_lookup) WHERE company_id = 1 AND pickup_point_city_id = {$rCityA} AND delivery_point_city_id = {$rCityB} AND is_active = 1 ORDER BY id ASC LIMIT 1")->fetch_assoc();
+    ts_check(($expRute['key'] ?? '') === 'ix_rutes_lookup' && !str_contains((string) ($expRute['Extra'] ?? ''), 'Using filesort'), 'EXPLAIN rutes lookup uses ix_rutes_lookup without filesort');
+
+    $lkExact = $httpGet("/pages/travel/rutes/lookup.php?company_id=1&pickup_point_city_id={$rCityA}&delivery_point_city_id={$rCityB}&category_vehicle_id={$catId}");
+    ts_check($lkExact['code'] === 200 && !empty($lkExact['json']['ok']) && (int) round((float) ($lkExact['json']['route']['price'] ?? 0)) === 425000, 'rutes/lookup.php returns exact category-matched route price 425000');
+
+    $lkFallback = $httpGet("/pages/travel/rutes/lookup.php?company_id=1&pickup_point_city_id={$rCityA}&delivery_point_city_id={$rCityB}&category_vehicle_id=999999");
+    ts_check($lkFallback['code'] === 200 && !empty($lkFallback['json']['ok']) && (int) round((float) ($lkFallback['json']['route']['price'] ?? 0)) === 275000, 'rutes/lookup.php falls back cleanly to first active route price 275000 when category unmatched');
+
+    $lkMiss = $httpGet("/pages/travel/rutes/lookup.php?company_id=1&pickup_point_city_id={$rCityB}&delivery_point_city_id=999999");
+    ts_check($lkMiss['code'] === 200 && !empty($lkMiss['json']['ok']) && array_key_exists('route', $lkMiss['json']) && $lkMiss['json']['route'] === null, 'rutes/lookup.php returns null cleanly when no active route matches');
+
+    // 9. Travel Detail ERP UI + Multi-Penumpang + Payment Manual Overpay/Valid + QRIS travel + Index Multi-Pax Search
     $extraTravelPax = [$createdPaxIds[0], $createdPaxIds[1]];
     $tbk = booking_create('travel', [
         'company_id'                 => 1,
@@ -321,6 +406,7 @@ try {
         'created_user'               => 'test',
     ]);
     $tempTravelId = (int) $tbk['id'];
+    $tempTravelInvId = (int) ($tbk['invoice_id'] ?? 0);
     $td = $httpGet('/pages/travel/bookings/detail.php?id=' . $tempTravelId);
     ts_check($td['code'] === 200, 'travel/bookings/detail.php returns HTTP 200');
     ts_check(str_contains($td['body'], 'erp-window-card') && str_contains($td['body'], 'erp-sub-tabs'), 'travel/bookings/detail.php uses ERP window card & sub-tabs UI');
@@ -328,12 +414,125 @@ try {
         ts_check(str_contains($td['body'], $tabHref), "travel/bookings/detail.php renders tab {$tabHref}");
     }
     ts_check(str_contains($td['body'], '3 Penumpang') && str_contains($td['body'], 'ZZZScale Test Passenger 120') && str_contains($td['body'], 'ZZZScale Test Passenger 001') && str_contains($td['body'], 'ZZZScale Test Passenger 002'), 'travel/bookings/detail.php displays primary + 2 extra passengers + count badge');
+    ts_check(str_contains($td['body'], 'id="travelManualPayForm"') && str_contains($td['body'], 'id="btnPayQrisAuto"') && str_contains($td['body'], 'id="qrisAutoModal"'), 'travel/bookings/detail.php #tab-cost renders manual payment form & QRIS auto modal');
+
+    // HTTP POST Helper
+    $httpPostForm = static function (string $path, array $fields) use ($base, $jar): array {
+        $tmpBody = tempnam(sys_get_temp_dir(), 'ts_pf_');
+        file_put_contents($tmpBody, http_build_query($fields));
+        $hdrFile = tempnam(sys_get_temp_dir(), 'ts_ph_');
+        $body = (string) shell_exec('curl.exe -s -L -b ' . escapeshellarg($jar) . ' -D ' . escapeshellarg($hdrFile) . ' --data-binary ' . escapeshellarg('@' . $tmpBody) . ' ' . escapeshellarg($base . $path));
+        $hdrs = (string) @file_get_contents($hdrFile);
+        @unlink($tmpBody);
+        @unlink($hdrFile);
+        $code = 0;
+        if (preg_match_all('/HTTP\/\S+\s+(\d{3})/', $hdrs, $ms) && !empty($ms[1])) {
+            $code = (int) end($ms[1]);
+        }
+        return ['code' => $code, 'body' => $body, 'json' => json_decode($body, true)];
+    };
+
+    if (preg_match('/name="csrf_token"\s+value="([^"]+)"/', $td['body'], $tCsrfM)) {
+        $tCsrf = $tCsrfM[1];
+        // Reject manual overpay (400k > 350k)
+        $resTBad = $httpPostForm('/pages/travel/bookings/detail.php?id=' . $tempTravelId, [
+            'csrf_token' => $tCsrf,
+            'id'         => $tempTravelId,
+            'act'        => 'pay_manual',
+            'active_tab' => 'cost',
+            'pay_type'   => 'Pembayaran Penuh (Full)',
+            'amount'     => '400000',
+            'pay_note'   => 'Test overpay',
+        ]);
+        ts_check(abs(invoice_paid_total($tempTravelInvId)) < 0.01 && stripos($resTBad['body'], 'melebihi sisa tagihan') !== false, 'travel/detail.php act=pay_manual rejects overpay > invoice total');
+
+        // Accept valid manual partial payment (150k of 350k)
+        $resTOk = $httpPostForm('/pages/travel/bookings/detail.php?id=' . $tempTravelId, [
+            'csrf_token' => $tCsrf,
+            'id'         => $tempTravelId,
+            'act'        => 'pay_manual',
+            'active_tab' => 'cost',
+            'pay_type'   => 'Down Payment (DP)',
+            'amount'     => '150000',
+            'pay_note'   => 'DP Valid 150k',
+        ]);
+        $tInvNow = invoice_find($tempTravelInvId);
+        ts_check(
+            abs(invoice_paid_total($tempTravelInvId) - 150000.0) < 0.01 && ($tInvNow['pay_status'] ?? '') === 'partial',
+            'travel/detail.php act=pay_manual accepts valid 150k DP -> paid=150000 & pay_status=partial'
+        );
+
+        // Generalized qris_ajax.php with booking_type=travel: reject overpay 250k (> 200k remaining)
+        $qTBad = $httpPostForm('/pages/rental/bookings/qris_ajax.php', [
+            'csrf_token'   => $tCsrf,
+            'act'          => 'create',
+            'booking_type' => 'travel',
+            'booking_id'   => $tempTravelId,
+            'pay_type'     => 'Pelunasan',
+            'amount'       => '250000',
+        ]);
+        ts_check($qTBad['code'] === 422 && empty($qTBad['json']['ok']), 'qris_ajax.php (booking_type=travel) rejects QRIS > remaining bill with HTTP 422');
+
+        // Generalized qris_ajax.php with booking_type=travel: create valid 100k QRIS + poll
+        $qTOk = $httpPostForm('/pages/rental/bookings/qris_ajax.php', [
+            'csrf_token'   => $tCsrf,
+            'act'          => 'create',
+            'booking_type' => 'travel',
+            'booking_id'   => $tempTravelId,
+            'pay_type'     => 'Pelunasan',
+            'amount'       => '100000',
+        ]);
+        $qTOrd = (string) ($qTOk['json']['order_id'] ?? '');
+        if ($qTOrd !== '') $createdOrders[] = $qTOrd;
+        ts_check(
+            $qTOk['code'] === 200 && !empty($qTOk['json']['ok']) && $qTOrd !== '' && abs((float) ($qTOk['json']['remaining'] ?? 0) - 200000.0) < 0.01,
+            'qris_ajax.php (booking_type=travel) creates dynamic QRIS order cleanly'
+        );
+
+        $qTPoll = $httpPostForm('/pages/rental/bookings/qris_ajax.php', [
+            'csrf_token'   => $tCsrf,
+            'act'          => 'poll',
+            'booking_type' => 'travel',
+            'booking_id'   => $tempTravelId,
+            'order_id'     => $qTOrd,
+        ]);
+        ts_check(
+            $qTPoll['code'] === 200 && !empty($qTPoll['json']['ok']) && ($qTPoll['json']['booking_type'] ?? '') === 'travel' && abs((float) ($qTPoll['json']['remaining'] ?? 0) - 200000.0) < 0.01,
+            'qris_ajax.php (booking_type=travel) act=poll returns booking_type=travel & remaining=200000'
+        );
+    } else {
+        ts_check(false, 'CSRF token extracted from travel/detail.php');
+    }
+
+    // 10. Multi-Passenger Search & +N tambahan Badge on Rental & Travel Index
+    booking_passengers_set('rental', $tempBookingId, 1, [$lastPaxId, $createdPaxIds[0]], $lastPaxId, 'test');
+    $rIdx = $httpGet('/pages/rental/bookings/index.php?company_id=1&q=' . urlencode('ZZZScale Test Passenger 001'));
+    ts_check(
+        $rIdx['code'] === 200 && str_contains($rIdx['body'], (string) $bk['document_number']) && str_contains($rIdx['body'], '+1 tambahan'),
+        'rental/bookings/index.php finds booking via extra passenger & shows +1 tambahan badge'
+    );
+
+    $tIdx = $httpGet('/pages/travel/bookings/index.php?company_id=1&q=' . urlencode('ZZZScale Test Passenger 001'));
+    ts_check(
+        $tIdx['code'] === 200 && str_contains($tIdx['body'], (string) $tbk['document_number']) && str_contains($tIdx['body'], '+2 tambahan') && str_contains($tIdx['body'], 'Total Pembayaran') && str_contains($tIdx['body'], 'ZZ 0070 SC'),
+        'travel/bookings/index.php finds booking via extra passenger, shows +2 tambahan badge & Rental-parity columns'
+    );
 } finally {
+    foreach ($createdOrders as $oid) {
+        $esc = $db->real_escape_string($oid);
+        $db->query("DELETE FROM wa_outbox WHERE event_id = 'pay-{$esc}'");
+        $db->query("DELETE FROM payment_gateway_orders WHERE order_id = '{$esc}'");
+    }
     if (!empty($tempTravelId) && $tempTravelId > 0) {
+        $db->query("DELETE FROM payment_gateway_orders WHERE booking_type = 'travel' AND booking_id = {$tempTravelId}");
         try { booking_delete('travel', $tempTravelId, 1); } catch (Throwable $ex) {}
     }
     if ($tempBookingId > 0) {
         try { booking_delete('rental', $tempBookingId, 1); } catch (Throwable $ex) {}
+    }
+    if ($createdRuteIds) {
+        $inR = implode(',', array_map('intval', $createdRuteIds));
+        $db->query("DELETE FROM rutes WHERE id IN ({$inR})");
     }
     if ($createdVehIds) {
         $inV = implode(',', array_map('intval', $createdVehIds));

@@ -1,9 +1,10 @@
 <?php
 /**
- * AJAX Endpoint QRIS Otomatis pada Tab Pembayaran Sewa (Rental Detail).
+ * AJAX Endpoint QRIS Otomatis pada Tab Pembayaran (Rental & Travel Detail).
  * Aksi:
  *  - act=create : Membuat (atau memakai ulang order PENDING identik) QRIS Dinamis untuk nominal & tipe pembayaran tertentu.
  *  - act=poll   : Memeriksa mutasi order PENDING pada invoice terkait, memfinalisasi bila lunas, dan mengembalikan daftar pembayaran terbaru.
+ * Parameter wajib: booking_id, booking_type ('rental'|'travel', default 'rental').
  */
 require_once __DIR__ . '/../../../config/config.php';
 require_once __DIR__ . '/../../travel/_helpers.php';
@@ -80,8 +81,12 @@ if (($_SERVER['REQUEST_METHOD'] ?? '') !== 'POST') {
 if (empty($_SESSION['user_id'])) {
     rental_qris_reply(401, ['ok' => false, 'error' => 'Sesi login telah berakhir. Silakan muat ulang halaman.']);
 }
-if (!can('rental.view')) {
-    rental_qris_reply(403, ['ok' => false, 'error' => 'Anda tidak memiliki izin mengakses data rental.']);
+$bookingType = trim((string) ($_POST['booking_type'] ?? 'rental'));
+if (!in_array($bookingType, ['rental', 'travel'], true)) {
+    rental_qris_reply(400, ['ok' => false, 'error' => 'Tipe booking tidak valid.']);
+}
+if (!can($bookingType . '.view')) {
+    rental_qris_reply(403, ['ok' => false, 'error' => 'Anda tidak memiliki izin mengakses data ' . $bookingType . '.']);
 }
 if (!hash_equals(csrf_token(), (string) ($_POST['csrf_token'] ?? ''))) {
     rental_qris_reply(403, ['ok' => false, 'error' => 'Token keamanan tidak valid. Muat ulang halaman dan coba lagi.']);
@@ -89,9 +94,9 @@ if (!hash_equals(csrf_token(), (string) ($_POST['csrf_token'] ?? ''))) {
 
 $act       = trim((string) ($_POST['act'] ?? 'poll'));
 $bookingId = (int) ($_POST['booking_id'] ?? 0);
-$b         = $bookingId > 0 ? booking_find('rental', $bookingId) : null;
+$b         = $bookingId > 0 ? booking_find($bookingType, $bookingId) : null;
 if (!$b) {
-    rental_qris_reply(404, ['ok' => false, 'error' => 'Data pemesanan sewa tidak ditemukan.']);
+    rental_qris_reply(404, ['ok' => false, 'error' => 'Data pemesanan ' . ($bookingType === 'travel' ? 'travel' : 'sewa') . ' tidak ditemukan.']);
 }
 if (!is_super_admin() && (int) $b['company_id'] !== active_company_id()) {
     rental_qris_reply(403, ['ok' => false, 'error' => 'Akses perusahaan ditolak.']);
@@ -101,8 +106,8 @@ $db        = db();
 $companyId = (int) $b['company_id'];
 $user      = $_SESSION['username'] ?? null;
 
-$stInv = $db->prepare("SELECT id FROM invoices WHERE booking_type = 'rental' AND booking_id = ? AND company_id = ? LIMIT 1");
-$stInv->bind_param('ii', $bookingId, $companyId);
+$stInv = $db->prepare('SELECT id FROM invoices WHERE booking_type = ? AND booking_id = ? AND company_id = ? LIMIT 1');
+$stInv->bind_param('sii', $bookingType, $bookingId, $companyId);
 $stInv->execute();
 $invRow = $stInv->get_result()->fetch_assoc();
 $stInv->close();
@@ -110,11 +115,11 @@ $stInv->close();
 $invoiceId = $invRow ? (int) $invRow['id'] : 0;
 
 if ($act === 'create') {
-    if (!can('rental.manage')) {
+    if (!can($bookingType . '.manage')) {
         rental_qris_reply(403, ['ok' => false, 'error' => 'Anda tidak memiliki izin membuat pembayaran QRIS.']);
     }
 
-    $curStatus = booking_current_status('rental', $bookingId);
+    $curStatus = booking_current_status($bookingType, $bookingId);
     if ($curStatus === 'cancelled') {
         rental_qris_reply(422, ['ok' => false, 'error' => 'Booking sudah dibatalkan — tidak dapat menerima pembayaran QRIS.']);
     }
@@ -122,7 +127,7 @@ if ($act === 'create') {
     if ($invoiceId <= 0) {
         $invoiceId = invoice_issue(
             $companyId,
-            'rental',
+            $bookingType,
             $bookingId,
             !empty($b['branch_id']) ? (int) $b['branch_id'] : null,
             (string) $b['document_number'],
@@ -185,7 +190,8 @@ if ($act === 'create') {
 
     if (!$order) {
         $orderId = gateway_make_order_id($invoiceId);
-        $res = gateway_create($channel, $orderId, $charge, 'Sewa ' . ($b['document_number'] ?? ''));
+        $descPrefix = $bookingType === 'travel' ? 'Travel ' : 'Sewa ';
+        $res = gateway_create($channel, $orderId, $charge, $descPrefix . ($b['document_number'] ?? ''));
         if (empty($res['ok'])) {
             rental_qris_reply(502, ['ok' => false, 'error' => (string) ($res['error'] ?? 'Gagal membuat transaksi QRIS.')]);
         }
@@ -202,7 +208,7 @@ if ($act === 'create') {
             $inv,
             $charge,
             $data,
-            'admin-rental',
+            'admin-' . $bookingType,
             $user
         );
         $order = gateway_find_order($orderId);
@@ -318,7 +324,7 @@ $invTotal   = $inv ? (float) $inv['total'] : (float) $b['total_price'];
 $paidTotal  = $inv ? (float) ($inv['paid_total'] ?? invoice_paid_total($invoiceId)) : 0.0;
 $remaining  = max(0.0, round($invTotal - $paidTotal, 2));
 $payments   = $invoiceId > 0 ? rental_qris_format_payments($invoiceId) : [];
-$curBkStat  = booking_current_status('rental', $bookingId) ?: 'draft';
+$curBkStat  = booking_current_status($bookingType, $bookingId) ?: 'draft';
 
 $hasPending = false;
 if ($invoiceId > 0) {
@@ -331,6 +337,7 @@ if ($invoiceId > 0) {
 
 rental_qris_reply(200, [
     'ok'                   => true,
+    'booking_type'         => $bookingType,
     'invoice_id'           => $invoiceId,
     'order_id'             => $orderId,
     'order_status'         => $orderStatus,

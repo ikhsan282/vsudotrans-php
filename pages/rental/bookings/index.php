@@ -79,12 +79,12 @@ if ($start_date !== '' && $end_date !== '') {
     $params[] = $end_date;
 }
 
-// Filter Pencarian Resi / Penumpang
+// Filter Pencarian Resi / Penumpang (termasuk penumpang tambahan)
 if ($q !== '') {
-    $where .= ' AND (b.document_number LIKE ? OR p.name LIKE ? OR p.phone_number LIKE ?)';
-    $types .= 'sss';
+    $where .= ' AND ' . booking_passenger_search_sql('rental');
+    $types .= 'sssss';
     $q_like = '%' . $q . '%';
-    array_push($params, $q_like, $q_like, $q_like);
+    array_push($params, $q_like, $q_like, $q_like, $q_like, $q_like);
 }
 
 // Filter Status
@@ -217,6 +217,8 @@ $st->execute();
 $rows = $st->get_result()->fetch_all(MYSQLI_ASSOC);
 $st->close();
 
+$extraCounts = booking_extra_passenger_counts('rental', array_column($rows, 'id'));
+
 $header_actions = ui_export_actions();
 if (can('rental.manage') && active_company_id() !== null) {
     $header_actions[] = ['label' => 'Tambah', 'icon' => 'plus-lg', 'href' => 'pages/rental/bookings/form.php', 'class' => 'btn btn-primary btn-sm'];
@@ -332,7 +334,12 @@ require __DIR__ . '/../../../includes/header.php';
                             </a>
                         </td>
                         <td>
-                            <div class="small fw-semibold text-dark"><?= e($r['passenger_name']) ?></div>
+                            <div class="small fw-semibold text-dark d-flex flex-wrap align-items-center gap-1">
+                                <span><?= e($r['passenger_name']) ?></span>
+                                <?php $exCnt = $extraCounts[(int) $r['id']] ?? 0; if ($exCnt > 0): ?>
+                                    <span class="badge bg-info-subtle text-info-emphasis border">+<?= $exCnt ?> tambahan</span>
+                                <?php endif; ?>
+                            </div>
                             <div class="text-muted" style="font-size: 0.8rem;"><?= e($r['passenger_phone'] ?: '-') ?></div>
                         </td>
                         <td class="text-center">

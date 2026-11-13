@@ -5,16 +5,63 @@ require_once __DIR__ . '/../_helpers.php';
 
 $status_sql = "(SELECT h.to_status FROM booking_status_history h
     WHERE h.booking_type = 'travel' AND h.booking_id = b.id ORDER BY h.id DESC LIMIT 1)";
-[$where, $types, $params] = company_scope('b.company_id');
 
-$q = trim((string) ($_GET['q'] ?? ''));
-$status = trim((string) ($_GET['status'] ?? ''));
+$companies  = accessible_companies();
+$active_cid = active_company_id();
+
+$q          = trim((string) ($_GET['q'] ?? ''));
+$status     = trim((string) ($_GET['status'] ?? ''));
+$start_date = trim((string) ($_GET['start_date'] ?? ''));
+$end_date   = trim((string) ($_GET['end_date'] ?? ''));
+
+if ($start_date !== '' && !preg_match('/^\d{4}-\d{2}-\d{2}$/', $start_date)) {
+    $start_date = '';
+}
+if ($end_date !== '' && !preg_match('/^\d{4}-\d{2}-\d{2}$/', $end_date)) {
+    $end_date = '';
+}
+
+if (isset($_GET['company_id'])) {
+    $filter_company_id = $_GET['company_id'] !== '' ? (int) $_GET['company_id'] : 0;
+} else {
+    $filter_company_id = $active_cid ?? 0;
+}
+
+if ($filter_company_id > 0) {
+    $allowed = is_super_admin() || in_array($filter_company_id, array_map('intval', array_column($companies, 'id')), true);
+    if ($allowed) {
+        $where  = 'b.company_id = ?';
+        $types  = 'i';
+        $params = [$filter_company_id];
+    } else {
+        [$where, $types, $params] = company_scope('b.company_id');
+        $filter_company_id = $active_cid ?? 0;
+    }
+} elseif ($filter_company_id === 0 && is_super_admin()) {
+    $where  = '1=1';
+    $types  = '';
+    $params = [];
+} else {
+    [$where, $types, $params] = company_scope('b.company_id');
+    $filter_company_id = $active_cid ?? 0;
+}
+
+if ($start_date !== '') {
+    $where .= ' AND b.date >= ?';
+    $types .= 's';
+    $params[] = $start_date;
+}
+if ($end_date !== '') {
+    $where .= ' AND b.date <= ?';
+    $types .= 's';
+    $params[] = $end_date;
+}
 
 if ($q !== '') {
-    $where .= ' AND (b.document_number LIKE ? OR p.name LIKE ?)';
-    $types .= 'ss';
+    $where .= ' AND ' . booking_passenger_search_sql('travel');
+    $types .= 'sssss';
     $q_like = '%' . $q . '%';
-    array_push($params, $q_like, $q_like);
+    array_push($params, $q_like, $q_like, $q_like, $q_like, $q_like);
 }
 if ($status !== '') {
     $where .= " AND COALESCE({$status_sql}, 'draft') = ?";
@@ -23,6 +70,7 @@ if ($status !== '') {
 }
 
 $st = db()->prepare("SELECT COUNT(*) FROM travel_ticket_bookings b
+                     JOIN companies c ON c.id = b.company_id
                      JOIN passengers p ON p.id = b.passenger_id
                      WHERE {$where}");
 if ($types !== '') {
@@ -34,31 +82,59 @@ $st->close();
 
 $export_format = strtolower(trim((string) ($_GET['export'] ?? '')));
 if (in_array($export_format, ['xlsx', 'pdf'], true)) {
-    $sql_export = "SELECT b.document_number, b.date, b.time, p.name AS passenger, b.total_price,
+    $sql_export = "SELECT b.document_number, b.date, b.time,
+                          p.name AS passenger_name, p.phone_number AS passenger_phone,
+                          bv.name AS brand_name, mu.name AS model_name,
+                          v.vehicle_number, cv.name AS category_name,
+                          pc.name AS pickup_city_name, dc.name AS delivery_city_name,
+                          b.total_price, COALESCE(b.total_payment, 0) AS total_payment,
                           COALESCE({$status_sql}, 'draft') AS status
-                   FROM travel_ticket_bookings b
-                   JOIN passengers p ON p.id = b.passenger_id
-                   WHERE {$where} ORDER BY b.date DESC, b.id DESC";
+                     FROM travel_ticket_bookings b
+                     JOIN companies c ON c.id = b.company_id
+                     JOIN passengers p ON p.id = b.passenger_id
+                     LEFT JOIN vehicles v ON v.id = b.vehicle_id
+                     LEFT JOIN brand_vehicles bv ON bv.id = v.brand_id
+                     LEFT JOIN model_units mu ON mu.id = v.model_unit_id
+                     LEFT JOIN category_vehicles cv ON cv.id = b.category_vehicle_id
+                     LEFT JOIN cities pc ON pc.id = b.pickup_point_city_id
+                     LEFT JOIN cities dc ON dc.id = b.delivery_point_city_id
+                     WHERE {$where} ORDER BY b.date DESC, b.id DESC";
     $max_export_rows = $export_format === 'pdf' ? GRID_PDF_MAX_ROWS : null;
 
     $row_stream = grid_query_stream(
         $sql_export,
         $types,
         $params,
-        static fn (array $r): array => [
-            $r['document_number'],
-            $r['date'] . ' ' . substr($r['time'], 0, 5),
-            $r['passenger'],
-            (float) $r['total_price'],
-            ucfirst($r['status']),
-        ],
+        static function (array $r): array {
+            $vehLabel = trim(implode(' · ', array_filter([
+                $r['vehicle_number'] ?? '',
+                trim(implode(' ', array_filter([$r['brand_name'] ?? '', $r['model_name'] ?? '']))),
+            ])));
+            return [
+                $r['document_number'],
+                trim($r['passenger_name'] . ($r['passenger_phone'] ? ' (' . $r['passenger_phone'] . ')' : '')),
+                $vehLabel !== '' ? $vehLabel : ($r['category_name'] ?: '-'),
+                !empty($r['time']) ? substr($r['time'], 0, 5) : '-',
+                !empty($r['date']) ? date('d-M-Y', strtotime($r['date'])) : '-',
+                $r['pickup_city_name'] ?: '-',
+                $r['delivery_city_name'] ?: '-',
+                (float) $r['total_price'],
+                (float) $r['total_payment'],
+                ucfirst((string) $r['status']),
+            ];
+        },
         $max_export_rows
     );
 
-    $sub = $q !== '' ? 'Pencarian: "' . $q . '"' : 'Semua Data';
+    $subParts = [];
+    if ($q !== '') $subParts[] = 'Pencarian: "' . $q . '"';
+    if ($start_date !== '' || $end_date !== '') $subParts[] = 'Tgl: ' . ($start_date ?: '...') . ' s/d ' . ($end_date ?: '...');
+    if ($status !== '') $subParts[] = 'Status: ' . ucfirst($status);
+    $sub = $subParts ? implode(' | ', $subParts) : 'Semua Data';
+
     grid_export_send(
         'Daftar Booking Travel',
-        ['No Resi / Dokumen', 'Waktu Keberangkatan', 'Nama Penumpang', 'Total Bayar', 'Status'],
+        ['Resi', 'Penumpang (Nama & HP)', 'Kendaraan', 'Jam', 'Tanggal', 'Penjemputan', 'Pengantaran', 'Total Harga', 'Total Pembayaran', 'Status'],
         $row_stream,
         $export_format,
         'landscape',
@@ -68,28 +144,51 @@ if (in_array($export_format, ['xlsx', 'pdf'], true)) {
 }
 
 $p = paginate($total, (int) ($_GET['page'] ?? 1));
-$st = db()->prepare("SELECT b.id, b.document_number, b.date, b.time, b.total_price, p.name AS passenger,
+$st = db()->prepare("SELECT b.id, b.company_id, c.code AS company_code, c.name AS company_name,
+                     b.document_number, b.date, b.time, b.total_price,
+                     COALESCE(b.total_payment, 0) AS total_payment,
+                     p.name AS passenger_name, p.phone_number AS passenger_phone,
+                     bv.name AS brand_name, mu.name AS model_name,
+                     v.vehicle_number, cv.name AS category_name,
+                     pc.name AS pickup_city_name, dc.name AS delivery_city_name,
                      COALESCE({$status_sql}, 'draft') AS status
                      FROM travel_ticket_bookings b
+                     JOIN companies c ON c.id = b.company_id
                      JOIN passengers p ON p.id = b.passenger_id
+                     LEFT JOIN vehicles v ON v.id = b.vehicle_id
+                     LEFT JOIN brand_vehicles bv ON bv.id = v.brand_id
+                     LEFT JOIN model_units mu ON mu.id = v.model_unit_id
+                     LEFT JOIN category_vehicles cv ON cv.id = b.category_vehicle_id
+                     LEFT JOIN cities pc ON pc.id = b.pickup_point_city_id
+                     LEFT JOIN cities dc ON dc.id = b.delivery_point_city_id
                      WHERE {$where} ORDER BY b.date DESC, b.id DESC LIMIT ? OFFSET ?");
 $st->bind_param($types . 'ii', ...[...$params, $p['per_page'], $p['offset']]);
 $st->execute();
 $rows = $st->get_result()->fetch_all(MYSQLI_ASSOC);
 $st->close();
 
+$extraCounts = booking_extra_passenger_counts('travel', array_column($rows, 'id'));
+
 $header_actions = ui_export_actions();
 if (can('travel.manage') && active_company_id() !== null) {
     $header_actions[] = ['label' => 'Tambah', 'icon' => 'plus-lg', 'href' => 'pages/travel/bookings/form.php', 'class' => 'btn btn-primary btn-sm'];
 }
 
-$query_base = http_build_query(array_filter(['q' => $q, 'status' => $status]));
+$query_params = [];
+if ($q !== '') $query_params['q'] = $q;
+if ($status !== '') $query_params['status'] = $status;
+if ($start_date !== '') $query_params['start_date'] = $start_date;
+if ($end_date !== '') $query_params['end_date'] = $end_date;
+if (isset($_GET['company_id'])) $query_params['company_id'] = $_GET['company_id'];
+$query_base = http_build_query($query_params);
+
+$has_active_filter = ($q !== '' || $status !== '' || $start_date !== '' || $end_date !== '' || (isset($_GET['company_id']) && (int) $_GET['company_id'] !== ($active_cid ?? 0)));
 
 $active = 'travel';
 $title  = 'Booking Travel';
 require __DIR__ . '/../../../includes/header.php';
 ?>
-<main class="col-12 col-md-9 col-lg-10 p-3 p-lg-4">
+<main class="p-3 p-lg-4 w-100 flex-grow-1">
     <?= ui_page_header(
         'Booking Travel',
         ['Dashboard' => 'pages/dashboard/index.php', 'Travel' => null, 'Booking' => null],
@@ -99,24 +198,46 @@ require __DIR__ . '/../../../includes/header.php';
     <div class="card shadow-sm border-0 mb-3">
         <div class="card-body py-2 px-3">
             <form method="get" class="row g-2 align-items-center">
-                <div class="col-12 col-md-4">
+                <div class="col-12 col-md-3">
                     <div class="input-group input-group-sm">
                         <span class="input-group-text bg-white text-muted"><i class="bi bi-search"></i></span>
-                        <input type="text" name="q" class="form-control" placeholder="Cari resi atau nama penumpang..." value="<?= e($q) ?>">
+                        <input type="text" name="q" class="form-control" placeholder="Cari resi / penumpang / no. hp..." value="<?= e($q) ?>">
                     </div>
                 </div>
-                <div class="col-6 col-md-3">
-                    <select name="status" class="form-select form-select-sm" onchange="this.form.submit()">
+                <div class="col-6 col-md-2">
+                    <input type="text" name="start_date" class="form-control form-control-sm bg-white flatpickr-date" value="<?= e($start_date) ?>" placeholder="Tgl Mulai">
+                </div>
+                <div class="col-6 col-md-2">
+                    <input type="text" name="end_date" class="form-control form-control-sm bg-white flatpickr-date" value="<?= e($end_date) ?>" placeholder="Tgl Akhir">
+                </div>
+                <div class="col-6 col-md-2">
+                    <select name="company_id" class="form-select form-select-sm" onchange="this.form.submit()" title="Pilih Perusahaan">
+                        <?php if (is_super_admin()): ?>
+                            <option value="0" <?= ($filter_company_id === 0 && isset($_GET['company_id'])) ? 'selected' : '' ?>>Semua Perusahaan</option>
+                        <?php endif; ?>
+                        <?php foreach ($companies as $c): ?>
+                            <option value="<?= (int) $c['id'] ?>" <?= ((int) $c['id'] === $filter_company_id) ? 'selected' : '' ?>>
+                                <?= e($c['code'] . ' - ' . $c['name']) ?>
+                            </option>
+                        <?php endforeach; ?>
+                    </select>
+                </div>
+                <div class="col-6 col-md-2">
+                    <select name="status" class="form-select form-select-sm" onchange="this.form.submit()" title="Pilih Status">
                         <option value="">Semua Status</option>
                         <?php foreach (['draft' => 'Draft', 'confirmed' => 'Confirmed', 'paid' => 'Paid', 'assigned' => 'Assigned', 'on_the_way' => 'On The Way', 'completed' => 'Completed', 'cancelled' => 'Cancelled'] as $sk => $sl): ?>
                             <option value="<?= $sk ?>" <?= $status === $sk ? 'selected' : '' ?>><?= $sl ?></option>
                         <?php endforeach; ?>
                     </select>
                 </div>
-                <div class="col-auto d-flex gap-1">
-                    <button type="submit" class="btn btn-sm btn-secondary">Filter</button>
-                    <?php if ($q !== '' || $status !== ''): ?>
-                        <a href="<?= e(APP_URL) ?>/pages/travel/bookings/index.php" class="btn btn-sm btn-outline-danger" title="Reset"><i class="bi bi-x-lg"></i> Reset</a>
+                <div class="col-auto d-flex gap-1 ms-auto">
+                    <button type="submit" class="btn btn-sm btn-primary" title="Terapkan Filter">
+                        <i class="bi bi-funnel-fill me-1"></i>Filter
+                    </button>
+                    <?php if ($has_active_filter): ?>
+                        <a href="<?= e(APP_URL) ?>/pages/travel/bookings/index.php" class="btn btn-sm btn-outline-danger" title="Reset filter">
+                            <i class="bi bi-x-lg"></i>
+                        </a>
                     <?php endif; ?>
                 </div>
             </form>
@@ -125,26 +246,86 @@ require __DIR__ . '/../../../includes/header.php';
     <div class="card shadow-sm border-0">
         <div class="table-responsive">
             <table class="table table-hover mb-0 align-middle">
-                <thead class="table-light"><tr><th class="text-center" style="width: 52px;">No</th><th>Resi</th><th>Tanggal</th><th>Penumpang</th><th class="text-end">Total</th><th>Status</th><th class="text-end">Aksi</th></tr></thead>
+                <thead class="table-light">
+                    <tr>
+                        <th class="text-center" style="width: 48px;">No</th>
+                        <th>Resi</th>
+                        <th>Penumpang</th>
+                        <th class="text-center">Kendaraan</th>
+                        <th class="text-center">Jam</th>
+                        <th>Tanggal</th>
+                        <th>Asal</th>
+                        <th>Tujuan</th>
+                        <th class="text-end">Total Harga</th>
+                        <th class="text-end">Total Pembayaran</th>
+                        <th class="text-center">Status</th>
+                        <th class="text-center" style="width: 100px;">Aksi</th>
+                    </tr>
+                </thead>
                 <tbody>
-                <?php foreach ($rows as $idx => $r): ?>
+                <?php foreach ($rows as $idx => $r):
+                    $plate = trim((string) ($r['vehicle_number'] ?? ''));
+                    $brand_model = trim(implode(' - ', array_filter([$r['brand_name'] ?? '', $r['model_name'] ?? ''])));
+                    $jam = !empty($r['time']) ? substr($r['time'], 0, 5) : '-';
+                    $tgl = !empty($r['date']) ? date('d-M-Y', strtotime($r['date'])) : '-';
+                    $exCnt = $extraCounts[(int) $r['id']] ?? 0;
+                ?>
                     <tr>
                         <td class="text-center text-muted small"><?= number_format($p['offset'] + $idx + 1, 0, ',', '.') ?></td>
-                        <td><a class="fw-semibold text-decoration-none" href="<?= e(APP_URL) ?>/pages/travel/bookings/detail.php?id=<?= (int) $r['id'] ?>"><?= e($r['document_number']) ?></a></td>
-                        <td><?= e($r['date']) ?> <small class="text-muted"><?= e(substr($r['time'], 0, 5)) ?></small></td>
-                        <td><?= e($r['passenger']) ?></td>
-                        <td class="text-end"><?= e(rupiah((float) $r['total_price'])) ?></td>
-                        <td><?= status_badge($r['status']) ?></td>
-                        <td class="text-end">
-                            <a class="btn btn-sm btn-outline-secondary" href="<?= e(APP_URL) ?>/pages/travel/bookings/detail.php?id=<?= (int) $r['id'] ?>">Detail</a>
+                        <td>
+                            <a class="fw-semibold text-decoration-none" href="<?= e(APP_URL) ?>/pages/travel/bookings/detail.php?id=<?= (int) $r['id'] ?>">
+                                <?= e($r['document_number']) ?>
+                            </a>
+                        </td>
+                        <td>
+                            <div class="small fw-semibold text-dark d-flex flex-wrap align-items-center gap-1">
+                                <span><?= e($r['passenger_name']) ?></span>
+                                <?php if ($exCnt > 0): ?>
+                                    <span class="badge bg-info-subtle text-info-emphasis border">+<?= $exCnt ?> tambahan</span>
+                                <?php endif; ?>
+                            </div>
+                            <div class="text-muted" style="font-size: 0.8rem;"><?= e($r['passenger_phone'] ?: '-') ?></div>
+                        </td>
+                        <td class="text-center">
+                            <?php if ($plate !== ''): ?>
+                                <div class="small fw-semibold text-dark text-nowrap"><?= e($plate) ?></div>
+                                <?php if ($brand_model !== ''): ?>
+                                    <div class="text-muted text-nowrap" style="font-size: 0.8rem;"><?= e($brand_model) ?></div>
+                                <?php elseif (!empty($r['category_name'])): ?>
+                                    <div class="text-muted text-nowrap" style="font-size: 0.8rem;"><?= e($r['category_name']) ?></div>
+                                <?php endif; ?>
+                            <?php elseif ($brand_model !== ''): ?>
+                                <div class="small fw-semibold text-dark text-nowrap"><?= e($brand_model) ?></div>
+                                <?php if (!empty($r['category_name'])): ?>
+                                    <div class="text-muted text-nowrap" style="font-size: 0.8rem;"><?= e($r['category_name']) ?></div>
+                                <?php endif; ?>
+                            <?php elseif (!empty($r['category_name'])): ?>
+                                <div class="small text-muted text-nowrap"><?= e($r['category_name']) ?></div>
+                            <?php else: ?>
+                                <span class="text-muted small">-</span>
+                            <?php endif; ?>
+                        </td>
+                        <td class="text-center text-nowrap"><?= e($jam) ?></td>
+                        <td class="text-nowrap small"><?= e($tgl) ?></td>
+                        <td class="small"><?= e($r['pickup_city_name'] ?: '-') ?></td>
+                        <td class="small"><?= e($r['delivery_city_name'] ?: '-') ?></td>
+                        <td class="text-end fw-semibold text-nowrap"><?= e(rupiah((float) $r['total_price'])) ?></td>
+                        <td class="text-end fw-semibold text-nowrap text-success"><?= e(rupiah((float) $r['total_payment'])) ?></td>
+                        <td class="text-center"><?= status_badge($r['status']) ?></td>
+                        <td class="text-center text-nowrap">
+                            <a class="btn btn-sm btn-outline-secondary" href="<?= e(APP_URL) ?>/pages/travel/bookings/detail.php?id=<?= (int) $r['id'] ?>" title="Lihat Detail">
+                                <i class="bi bi-eye"></i>
+                            </a>
                             <?php if (can('travel.manage')): ?>
-                                <a class="btn btn-sm btn-outline-primary" href="<?= e(APP_URL) ?>/pages/travel/bookings/form.php?id=<?= (int) $r['id'] ?>">Ubah</a>
+                                <a class="btn btn-sm btn-outline-primary" href="<?= e(APP_URL) ?>/pages/travel/bookings/form.php?id=<?= (int) $r['id'] ?>" title="Ubah Booking">
+                                    <i class="bi bi-pencil-square"></i>
+                                </a>
                             <?php endif; ?>
                         </td>
                     </tr>
                 <?php endforeach; ?>
                 <?php if (!$rows): ?>
-                    <tr><td colspan="7" class="text-center text-muted py-4">Belum ada booking travel.</td></tr>
+                    <tr><td colspan="12" class="text-center text-muted py-4">Belum ada booking travel yang cocok dengan filter yang dipilih.</td></tr>
                 <?php endif; ?>
                 </tbody>
             </table>
@@ -161,4 +342,19 @@ require __DIR__ . '/../../../includes/header.php';
         </div>
     </div>
 </main>
+<script>
+document.addEventListener('DOMContentLoaded', function () {
+    if (typeof flatpickr !== 'undefined') {
+        document.querySelectorAll('.flatpickr-date').forEach(function (el) {
+            flatpickr(el, {
+                altInput: true,
+                altFormat: 'd-M-Y',
+                dateFormat: 'Y-m-d',
+                altInputClass: el.className,
+                allowInput: false
+            });
+        });
+    }
+});
+</script>
 <?php require __DIR__ . '/../../../includes/footer.php'; ?>
