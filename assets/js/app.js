@@ -308,7 +308,34 @@ window.initTsSelect = function (el, overrides) {
       Object.assign(ts.options[k], initialMeta[k]);
     }
   });
-  el._tsLastVal = String(ts.getValue() || '');
+
+  if (el.multiple && ts.control) {
+    // Gunakan delegasi capture-phase di ts.control agar tombol hapus (.remove) tetap bekerja
+    // meski child DOM di dalam .item diganti ulang (mis. oleh ekstensi 3CX yang membungkus nomor telepon).
+    ts.control.addEventListener('mousedown', function (e) {
+      const rm = e.target && e.target.closest ? e.target.closest('.remove') : null;
+      if (!rm || !ts.control.contains(rm)) return;
+      e.preventDefault();
+      e.stopPropagation();
+    }, true);
+
+    ts.control.addEventListener('click', function (e) {
+      const rm = e.target && e.target.closest ? e.target.closest('.remove') : null;
+      if (!rm || !ts.control.contains(rm)) return;
+      e.preventDefault();
+      e.stopPropagation();
+      if (ts.isLocked || ts.isDisabled) return;
+      const itemEl = rm.closest('[data-ts-item], .item');
+      if (itemEl && ts.shouldDelete([itemEl], e)) {
+        ts.removeItem(itemEl);
+        ts.refreshOptions(false);
+        ts.inputState();
+      }
+    }, true);
+  }
+
+  const initVal = ts.getValue();
+  el._tsLastVal = Array.isArray(initVal) ? initVal.join(',') : String(initVal == null ? '' : initVal);
   return ts;
 };
 
@@ -371,10 +398,16 @@ window.setTsOptions = function (el, items, selectedVal, placeholder) {
 window.bindTsChange = function (el, callback) {
   if (!el || typeof callback !== 'function') return;
   if (!el._tsChangeCallbacks) {
+    const readVal = function () {
+      if (el.tomselect) return el.tomselect.getValue();
+      if (el.multiple) return Array.from(el.selectedOptions || []).map(o => o.value);
+      return el.value;
+    };
+    const toStr = val => (Array.isArray(val) ? val.join(',') : String(val == null ? '' : val));
     el._tsChangeCallbacks = [];
-    el._tsLastVal = el.tomselect ? String(el.tomselect.getValue() || '') : String(el.value || '');
+    el._tsLastVal = toStr(readVal());
     const emit = function (val) {
-      const cur = Array.isArray(val) ? val.join(',') : String(val == null ? '' : val);
+      const cur = toStr(val);
       if (cur === el._tsLastVal) return;
       el._tsLastVal = cur;
       el._tsChangeCallbacks.forEach(fn => {
@@ -382,7 +415,7 @@ window.bindTsChange = function (el, callback) {
       });
     };
     el.addEventListener('change', function () {
-      emit(this.tomselect ? this.tomselect.getValue() : this.value);
+      emit(readVal());
     });
     if (el.tomselect) {
       el.tomselect.on('change', emit);

@@ -2024,6 +2024,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const payCountEl = document.getElementById('payRecordCount');
     const payOverAlert = document.getElementById('payOverpayAlert');
     const payOverMsg   = document.getElementById('payOverpayMsg');
+    const qrisRemainingDisp  = document.getElementById('qrisRemainingDisplay');
     const todayIso     = <?= json_encode(date('Y-m-d')) ?>;
     const qrisTaxPct   = <?= json_encode((float) ($invoice['tax_percent'] ?? 0)) ?>;
     const qrisOrigBookingPrice = <?= json_encode((float) $b['total_price']) ?>;
@@ -2224,7 +2225,6 @@ document.addEventListener('DOMContentLoaded', () => {
     const qrisAmtDisp        = document.getElementById('qrisAmountDisplay');
     const qrisAmtVal         = document.getElementById('qrisAmountValue');
     const btnGenQris         = document.getElementById('btnGenerateQris');
-    const qrisRemainingDisp  = document.getElementById('qrisRemainingDisplay');
     const qrisLiveSyncBadge  = document.getElementById('qrisLiveSyncBadge');
     const qrisNewRowBanner   = document.getElementById('qrisAutoNewRowBanner');
     const qrisNewRowMsg      = document.getElementById('qrisAutoNewRowMsg');

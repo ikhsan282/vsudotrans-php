@@ -199,6 +199,73 @@ try {
 
     $distAjax = $httpGet('/pages/masters/districts/options.php?city_id=' . (int) ($cityGlobal['json'][0]['id'] ?? 3204) . '&limit=50');
     ts_check($distAjax['code'] === 200 && is_array($distAjax['json']) && count($distAjax['json']) >= 1 && !empty($distAjax['json'][0]['city_id']), 'districts/options.php returns districts with city_id metadata');
+
+    // Check delegated multi-select remove_button protection & detail.php qrisRemainingDisp init order
+    $appJsSrc = (string) file_get_contents(__DIR__ . '/../assets/js/app.js');
+    ts_check(
+        str_contains($appJsSrc, "ts.control.addEventListener('click'") && str_contains($appJsSrc, "e.target.closest('.remove')") && str_contains($appJsSrc, 'ts.removeItem(itemEl)'),
+        'assets/js/app.js registers delegated capture-phase click handler for multi-select .remove buttons'
+    );
+    $detailSrc = (string) file_get_contents(__DIR__ . '/../pages/rental/bookings/detail.php');
+    $qrisDeclPos = strpos($detailSrc, 'const qrisRemainingDisp');
+    $recalcCallPos = preg_match('/^\s+recalcPayTotals\(\);\r?$/m', $detailSrc, $mRecalc, PREG_OFFSET_CAPTURE) ? $mRecalc[0][1] : false;
+    ts_check(
+        $qrisDeclPos !== false && $recalcCallPos !== false && $qrisDeclPos < $recalcCallPos,
+        'rental/detail.php declares qrisRemainingDisp before initial recalcPayTotals() call'
+    );
+
+    // Check HTTP POST persistence of Penumpang Tambahan: 3 -> 2 -> 0
+    if (preg_match('/name="csrf_token"\s+value="([^"]+)"/', $rd['body'], $csrfM)) {
+        $csrfTok = $csrfM[1];
+        $extra3 = array_slice($createdPaxIds, 0, 3);
+        $extra2 = [$extra3[0], $extra3[2]];
+        $httpPostDetail = static function (array $extraIds) use ($base, $jar, $tempBookingId, $branchId, $distRow, $catId, $lastVehId, $lastPaxId, $csrfTok): void {
+            $postFields = [
+                'csrf_token'                 => $csrfTok,
+                'id'                         => (string) $tempBookingId,
+                'act'                        => 'update_detail',
+                'branch_id'                  => (string) $branchId,
+                'start_date'                 => date('Y-m-d'),
+                'end_date'                   => date('Y-m-d'),
+                'time'                       => '09:00',
+                'passenger_id'               => (string) $lastPaxId,
+                'category_vehicle_id'        => (string) $catId,
+                'vehicle_id'                 => (string) $lastVehId,
+                'total_price'                => '500000',
+                'trip'                       => '1',
+                'bbm'                        => '0',
+                'pickup_point_province_id'   => (string) $distRow['province_id'],
+                'pickup_point_city_id'       => (string) $distRow['city_id'],
+                'pickup_point_district_id'   => (string) $distRow['id'],
+                'delivery_point_province_id' => (string) $distRow['province_id'],
+                'delivery_point_city_id'     => (string) $distRow['city_id'],
+                'delivery_point_district_id' => (string) $distRow['id'],
+            ];
+            $parts = [http_build_query($postFields)];
+            foreach ($extraIds as $eid) {
+                $parts[] = 'passenger_ids%5B%5D=' . rawurlencode((string) $eid);
+            }
+            $tmpBody = tempnam(sys_get_temp_dir(), 'ts_post_');
+            file_put_contents($tmpBody, implode('&', $parts));
+            shell_exec('curl.exe -s -L -b ' . escapeshellarg($jar) . ' --data-binary ' . escapeshellarg('@' . $tmpBody) . ' ' . escapeshellarg($base . '/pages/rental/bookings/detail.php?id=' . $tempBookingId));
+            @unlink($tmpBody);
+        };
+
+        $httpPostDetail($extra3);
+        $bp3 = booking_passengers_list('rental', $tempBookingId, $lastPaxId);
+        ts_check(count($bp3) === 4, 'HTTP update saves 1 primary + 3 extra passengers (got ' . count($bp3) . ')');
+
+        $httpPostDetail($extra2);
+        $bp2 = booking_passengers_list('rental', $tempBookingId, $lastPaxId);
+        $bp2Ids = array_map(static fn($r) => (int) $r['passenger_id'], $bp2);
+        ts_check(count($bp2) === 3 && !in_array((int) $extra3[1], $bp2Ids, true), 'HTTP update removes 1 of 3 extra passengers -> 2 extra remain');
+
+        $httpPostDetail([]);
+        $bp0 = booking_passengers_list('rental', $tempBookingId, $lastPaxId);
+        ts_check(count($bp0) === 1 && (int) $bp0[0]['passenger_id'] === (int) $lastPaxId, 'HTTP update clears all extra passengers -> only primary remains');
+    } else {
+        ts_check(false, 'CSRF token found in rental/detail.php for HTTP passenger update check');
+    }
 } finally {
     if ($tempBookingId > 0) {
         try { booking_delete('rental', $tempBookingId, 1); } catch (Throwable $ex) {}
