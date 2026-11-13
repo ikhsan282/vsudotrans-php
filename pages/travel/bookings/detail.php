@@ -165,56 +165,20 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 throw new InvalidArgumentException('Cabang, pelanggan utama, serta kecamatan penjemputan & pengantaran wajib dipilih.');
             }
 
-            $db = db();
-            $stBrChk = $db->prepare('SELECT 1 FROM branches WHERE id = ? AND company_id = ? LIMIT 1');
-            $stBrChk->bind_param('ii', $branch_id, $booking_cid);
-            $stBrChk->execute();
-            $okBr = (bool) $stBrChk->get_result()->fetch_row();
-            $stBrChk->close();
-            if (!$okBr) {
-                throw new InvalidArgumentException('Cabang tidak valid untuk perusahaan booking ini.');
-            }
-
-            $stPaxChk = $db->prepare('SELECT 1 FROM passengers WHERE id = ? AND company_id = ? LIMIT 1');
-            $stPaxChk->bind_param('ii', $passenger_id, $booking_cid);
-            $stPaxChk->execute();
-            $okPax = (bool) $stPaxChk->get_result()->fetch_row();
-            $stPaxChk->close();
-            if (!$okPax) {
-                throw new InvalidArgumentException('Pelanggan utama tidak valid untuk perusahaan booking ini.');
-            }
-
-            $userCompanyIds = accessible_company_ids($booking_cid);
-            if ($veh_id !== null && $veh_id > 0) {
-                $compIn = implode(',', array_map('intval', $userCompanyIds));
-                $stVehChk = $db->prepare("SELECT category_vehicle_id FROM vehicles WHERE id = ? AND company_id IN ({$compIn}) LIMIT 1");
-                $stVehChk->bind_param('i', $veh_id);
-                $stVehChk->execute();
-                $vehRowChk = $stVehChk->get_result()->fetch_assoc();
-                $stVehChk->close();
-                if (!$vehRowChk) {
-                    throw new InvalidArgumentException('Kendaraan tidak valid atau di luar akses perusahaan.');
-                }
-                if (($cat_id === null || $cat_id <= 0) && !empty($vehRowChk['category_vehicle_id'])) {
-                    $cat_id = (int) $vehRowChk['category_vehicle_id'];
-                }
-            }
-
-            $extra_pids_raw = array_values(array_unique(array_filter(
+            $extra_pids = array_values(array_unique(array_filter(
                 array_map('intval', (array) ($_POST['passenger_ids'] ?? [])),
                 static fn($v) => $v > 0 && $v !== $passenger_id
             )));
-            $extra_pids = [];
-            if ($extra_pids_raw) {
-                $phExtra = implode(',', array_fill(0, count($extra_pids_raw), '?'));
-                $stExChk = $db->prepare("SELECT id FROM passengers WHERE company_id = ? AND id IN ({$phExtra})");
-                $stExChk->bind_param('i' . str_repeat('i', count($extra_pids_raw)), $booking_cid, ...$extra_pids_raw);
-                $stExChk->execute();
-                foreach ($stExChk->get_result()->fetch_all(MYSQLI_ASSOC) as $er) {
-                    $extra_pids[] = (int) $er['id'];
-                }
-                $stExChk->close();
-            }
+
+            validate_booking_company_scope(
+                $booking_cid,
+                $branch_id,
+                $passenger_id,
+                $extra_pids,
+                $cat_id,
+                $veh_id
+            );
+            $db = db();
 
             if ($p_info = resolve_district_info($p_dist)) {
                 $p_city = $p_info['city_id'];
@@ -347,14 +311,13 @@ $selected_p_ids = array_values(array_unique(array_filter(array_merge([(int) ($b[
 $branches   = opts_branches($booking_cid);
 $passengers = opts_passengers($booking_cid, $selected_p_ids, 50);
 
-$userCompanyIds = accessible_company_ids($booking_cid);
 $cur_veh_id     = (int) ($b['vehicle_id'] ?? 0);
 $cur_cat_id_raw = (int) ($b['category_vehicle_id'] ?? 0);
 
 $cats           = opts_categories($booking_cid, $cur_cat_id_raw > 0 ? [$cur_cat_id_raw] : [], 200);
 $detailVehicles = opts_vehicles_detailed(
     $booking_cid,
-    $userCompanyIds,
+    [$booking_cid],
     $cur_veh_id > 0 ? $cur_veh_id : null,
     $cur_cat_id_raw > 0 ? $cur_cat_id_raw : null,
     50
@@ -2127,6 +2090,7 @@ document.addEventListener('DOMContentLoaded', function () {
             try {
                 const fd = new FormData();
                 fd.append('csrf_token', csrfTok);
+                fd.append('company_id', String(bookingCid));
                 fd.append('name', (document.getElementById('qpName')?.value || '').trim());
                 fd.append('phone_number', (document.getElementById('qpPhone')?.value || '').trim());
                 fd.append('email', (document.getElementById('qpEmail')?.value || '').trim());

@@ -433,6 +433,17 @@ function booking_assign_driver(string $type, int $booking_id, int $company_id, i
         throw new RuntimeException('Driver harus karyawan aktif perusahaan ini.');
     }
 
+    if ($vehicle_id !== null && $vehicle_id > 0) {
+        $stVeh = $db->prepare('SELECT 1 FROM vehicles WHERE id = ? AND company_id = ? LIMIT 1');
+        $stVeh->bind_param('ii', $vehicle_id, $company_id);
+        $stVeh->execute();
+        $okVeh = $stVeh->get_result()->num_rows > 0;
+        $stVeh->close();
+        if (!$okVeh) {
+            throw new RuntimeException('Kendaraan harus milik perusahaan ini.');
+        }
+    }
+
     $db->begin_transaction();
     try {
         $st = $db->prepare('UPDATE trip_assignments SET ended_at = NOW(), modified_user = ?, modified_date = NOW()

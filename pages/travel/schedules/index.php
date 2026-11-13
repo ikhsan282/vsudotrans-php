@@ -3,7 +3,13 @@ require_once __DIR__ . '/../../../config/config.php';
 require_permission('travel.view');
 require_once __DIR__ . '/../_helpers.php';
 
-[$where, $types, $params] = company_scope('s.company_id');
+$scope = company_filter_scope('s.company_id');
+$filter_company_id = $scope['filter_company_id'];
+$where             = $scope['where'];
+$types             = $scope['types'];
+$params            = $scope['params'];
+$companies         = $scope['companies'];
+$active_cid        = $scope['active_cid'];
 
 $st = db()->prepare("SELECT COUNT(*) FROM schedules s WHERE {$where}");
 if ($types !== '') {
@@ -57,6 +63,10 @@ if (can('travel.manage') && active_company_id() !== null) {
     $header_actions[] = ['label' => 'Tambah', 'icon' => 'plus-lg', 'href' => 'pages/travel/schedules/form.php', 'class' => 'btn btn-primary btn-sm'];
 }
 
+$has_explicit_company = isset($_GET['company_id']);
+$query_base = $has_explicit_company ? http_build_query(['company_id' => $filter_company_id]) : '';
+$has_active_filter = ($has_explicit_company && $filter_company_id !== ($active_cid ?? 0));
+
 $active = 'travel';
 $title  = 'Jadwal';
 require __DIR__ . '/../../../includes/header.php';
@@ -68,6 +78,22 @@ require __DIR__ . '/../../../includes/header.php';
         [['text' => number_format($total, 0, ',', '.') . ' Jadwal', 'class' => 'bg-light text-secondary border']],
         $header_actions
     ) ?>
+    <div class="card shadow-sm border-0 mb-3">
+        <div class="card-body py-2 px-3">
+            <form method="get" class="row g-2 align-items-center">
+                <div class="col-6 col-md-3">
+                    <select name="company_id" class="form-select form-select-sm" onchange="this.form.submit()" title="Pilih Perusahaan">
+                        <?= ui_company_filter_options($companies, $filter_company_id, $has_explicit_company) ?>
+                    </select>
+                </div>
+                <?php if ($has_active_filter): ?>
+                    <div class="col-auto d-flex gap-1">
+                        <a href="<?= e(APP_URL) ?>/pages/travel/schedules/index.php" class="btn btn-sm btn-outline-danger" title="Reset"><i class="bi bi-x-lg"></i> Reset</a>
+                    </div>
+                <?php endif; ?>
+            </form>
+        </div>
+    </div>
     <div class="card shadow-sm border-0">
         <div class="table-responsive">
             <table class="table table-hover mb-0 align-middle">
@@ -107,7 +133,7 @@ require __DIR__ . '/../../../includes/header.php';
                     Total <strong>0</strong> data
                 <?php endif; ?>
             </div>
-            <?= pagination_html($p, '') ?>
+            <?= pagination_html($p, $query_base) ?>
         </div>
     </div>
 </main>

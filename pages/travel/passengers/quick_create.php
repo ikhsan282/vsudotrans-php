@@ -4,6 +4,7 @@
  * POST: name, phone_number, email (opsional), csrf_token
  */
 require_once __DIR__ . '/../../../config/config.php';
+require_once __DIR__ . '/../_helpers.php';
 header('Content-Type: application/json; charset=utf-8');
 
 if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
@@ -18,8 +19,15 @@ if (!can('travel.manage') && !can('rental.manage')) {
     exit;
 }
 
-$cid = active_company_id();
-if ($cid === null) {
+$activeCid = (int) (active_company_id() ?? 0);
+$reqCid    = (int) ($_POST['company_id'] ?? $activeCid);
+$allowed   = accessible_company_ids($activeCid);
+
+if ($reqCid > 0 && (is_super_admin() || in_array($reqCid, $allowed, true))) {
+    $cid = $reqCid;
+} elseif ($activeCid > 0) {
+    $cid = $activeCid;
+} else {
     http_response_code(400);
     echo json_encode(['ok' => false, 'error' => 'Perusahaan aktif belum dipilih.']);
     exit;

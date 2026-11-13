@@ -22,6 +22,7 @@ if ($id > 0) {
         redirect('pages/travel/rutes/index.php');
     }
     assert_company_access((int) $found['company_id']);
+    $cid = (int) $found['company_id'];
     $row = $found;
 }
 
@@ -48,6 +49,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $err = 'Nama wajib diisi (maks 255 karakter).';
     } elseif ($in['pickup'] <= 0 || $in['delivery'] <= 0 || $in['category'] <= 0) {
         $err = 'Kota asal, tujuan, dan kategori kendaraan wajib dipilih.';
+    } elseif (!fetch_company_ref_row('category_vehicles', $in['category'], $cid)) {
+        $err = 'Kategori kendaraan tidak valid atau bukan milik perusahaan yang dipilih.';
     } elseif ($in['price'] < 0 || $in['min'] < 0 || $in['max'] < 0 || $in['seat_s'] < 0 || $in['seat_e'] < 0) {
         $err = 'Harga dan kapasitas tidak boleh negatif.';
     }
@@ -98,7 +101,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 }
 
 $cities = opts_cities(null, array_filter([(int) $row['pickup_point_city_id'], (int) $row['delivery_point_city_id']]), 50);
-$cats   = opts_categories($cid);
+$cats   = opts_categories($cid, array_filter([(int) $row['category_vehicle_id']]));
 $active = 'travel';
 $title  = $id > 0 ? 'Ubah Rute' : 'Tambah Rute';
 require __DIR__ . '/../../../includes/header.php';

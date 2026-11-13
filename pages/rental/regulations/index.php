@@ -115,9 +115,30 @@ if ($rows) {
     }
 }
 
-$categories = $filter_company_id > 0
-    ? opts_categories($filter_company_id)
-    : db()->query("SELECT cv.id, CONCAT(c.code, ' | ', cv.code, ' - ', cv.name) AS label FROM category_vehicles cv LEFT JOIN companies c ON c.id = cv.company_id ORDER BY c.code, cv.code, cv.name")->fetch_all(MYSQLI_ASSOC);
+$categories = [];
+if ($filter_company_id > 0) {
+    $categories = array_map(
+        static fn(array $cv): array => ['id' => (int) $cv['id'], 'label' => (string) ($cv['label'] ?? $cv['name'] ?? '')],
+        opts_categories($filter_company_id, $filter_category_id > 0 ? [$filter_category_id] : [], 200)
+    );
+} else {
+    $allowedCids = accessible_company_ids($active_cid ?? 0);
+    if ($allowedCids) {
+        $ph = implode(',', array_fill(0, count($allowedCids), '?'));
+        $stCat = db()->prepare(
+            "SELECT cv.id, CONCAT(c.code, ' | ', cv.code, ' - ', cv.name) AS label
+               FROM category_vehicles cv
+               LEFT JOIN companies c ON c.id = cv.company_id
+              WHERE cv.company_id IN ({$ph})
+                AND (cv.is_active = 1 OR cv.id = ?)
+              ORDER BY c.code, cv.code, cv.name"
+        );
+        $stCat->bind_param(str_repeat('i', count($allowedCids)) . 'i', ...[...$allowedCids, $filter_category_id]);
+        $stCat->execute();
+        $categories = $stCat->get_result()->fetch_all(MYSQLI_ASSOC);
+        $stCat->close();
+    }
+}
 
 $header_actions = [
     ['label' => 'Pemesanan Sewa Kendaraan', 'icon' => 'car-front', 'href' => 'pages/rental/bookings/index.php', 'class' => 'btn btn-outline-secondary btn-sm'],
@@ -163,15 +184,8 @@ require __DIR__ . '/../../../includes/header.php';
                     </div>
                 </div>
                 <div class="col-6 col-md-3">
-                    <select name="company_id" class="form-select form-select-sm" onchange="this.form.submit()" title="Pilih Perusahaan">
-                        <?php if (is_super_admin()): ?>
-                            <option value="0" <?= ($filter_company_id === 0 && isset($_GET['company_id'])) ? 'selected' : '' ?>>Semua Perusahaan</option>
-                        <?php endif; ?>
-                        <?php foreach ($companies as $c): ?>
-                            <option value="<?= (int) $c['id'] ?>" <?= ((int) $c['id'] === $filter_company_id) ? 'selected' : '' ?>>
-                                <?= e($c['code'] . ' - ' . $c['name']) ?>
-                            </option>
-                        <?php endforeach; ?>
+                    <select name="company_id" class="form-select form-select-sm" onchange="var f=this.form,c=f.querySelector('[name=category_vehicle_id]');if(c)c.value='0';f.submit()" title="Pilih Perusahaan">
+                        <?= ui_company_filter_options($companies, $filter_company_id, isset($_GET['company_id'])) ?>
                     </select>
                 </div>
                 <div class="col-6 col-md-3">

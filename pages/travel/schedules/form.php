@@ -18,6 +18,7 @@ if ($id > 0) {
         redirect('pages/travel/schedules/index.php');
     }
     assert_company_access((int) $found['company_id']);
+    $cid = (int) $found['company_id'];
     $row = ['start' => substr($found['start'], 0, 5), 'end' => substr($found['end'], 0, 5),
         'start_break' => substr((string) $found['start_break'], 0, 5), 'end_break' => substr((string) $found['end_break'], 0, 5)];
 }

@@ -21,6 +21,13 @@ try {
 
     if ($regId > 0) {
         $reg = regulation_find($regId);
+        if ($reg) {
+            assert_company_access((int) $reg['company_id']);
+            if ($companyId > 0 && (int) $reg['company_id'] !== $companyId) {
+                echo json_encode(['ok' => false, 'error' => 'Peraturan komisi tidak sesuai dengan perusahaan booking ini.']);
+                exit;
+            }
+        }
     } else {
         if ($companyId <= 0) {
             echo json_encode(['ok' => false, 'error' => 'Perusahaan belum dipilih.']);

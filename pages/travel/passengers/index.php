@@ -6,7 +6,13 @@ if (!can('travel.view') && !can('rental.view')) {
 $can_manage = can('travel.manage') || can('rental.manage');
 require_once __DIR__ . '/../_helpers.php';
 
-[$where, $types, $params] = company_scope('p.company_id');
+$scope = company_filter_scope('p.company_id');
+$filter_company_id = $scope['filter_company_id'];
+$where             = $scope['where'];
+$types             = $scope['types'];
+$params            = $scope['params'];
+$companies         = $scope['companies'];
+$active_cid        = $scope['active_cid'];
 
 $q = trim((string) ($_GET['q'] ?? ''));
 if ($q !== '') {
@@ -71,7 +77,12 @@ if ($can_manage && active_company_id() !== null) {
     $header_actions[] = ['label' => 'Tambah', 'icon' => 'plus-lg', 'href' => 'pages/travel/passengers/form.php', 'class' => 'btn btn-primary btn-sm'];
 }
 
-$query_base = http_build_query(array_filter(['q' => $q]));
+$has_explicit_company = isset($_GET['company_id']);
+$query_base = http_build_query(array_filter(
+    ['q' => $q, 'company_id' => $has_explicit_company ? (string) $filter_company_id : null],
+    static fn($v) => $v !== null && $v !== ''
+));
+$has_active_filter = ($q !== '' || ($has_explicit_company && $filter_company_id !== ($active_cid ?? 0)));
 
 $active = 'passengers';
 $title  = 'Penumpang';
@@ -93,9 +104,14 @@ require __DIR__ . '/../../../includes/header.php';
                         <input type="text" name="q" class="form-control" placeholder="Cari nama, kode, telepon..." value="<?= e($q) ?>">
                     </div>
                 </div>
+                <div class="col-6 col-md-3">
+                    <select name="company_id" class="form-select form-select-sm" onchange="this.form.submit()" title="Pilih Perusahaan">
+                        <?= ui_company_filter_options($companies, $filter_company_id, $has_explicit_company) ?>
+                    </select>
+                </div>
                 <div class="col-auto d-flex gap-1">
                     <button type="submit" class="btn btn-sm btn-secondary">Filter</button>
-                    <?php if ($q !== ''): ?>
+                    <?php if ($has_active_filter): ?>
                         <a href="<?= e(APP_URL) ?>/pages/travel/passengers/index.php" class="btn btn-sm btn-outline-danger" title="Reset"><i class="bi bi-x-lg"></i> Reset</a>
                     <?php endif; ?>
                 </div>

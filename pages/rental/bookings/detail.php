@@ -39,16 +39,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $passenger_id = (int) ($_POST['passenger_id'] ?? $b['passenger_id']);
             $cat_id       = (int) ($_POST['category_vehicle_id'] ?? 0) ?: null;
             $veh_id       = (int) ($_POST['vehicle_id'] ?? 0) ?: null;
-            if ($veh_id !== null && $veh_id > 0 && ($cat_id === null || $cat_id <= 0)) {
-                $stVehCat = db()->prepare("SELECT category_vehicle_id FROM vehicles WHERE id = ?");
-                $stVehCat->bind_param('i', $veh_id);
-                $stVehCat->execute();
-                $catRow = $stVehCat->get_result()->fetch_assoc();
-                $stVehCat->close();
-                if (!empty($catRow['category_vehicle_id'])) {
-                    $cat_id = (int) $catRow['category_vehicle_id'];
-                }
-            }
             $total_price  = parse_rupiah_input($_POST['total_price'] ?? $b['total_price']);
             $trip         = (float) ($_POST['trip'] ?? $b['trip']);
             $bbm          = parse_rupiah_input($_POST['bbm'] ?? $b['bbm']);
@@ -108,6 +98,20 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             if ($branch_id <= 0 || $passenger_id <= 0 || $p_dist <= 0 || $d_dist <= 0) {
                 throw new InvalidArgumentException('Cabang, pelanggan, serta kecamatan penjemputan & pengantaran wajib dipilih.');
             }
+
+            $extra_pids = array_values(array_unique(array_filter(
+                array_map('intval', (array) ($_POST['passenger_ids'] ?? [])),
+                static fn($v) => $v > 0 && $v !== $passenger_id
+            )));
+            validate_booking_company_scope(
+                $booking_cid,
+                $branch_id,
+                $passenger_id,
+                $extra_pids,
+                $cat_id,
+                $veh_id,
+                array_column($in_crew, 'employee_id')
+            );
 
             // Cek bentrok armada (kecualikan booking ini sendiri: b.id != $id)
             if ($veh_id !== null && $veh_id > 0) {
@@ -185,11 +189,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     }
                 }
 
-                // Sinkronkan penumpang utama
-                $extra_pids = array_values(array_unique(array_filter(
-                    array_map('intval', (array) ($_POST['passenger_ids'] ?? [])),
-                    static fn($v) => $v > 0 && $v !== $passenger_id
-                )));
+                // Sinkronkan penumpang utama & tambahan (sudah tervalidasi milik $booking_cid)
                 booking_passengers_set('rental', $id, $booking_cid, array_merge([$passenger_id], $extra_pids), $passenger_id, $user);
 
                 // Sinkronkan rincian kru/premi (Sopir, Kernet, Montir, Agen) + BBM + Total Biaya Operasional
@@ -230,11 +230,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             flash('success', 'Data pemesanan sewa kendaraan berhasil disimpan.');
         } elseif ($act === 'status') {
             $to = (string) ($_POST['to_status'] ?? '');
-            booking_change_status('rental', $id, $cid, $to, $note === '' ? 'Ubah status' : $note, $user);
+            booking_change_status('rental', $id, $booking_cid, $to, $note === '' ? 'Ubah status' : $note, $user);
             audit('booking.rental.status', "Booking #{$id} -> {$to}");
             flash('success', 'Status pemesanan diperbarui.');
         } elseif ($act === 'cancel') {
-            booking_change_status('rental', $id, $cid, 'cancelled', $note === '' ? null : $note, $user);
+            booking_change_status('rental', $id, $booking_cid, 'cancelled', $note === '' ? null : $note, $user);
             audit('booking.rental.cancel', "Booking #{$id}");
             flash('success', 'Pemesanan sewa kendaraan dibatalkan.');
         } elseif ($act === 'reschedule') {
@@ -243,17 +243,17 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             if (!preg_match('/^\d{4}-\d{2}-\d{2}$/', $date) || !preg_match('/^([01]\d|2[0-3]):[0-5]\d$/', $time)) {
                 throw new InvalidArgumentException('Tanggal/jam reschedule tidak valid.');
             }
-            booking_reschedule('rental', $id, $cid, $date, $time . ':00', $note === '' ? 'Reschedule' : $note, $user);
+            booking_reschedule('rental', $id, $booking_cid, $date, $time . ':00', $note === '' ? 'Reschedule' : $note, $user);
             audit('booking.rental.reschedule', "Booking #{$id} -> {$date} {$time}");
             flash('success', 'Pemesanan sewa kendaraan dijadwalkan ulang.');
         } elseif ($act === 'driver') {
             $emp = (int) ($_POST['employee_id'] ?? 0);
             $veh = (int) ($_POST['vehicle_id'] ?? 0);
-            booking_assign_driver('rental', $id, $cid, $emp, $veh > 0 ? $veh : null, $user);
+            booking_assign_driver('rental', $id, $booking_cid, $emp, $veh > 0 ? $veh : null, $user);
             audit('booking.rental.driver', "Booking #{$id} driver #{$emp}");
             flash('success', 'Driver berhasil ditugaskan.');
         } elseif ($act === 'delete') {
-            $doc_no = booking_delete('rental', $id, $cid);
+            $doc_no = booking_delete('rental', $id, $booking_cid);
             audit('booking.rental.delete', "Hapus booking {$doc_no} (#{$id})");
             flash('success', "Pemesanan sewa kendaraan {$doc_no} berhasil dihapus.");
             redirect('pages/rental/bookings/index.php');
@@ -346,7 +346,6 @@ $branches   = opts_branches((int) $b['company_id']);
 $selected_p_ids = array_filter(array_merge([(int) ($b['passenger_id'] ?? 0)], $extra_passenger_ids));
 $passengers = opts_passengers((int) $b['company_id'], $selected_p_ids, 50);
 
-$userCompanyIds = accessible_company_ids((int) $b['company_id']);
 $cur_veh_id = (int) ($b['vehicle_id'] ?? 0);
 $cur_cat_id_raw = (int) ($b['category_vehicle_id'] ?? 0);
 
@@ -354,7 +353,7 @@ $cur_cat_id_raw = (int) ($b['category_vehicle_id'] ?? 0);
 $cats = opts_categories((int) $b['company_id'], $cur_cat_id_raw > 0 ? [$cur_cat_id_raw] : [], 200);
 $vehicles = opts_vehicles_detailed(
     (int) $b['company_id'],
-    $userCompanyIds,
+    [(int) $b['company_id']],
     $cur_veh_id > 0 ? $cur_veh_id : null,
     $cur_cat_id_raw > 0 ? $cur_cat_id_raw : null,
     50
@@ -1791,6 +1790,7 @@ document.addEventListener('DOMContentLoaded', () => {
             try {
                 const fd = new FormData();
                 fd.append('csrf_token', csrfTok);
+                fd.append('company_id', '<?= (int) $booking_cid ?>');
                 fd.append('name', document.getElementById('qpName').value.trim());
                 fd.append('phone_number', document.getElementById('qpPhone').value.trim());
 

@@ -157,10 +157,10 @@ function opts_categories(int $company_id, array $include_ids = [], int $limit = 
     $rows = $st->get_result()->fetch_all(MYSQLI_ASSOC);
     $st->close();
 
-    return _merge_included_rows($rows, $include_ids, static function (array $ids): array {
+    return _merge_included_rows($rows, $include_ids, static function (array $ids) use ($company_id): array {
         $ph = implode(',', array_fill(0, count($ids), '?'));
-        $st2 = db()->prepare("SELECT id, CONCAT(code, ' - ', name) AS name, company_id FROM category_vehicles WHERE id IN ({$ph}) ORDER BY code, name");
-        $st2->bind_param(str_repeat('i', count($ids)), ...$ids);
+        $st2 = db()->prepare("SELECT id, CONCAT(code, ' - ', name) AS name, company_id FROM category_vehicles WHERE company_id = ? AND id IN ({$ph}) ORDER BY code, name");
+        $st2->bind_param('i' . str_repeat('i', count($ids)), $company_id, ...$ids);
         $st2->execute();
         $out = $st2->get_result()->fetch_all(MYSQLI_ASSOC);
         $st2->close();
@@ -184,16 +184,16 @@ function opts_vehicles(int $company_id, array $include_ids = [], int $limit = 50
     $rows = $st->get_result()->fetch_all(MYSQLI_ASSOC);
     $st->close();
 
-    return _merge_included_rows($rows, $include_ids, static function (array $ids): array {
+    return _merge_included_rows($rows, $include_ids, static function (array $ids) use ($company_id): array {
         $ph = implode(',', array_fill(0, count($ids), '?'));
         $st2 = db()->prepare("SELECT v.id, v.category_vehicle_id,
                 CONCAT_WS(' - ', bv.name, mu.name, v.vehicle_number, v.vehicle_color, v.seat) AS name
             FROM vehicles v
             LEFT JOIN brand_vehicles bv ON bv.id = v.brand_id
             LEFT JOIN model_units mu ON mu.id = v.model_unit_id
-            WHERE v.id IN ({$ph})
+            WHERE v.company_id = ? AND v.id IN ({$ph})
             ORDER BY v.vehicle_number ASC");
-        $st2->bind_param(str_repeat('i', count($ids)), ...$ids);
+        $st2->bind_param('i' . str_repeat('i', count($ids)), $company_id, ...$ids);
         $st2->execute();
         $out = $st2->get_result()->fetch_all(MYSQLI_ASSOC);
         $st2->close();
@@ -241,7 +241,7 @@ function opts_vehicles_detailed(int $active_cid, array $company_ids, ?int $selec
     $st->close();
 
     $inc = ($selected_id !== null && $selected_id > 0) ? [$selected_id] : [];
-    return _merge_included_rows($rows, $inc, static function (array $ids) use ($active_cid): array {
+    return _merge_included_rows($rows, $inc, static function (array $ids) use ($active_cid, $compIn): array {
         $ph = implode(',', array_fill(0, count($ids), '?'));
         $st2 = db()->prepare(
             "SELECT v.id, v.company_id, v.category_vehicle_id, v.vehicle_number, v.vehicle_color, v.seat,
@@ -254,7 +254,7 @@ function opts_vehicles_detailed(int $active_cid, array $company_ids, ?int $selec
                LEFT JOIN model_units mu ON mu.id = v.model_unit_id
                LEFT JOIN category_vehicles cv ON cv.id = v.category_vehicle_id
                LEFT JOIN companies c ON c.id = v.company_id
-              WHERE v.id IN ({$ph})"
+              WHERE v.company_id IN ({$compIn}) AND v.id IN ({$ph})"
         );
         $st2->bind_param('i' . str_repeat('i', count($ids)), $active_cid, ...$ids);
         $st2->execute();
@@ -512,4 +512,147 @@ function booking_extra_passengers_export_sql(string $booking_type): string
             FROM booking_passengers bp
             JOIN passengers px ON px.id = bp.passenger_id
             WHERE bp.booking_type = '{$bt}' AND bp.booking_id = b.id AND bp.is_primary = 0)";
+}
+
+/**
+ * Resolusi filter CompanyId seragam untuk halaman daftar Travel & Rental.
+ * Default mengikuti perusahaan aktif dari switcher header; hanya Super Admin yang memilih
+ * company_id=0 secara eksplisit dapat melihat lintas perusahaan.
+ *
+ * @return array{filter_company_id:int, where:string, types:string, params:array<int,mixed>, companies:array<int,array<string,mixed>>, active_cid:?int}
+ */
+function company_filter_scope(string $column, ?array $query = null): array
+{
+    $src        = $query ?? $_GET;
+    $companies  = accessible_companies();
+    $active_cid = active_company_id();
+
+    if (isset($src['company_id'])) {
+        $filter_company_id = $src['company_id'] !== '' ? (int) $src['company_id'] : 0;
+    } else {
+        $filter_company_id = $active_cid ?? 0;
+    }
+
+    if ($filter_company_id > 0) {
+        $allowed = is_super_admin() || in_array($filter_company_id, array_map('intval', array_column($companies, 'id')), true);
+        if ($allowed) {
+            $where  = "{$column} = ?";
+            $types  = 'i';
+            $params = [$filter_company_id];
+        } else {
+            [$where, $types, $params] = company_scope($column);
+            $filter_company_id = $active_cid ?? 0;
+        }
+    } elseif ($filter_company_id === 0 && is_super_admin()) {
+        $where  = '1=1';
+        $types  = '';
+        $params = [];
+    } else {
+        [$where, $types, $params] = company_scope($column);
+        $filter_company_id = $active_cid ?? 0;
+    }
+
+    return [
+        'filter_company_id' => $filter_company_id,
+        'where'             => $where,
+        'types'             => $types,
+        'params'            => $params,
+        'companies'         => $companies,
+        'active_cid'        => $active_cid,
+    ];
+}
+
+/** Ambil satu baris entitas referensi bila benar-benar milik $company_id (whitelist tabel). */
+function fetch_company_ref_row(string $table, int $id, int $company_id): ?array
+{
+    $colsMap = [
+        'branches'          => 'id',
+        'passengers'        => 'id',
+        'category_vehicles' => 'id',
+        'vehicles'          => 'id, category_vehicle_id',
+        'employees'         => 'id, status',
+    ];
+    if ($id <= 0 || $company_id <= 0 || !isset($colsMap[$table])) {
+        return null;
+    }
+    $st = db()->prepare("SELECT {$colsMap[$table]} FROM {$table} WHERE id = ? AND company_id = ? LIMIT 1");
+    $st->bind_param('ii', $id, $company_id);
+    $st->execute();
+    $row = $st->get_result()->fetch_assoc();
+    $st->close();
+    return $row ?: null;
+}
+
+/** Pastikan seluruh ID (non-kosong) pada array benar-benar milik $company_id. */
+function verify_company_ids_belong(string $table, array $ids, int $company_id): bool
+{
+    if (!in_array($table, ['passengers', 'employees'], true)) {
+        return false;
+    }
+    $clean = array_values(array_unique(array_filter(array_map('intval', $ids), static fn($v) => $v > 0)));
+    if (!$clean) {
+        return true;
+    }
+    if ($company_id <= 0) {
+        return false;
+    }
+    $ph = implode(',', array_fill(0, count($clean), '?'));
+    $st = db()->prepare("SELECT COUNT(DISTINCT id) FROM {$table} WHERE company_id = ? AND id IN ({$ph})");
+    $st->bind_param('i' . str_repeat('i', count($clean)), $company_id, ...$clean);
+    $st->execute();
+    $cnt = (int) $st->get_result()->fetch_row()[0];
+    $st->close();
+    return $cnt === count($clean);
+}
+
+/** Validasi seragam kepemilikan referensi booking (cabang, pelanggan, kategori, kendaraan, kru) terhadap $company_id. */
+function validate_booking_company_scope(
+    int $company_id,
+    int $branch_id,
+    int $passenger_id,
+    array $extra_passenger_ids,
+    ?int &$category_vehicle_id,
+    ?int $vehicle_id,
+    array $crew_employee_ids = []
+): void {
+    if (!fetch_company_ref_row('branches', $branch_id, $company_id)) {
+        throw new InvalidArgumentException('Cabang tidak valid untuk perusahaan ini.');
+    }
+    if (!fetch_company_ref_row('passengers', $passenger_id, $company_id)) {
+        throw new InvalidArgumentException('Pelanggan utama tidak valid untuk perusahaan ini.');
+    }
+    if (!verify_company_ids_belong('passengers', $extra_passenger_ids, $company_id)) {
+        throw new InvalidArgumentException('Penumpang tambahan tidak valid untuk perusahaan ini.');
+    }
+    if ($category_vehicle_id !== null && $category_vehicle_id > 0 && !fetch_company_ref_row('category_vehicles', $category_vehicle_id, $company_id)) {
+        throw new InvalidArgumentException('Kategori kendaraan tidak valid untuk perusahaan ini.');
+    }
+    if ($vehicle_id !== null && $vehicle_id > 0) {
+        $vehRow = fetch_company_ref_row('vehicles', $vehicle_id, $company_id);
+        if (!$vehRow) {
+            throw new InvalidArgumentException('Kendaraan tidak valid atau bukan milik perusahaan yang dipilih.');
+        }
+        if (($category_vehicle_id === null || $category_vehicle_id <= 0) && !empty($vehRow['category_vehicle_id'])) {
+            $category_vehicle_id = (int) $vehRow['category_vehicle_id'];
+        }
+    }
+    if ($crew_employee_ids && !verify_company_ids_belong('employees', $crew_employee_ids, $company_id)) {
+        throw new InvalidArgumentException('Karyawan / kru tidak valid untuk perusahaan ini.');
+    }
+}
+
+/** Opsi HTML <option> untuk dropdown filter perusahaan pada halaman daftar Travel/Rental. */
+function ui_company_filter_options(array $companies, int $filter_company_id, bool $has_explicit_query): string
+{
+    $html = '';
+    if (is_super_admin()) {
+        $selAll = ($filter_company_id === 0 && $has_explicit_query) ? ' selected' : '';
+        $html .= '<option value="0"' . $selAll . '>Semua Perusahaan</option>';
+    }
+    foreach ($companies as $c) {
+        $cidVal = (int) $c['id'];
+        $sel    = ($cidVal === $filter_company_id) ? ' selected' : '';
+        $html  .= '<option value="' . $cidVal . '"' . $sel . '>' . e($c['code'] . ' - ' . $c['name']) . '</option>';
+    }
+    return $html;
 }

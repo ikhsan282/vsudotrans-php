@@ -40,6 +40,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $companyId  = (int) ($_POST['company_id'] ?? ($reg['company_id'] ?? $active_cid ?? 0));
         assert_company_access($companyId);
         $categoryId = (int) ($_POST['category_vehicle_id'] ?? ($reg['category_vehicle_id'] ?? 0));
+        if ($categoryId > 0 && !fetch_company_ref_row('category_vehicles', $categoryId, $companyId)) {
+            throw new InvalidArgumentException('Kategori kendaraan tidak valid untuk perusahaan yang dipilih.');
+        }
         $trip       = max(1, (int) ($_POST['trip'] ?? 1));
         $startDate  = trim((string) ($_POST['start_date'] ?? date('Y-01-01')));
         $endDate    = trim((string) ($_POST['end_date'] ?? '9999-12-31'));
@@ -118,13 +121,23 @@ if (!$detailRows) {
     ];
 }
 
-// Ambil semua kategori kendaraan milik perusahaan yang dapat diakses (untuk filter dinamis JS)
-$allCategories = db()->query(
-    "SELECT id, company_id, code, name, CONCAT(code, ' - ', name) AS label
-       FROM category_vehicles
-      WHERE is_active = 1
-      ORDER BY code, name"
-)->fetch_all(MYSQLI_ASSOC);
+// Ambil hanya kategori kendaraan milik perusahaan yang dapat diakses user (untuk filter dinamis JS)
+$allowedCids = accessible_company_ids($curCompanyId);
+$allCategories = [];
+if ($allowedCids) {
+    $ph = implode(',', array_fill(0, count($allowedCids), '?'));
+    $stCats = db()->prepare(
+        "SELECT id, company_id, code, name, CONCAT(code, ' - ', name) AS label
+           FROM category_vehicles
+          WHERE company_id IN ({$ph})
+            AND (is_active = 1 OR id = ?)
+          ORDER BY code, name"
+    );
+    $stCats->bind_param(str_repeat('i', count($allowedCids)) . 'i', ...[...$allowedCids, $curCategoryId]);
+    $stCats->execute();
+    $allCategories = $stCats->get_result()->fetch_all(MYSQLI_ASSOC);
+    $stCats->close();
+}
 
 $tabTitle = $reg
     ? 'Detail Peraturan Komisi Karyawan (' . $reg['company_code'] . ' - ' . ($reg['note'] ?: ($reg['category_code'] . ' Trip ' . $reg['trip'])) . ')'

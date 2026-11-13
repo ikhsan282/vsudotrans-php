@@ -3,7 +3,13 @@ require_once __DIR__ . '/../../../config/config.php';
 require_permission('travel.view');
 require_once __DIR__ . '/../_helpers.php';
 
-[$where, $types, $params] = company_scope('r.company_id');
+$scope = company_filter_scope('r.company_id');
+$filter_company_id = $scope['filter_company_id'];
+$where             = $scope['where'];
+$types             = $scope['types'];
+$params            = $scope['params'];
+$companies         = $scope['companies'];
+$active_cid        = $scope['active_cid'];
 
 $q = trim((string) ($_GET['q'] ?? ''));
 $status = trim((string) ($_GET['status'] ?? ''));
@@ -83,7 +89,12 @@ if (can('travel.manage') && active_company_id() !== null) {
     $header_actions[] = ['label' => 'Tambah', 'icon' => 'plus-lg', 'href' => 'pages/travel/rutes/form.php', 'class' => 'btn btn-primary btn-sm'];
 }
 
-$query_base = http_build_query(array_filter(['q' => $q, 'status' => $status]));
+$has_explicit_company = isset($_GET['company_id']);
+$query_base = http_build_query(array_filter(
+    ['q' => $q, 'status' => $status, 'company_id' => $has_explicit_company ? (string) $filter_company_id : null],
+    static fn($v) => $v !== null && $v !== ''
+));
+$has_active_filter = ($q !== '' || $status !== '' || ($has_explicit_company && $filter_company_id !== ($active_cid ?? 0)));
 
 $active = 'travel';
 $title  = 'Rute';
@@ -106,6 +117,11 @@ require __DIR__ . '/../../../includes/header.php';
                     </div>
                 </div>
                 <div class="col-6 col-md-3">
+                    <select name="company_id" class="form-select form-select-sm" onchange="this.form.submit()" title="Pilih Perusahaan">
+                        <?= ui_company_filter_options($companies, $filter_company_id, $has_explicit_company) ?>
+                    </select>
+                </div>
+                <div class="col-6 col-md-2">
                     <select name="status" class="form-select form-select-sm" onchange="this.form.submit()">
                         <option value="">Semua Status</option>
                         <option value="1" <?= $status === '1' ? 'selected' : '' ?>>Aktif</option>
@@ -114,7 +130,7 @@ require __DIR__ . '/../../../includes/header.php';
                 </div>
                 <div class="col-auto d-flex gap-1">
                     <button type="submit" class="btn btn-sm btn-secondary">Filter</button>
-                    <?php if ($q !== '' || $status !== ''): ?>
+                    <?php if ($has_active_filter): ?>
                         <a href="<?= e(APP_URL) ?>/pages/travel/rutes/index.php" class="btn btn-sm btn-outline-danger" title="Reset"><i class="bi bi-x-lg"></i> Reset</a>
                     <?php endif; ?>
                 </div>

@@ -20,6 +20,7 @@ if ($id > 0) {
         redirect('pages/travel/passengers/index.php');
     }
     assert_company_access((int) $found['company_id']);
+    $cid = (int) $found['company_id'];
     $row = $found;
 }
 

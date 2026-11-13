@@ -212,6 +212,29 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         }
     }
 
+    if ($err === '') {
+        $cat_id_post = (int) $in['category_vehicle_id'] ?: null;
+        $veh_id_post = (int) $in['vehicle_id'] ?: null;
+        $crew_emp_ids = array_values(array_filter(array_merge(
+            [(int) ($in['employee_id'] ?? 0)],
+            array_column($in_crew, 'employee_id')
+        )));
+        try {
+            validate_booking_company_scope(
+                $cid,
+                (int) $in['branch_id'],
+                (int) $in['passenger_id'],
+                $in_passengers,
+                $cat_id_post,
+                $veh_id_post,
+                $crew_emp_ids
+            );
+            $in['category_vehicle_id'] = (string) ($cat_id_post ?? '');
+        } catch (InvalidArgumentException $ex) {
+            $err = $ex->getMessage();
+        }
+    }
+
     // Validasi Anti Double-Booking Armada Rental
     if ($err === '' && (int) $in['vehicle_id'] > 0) {
         $v_id = (int) $in['vehicle_id'];
@@ -324,12 +347,10 @@ if ($in['branch_id'] === '' && !empty($branches[0]['id'])) {
 }
 $selected_p_ids = array_filter(array_merge([(int) ($in['passenger_id'] ?? 0)], $in_passengers));
 $passengers = opts_passengers($cid, $selected_p_ids, 50);
-$userCompanyIds = accessible_company_ids($cid);
-
 $cats = opts_categories($cid, [(int) ($in['category_vehicle_id'] ?? 0)], 200);
 $vehicles = opts_vehicles_detailed(
     $cid,
-    $userCompanyIds,
+    [$cid],
     (int) ($in['vehicle_id'] ?? 0) ?: null,
     !empty($in['category_vehicle_id']) ? (int) $in['category_vehicle_id'] : null,
     50
@@ -1366,6 +1387,7 @@ document.addEventListener('DOMContentLoaded', function () {
             var phoneVal = document.getElementById('qp_phone').value.trim();
             var payload = new FormData();
             payload.append('csrf_token', '<?= csrf_token() ?>');
+            payload.append('company_id', '<?= (int) $cid ?>');
             payload.append('name', document.getElementById('qp_name').value);
             payload.append('phone_number', phoneVal);
             payload.append('email', document.getElementById('qp_email').value);
@@ -1454,7 +1476,8 @@ document.addEventListener('DOMContentLoaded', function () {
             return;
         }
 
-        var url = '<?= e(APP_URL) ?>/pages/rental/bookings/check_availability.php?vehicle_id=' + encodeURIComponent(vId)
+        var url = '<?= e(APP_URL) ?>/pages/rental/bookings/check_availability.php?company_id=' + encodeURIComponent('<?= (int) $cid ?>')
+                + '&vehicle_id=' + encodeURIComponent(vId)
                 + '&start_date=' + encodeURIComponent(sDate)
                 + '&end_date=' + encodeURIComponent(eDate);
 

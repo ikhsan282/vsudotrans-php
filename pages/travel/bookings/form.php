@@ -128,6 +128,22 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $tot_price           = (float) $in['total_price'];
         $user                = $_SESSION['username'] ?? null;
 
+        try {
+            validate_booking_company_scope(
+                $cid,
+                (int) $in['branch_id'],
+                (int) $in['passenger_id'],
+                $in_passengers,
+                $category_vehicle_id,
+                $vehicle_id
+            );
+            $in['category_vehicle_id'] = (string) ($category_vehicle_id ?? '');
+        } catch (InvalidArgumentException $ex) {
+            $err = $ex->getMessage();
+        }
+    }
+
+    if ($err === '') {
         if ($is_edit) {
             $db = db();
             $db->begin_transaction();
@@ -211,7 +227,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             }
         }
     }
-    flash('error', $err);
+    if ($err !== '') {
+        flash('error', $err);
+    }
 }
 
 $stComp = db()->prepare("SELECT id, CONCAT(code, ' - ', name) AS label FROM companies WHERE id = ? LIMIT 1");
@@ -226,12 +244,11 @@ if ($in['branch_id'] === '' && !empty($branches[0]['id'])) {
 }
 $selected_p_ids = array_filter(array_merge([(int) ($in['passenger_id'] ?? 0)], $in_passengers));
 $passengers = opts_passengers($cid, $selected_p_ids, 50);
-$userCompanyIds = accessible_company_ids($cid);
 
 $cats = opts_categories($cid, [(int) ($in['category_vehicle_id'] ?? 0)], 200);
 $vehicles = opts_vehicles_detailed(
     $cid,
-    $userCompanyIds,
+    [$cid],
     (int) ($in['vehicle_id'] ?? 0) ?: null,
     !empty($in['category_vehicle_id']) ? (int) $in['category_vehicle_id'] : null,
     50
@@ -843,6 +860,7 @@ document.addEventListener('DOMContentLoaded', function () {
             var phoneVal = document.getElementById('qp_phone').value.trim();
             var payload = new FormData();
             payload.append('csrf_token', '<?= csrf_token() ?>');
+            payload.append('company_id', '<?= (int) $cid ?>');
             payload.append('name', document.getElementById('qp_name').value);
             payload.append('phone_number', phoneVal);
             payload.append('email', document.getElementById('qp_email').value);

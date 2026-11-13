@@ -25,25 +25,19 @@ $reqCid    = (int) ($_GET['company_id'] ?? $activeCid);
 $allowed   = accessible_company_ids($activeCid);
 
 if ($reqCid > 0 && (is_super_admin() || in_array($reqCid, $allowed, true))) {
-    $displayCid = $reqCid;
-    if (!in_array($displayCid, $allowed, true)) {
-        $allowed[] = $displayCid;
-    }
+    $cid = $reqCid;
+} elseif ($activeCid > 0) {
+    $cid = $activeCid;
 } else {
-    $displayCid = $activeCid;
-}
-
-$allowed = array_values(array_unique(array_filter($allowed, static fn($x) => $x > 0)));
-if (!$allowed) {
     echo '[]';
     exit;
 }
 
-$compIn = implode(',', $allowed);
-$catId  = (int) ($_GET['category_id'] ?? 0);
-$q      = trim((string) ($_GET['q'] ?? ''));
-$limit  = max(1, min(50, (int) ($_GET['limit'] ?? 30)));
-$db     = db();
+$displayCid = $cid;
+$catId      = (int) ($_GET['category_id'] ?? 0);
+$q          = trim((string) ($_GET['q'] ?? ''));
+$limit      = max(1, min(50, (int) ($_GET['limit'] ?? 30)));
+$db         = db();
 
 $baseSelect = "SELECT v.id, v.company_id, v.category_vehicle_id, v.vehicle_number, v.vehicle_color, v.seat,
                       bv.name AS brand_name, mu.name AS model_name, cv.name AS category_name, c.code AS company_code,
@@ -56,7 +50,9 @@ $baseSelect = "SELECT v.id, v.company_id, v.category_vehicle_id, v.vehicle_numbe
                  LEFT JOIN category_vehicles cv ON cv.id = v.category_vehicle_id
                  LEFT JOIN companies c ON c.id = v.company_id";
 
-$catWhere = $catId > 0 ? " AND v.category_vehicle_id = {$catId}" : '';
+$catWhere  = $catId > 0 ? ' AND v.category_vehicle_id = ?' : '';
+$catTypes  = $catId > 0 ? 'i' : '';
+$catParams = $catId > 0 ? [$catId] : [];
 
 $rows = [];
 $seen = [];
@@ -74,48 +70,40 @@ $append = static function (array $batch) use (&$rows, &$seen, $limit): void {
     }
 };
 
-if ($q === '') {
+$runQuery = static function (string $extraWhere, string $extraTypes, array $extraParams, int $lim) use ($db, $baseSelect, $displayCid, $cid, $catWhere, $catTypes, $catParams, $append): void {
     $st = $db->prepare(
         "{$baseSelect}
-         WHERE v.is_active = 1 AND v.company_id IN ({$compIn}){$catWhere}
+         WHERE v.is_active = 1 AND v.company_id = ?{$catWhere}{$extraWhere}
          ORDER BY v.vehicle_number ASC
          LIMIT ?"
     );
-    $st->bind_param('ii', $displayCid, $limit);
+    $types  = 'ii' . $catTypes . $extraTypes . 'i';
+    $params = array_merge([$displayCid, $cid], $catParams, $extraParams, [$lim]);
+    $st->bind_param($types, ...$params);
     $st->execute();
     $append($st->get_result()->fetch_all(MYSQLI_ASSOC));
     $st->close();
+};
+
+if ($q === '') {
+    $runQuery('', '', [], $limit);
 } else {
     $escaped = addcslashes($q, '%_\\');
     $prefix  = $escaped . '%';
 
     // Query 1: prefix match pada nomor polisi (memakai ix_vehicles_comp_active_*)
-    $st = $db->prepare(
-        "{$baseSelect}
-         WHERE v.is_active = 1 AND v.company_id IN ({$compIn}){$catWhere} AND v.vehicle_number LIKE ?
-         ORDER BY v.vehicle_number ASC
-         LIMIT ?"
-    );
-    $st->bind_param('isi', $displayCid, $prefix, $limit);
-    $st->execute();
-    $append($st->get_result()->fetch_all(MYSQLI_ASSOC));
-    $st->close();
+    $runQuery(' AND v.vehicle_number LIKE ?', 's', [$prefix], $limit);
 
     // Fallback pencarian merk / model / plat tengah / warna bila hasil masih kurang dari limit
     if (count($rows) < $limit && mb_strlen($q) >= 2) {
         $rem  = $limit - count($rows);
         $like = '%' . $escaped . '%';
-        $st2 = $db->prepare(
-            "{$baseSelect}
-             WHERE v.is_active = 1 AND v.company_id IN ({$compIn}){$catWhere}
-               AND (v.vehicle_number LIKE ? OR bv.name LIKE ? OR mu.name LIKE ? OR v.vehicle_color LIKE ?)
-             ORDER BY v.vehicle_number ASC
-             LIMIT ?"
+        $runQuery(
+            ' AND (v.vehicle_number LIKE ? OR bv.name LIKE ? OR mu.name LIKE ? OR v.vehicle_color LIKE ?)',
+            'ssss',
+            [$like, $like, $like, $like],
+            $rem
         );
-        $st2->bind_param('issssi', $displayCid, $like, $like, $like, $like, $rem);
-        $st2->execute();
-        $append($st2->get_result()->fetch_all(MYSQLI_ASSOC));
-        $st2->close();
     }
 }
 
