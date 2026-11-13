@@ -76,7 +76,10 @@ require __DIR__ . '/../../includes/header.php';
                 </div>
                 <div class="col-md-6">
                     <label class="form-label small mb-1" for="dispatch-vehicle">Kendaraan (opsional)</label>
-                    <select id="dispatch-vehicle" class="form-select form-select-sm ts-select" name="vehicle_id">
+                    <select id="dispatch-vehicle" class="form-select form-select-sm ts-select" name="vehicle_id"
+                        data-ts-url="<?= e(APP_URL) ?>/pages/vehicles/options.php"
+                        data-ts-company="<?= (int) $cid ?>"
+                        data-ts-limit="30">
                         <option value="">— tanpa kendaraan —</option>
                         <?= select_options($vehicles, '') ?>
                     </select>

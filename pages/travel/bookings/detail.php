@@ -90,7 +90,7 @@ $assignments = dispatch_by_booking('travel', $id);
 
 $canManage = can('travel.manage');
 $employees = $canManage ? opts_employees($cid) : [];
-$vehicles  = $canManage ? opts_vehicles($cid) : [];
+$vehicles  = $canManage ? opts_vehicles($cid, [(int) ($assignment['vehicle_id'] ?? 0)]) : [];
 
 $active = 'travel';
 $title  = 'Detail Booking Travel';
@@ -182,7 +182,10 @@ require __DIR__ . '/../../../includes/header.php';
                 <select class="form-select form-select-sm ts-select" name="employee_id" required>
                     <option value="">-- Karyawan --</option><?= select_options($employees, $assignment['employee_id'] ?? '') ?>
                 </select>
-                <select class="form-select form-select-sm ts-select" name="vehicle_id">
+                <select class="form-select form-select-sm ts-select" name="vehicle_id"
+                    data-ts-url="<?= e(APP_URL) ?>/pages/vehicles/options.php"
+                    data-ts-company="<?= (int) $cid ?>"
+                    data-ts-limit="30">
                     <option value="">-- Kendaraan --</option><?= select_options($vehicles, $assignment['vehicle_id'] ?? '') ?>
                 </select>
                 <button class="btn btn-sm btn-outline-primary" type="submit">Tugaskan</button>

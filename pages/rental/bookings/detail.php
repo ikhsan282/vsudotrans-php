@@ -343,45 +343,28 @@ foreach ($bp_list as $bp) {
 }
 
 $branches   = opts_branches((int) $b['company_id']);
-$passengers = opts_passengers((int) $b['company_id']);
+$selected_p_ids = array_filter(array_merge([(int) ($b['passenger_id'] ?? 0)], $extra_passenger_ids));
+$passengers = opts_passengers((int) $b['company_id'], $selected_p_ids, 50);
 
-$userCompanies = accessible_companies();
-$userCompanyIds = array_map(static fn($c) => (int) $c['id'], $userCompanies);
-if (!in_array((int) $b['company_id'], $userCompanyIds, true)) {
-    $userCompanyIds[] = (int) $b['company_id'];
-}
-$compInSql = implode(',', array_unique(array_filter($userCompanyIds))) ?: (string)(int)$b['company_id'];
+$userCompanyIds = accessible_company_ids((int) $b['company_id']);
+$cur_veh_id = (int) ($b['vehicle_id'] ?? 0);
+$cur_cat_id_raw = (int) ($b['category_vehicle_id'] ?? 0);
 
-// Kategori kendaraan dari perusahaan terkait & armada
-$cats = db()->query(
-    "SELECT id, CONCAT(code, ' - ', name) AS name, company_id
-       FROM category_vehicles
-      WHERE is_active = 1 AND (company_id = " . (int) $b['company_id'] . (!empty($b['category_vehicle_id']) ? " OR id = " . (int) $b['category_vehicle_id'] : "") . ")
-      ORDER BY code, name"
-)->fetch_all(MYSQLI_ASSOC);
-
-// Daftar kendaraan: format Plat Nomor di depan, sertakan semua armada yang dapat diakses atau sedang terhubung
-$stVeh = db()->query(
-    "SELECT v.id, v.company_id, v.category_vehicle_id, v.vehicle_number, v.vehicle_color, v.seat,
-            bv.name AS brand_name, mu.name AS model_name, cv.name AS category_name, c.code AS company_code,
-            CONCAT(v.vehicle_number, ' - ', COALESCE(bv.name, ''), ' ', COALESCE(mu.name, ''),
-                   IF(v.vehicle_color != '' OR v.seat > 0, CONCAT(' (', CONCAT_WS(', ', NULLIF(v.vehicle_color, ''), IF(v.seat > 0, CONCAT(v.seat, ' Kursi'), NULL)), ')'), ''),
-                   IF(v.company_id != " . (int) $b['company_id'] . ", CONCAT(' [', c.code, ']'), '')) AS name
-       FROM vehicles v
-       LEFT JOIN brand_vehicles bv ON bv.id = v.brand_id
-       LEFT JOIN model_units mu ON mu.id = v.model_unit_id
-       LEFT JOIN category_vehicles cv ON cv.id = v.category_vehicle_id
-       LEFT JOIN companies c ON c.id = v.company_id
-      WHERE v.is_active = 1 AND (v.company_id IN ({$compInSql})" . (!empty($b['vehicle_id']) ? " OR v.id = " . (int) $b['vehicle_id'] : "") . ")
-      ORDER BY v.vehicle_number"
+// Kategori & kendaraan perusahaan terkait (dibatasi LIMIT agar aman jutaan data + wajib sertakan nilai terpilih)
+$cats = opts_categories((int) $b['company_id'], $cur_cat_id_raw > 0 ? [$cur_cat_id_raw] : [], 200);
+$vehicles = opts_vehicles_detailed(
+    (int) $b['company_id'],
+    $userCompanyIds,
+    $cur_veh_id > 0 ? $cur_veh_id : null,
+    $cur_cat_id_raw > 0 ? $cur_cat_id_raw : null,
+    50
 );
-$vehicles = $stVeh ? $stVeh->fetch_all(MYSQLI_ASSOC) : [];
 
 // Ambil data kendaraan yang sedang terhubung untuk preview detail
 $cur_veh = null;
-if (!empty($b['vehicle_id'])) {
+if ($cur_veh_id > 0) {
     foreach ($vehicles as $v) {
-        if ((int) $v['id'] === (int) $b['vehicle_id']) {
+        if ((int) $v['id'] === $cur_veh_id) {
             $cur_veh = $v;
             break;
         }
@@ -390,8 +373,6 @@ if (!empty($b['vehicle_id'])) {
 $cur_category_id = (int) ($b['category_vehicle_id'] ?: ($cur_veh['category_vehicle_id'] ?? 0));
 
 $employees  = opts_employees((int) $b['company_id']);
-$provinces  = opts_provinces();
-$cities     = opts_cities();
 $company_regulations = regulation_list_by_company((int) $b['company_id']);
 $matched_regulation  = regulation_match(
     (int) $b['company_id'],
@@ -422,49 +403,19 @@ if ($d_info) {
     $d_prov_id = $d_info['province_id'];
 }
 
-// Fallback jika district belum ada namun city_id sudah tersimpan
+// Fallback O(1) via Primary Key jika district belum ada namun city_id sudah tersimpan
 if ($p_prov_id <= 0 && $p_city_id > 0) {
-    foreach ($cities as $c) {
-        if ((int) $c['id'] === $p_city_id) {
-            $p_prov_id = (int) $c['province_id'];
-            break;
-        }
-    }
+    $p_prov_id = resolve_city_province_id($p_city_id);
 }
 if ($d_prov_id <= 0 && $d_city_id > 0) {
-    foreach ($cities as $c) {
-        if ((int) $c['id'] === $d_city_id) {
-            $d_prov_id = (int) $c['province_id'];
-            break;
-        }
-    }
+    $d_prov_id = resolve_city_province_id($d_city_id);
 }
 
-$pickup_districts = $p_city_id > 0
-    ? db()->query('SELECT id, name FROM districts WHERE city_id = ' . (int) $p_city_id . ' ORDER BY name')->fetch_all(MYSQLI_ASSOC)
-    : ($p_dist_id > 0 ? db()->query('SELECT id, name FROM districts WHERE id = ' . (int) $p_dist_id)->fetch_all(MYSQLI_ASSOC) : []);
-
-$delivery_districts = $d_city_id > 0
-    ? db()->query('SELECT id, name FROM districts WHERE city_id = ' . (int) $d_city_id . ' ORDER BY name')->fetch_all(MYSQLI_ASSOC)
-    : ($d_dist_id > 0 ? db()->query('SELECT id, name FROM districts WHERE id = ' . (int) $d_dist_id)->fetch_all(MYSQLI_ASSOC) : []);
-
-// Pastikan district terpilih selalu tersedia di opsi dropdown agar tidak unselected
-if ($p_dist_id > 0 && !array_filter($pickup_districts, static fn($x) => (int)$x['id'] === $p_dist_id)) {
-    $stD = db()->prepare('SELECT id, name FROM districts WHERE id = ? LIMIT 1');
-    $stD->bind_param('i', $p_dist_id);
-    $stD->execute();
-    $r = $stD->get_result()->fetch_assoc();
-    $stD->close();
-    if ($r) $pickup_districts[] = $r;
-}
-if ($d_dist_id > 0 && !array_filter($delivery_districts, static fn($x) => (int)$x['id'] === $d_dist_id)) {
-    $stD = db()->prepare('SELECT id, name FROM districts WHERE id = ? LIMIT 1');
-    $stD->bind_param('i', $d_dist_id);
-    $stD->execute();
-    $r = $stD->get_result()->fetch_assoc();
-    $stD->close();
-    if ($r) $delivery_districts[] = $r;
-}
+$provinces          = opts_provinces([$p_prov_id, $d_prov_id], 100);
+$pickup_cities      = opts_cities($p_prov_id > 0 ? $p_prov_id : null, [$p_city_id], $p_prov_id > 0 ? 100 : 50);
+$delivery_cities    = opts_cities($d_prov_id > 0 ? $d_prov_id : null, [$d_city_id], $d_prov_id > 0 ? 100 : 50);
+$pickup_districts   = opts_districts_by_city($p_city_id, [$p_dist_id], 100);
+$delivery_districts = opts_districts_by_city($d_city_id, [$d_dist_id], 100);
 
 $d1 = new DateTime((string) $b['start_date']);
 $d2 = new DateTime((string) $b['end_date']);
@@ -697,7 +648,7 @@ require __DIR__ . '/../../../includes/header.php';
                             <div class="rnt-row">
                                 <div class="rnt-label">Kategori</div>
                                 <div class="rnt-field">
-                                    <select class="form-select form-select-sm" name="category_vehicle_id" id="categoryVehicleSelect" form="rentalDetailForm" <?= $canManage ? '' : 'disabled' ?>>
+                                    <select class="form-select form-select-sm ts-select" name="category_vehicle_id" id="categoryVehicleSelect" form="rentalDetailForm" data-ts-placeholder="-- Semua Kategori --" <?= $canManage ? '' : 'disabled' ?>>
                                         <option value="">-- Semua Kategori --</option>
                                         <?= select_options($cats, $cur_category_id) ?>
                                     </select>
@@ -706,11 +657,24 @@ require __DIR__ . '/../../../includes/header.php';
                             <div class="rnt-row">
                                 <div class="rnt-label">Kendaraan</div>
                                 <div class="rnt-field">
-                                    <select class="form-select form-select-sm" name="vehicle_id" id="vehicleSelect" form="rentalDetailForm" <?= $canManage ? '' : 'disabled' ?>>
+                                    <select class="form-select form-select-sm ts-select" name="vehicle_id" id="vehicleSelect" form="rentalDetailForm"
+                                        data-ts-url="<?= e(APP_URL) ?>/pages/vehicles/options.php"
+                                        data-ts-company="<?= (int) $b['company_id'] ?>"
+                                        data-ts-parent="#categoryVehicleSelect"
+                                        data-ts-param="category_id"
+                                        data-ts-limit="30"
+                                        data-ts-placeholder="-- Pilih Kendaraan --"
+                                        <?= $canManage ? '' : 'disabled' ?>>
                                         <option value="">-- Pilih Kendaraan --</option>
                                         <?php foreach ($vehicles as $v): ?>
                                             <option value="<?= (int) $v['id'] ?>"
                                                     data-category="<?= (int) ($v['category_vehicle_id'] ?? 0) ?>"
+                                                    data-plate="<?= e((string) ($v['vehicle_number'] ?? '')) ?>"
+                                                    data-brand="<?= e((string) ($v['brand_name'] ?? '')) ?>"
+                                                    data-model="<?= e((string) ($v['model_name'] ?? '')) ?>"
+                                                    data-category-name="<?= e((string) ($v['category_name'] ?? '')) ?>"
+                                                    data-color="<?= e((string) ($v['vehicle_color'] ?? '')) ?>"
+                                                    data-seat="<?= (int) ($v['seat'] ?? 0) ?>"
                                                     <?= (string) $v['id'] === (string) $b['vehicle_id'] ? 'selected' : '' ?>>
                                                 <?= e($v['name']) ?>
                                             </option>
@@ -758,7 +722,12 @@ require __DIR__ . '/../../../includes/header.php';
                             <div class="rnt-row">
                                 <div class="rnt-label">Pelanggan Utama <span class="text-danger">*</span></div>
                                 <div class="rnt-field">
-                                    <select class="form-select form-select-sm ts-select" name="passenger_id" id="primaryPassengerSelect" form="rentalDetailForm" <?= $canManage ? 'required' : 'disabled' ?>>
+                                    <select class="form-select form-select-sm ts-select" name="passenger_id" id="primaryPassengerSelect" form="rentalDetailForm"
+                                        data-ts-url="<?= e(APP_URL) ?>/pages/travel/passengers/options.php"
+                                        data-ts-company="<?= (int) $b['company_id'] ?>"
+                                        data-ts-limit="30"
+                                        data-ts-placeholder="-- Pilih Pelanggan Utama --"
+                                        <?= $canManage ? 'required' : 'disabled' ?>>
                                         <option value="">-- Pilih Pelanggan Utama --</option>
                                         <?= select_options($passengers, $b['passenger_id']) ?>
                                     </select>
@@ -767,7 +736,11 @@ require __DIR__ . '/../../../includes/header.php';
                             <div class="rnt-row align-items-start">
                                 <div class="rnt-label pt-1">Penumpang Tambahan</div>
                                 <div class="rnt-field">
-                                    <select class="form-select form-select-sm ts-select" name="passenger_ids[]" id="extraPassengersSelect" form="rentalDetailForm" multiple placeholder="Pilih penumpang tambahan (opsional)..." <?= $canManage ? '' : 'disabled' ?>>
+                                    <select class="form-select form-select-sm ts-select" name="passenger_ids[]" id="extraPassengersSelect" form="rentalDetailForm" multiple
+                                        data-ts-url="<?= e(APP_URL) ?>/pages/travel/passengers/options.php"
+                                        data-ts-company="<?= (int) $b['company_id'] ?>"
+                                        data-ts-limit="30"
+                                        placeholder="Pilih penumpang tambahan (opsional)..." <?= $canManage ? '' : 'disabled' ?>>
                                         <?= select_options($passengers, $extra_passenger_ids) ?>
                                     </select>
                                     <div class="form-text small">Opsional — pilih penumpang lain yang ikut dalam penyewaan ini (ditampilkan pada E-Tiket).</div>
@@ -787,7 +760,12 @@ require __DIR__ . '/../../../includes/header.php';
                                     <div class="rnt-row">
                                         <div class="rnt-label">Provinsi</div>
                                         <div class="rnt-field">
-                                            <select class="form-select form-select-sm" name="pickup_point_province_id" id="pickupProvince" form="rentalDetailForm" <?= $canManage ? '' : 'disabled' ?>>
+                                            <select class="form-select form-select-sm ts-select" name="pickup_point_province_id" id="pickupProvince" form="rentalDetailForm"
+                                                data-ts-url="<?= e(APP_URL) ?>/pages/masters/provinces/options.php"
+                                                data-ts-with-code="1"
+                                                data-ts-limit="50"
+                                                data-ts-placeholder="-- Pilih Provinsi --"
+                                                <?= $canManage ? '' : 'disabled' ?>>
                                                 <option value="">-- Pilih Provinsi --</option>
                                                 <?= select_options($provinces, $p_prov_id) ?>
                                             </select>
@@ -796,9 +774,15 @@ require __DIR__ . '/../../../includes/header.php';
                                     <div class="rnt-row">
                                         <div class="rnt-label">Kota/Kab <span class="text-danger">*</span></div>
                                         <div class="rnt-field">
-                                            <select class="form-select form-select-sm" name="pickup_point_city_id" id="pickupCity" form="rentalDetailForm" <?= $canManage ? '' : 'disabled' ?>>
+                                            <select class="form-select form-select-sm ts-select" name="pickup_point_city_id" id="pickupCity" form="rentalDetailForm"
+                                                data-ts-url="<?= e(APP_URL) ?>/pages/masters/cities/options.php"
+                                                data-ts-parent="#pickupProvince"
+                                                data-ts-param="province_id"
+                                                data-ts-limit="50"
+                                                data-ts-placeholder="-- Pilih Kota/Kab --"
+                                                <?= $canManage ? '' : 'disabled' ?>>
                                                 <option value="">-- Pilih Kota/Kab --</option>
-                                                <?php foreach ($cities as $c): ?>
+                                                <?php foreach ($pickup_cities as $c): ?>
                                                     <option value="<?= (int) $c['id'] ?>"
                                                             data-province="<?= (int) $c['province_id'] ?>"
                                                             <?= (int) $c['id'] === $p_city_id ? 'selected' : '' ?>>
@@ -811,7 +795,14 @@ require __DIR__ . '/../../../includes/header.php';
                                     <div class="rnt-row">
                                         <div class="rnt-label">Kecamatan <span class="text-danger">*</span></div>
                                         <div class="rnt-field">
-                                            <select class="form-select form-select-sm" name="pickup_point_district_id" id="pickupDistrict" form="rentalDetailForm" <?= $canManage ? 'required' : 'disabled' ?>>
+                                            <select class="form-select form-select-sm ts-select" name="pickup_point_district_id" id="pickupDistrict" form="rentalDetailForm"
+                                                data-ts-url="<?= e(APP_URL) ?>/pages/masters/districts/options.php"
+                                                data-ts-parent="#pickupCity"
+                                                data-ts-param="city_id"
+                                                data-ts-require-parent="1"
+                                                data-ts-limit="50"
+                                                data-ts-placeholder="-- Pilih Kecamatan --"
+                                                <?= $canManage ? 'required' : 'disabled' ?>>
                                                 <option value="">-- Pilih Kecamatan --</option>
                                                 <?= select_options($pickup_districts, $p_dist_id) ?>
                                             </select>
@@ -836,7 +827,12 @@ require __DIR__ . '/../../../includes/header.php';
                                     <div class="rnt-row">
                                         <div class="rnt-label">Provinsi</div>
                                         <div class="rnt-field">
-                                            <select class="form-select form-select-sm" name="delivery_point_province_id" id="deliveryProvince" form="rentalDetailForm" <?= $canManage ? '' : 'disabled' ?>>
+                                            <select class="form-select form-select-sm ts-select" name="delivery_point_province_id" id="deliveryProvince" form="rentalDetailForm"
+                                                data-ts-url="<?= e(APP_URL) ?>/pages/masters/provinces/options.php"
+                                                data-ts-with-code="1"
+                                                data-ts-limit="50"
+                                                data-ts-placeholder="-- Pilih Provinsi --"
+                                                <?= $canManage ? '' : 'disabled' ?>>
                                                 <option value="">-- Pilih Provinsi --</option>
                                                 <?= select_options($provinces, $d_prov_id) ?>
                                             </select>
@@ -845,9 +841,15 @@ require __DIR__ . '/../../../includes/header.php';
                                     <div class="rnt-row">
                                         <div class="rnt-label">Kota/Kab <span class="text-danger">*</span></div>
                                         <div class="rnt-field">
-                                            <select class="form-select form-select-sm" name="delivery_point_city_id" id="deliveryCity" form="rentalDetailForm" <?= $canManage ? '' : 'disabled' ?>>
+                                            <select class="form-select form-select-sm ts-select" name="delivery_point_city_id" id="deliveryCity" form="rentalDetailForm"
+                                                data-ts-url="<?= e(APP_URL) ?>/pages/masters/cities/options.php"
+                                                data-ts-parent="#deliveryProvince"
+                                                data-ts-param="province_id"
+                                                data-ts-limit="50"
+                                                data-ts-placeholder="-- Pilih Kota/Kab --"
+                                                <?= $canManage ? '' : 'disabled' ?>>
                                                 <option value="">-- Pilih Kota/Kab --</option>
-                                                <?php foreach ($cities as $c): ?>
+                                                <?php foreach ($delivery_cities as $c): ?>
                                                     <option value="<?= (int) $c['id'] ?>"
                                                             data-province="<?= (int) $c['province_id'] ?>"
                                                             <?= (int) $c['id'] === $d_city_id ? 'selected' : '' ?>>
@@ -860,7 +862,14 @@ require __DIR__ . '/../../../includes/header.php';
                                     <div class="rnt-row">
                                         <div class="rnt-label">Kecamatan <span class="text-danger">*</span></div>
                                         <div class="rnt-field">
-                                            <select class="form-select form-select-sm" name="delivery_point_district_id" id="deliveryDistrict" form="rentalDetailForm" <?= $canManage ? 'required' : 'disabled' ?>>
+                                            <select class="form-select form-select-sm ts-select" name="delivery_point_district_id" id="deliveryDistrict" form="rentalDetailForm"
+                                                data-ts-url="<?= e(APP_URL) ?>/pages/masters/districts/options.php"
+                                                data-ts-parent="#deliveryCity"
+                                                data-ts-param="city_id"
+                                                data-ts-require-parent="1"
+                                                data-ts-limit="50"
+                                                data-ts-placeholder="-- Pilih Kecamatan --"
+                                                <?= $canManage ? 'required' : 'disabled' ?>>
                                                 <option value="">-- Pilih Kecamatan --</option>
                                                 <?= select_options($delivery_districts, $d_dist_id) ?>
                                             </select>
@@ -1811,26 +1820,34 @@ document.addEventListener('DOMContentLoaded', () => {
     const vehPreviewCategory = document.getElementById('vehPreviewCategory');
     const vehPreviewSpecs = document.getElementById('vehPreviewSpecs');
 
-    const allVehicles = <?= json_encode(array_map(static fn($v) => [
-        'id'            => (string) $v['id'],
-        'name'          => (string) $v['name'],
-        'plate'         => (string) ($v['vehicle_number'] ?? ''),
-        'brand'         => (string) ($v['brand_name'] ?? ''),
-        'model'         => (string) ($v['model_name'] ?? ''),
-        'category_name' => (string) ($v['category_name'] ?? ''),
-        'color'         => (string) ($v['vehicle_color'] ?? ''),
-        'seat'          => (int) ($v['seat'] ?? 0),
-        'category'      => (string) ($v['category_vehicle_id'] ?? ''),
-    ], $vehicles)) ?>;
+    const getVehicleMeta = (vId) => {
+        if (!vId || !vehSelect) return null;
+        if (vehSelect.tomselect && vehSelect.tomselect.options[vId]) {
+            return vehSelect.tomselect.options[vId];
+        }
+        const opt = vehSelect.querySelector('option[value="' + String(vId).replace(/"/g, '\\"') + '"]');
+        if (!opt) return null;
+        const d = opt.dataset || {};
+        return {
+            id: vId,
+            plate: d.plate || '',
+            brand: d.brand || '',
+            model: d.model || '',
+            category_name: d.categoryName || '',
+            color: d.color || '',
+            seat: d.seat ? parseInt(d.seat, 10) || 0 : 0,
+            category: d.category || ''
+        };
+    };
 
     function refreshVehiclePreview() {
         if (!vehSelect || !vehPreview) return;
-        const vId = String(vehSelect.value || '');
-        const vData = allVehicles.find(v => v.id === vId);
+        const vId = vehSelect.tomselect ? String(vehSelect.tomselect.getValue() || '') : String(vehSelect.value || '');
+        const vData = getVehicleMeta(vId);
         if (vData && vData.plate) {
             vehPreview.style.display = '';
             if (vehPreviewPlate) vehPreviewPlate.textContent = vData.plate;
-            if (vehPreviewModel) vehPreviewModel.textContent = (vData.brand + ' ' + vData.model).trim();
+            if (vehPreviewModel) vehPreviewModel.textContent = ((vData.brand || '') + ' ' + (vData.model || '')).trim();
             if (vehPreviewCategory) vehPreviewCategory.textContent = vData.category_name || 'Armada';
             const specs = [vData.color, vData.seat > 0 ? (vData.seat + ' Kursi') : ''].filter(Boolean).join(' • ');
             if (vehPreviewSpecs) vehPreviewSpecs.textContent = specs;
@@ -1840,117 +1857,50 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     if (vehSelect) {
-        vehSelect.addEventListener('change', () => {
+        bindTsChange(vehSelect, (vId) => {
             refreshVehiclePreview();
-            const vId = String(vehSelect.value || '');
-            const vData = allVehicles.find(v => v.id === vId);
-            if (vData && vData.category && catSelect && !catSelect.value) {
-                catSelect.value = vData.category;
+            const vData = getVehicleMeta(String(vId || ''));
+            const curCat = catSelect ? (catSelect.tomselect ? String(catSelect.tomselect.getValue() || '') : String(catSelect.value || '')) : '';
+            if (vData && vData.category && catSelect && !curCat) {
+                setTsValueSilent(catSelect, String(vData.category));
             }
         });
         refreshVehiclePreview();
     }
 
     if (catSelect && vehSelect) {
-        catSelect.addEventListener('change', () => {
-            const catId = String(catSelect.value || '');
-            const curVal = String(vehSelect.value || '');
-            const filtered = allVehicles.filter(v => !catId || v.category === catId);
-
-            if (vehSelect.tomselect) {
-                const ts = vehSelect.tomselect;
-                ts.clear(true);
-                ts.clearOptions();
-                ts.addOption({ value: '', text: '-- Pilih Kendaraan --' });
-                filtered.forEach(v => ts.addOption({ value: v.id, text: v.name }));
-                ts.refreshOptions(false);
-                if (filtered.some(v => v.id === curVal)) {
-                    ts.setValue(curVal, true);
+        bindTsChange(catSelect, async (catId) => {
+            const curVal = vehSelect.tomselect ? String(vehSelect.tomselect.getValue() || '') : String(vehSelect.value || '');
+            const curOpt = getVehicleMeta(curVal);
+            const keepVal = (curVal && curOpt && (!catId || String(curOpt.category || '') === catId)) ? curVal : '';
+            try {
+                const u = `${appUrl}/pages/vehicles/options.php?company_id=<?= (int) $b['company_id'] ?>&limit=50`
+                        + (catId ? `&category_id=${encodeURIComponent(catId)}` : '');
+                const res = await fetch(u);
+                const data = await res.json();
+                if (keepVal && curOpt && !data.some(x => String(x.id) === keepVal)) {
+                    data.unshift(curOpt);
                 }
-            } else {
-                vehSelect.innerHTML = '<option value="">-- Pilih Kendaraan --</option>';
-                filtered.forEach(v => {
-                    const opt = document.createElement('option');
-                    opt.value = v.id;
-                    opt.textContent = v.name;
-                    opt.setAttribute('data-category', v.category);
-                    if (v.id === curVal) opt.selected = true;
-                    vehSelect.appendChild(opt);
-                });
+                setTsOptions(vehSelect, data, keepVal, '-- Pilih Kendaraan --');
+            } catch (e) {
+                console.error('Gagal memuat kendaraan:', e);
             }
             refreshVehiclePreview();
         });
     }
 
-    // Cascading Provinsi -> Kota/Kab -> Kecamatan
-    const allCities = <?= json_encode(array_map(static fn($c) => [
-        'id'       => (string) $c['id'],
-        'name'     => (string) $c['name'],
-        'province' => (string) ($c['province_id'] ?? ''),
-    ], $cities)) ?>;
-
-    function updateSelectOptions(el, items, selectedVal, placeholder) {
-        if (!el) return;
-        const ph = placeholder || '-- Pilih --';
-        let html = '<option value="">' + ph + '</option>';
-        (items || []).forEach(it => {
-            const id = String(it.id != null ? it.id : (it.value != null ? it.value : ''));
-            const txt = String(it.name != null ? it.name : (it.text != null ? it.text : ''));
-            const isSel = (id && String(selectedVal || '') === id);
-            html += `<option value="${id}"${isSel ? ' selected' : ''}>${txt}</option>`;
-        });
-        el.innerHTML = html;
-
-        if (el.tomselect) {
-            const ts = el.tomselect;
-            ts.clear(true);
-            ts.clearOptions();
-            ts.addOption({ value: '', text: ph });
-            (items || []).forEach(it => {
-                const id = String(it.id != null ? it.id : (it.value != null ? it.value : ''));
-                const txt = String(it.name != null ? it.name : (it.text != null ? it.text : ''));
-                ts.addOption({ value: id, text: txt });
-            });
-            ts.refreshOptions(false);
-            if (selectedVal) {
-                ts.setValue(String(selectedVal), true);
-            }
-        }
-    }
-
-    function onSelectChange(el, callback) {
-        if (!el) return;
-        el.addEventListener('change', function () {
-            callback(this.value);
-        });
-        if (el.tomselect) {
-            el.tomselect.on('change', function (val) {
-                callback(val);
-            });
-        } else {
-            const timer = setInterval(() => {
-                if (el.tomselect) {
-                    clearInterval(timer);
-                    el.tomselect.on('change', function (val) {
-                        callback(val);
-                    });
-                }
-            }, 100);
-            setTimeout(() => clearInterval(timer), 3000);
-        }
-    }
+    // Cascading Provinsi -> Kota/Kab -> Kecamatan (Tom Select + Remote Search)
+    const updateSelectOptions = window.setTsOptions;
+    const onSelectChange = window.bindTsChange;
 
     async function reloadCityOptions(provVal, cityEl, distEl, currentCityVal) {
         if (!cityEl) return;
-        if (distEl) updateSelectOptions(distEl, [], '', '-- Pilih Kecamatan --');
-        if (!provVal) {
-            updateSelectOptions(cityEl, [], '', '-- Pilih Kota/Kab --');
-            return;
-        }
+        if (distEl) setTsOptions(distEl, [], '', '-- Pilih Kecamatan --');
         try {
-            const res = await fetch(`${appUrl}/pages/masters/cities/options.php?province_id=${encodeURIComponent(provVal)}`);
+            const qs = provVal ? `limit=100&province_id=${encodeURIComponent(provVal)}` : 'limit=50&all=1';
+            const res = await fetch(`${appUrl}/pages/masters/cities/options.php?${qs}`);
             const data = await res.json();
-            updateSelectOptions(cityEl, data, currentCityVal || '', '-- Pilih Kota/Kab --');
+            setTsOptions(cityEl, data, currentCityVal || '', '-- Pilih Kota/Kab --');
         } catch (e) {
             console.error('Gagal memuat kota:', e);
         }
@@ -1959,13 +1909,13 @@ document.addEventListener('DOMContentLoaded', () => {
     async function reloadDistrictOptions(cityVal, distEl, currentDistVal) {
         if (!distEl) return;
         if (!cityVal) {
-            updateSelectOptions(distEl, [], '', '-- Pilih Kecamatan --');
+            setTsOptions(distEl, [], '', '-- Pilih Kecamatan --');
             return;
         }
         try {
-            const res = await fetch(`${appUrl}/pages/masters/districts/options.php?city_id=${encodeURIComponent(cityVal)}`);
+            const res = await fetch(`${appUrl}/pages/masters/districts/options.php?limit=100&city_id=${encodeURIComponent(cityVal)}`);
             const data = await res.json();
-            updateSelectOptions(distEl, data, currentDistVal || '', '-- Pilih Kecamatan --');
+            setTsOptions(distEl, data, currentDistVal || '', '-- Pilih Kecamatan --');
         } catch (e) {
             console.error('Gagal memuat kecamatan:', e);
         }
@@ -1977,11 +1927,16 @@ document.addEventListener('DOMContentLoaded', () => {
         const dSel = document.getElementById(distId);
         if (!pSel || !cSel || !dSel) return;
 
-        onSelectChange(pSel, function (val) {
+        bindTsChange(pSel, function (val) {
             reloadCityOptions(val, cSel, dSel, '');
         });
 
-        onSelectChange(cSel, function (val) {
+        bindTsChange(cSel, function (val) {
+            const opt = cSel.tomselect ? cSel.tomselect.options[String(val)] : null;
+            const curProv = pSel.tomselect ? String(pSel.tomselect.getValue() || '') : String(pSel.value || '');
+            if (!curProv && opt && opt.province_id) {
+                setTsValueSilent(pSel, String(opt.province_id));
+            }
             reloadDistrictOptions(val, dSel, '');
         });
     }

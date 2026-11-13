@@ -404,6 +404,8 @@ CREATE TABLE `provinces` (
   PRIMARY KEY (`id`),
   UNIQUE KEY `uq_provinces_code` (`code`),
   KEY `ix_provinces_country` (`country_id`),
+  KEY `ix_provinces_country_name` (`country_id`, `name`),
+  KEY `ix_provinces_name` (`name`),
   CONSTRAINT `fk_provinces_country` FOREIGN KEY (`country_id`) REFERENCES `countries` (`id`) ON DELETE RESTRICT
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
@@ -421,6 +423,8 @@ CREATE TABLE `cities` (
   PRIMARY KEY (`id`),
   UNIQUE KEY `uq_cities_code` (`code`),
   KEY `ix_cities_province` (`province_id`),
+  KEY `ix_cities_prov_name` (`province_id`, `name`),
+  KEY `ix_cities_name` (`name`),
   CONSTRAINT `fk_cities_country` FOREIGN KEY (`country_id`) REFERENCES `countries` (`id`) ON DELETE RESTRICT,
   CONSTRAINT `fk_cities_province` FOREIGN KEY (`province_id`) REFERENCES `provinces` (`id`) ON DELETE RESTRICT
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
@@ -440,6 +444,8 @@ CREATE TABLE `districts` (
   PRIMARY KEY (`id`),
   UNIQUE KEY `uq_districts_code` (`code`),
   KEY `ix_districts_city` (`city_id`),
+  KEY `ix_districts_city_name` (`city_id`, `name`),
+  KEY `ix_districts_name` (`name`),
   CONSTRAINT `fk_districts_country` FOREIGN KEY (`country_id`) REFERENCES `countries` (`id`) ON DELETE RESTRICT,
   CONSTRAINT `fk_districts_province` FOREIGN KEY (`province_id`) REFERENCES `provinces` (`id`) ON DELETE RESTRICT,
   CONSTRAINT `fk_districts_city` FOREIGN KEY (`city_id`) REFERENCES `cities` (`id`) ON DELETE RESTRICT
@@ -462,6 +468,8 @@ CREATE TABLE `villages` (
   PRIMARY KEY (`id`),
   UNIQUE KEY `uq_villages_code` (`code`),
   KEY `ix_villages_district` (`district_id`),
+  KEY `ix_villages_district_name` (`district_id`, `name`),
+  KEY `ix_villages_name` (`name`),
   CONSTRAINT `fk_villages_country` FOREIGN KEY (`country_id`) REFERENCES `countries` (`id`) ON DELETE RESTRICT,
   CONSTRAINT `fk_villages_province` FOREIGN KEY (`province_id`) REFERENCES `provinces` (`id`) ON DELETE RESTRICT,
   CONSTRAINT `fk_villages_city` FOREIGN KEY (`city_id`) REFERENCES `cities` (`id`) ON DELETE RESTRICT,
@@ -587,6 +595,8 @@ CREATE TABLE `vehicles` (
   UNIQUE KEY `uq_vehicles_machine` (`company_id`, `machine_number`),
   KEY `ix_vehicles_company` (`company_id`),
   KEY `ix_vehicles_category` (`category_vehicle_id`),
+  KEY `ix_vehicles_comp_active_num` (`company_id`, `is_active`, `vehicle_number`),
+  KEY `ix_vehicles_comp_active_cat_num` (`company_id`, `is_active`, `category_vehicle_id`, `vehicle_number`),
   CONSTRAINT `fk_vehicles_company` FOREIGN KEY (`company_id`) REFERENCES `companies` (`id`) ON DELETE RESTRICT,
   CONSTRAINT `fk_vehicles_brand` FOREIGN KEY (`brand_id`) REFERENCES `brand_vehicles` (`id`) ON DELETE RESTRICT,
   CONSTRAINT `fk_vehicles_model` FOREIGN KEY (`model_unit_id`) REFERENCES `model_units` (`id`) ON DELETE RESTRICT,
@@ -660,6 +670,7 @@ CREATE TABLE `passengers` (
   PRIMARY KEY (`id`),
   UNIQUE KEY `uq_passengers_code` (`company_id`, `code`),
   KEY `ix_passengers_company` (`company_id`),
+  KEY `ix_passengers_company_name` (`company_id`, `name`),
   KEY `ix_passengers_company_phone` (`company_id`, `phone_number`),
   CONSTRAINT `fk_passengers_company` FOREIGN KEY (`company_id`) REFERENCES `companies` (`id`) ON DELETE RESTRICT
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;

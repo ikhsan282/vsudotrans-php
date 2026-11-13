@@ -1599,19 +1599,120 @@ function master_options_json(string $source, string $parent_col, string $param):
 {
     require_login();
     header('Content-Type: application/json; charset=utf-8');
-    $parent = (int) ($_GET[$param] ?? 0);
-    if ($parent <= 0) {
+
+    if (!in_array($source, ['countries', 'provinces', 'cities', 'districts', 'villages'], true)) {
         echo '[]';
         return;
     }
-    $st = db()->prepare("SELECT id, name FROM `{$source}` WHERE `{$parent_col}` = ? ORDER BY name");
-    $st->bind_param('i', $parent);
-    $st->execute();
-    $rows = $st->get_result()->fetch_all(MYSQLI_ASSOC);
-    $st->close();
+
+    $parent   = (int) ($_GET[$param] ?? 0);
+    $q        = trim((string) ($_GET['q'] ?? ''));
+    $allowAll = (($_GET['all'] ?? '') === '1');
+    $withCode = (($_GET['with_code'] ?? '') === '1');
+    $hasQuery = ($q !== '');
+    $limit    = isset($_GET['limit']) ? (int) $_GET['limit'] : ($hasQuery ? 50 : 200);
+    $limit    = max(1, min(200, $limit));
+
+    if ($parent <= 0 && !$hasQuery && !$allowAll) {
+        echo '[]';
+        return;
+    }
+
+    $nameExpr = ($source === 'provinces' && $withCode) ? "CONCAT(code, ' - ', name) AS name" : 'name';
+    $extraCols = '';
+    if ($source === 'cities') {
+        $extraCols = ', province_id';
+    } elseif ($source === 'districts') {
+        $extraCols = ', city_id, province_id';
+    } elseif ($source === 'provinces') {
+        $extraCols = ', code';
+    }
+
+    $db   = db();
+    $rows = [];
+    $seen = [];
+    $append = static function (array $batch) use (&$rows, &$seen, $limit): void {
+        foreach ($batch as $r) {
+            $id = (int) $r['id'];
+            if (isset($seen[$id])) {
+                continue;
+            }
+            $seen[$id] = true;
+            $rows[] = $r;
+            if (count($rows) >= $limit) {
+                break;
+            }
+        }
+    };
+
+    $parentSql = $parent > 0 ? "`{$parent_col}` = ?" : '1=1';
+
+    if (!$hasQuery) {
+        $orderBy = $source === 'provinces' ? 'code ASC, name ASC' : 'name ASC';
+        $sql = "SELECT id, {$nameExpr}{$extraCols} FROM `{$source}` WHERE {$parentSql} ORDER BY {$orderBy} LIMIT ?";
+        $st  = $db->prepare($sql);
+        if ($parent > 0) {
+            $st->bind_param('ii', $parent, $limit);
+        } else {
+            $st->bind_param('i', $limit);
+        }
+        $st->execute();
+        $append($st->get_result()->fetch_all(MYSQLI_ASSOC));
+        $st->close();
+    } else {
+        $escaped = addcslashes($q, '%_\\');
+        $prefix  = $escaped . '%';
+        $searchCond = ($source === 'provinces' && preg_match('/^[0-9]+$/', $q))
+            ? '(code LIKE ? OR name LIKE ?)'
+            : 'name LIKE ?';
+        $searchParams = ($source === 'provinces' && preg_match('/^[0-9]+$/', $q))
+            ? [$prefix, $prefix]
+            : [$prefix];
+        $searchTypes = str_repeat('s', count($searchParams));
+
+        // Query 1: prefix match berbasis index ix_*_name
+        $sql = "SELECT id, {$nameExpr}{$extraCols} FROM `{$source}` WHERE {$parentSql} AND {$searchCond} ORDER BY name ASC LIMIT ?";
+        $st  = $db->prepare($sql);
+        if ($parent > 0) {
+            $st->bind_param('i' . $searchTypes . 'i', $parent, ...[...$searchParams, $limit]);
+        } else {
+            $st->bind_param($searchTypes . 'i', ...[...$searchParams, $limit]);
+        }
+        $st->execute();
+        $append($st->get_result()->fetch_all(MYSQLI_ASSOC));
+        $st->close();
+
+        // Fallback infix hanya bila hasil prefix masih sedikit & kata kunci >= 2 karakter
+        if (count($rows) < min(15, $limit) && mb_strlen($q) >= 2) {
+            $rem  = $limit - count($rows);
+            $like = '%' . $escaped . '%';
+            $sql2 = "SELECT id, {$nameExpr}{$extraCols} FROM `{$source}` WHERE {$parentSql} AND name LIKE ? ORDER BY name ASC LIMIT ?";
+            $st2  = $db->prepare($sql2);
+            if ($parent > 0) {
+                $st2->bind_param('isi', $parent, $like, $rem);
+            } else {
+                $st2->bind_param('si', $like, $rem);
+            }
+            $st2->execute();
+            $append($st2->get_result()->fetch_all(MYSQLI_ASSOC));
+            $st2->close();
+        }
+    }
+
     $out = [];
     foreach ($rows as $r) {
-        $out[] = ['id' => (int) $r['id'], 'text' => $r['name']];
+        $item = [
+            'value' => (string) (int) $r['id'],
+            'id'    => (int) $r['id'],
+            'text'  => (string) $r['name'],
+        ];
+        if (isset($r['province_id'])) {
+            $item['province_id'] = (int) $r['province_id'];
+        }
+        if (isset($r['city_id'])) {
+            $item['city_id'] = (int) $r['city_id'];
+        }
+        $out[] = $item;
     }
-    echo json_encode($out);
+    echo json_encode($out, JSON_UNESCAPED_UNICODE);
 }

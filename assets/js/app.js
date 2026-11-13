@@ -211,15 +211,197 @@ window.attachRupiahInput = function (inputEl, hiddenEl, onChangeCallback) {
   });
 };
 
-// ── Tom Select: aktifkan otomatis ke <select class="ts-select"> ────────────
-if (window.TomSelect) {
-  document.querySelectorAll('select.ts-select').forEach(el => {
-    if (el.tomselect) return;
-    new TomSelect(el, {
-      allowEmptyOption: true,
-      create: false,
-      plugins: el.multiple ? ['remove_button'] : [],
-      sortField: { field: 'text', direction: 'asc' }
-    });
+// ── Tom Select v2.3.1: Inisialisasi Standar & Remote Search (Skala Jutaan Data) ──
+window._collectSelectMeta = function (el) {
+  const metaMap = {};
+  if (!el) return metaMap;
+  Array.from(el.options || []).forEach(opt => {
+    const val = String(opt.value || '');
+    if (!val) return;
+    const d = opt.dataset || {};
+    metaMap[val] = {
+      value: val,
+      id: val,
+      text: opt.textContent || '',
+      name: opt.textContent || '',
+      category: d.category || '',
+      province_id: d.province || d.provinceId || '',
+      city_id: d.city || d.cityId || '',
+      plate: d.plate || '',
+      brand: d.brand || '',
+      model: d.model || '',
+      color: d.color || '',
+      seat: d.seat ? parseInt(d.seat, 10) || 0 : 0,
+      category_name: d.categoryName || '',
+      code: d.code || '',
+      phone: d.phone || ''
+    };
   });
+  return metaMap;
+};
+
+window.initTsSelect = function (el, overrides) {
+  if (!window.TomSelect || !el) return null;
+  if (el.tomselect) return el.tomselect;
+
+  const initialMeta = window._collectSelectMeta(el);
+  const remoteUrl = el.dataset.tsUrl || '';
+  const opts = {
+    allowEmptyOption: true,
+    create: false,
+    maxOptions: 200,
+    plugins: el.multiple ? ['remove_button'] : [],
+    searchField: ['text', 'code', 'phone', 'plate', 'brand', 'model', 'color'],
+    sortField: remoteUrl
+      ? [{ field: '$score' }, { field: 'text', direction: 'asc' }]
+      : { field: 'text', direction: 'asc' },
+    valueField: 'value',
+    labelField: 'text'
+  };
+
+  if (remoteUrl) {
+    opts.loadThrottle = 250;
+    opts.shouldLoad = function (query) {
+      return query.trim().length >= 1;
+    };
+    opts.load = function (query, callback) {
+      const parentSel = el.dataset.tsParent ? document.querySelector(el.dataset.tsParent) : null;
+      const paramName = el.dataset.tsParam || '';
+      const requireParent = el.dataset.tsRequireParent === '1';
+      let parentVal = '';
+      if (parentSel) {
+        parentVal = parentSel.tomselect ? String(parentSel.tomselect.getValue() || '') : String(parentSel.value || '');
+      }
+      if (requireParent && !parentVal) {
+        callback([]);
+        return;
+      }
+
+      try {
+        const u = new URL(remoteUrl, window.location.origin);
+        u.searchParams.set('q', query.trim());
+        u.searchParams.set('limit', el.dataset.tsLimit || '30');
+        if (el.dataset.tsCompany) u.searchParams.set('company_id', el.dataset.tsCompany);
+        if (el.dataset.tsWithCode) u.searchParams.set('with_code', el.dataset.tsWithCode);
+        if (paramName && parentVal) u.searchParams.set(paramName, parentVal);
+
+        fetch(u.toString())
+          .then(r => (r.ok ? r.json() : []))
+          .then(data => {
+            const list = Array.isArray(data) ? data.map(it => ({
+              ...it,
+              value: String(it.value != null ? it.value : (it.id != null ? it.id : '')),
+              text: String(it.text != null ? it.text : (it.name != null ? it.name : ''))
+            })) : [];
+            callback(list);
+          })
+          .catch(() => callback([]));
+      } catch (e) {
+        callback([]);
+      }
+    };
+  }
+
+  const ts = new TomSelect(el, Object.assign(opts, overrides || {}));
+  Object.keys(initialMeta).forEach(k => {
+    if (ts.options[k]) {
+      Object.assign(ts.options[k], initialMeta[k]);
+    }
+  });
+  el._tsLastVal = String(ts.getValue() || '');
+  return ts;
+};
+
+window.setTsValueSilent = function (el, val) {
+  if (!el) return;
+  const v = Array.isArray(val) ? val : String(val == null ? '' : val);
+  el._tsLastVal = Array.isArray(v) ? v.join(',') : v;
+  if (el.tomselect) {
+    el.tomselect.setValue(v, true);
+  } else if (!Array.isArray(v)) {
+    el.value = v;
+  }
+};
+
+window.setTsOptions = function (el, items, selectedVal, placeholder) {
+  if (!el) return;
+  const ph = placeholder || (el.dataset.tsPlaceholder || '-- Pilih --');
+  const selStr = String(selectedVal == null ? '' : selectedVal);
+  const norm = (items || []).map(it => ({
+    ...it,
+    value: String(it.value != null ? it.value : (it.id != null ? it.id : '')),
+    text: String(it.text != null ? it.text : (it.name != null ? it.name : ''))
+  })).filter(it => it.value !== '');
+
+  if (el.tomselect) {
+    const ts = el.tomselect;
+    ts.loadedSearches = {};
+    ts.clear(true);
+    ts.clearOptions();
+    if (!el.multiple) {
+      ts.addOption({ value: '', text: ph });
+    }
+    norm.forEach(it => ts.addOption(it));
+    ts.refreshOptions(false);
+    if (selStr && norm.some(it => it.value === selStr)) {
+      el._tsLastVal = selStr;
+      ts.setValue(selStr, true);
+    } else {
+      el._tsLastVal = '';
+    }
+  } else {
+    el.innerHTML = '';
+    if (!el.multiple) {
+      const optPh = document.createElement('option');
+      optPh.value = '';
+      optPh.textContent = ph;
+      el.appendChild(optPh);
+    }
+    norm.forEach(it => {
+      const opt = document.createElement('option');
+      opt.value = it.value;
+      opt.textContent = it.text;
+      if (it.value === selStr) opt.selected = true;
+      el.appendChild(opt);
+    });
+    el._tsLastVal = selStr;
+  }
+};
+
+window.bindTsChange = function (el, callback) {
+  if (!el || typeof callback !== 'function') return;
+  if (!el._tsChangeCallbacks) {
+    el._tsChangeCallbacks = [];
+    el._tsLastVal = el.tomselect ? String(el.tomselect.getValue() || '') : String(el.value || '');
+    const emit = function (val) {
+      const cur = Array.isArray(val) ? val.join(',') : String(val == null ? '' : val);
+      if (cur === el._tsLastVal) return;
+      el._tsLastVal = cur;
+      el._tsChangeCallbacks.forEach(fn => {
+        try { fn(cur, val); } catch (e) { console.error(e); }
+      });
+    };
+    el.addEventListener('change', function () {
+      emit(this.tomselect ? this.tomselect.getValue() : this.value);
+    });
+    if (el.tomselect) {
+      el.tomselect.on('change', emit);
+    } else {
+      let tries = 0;
+      const timer = setInterval(() => {
+        tries++;
+        if (el.tomselect) {
+          clearInterval(timer);
+          el.tomselect.on('change', emit);
+        } else if (tries > 30) {
+          clearInterval(timer);
+        }
+      }, 100);
+    }
+  }
+  el._tsChangeCallbacks.push(callback);
+};
+
+if (window.TomSelect) {
+  document.querySelectorAll('select.ts-select').forEach(el => window.initTsSelect(el));
 }
