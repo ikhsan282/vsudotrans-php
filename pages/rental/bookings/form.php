@@ -642,12 +642,21 @@ require __DIR__ . '/../../../includes/header.php';
                             </div>
                             <div class="rnt-panel-body">
                                 <div class="rnt-row">
-                                    <label class="rnt-label">Pelanggan <span class="text-danger">*</span></label>
+                                    <label class="rnt-label">Pelanggan Utama <span class="text-danger">*</span></label>
                                     <div class="rnt-field">
-                                        <select class="form-select form-select-sm" id="select_passenger_id" name="passenger_id" required>
-                                            <option value="">-- Pilih Pelanggan --</option>
+                                        <select class="form-select form-select-sm ts-select" id="select_passenger_id" name="passenger_id" required>
+                                            <option value="">-- Pilih Pelanggan Utama --</option>
                                             <?= select_options($passengers, $in['passenger_id']) ?>
                                         </select>
+                                    </div>
+                                </div>
+                                <div class="rnt-row align-items-start">
+                                    <label class="rnt-label pt-1">Penumpang Tambahan</label>
+                                    <div class="rnt-field">
+                                        <select class="form-select form-select-sm ts-select" id="extraPassengersSelect" name="passenger_ids[]" multiple placeholder="Pilih penumpang tambahan (opsional)...">
+                                            <?= select_options($passengers, $in_passengers) ?>
+                                        </select>
+                                        <div class="form-text small">Opsional — pilih penumpang lain yang ikut serta (ditampilkan pada E-Tiket).</div>
                                     </div>
                                 </div>
                             </div>
@@ -1455,14 +1464,15 @@ document.addEventListener('DOMContentLoaded', function () {
 
                 var p = res.data;
                 var labelText = p.name + (phoneVal ? ' - ' + phoneVal : '');
+                var pidStr = String(p.id);
                 var pSelect = document.getElementById('select_passenger_id');
                 if (pSelect) {
                     if (pSelect.tomselect) {
-                        pSelect.tomselect.addOption({ value: p.id, text: labelText });
-                        pSelect.tomselect.setValue(p.id);
+                        pSelect.tomselect.addOption({ value: pidStr, text: labelText });
+                        pSelect.tomselect.setValue(pidStr);
                     } else {
                         var opt = document.createElement('option');
-                        opt.value = p.id;
+                        opt.value = pidStr;
                         opt.textContent = labelText;
                         opt.selected = true;
                         pSelect.appendChild(opt);
@@ -1472,10 +1482,11 @@ document.addEventListener('DOMContentLoaded', function () {
                 var extraSel = document.getElementById('extraPassengersSelect');
                 if (extraSel) {
                     if (extraSel.tomselect) {
-                        extraSel.tomselect.addOption({ value: p.id, text: labelText });
+                        extraSel.tomselect.addOption({ value: pidStr, text: labelText });
+                        extraSel.tomselect.removeItem(pidStr, true);
                     } else {
                         var opt2 = document.createElement('option');
-                        opt2.value = p.id;
+                        opt2.value = pidStr;
                         opt2.textContent = labelText;
                         extraSel.appendChild(opt2);
                     }
@@ -1491,6 +1502,22 @@ document.addEventListener('DOMContentLoaded', function () {
                 qpAlert.textContent = 'Terjadi kesalahan jaringan.';
                 qpAlert.classList.remove('d-none');
             });
+        });
+    }
+
+    // Hindari pelanggan utama ikut terpilih ganda di daftar penumpang tambahan
+    var primPaxSel  = document.getElementById('select_passenger_id');
+    var extraPaxSel = document.getElementById('extraPassengersSelect');
+    if (primPaxSel && extraPaxSel) {
+        onSelectChange(primPaxSel, function (val) {
+            if (!val) return;
+            if (extraPaxSel.tomselect) {
+                extraPaxSel.tomselect.removeItem(String(val), true);
+            } else {
+                Array.from(extraPaxSel.options).forEach(function (o) {
+                    if (o.value === String(val)) o.selected = false;
+                });
+            }
         });
     }
 

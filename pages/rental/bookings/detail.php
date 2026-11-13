@@ -756,12 +756,21 @@ require __DIR__ . '/../../../includes/header.php';
                         </div>
                         <div class="rnt-panel-body">
                             <div class="rnt-row">
-                                <div class="rnt-label">Pelanggan <span class="text-danger">*</span></div>
+                                <div class="rnt-label">Pelanggan Utama <span class="text-danger">*</span></div>
                                 <div class="rnt-field">
-                                    <select class="form-select form-select-sm" name="passenger_id" id="primaryPassengerSelect" form="rentalDetailForm" <?= $canManage ? 'required' : 'disabled' ?>>
-                                        <option value="">-- Pilih Pelanggan --</option>
+                                    <select class="form-select form-select-sm ts-select" name="passenger_id" id="primaryPassengerSelect" form="rentalDetailForm" <?= $canManage ? 'required' : 'disabled' ?>>
+                                        <option value="">-- Pilih Pelanggan Utama --</option>
                                         <?= select_options($passengers, $b['passenger_id']) ?>
                                     </select>
+                                </div>
+                            </div>
+                            <div class="rnt-row align-items-start">
+                                <div class="rnt-label pt-1">Penumpang Tambahan</div>
+                                <div class="rnt-field">
+                                    <select class="form-select form-select-sm ts-select" name="passenger_ids[]" id="extraPassengersSelect" form="rentalDetailForm" multiple placeholder="Pilih penumpang tambahan (opsional)..." <?= $canManage ? '' : 'disabled' ?>>
+                                        <?= select_options($passengers, $extra_passenger_ids) ?>
+                                    </select>
+                                    <div class="form-text small">Opsional — pilih penumpang lain yang ikut dalam penyewaan ini (ditampilkan pada E-Tiket).</div>
                                 </div>
                             </div>
                         </div>
@@ -1979,6 +1988,22 @@ document.addEventListener('DOMContentLoaded', () => {
 
     bindProvinceCityDistrict('pickupProvince', 'pickupCity', 'pickupDistrict');
     bindProvinceCityDistrict('deliveryProvince', 'deliveryCity', 'deliveryDistrict');
+
+    // Hindari pelanggan utama terpilih ganda pada penumpang tambahan
+    const primPaxDetailSel  = document.getElementById('primaryPassengerSelect');
+    const extraPaxDetailSel = document.getElementById('extraPassengersSelect');
+    if (primPaxDetailSel && extraPaxDetailSel) {
+        onSelectChange(primPaxDetailSel, function (val) {
+            if (!val) return;
+            if (extraPaxDetailSel.tomselect) {
+                extraPaxDetailSel.tomselect.removeItem(String(val), true);
+            } else {
+                Array.from(extraPaxDetailSel.options).forEach((o) => {
+                    if (o.value === String(val)) o.selected = false;
+                });
+            }
+        });
+    }
 
     // Quick Add Pelanggan via Modal
     const qpForm  = document.getElementById('quickPassengerForm');

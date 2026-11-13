@@ -215,7 +215,11 @@ window.attachRupiahInput = function (inputEl, hiddenEl, onChangeCallback) {
 if (window.TomSelect) {
   document.querySelectorAll('select.ts-select').forEach(el => {
     if (el.tomselect) return;
-    new TomSelect(el, { allowEmptyOption: true, create: false,
-      sortField: { field: 'text', direction: 'asc' } });
+    new TomSelect(el, {
+      allowEmptyOption: true,
+      create: false,
+      plugins: el.multiple ? ['remove_button'] : [],
+      sortField: { field: 'text', direction: 'asc' }
+    });
   });
 }
