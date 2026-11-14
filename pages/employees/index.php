@@ -169,14 +169,14 @@ require __DIR__ . '/../../includes/header.php';
                         </span>
                     </td>
                     <td class="text-end text-nowrap">
-                        <a href="detail.php?id=<?= (int) $r['id'] ?>" class="btn btn-sm btn-outline-secondary">Detail</a>
+                        <a href="detail.php?id=<?= (int) $r['id'] ?>" class="btn btn-sm btn-outline-secondary" title="Detail" aria-label="Detail"><i class="bi bi-eye"></i></a>
                         <?php if ($can_manage): ?>
-                            <a href="form.php?id=<?= (int) $r['id'] ?>" class="btn btn-sm btn-outline-primary">Ubah</a>
+                            <a href="form.php?id=<?= (int) $r['id'] ?>" class="btn btn-sm btn-outline-primary" title="Ubah" aria-label="Ubah"><i class="bi bi-pencil-square"></i></a>
                             <form method="post" action="delete.php" class="d-inline"
                                   onsubmit="return confirm('Hapus karyawan <?= e($r['name']) ?>? Tindakan ini tidak dapat dibatalkan.');">
                                 <?= csrf_field() ?>
                                 <input type="hidden" name="id" value="<?= (int) $r['id'] ?>">
-                                <button class="btn btn-sm btn-outline-danger" type="submit">Hapus</button>
+                                <button class="btn btn-sm btn-outline-danger" type="submit" title="Hapus" aria-label="Hapus"><i class="bi bi-trash"></i></button>
                             </form>
                         <?php endif; ?>
                     </td>

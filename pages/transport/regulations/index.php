@@ -278,8 +278,8 @@ require __DIR__ . '/../../../includes/header.php';
                             <?php endif; ?>
                         </td>
                         <td class="text-end text-nowrap">
-                            <a class="btn btn-sm btn-outline-primary" href="<?= e(APP_URL) ?>/pages/transport/regulations/form.php?id=<?= $rid ?>">
-                                <i class="bi bi-pencil-square me-1"></i>Detail / Ubah
+                            <a class="btn btn-sm btn-outline-primary" href="<?= e(APP_URL) ?>/pages/transport/regulations/form.php?id=<?= $rid ?>" title="Detail / Ubah" aria-label="Detail / Ubah">
+                                <i class="bi bi-pencil-square"></i>
                             </a>
                             <?php if ($canManage): ?>
                                 <form method="post" action="" class="d-inline" onsubmit="return confirm('Yakin ingin menghapus peraturan komisi ini?');">
@@ -287,7 +287,7 @@ require __DIR__ . '/../../../includes/header.php';
                                     <input type="hidden" name="act" value="delete">
                                     <input type="hidden" name="id" value="<?= $rid ?>">
                                     <input type="hidden" name="company_id" value="<?= (int) $r['company_id'] ?>">
-                                    <button type="submit" class="btn btn-sm btn-outline-danger" title="Hapus Peraturan Komisi">
+                                    <button type="submit" class="btn btn-sm btn-outline-danger" title="Hapus Peraturan Komisi" aria-label="Hapus Peraturan Komisi">
                                         <i class="bi bi-trash"></i>
                                     </button>
                                 </form>

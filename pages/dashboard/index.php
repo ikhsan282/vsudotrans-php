@@ -242,8 +242,8 @@ require __DIR__ . '/../../includes/header.php';
                                     </td>
                                     <td class="small text-muted"><?= e(date('d/m/Y', strtotime($doc['due_date']))) ?></td>
                                     <td class="small"><span class="badge <?= $badge_class ?>"><?= e($status_text) ?></span></td>
-                                    <td class="small text-end">
-                                        <a href="<?= e(APP_URL) ?>/<?= e($doc['url_prefix']) ?><?= (int) $doc['ref_id'] ?>" class="btn btn-sm btn-outline-primary py-0 px-2">Lihat Detail →</a>
+                                    <td class="small text-end text-nowrap">
+                                        <a href="<?= e(APP_URL) ?>/<?= e($doc['url_prefix']) ?><?= (int) $doc['ref_id'] ?>" class="btn btn-sm btn-outline-primary py-0 px-2" title="Lihat Detail" aria-label="Lihat Detail"><i class="bi bi-eye"></i></a>
                                     </td>
                                 </tr>
                             <?php endforeach; ?>

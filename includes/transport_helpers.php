@@ -286,27 +286,33 @@ function opts_provinces(array $include_ids = [], int $limit = 100): array
 }
 
 /** Kota global (tabel referensi, dibatasi LIMIT agar aman saat jutaan data + wajib sertakan $include_ids). */
-function opts_cities(?int $province_id = null, array $include_ids = [], int $limit = 100): array
+function opts_cities(?int $province_id = null, array $include_ids = [], int $limit = 100, bool $with_province = false): array
 {
+    $nameExpr = $with_province
+        ? "CONCAT(c.name, IF(p.name IS NOT NULL AND p.name <> '', CONCAT(' (', p.name, ')'), '')) AS name"
+        : 'c.name AS name';
+    $selectCols = "c.id, c.province_id, {$nameExpr}" . ($with_province ? ', p.name AS province_name' : '');
+    $joinSql    = $with_province ? ' LEFT JOIN provinces p ON p.id = c.province_id' : '';
+
     if ($province_id !== null && $province_id > 0) {
         $lim = max(1, min(200, $limit));
-        $st = db()->prepare('SELECT id, province_id, name FROM cities WHERE province_id = ? ORDER BY name ASC LIMIT ?');
+        $st = db()->prepare("SELECT {$selectCols} FROM cities c{$joinSql} WHERE c.province_id = ? ORDER BY c.name ASC LIMIT ?");
         $st->bind_param('ii', $province_id, $lim);
         $st->execute();
         $rows = $st->get_result()->fetch_all(MYSQLI_ASSOC);
         $st->close();
     } else {
         $lim = max(1, min(100, min(50, $limit)));
-        $st = db()->prepare('SELECT id, province_id, name FROM cities ORDER BY name ASC LIMIT ?');
+        $st = db()->prepare("SELECT {$selectCols} FROM cities c{$joinSql} ORDER BY c.name ASC LIMIT ?");
         $st->bind_param('i', $lim);
         $st->execute();
         $rows = $st->get_result()->fetch_all(MYSQLI_ASSOC);
         $st->close();
     }
 
-    return _merge_included_rows($rows, $include_ids, static function (array $ids): array {
+    return _merge_included_rows($rows, $include_ids, static function (array $ids) use ($selectCols, $joinSql): array {
         $ph = implode(',', array_fill(0, count($ids), '?'));
-        $st2 = db()->prepare("SELECT id, province_id, name FROM cities WHERE id IN ({$ph})");
+        $st2 = db()->prepare("SELECT {$selectCols} FROM cities c{$joinSql} WHERE c.id IN ({$ph})");
         $st2->bind_param(str_repeat('i', count($ids)), ...$ids);
         $st2->execute();
         $out = $st2->get_result()->fetch_all(MYSQLI_ASSOC);
@@ -337,6 +343,29 @@ function opts_districts_by_city(int $city_id, array $include_ids = [], int $limi
         $st2->close();
         return $out;
     });
+}
+
+/** Ambil daftar kecamatan berlabel "Kecamatan — Kota" untuk ID terpilih (cakupan radius rute). */
+function opts_districts_with_city(array $include_ids = []): array
+{
+    $ids = array_values(array_unique(array_filter(array_map('intval', $include_ids), static fn ($x) => $x > 0)));
+    if (!$ids) {
+        return [];
+    }
+    $ph = implode(',', array_fill(0, count($ids), '?'));
+    $st = db()->prepare(
+        "SELECT d.id, d.city_id,
+                CONCAT(d.name, IF(c.name IS NOT NULL AND c.name <> '', CONCAT(' — ', c.name), '')) AS name
+           FROM districts d
+           LEFT JOIN cities c ON c.id = d.city_id
+          WHERE d.id IN ({$ph})
+          ORDER BY d.name ASC"
+    );
+    $st->bind_param(str_repeat('i', count($ids)), ...$ids);
+    $st->execute();
+    $rows = $st->get_result()->fetch_all(MYSQLI_ASSOC);
+    $st->close();
+    return $rows;
 }
 
 /** Lookup province_id dari satu city_id via Primary Key (O(1)). */
@@ -735,4 +764,984 @@ function booking_upload_payment_proofs(array &$payments, int $company_id, int $i
         }
     }
     unset($pr);
+}
+
+const RUTE_SCHEDULE_SLOTS = [
+    '00:00', '01:00', '02:00', '03:00', '04:00', '05:00',
+    '06:00', '07:00', '08:00', '09:00', '10:00', '11:00',
+    '12:00', '13:00', '14:00', '15:00', '16:00', '17:00',
+    '18:00', '19:00', '20:00', '21:00', '22:00', '23:00',
+];
+
+/** Pastikan kolom radius penjemputan/pengantaran pada `rutes` serta tabel `rute_schedules` tersedia di DB. */
+function rute_ensure_schema(): void
+{
+    static $checked = false;
+    if ($checked) {
+        return;
+    }
+    $checked = true;
+    $db = db();
+    $wantCols = [
+        'seat_capacity'               => 'INT(11) NOT NULL DEFAULT 0 AFTER `end_capacity_seat`',
+        'pickup_free_radius_km'       => 'DECIMAL(10,2) NOT NULL DEFAULT 0.00 AFTER `seat_capacity`',
+        'pickup_max_radius_km'        => 'DECIMAL(10,2) NOT NULL DEFAULT 0.00 AFTER `pickup_free_radius_km`',
+        'pickup_extra_price_per_km'   => 'DECIMAL(18,2) NOT NULL DEFAULT 0.00 AFTER `pickup_max_radius_km`',
+        'delivery_free_radius_km'     => 'DECIMAL(10,2) NOT NULL DEFAULT 0.00 AFTER `pickup_extra_price_per_km`',
+        'delivery_max_radius_km'      => 'DECIMAL(10,2) NOT NULL DEFAULT 0.00 AFTER `delivery_free_radius_km`',
+        'delivery_extra_price_per_km' => 'DECIMAL(18,2) NOT NULL DEFAULT 0.00 AFTER `delivery_max_radius_km`',
+    ];
+    $have = [];
+    $res  = $db->query('SHOW COLUMNS FROM `rutes`');
+    while ($col = $res->fetch_assoc()) {
+        $have[(string) $col['Field']] = true;
+    }
+    foreach ($wantCols as $colName => $ddl) {
+        if (empty($have[$colName])) {
+            $db->query("ALTER TABLE `rutes` ADD COLUMN `{$colName}` {$ddl}");
+            if ($colName === 'seat_capacity') {
+                $db->query('UPDATE `rutes` SET `seat_capacity` = `end_capacity_seat` WHERE `seat_capacity` = 0 AND `end_capacity_seat` > 0');
+            }
+        }
+    }
+    rute_tariff_ensure_schema();
+    rute_schedule_ensure_schema();
+    rute_radius_ensure_schema();
+}
+
+/** Pastikan tabel `rute_tariffs` (tarif & kapasitas per kategori kendaraan per rute) tersedia dan ter-backfill. */
+function rute_tariff_ensure_schema(): void
+{
+    static $checked = false;
+    if ($checked) {
+        return;
+    }
+    $checked = true;
+    $db = db();
+    $db->query(
+        "CREATE TABLE IF NOT EXISTS `rute_tariffs` (
+            `id` INT(11) NOT NULL AUTO_INCREMENT,
+            `company_id` INT(11) NOT NULL,
+            `rute_id` INT(11) NOT NULL,
+            `category_vehicle_id` INT(11) NOT NULL,
+            `min_price` DECIMAL(18,2) NOT NULL DEFAULT 0.00,
+            `price` DECIMAL(18,2) NOT NULL DEFAULT 0.00,
+            `max_price` DECIMAL(18,2) NOT NULL DEFAULT 0.00,
+            `start_capacity_seat` INT(11) NOT NULL DEFAULT 0,
+            `end_capacity_seat` INT(11) NOT NULL DEFAULT 0,
+            `seat_capacity` INT(11) NOT NULL DEFAULT 0,
+            `note` VARCHAR(2000) DEFAULT NULL,
+            `sort_order` INT(11) NOT NULL DEFAULT 0,
+            `created_user` VARCHAR(255) DEFAULT NULL,
+            `created_date` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            `modified_user` VARCHAR(255) DEFAULT NULL,
+            `modified_date` DATETIME DEFAULT NULL,
+            PRIMARY KEY (`id`),
+            UNIQUE KEY `uq_rute_tariffs_cat` (`rute_id`, `category_vehicle_id`),
+            KEY `ix_rute_tariffs_company` (`company_id`),
+            KEY `ix_rute_tariffs_rute_cat` (`rute_id`, `category_vehicle_id`),
+            KEY `ix_rute_tariffs_category` (`category_vehicle_id`),
+            CONSTRAINT `fk_rute_tariffs_company` FOREIGN KEY (`company_id`) REFERENCES `companies` (`id`) ON DELETE RESTRICT,
+            CONSTRAINT `fk_rute_tariffs_rute` FOREIGN KEY (`rute_id`) REFERENCES `rutes` (`id`) ON DELETE CASCADE,
+            CONSTRAINT `fk_rute_tariffs_category` FOREIGN KEY (`category_vehicle_id`) REFERENCES `category_vehicles` (`id`) ON DELETE RESTRICT
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci"
+    );
+
+    $haveTariff = [];
+    $resCol = $db->query('SHOW COLUMNS FROM `rute_tariffs`');
+    while ($col = $resCol->fetch_assoc()) {
+        $haveTariff[(string) $col['Field']] = true;
+    }
+    if (empty($haveTariff['seat_capacity'])) {
+        $db->query('ALTER TABLE `rute_tariffs` ADD COLUMN `seat_capacity` INT(11) NOT NULL DEFAULT 0 AFTER `end_capacity_seat`');
+        $db->query('UPDATE `rute_tariffs` SET `seat_capacity` = `end_capacity_seat` WHERE `seat_capacity` = 0 AND `end_capacity_seat` > 0');
+    }
+
+    // Backfill 1x bagi rute lama yang belum memiliki baris di `rute_tariffs`
+    $db->query(
+        "INSERT IGNORE INTO `rute_tariffs`
+            (`company_id`, `rute_id`, `category_vehicle_id`, `min_price`, `price`, `max_price`,
+             `start_capacity_seat`, `end_capacity_seat`, `seat_capacity`, `note`, `sort_order`, `created_user`)
+         SELECT r.`company_id`, r.`id`, r.`category_vehicle_id`, r.`min_price`, r.`price`, r.`max_price`,
+                r.`start_capacity_seat`, r.`end_capacity_seat`,
+                COALESCE(NULLIF(r.`seat_capacity`, 0), r.`end_capacity_seat`, 0),
+                r.`note`, 1, r.`created_user`
+           FROM `rutes` r
+          WHERE r.`category_vehicle_id` > 0
+            AND NOT EXISTS (SELECT 1 FROM `rute_tariffs` rt WHERE rt.`rute_id` = r.`id`)"
+    );
+}
+
+/** Parse nominal Rupiah bertanda agar input negatif tetap terdeteksi validasi. */
+function rute_parse_signed_amount(mixed $raw): float
+{
+    if (is_int($raw) || is_float($raw)) {
+        return (float) $raw;
+    }
+    $str = trim((string) $raw);
+    if ($str === '') {
+        return 0.0;
+    }
+    $neg = str_starts_with($str, '-');
+    $abs = parse_rupiah_input($neg ? ltrim($str, "- \t") : $str);
+    return $neg ? -$abs : $abs;
+}
+
+/** Ambil peta [rute_id => list baris tarif kategori] dari tabel `rute_tariffs`. */
+function rute_tariffs_by_rute_ids(array $rute_ids, int $company_id = 0): array
+{
+    rute_tariff_ensure_schema();
+    $ids = array_values(array_unique(array_filter(array_map('intval', $rute_ids), static fn ($x) => $x > 0)));
+    if (!$ids) {
+        return [];
+    }
+    $ph    = implode(',', array_fill(0, count($ids), '?'));
+    $sql   = "SELECT rt.id, rt.rute_id, rt.category_vehicle_id, rt.min_price, rt.price, rt.max_price,
+                     rt.start_capacity_seat, rt.end_capacity_seat, rt.seat_capacity, rt.note, rt.sort_order,
+                     cv.code AS category_code, cv.name AS category_name
+                FROM `rute_tariffs` rt
+                JOIN `category_vehicles` cv ON cv.id = rt.category_vehicle_id
+               WHERE rt.rute_id IN ({$ph})";
+    $types = str_repeat('i', count($ids));
+    $args  = $ids;
+    if ($company_id > 0) {
+        $sql   .= ' AND rt.company_id = ?';
+        $types .= 'i';
+        $args[] = $company_id;
+    }
+    $sql .= ' ORDER BY rt.sort_order ASC, rt.id ASC';
+    $st = db()->prepare($sql);
+    $st->bind_param($types, ...$args);
+    $st->execute();
+    $out = [];
+    foreach ($st->get_result()->fetch_all(MYSQLI_ASSOC) as $r) {
+        $rid     = (int) $r['rute_id'];
+        $seatCap = (int) ($r['seat_capacity'] ?? 0);
+        if ($seatCap <= 0) {
+            $seatCap = (int) ($r['end_capacity_seat'] ?? 0);
+        }
+        $out[$rid][] = [
+            'id'                  => (int) $r['id'],
+            'rute_id'             => $rid,
+            'category_vehicle_id' => (int) $r['category_vehicle_id'],
+            'category_code'       => (string) $r['category_code'],
+            'category_name'       => (string) $r['category_name'],
+            'min_price'           => (float) $r['min_price'],
+            'price'               => (float) $r['price'],
+            'max_price'           => (float) $r['max_price'],
+            'seat_capacity'       => $seatCap,
+            'start_capacity_seat' => (int) ($r['start_capacity_seat'] ?? ($seatCap > 0 ? 1 : 0)),
+            'end_capacity_seat'   => $seatCap > 0 ? $seatCap : (int) ($r['end_capacity_seat'] ?? 0),
+            'note'                => (string) ($r['note'] ?? ''),
+            'sort_order'          => (int) $r['sort_order'],
+        ];
+    }
+    $st->close();
+    return $out;
+}
+
+/** Ambil daftar tarif kategori milik satu rute. */
+function rute_tariffs_for_rute(int $rute_id, int $company_id = 0): array
+{
+    if ($rute_id <= 0) {
+        return [];
+    }
+    $map = rute_tariffs_by_rute_ids([$rute_id], $company_id);
+    return $map[$rute_id] ?? [];
+}
+
+/** Normalisasi dan validasi list tarif kategori kendaraan dari form rute. */
+function rute_tariffs_normalize_and_validate(array $rows, int $company_id): array
+{
+    $clean = [];
+    $seenCats = [];
+    $sort = 1;
+    foreach ($rows as $raw) {
+        $catId     = (int) ($raw['category_vehicle_id'] ?? 0);
+        $minP      = round(rute_parse_signed_amount($raw['min_price'] ?? 0), 2);
+        $price     = round(rute_parse_signed_amount($raw['price'] ?? 0), 2);
+        $maxP      = round(rute_parse_signed_amount($raw['max_price'] ?? 0), 2);
+        $hasSeatIn = array_key_exists('seat_capacity', $raw) && $raw['seat_capacity'] !== '' && $raw['seat_capacity'] !== null;
+        $seatCap   = $hasSeatIn ? (int) $raw['seat_capacity'] : (int) ($raw['end_capacity_seat'] ?? 0);
+        $seatS     = $hasSeatIn ? ($seatCap > 0 ? 1 : 0) : (int) ($raw['start_capacity_seat'] ?? ($seatCap > 0 ? 1 : 0));
+        $seatE     = $seatCap;
+        $note      = trim((string) ($raw['note'] ?? ''));
+
+        if ($catId <= 0 && $price == 0.0 && $minP == 0.0 && $maxP == 0.0 && $seatCap === 0 && $seatS === 0 && $note === '') {
+            continue;
+        }
+        if ($catId <= 0) {
+            throw new InvalidArgumentException('Setiap baris tarif wajib memilih kategori kendaraan.');
+        }
+        if (!fetch_company_ref_row('category_vehicles', $catId, $company_id)) {
+            throw new InvalidArgumentException('Kategori kendaraan tidak valid atau bukan milik perusahaan yang dipilih.');
+        }
+        if (isset($seenCats[$catId])) {
+            throw new InvalidArgumentException('Kategori kendaraan tidak boleh duplikat pada rute yang sama.');
+        }
+        $seenCats[$catId] = true;
+
+        if ($price < 0 || $minP < 0 || $maxP < 0 || $seatCap < 0 || $seatS < 0) {
+            throw new InvalidArgumentException('Harga dan jumlah kursi pada daftar tarif tidak boleh negatif.');
+        }
+        if ($seatCap > 999) {
+            throw new InvalidArgumentException('Jumlah kursi maksimal 999.');
+        }
+        if ($minP > 0 && $minP > $price) {
+            throw new InvalidArgumentException('Harga minimum tidak boleh melebihi harga standar.');
+        }
+        if ($maxP > 0 && $price > $maxP) {
+            throw new InvalidArgumentException('Harga standar tidak boleh melebihi harga maksimum.');
+        }
+        if (!$hasSeatIn && $seatE > 0 && $seatS > $seatE) {
+            throw new InvalidArgumentException('Kursi awal tidak boleh melebihi kursi akhir.');
+        }
+        if (mb_strlen($note) > 2000) {
+            throw new InvalidArgumentException('Catatan baris tarif maksimal 2000 karakter.');
+        }
+
+        $clean[] = [
+            'category_vehicle_id' => $catId,
+            'min_price'           => $minP,
+            'price'               => $price,
+            'max_price'           => $maxP,
+            'seat_capacity'       => $seatCap,
+            'start_capacity_seat' => $seatS,
+            'end_capacity_seat'   => $seatE,
+            'note'                => $note,
+            'sort_order'          => $sort++,
+        ];
+    }
+
+    if (!$clean) {
+        throw new InvalidArgumentException('Tambahkan minimal 1 kategori kendaraan beserta harga tiketnya.');
+    }
+    return $clean;
+}
+
+/** Sinkronkan daftar tarif per kategori kendaraan pada `rute_tariffs` untuk rute terkait. */
+function rute_tariffs_sync(int $rute_id, int $company_id, array $tariffs, ?string $user = null): void
+{
+    if ($rute_id <= 0 || $company_id <= 0) {
+        return;
+    }
+    rute_tariff_ensure_schema();
+    $db = db();
+
+    $keepCats = array_values(array_map(static fn (array $t): int => (int) $t['category_vehicle_id'], $tariffs));
+    if ($keepCats) {
+        $ph = implode(',', array_fill(0, count($keepCats), '?'));
+        $stDel = $db->prepare("DELETE FROM `rute_tariffs` WHERE rute_id = ? AND company_id = ? AND category_vehicle_id NOT IN ({$ph})");
+        $stDel->bind_param('ii' . str_repeat('i', count($keepCats)), $rute_id, $company_id, ...$keepCats);
+        $stDel->execute();
+        $stDel->close();
+    }
+
+    $sqlUp = "INSERT INTO `rute_tariffs`
+                (`company_id`, `rute_id`, `category_vehicle_id`, `min_price`, `price`, `max_price`,
+                 `start_capacity_seat`, `end_capacity_seat`, `seat_capacity`, `note`, `sort_order`, `created_user`)
+              VALUES (?,?,?,?,?,?,?,?,?,?,?,?)
+              ON DUPLICATE KEY UPDATE
+                `min_price` = VALUES(`min_price`),
+                `price` = VALUES(`price`),
+                `max_price` = VALUES(`max_price`),
+                `start_capacity_seat` = VALUES(`start_capacity_seat`),
+                `end_capacity_seat` = VALUES(`end_capacity_seat`),
+                `seat_capacity` = VALUES(`seat_capacity`),
+                `note` = VALUES(`note`),
+                `sort_order` = VALUES(`sort_order`),
+                `modified_user` = ?,
+                `modified_date` = NOW()";
+    $stUp = $db->prepare($sqlUp);
+    foreach ($tariffs as $t) {
+        $catId   = (int) $t['category_vehicle_id'];
+        $minP    = (float) $t['min_price'];
+        $price   = (float) $t['price'];
+        $maxP    = (float) $t['max_price'];
+        $seatCap = (int) ($t['seat_capacity'] ?? $t['end_capacity_seat'] ?? 0);
+        $seatS   = (int) ($t['start_capacity_seat'] ?? ($seatCap > 0 ? 1 : 0));
+        $seatE   = $seatCap > 0 ? $seatCap : (int) ($t['end_capacity_seat'] ?? 0);
+        $note    = $t['note'] !== '' ? (string) $t['note'] : null;
+        $sort    = (int) $t['sort_order'];
+        $stUp->bind_param(
+            'iiidddiiisiss',
+            $company_id,
+            $rute_id,
+            $catId,
+            $minP,
+            $price,
+            $maxP,
+            $seatS,
+            $seatE,
+            $seatCap,
+            $note,
+            $sort,
+            $user,
+            $user
+        );
+        $stUp->execute();
+    }
+    $stUp->close();
+}
+
+/** Ringkasan daftar tarif kategori kendaraan untuk ekspor Excel/PDF daftar rute. */
+function rute_format_tariffs_summary(array $tariffs): string
+{
+    if (!$tariffs) {
+        return '-';
+    }
+    $parts = [];
+    foreach ($tariffs as $t) {
+        $cat = trim((string) ($t['category_name'] ?? ''));
+        if ($cat === '') {
+            $cat = 'Kategori #' . (int) ($t['category_vehicle_id'] ?? 0);
+        }
+        $line = $cat . ': ' . rupiah((float) ($t['price'] ?? 0));
+        $seat = (int) (($t['seat_capacity'] ?? 0) > 0 ? $t['seat_capacity'] : ($t['end_capacity_seat'] ?? 0));
+        if ($seat > 0) {
+            $line .= ' (' . $seat . ' kursi)';
+        }
+        $parts[] = $line;
+    }
+    return implode('; ', $parts);
+}
+
+/** Ringkasan singkat teks radius jemput/antar untuk tabel daftar dan export rute. */
+function rute_format_radius_summary(float $freeKm, float $maxKm, float $extraPerKm): string
+{
+    if ($freeKm <= 0 && $maxKm <= 0 && $extraPerKm <= 0) {
+        return '-';
+    }
+    $fmtKm = static fn (float $v): string => rtrim(rtrim(number_format($v, 2, '.', ''), '0'), '.');
+    $parts = [];
+    if ($freeKm > 0) {
+        $parts[] = 'Gratis ' . $fmtKm($freeKm) . ' km';
+    }
+    if ($maxKm > 0) {
+        $parts[] = 'Maks ' . $fmtKm($maxKm) . ' km';
+    }
+    if ($extraPerKm > 0) {
+        $parts[] = '+' . rupiah($extraPerKm) . '/km';
+    }
+    return implode(' · ', $parts);
+}
+
+/** Pastikan tabel `rute_radius_districts` (cakupan kecamatan & biaya tambahan per rute) tersedia di DB. */
+function rute_radius_ensure_schema(): void
+{
+    static $checked = false;
+    if ($checked) {
+        return;
+    }
+    $checked = true;
+    db()->query(
+        "CREATE TABLE IF NOT EXISTS `rute_radius_districts` (
+            `id` INT(11) NOT NULL AUTO_INCREMENT,
+            `company_id` INT(11) NOT NULL,
+            `rute_id` INT(11) NOT NULL,
+            `radius_type` ENUM('pickup','delivery') NOT NULL,
+            `district_id` INT(11) NOT NULL,
+            `extra_price` DECIMAL(18,2) NOT NULL DEFAULT 0.00,
+            `note` VARCHAR(500) DEFAULT NULL,
+            `sort_order` INT(11) NOT NULL DEFAULT 0,
+            `created_user` VARCHAR(255) DEFAULT NULL,
+            `created_date` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            `modified_user` VARCHAR(255) DEFAULT NULL,
+            `modified_date` DATETIME DEFAULT NULL,
+            PRIMARY KEY (`id`),
+            UNIQUE KEY `uq_rute_radius_area_dist` (`rute_id`, `radius_type`, `district_id`),
+            KEY `ix_rute_radius_company` (`company_id`),
+            KEY `ix_rute_radius_rute_type` (`rute_id`, `radius_type`),
+            KEY `ix_rute_radius_district` (`district_id`),
+            CONSTRAINT `fk_rute_radius_company` FOREIGN KEY (`company_id`) REFERENCES `companies` (`id`) ON DELETE RESTRICT,
+            CONSTRAINT `fk_rute_radius_rute` FOREIGN KEY (`rute_id`) REFERENCES `rutes` (`id`) ON DELETE CASCADE,
+            CONSTRAINT `fk_rute_radius_district` FOREIGN KEY (`district_id`) REFERENCES `districts` (`id`) ON DELETE RESTRICT
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci"
+    );
+}
+
+/** Ambil peta [rute_id => ['pickup' => [...], 'delivery' => [...]]] dari `rute_radius_districts`. */
+function rute_radius_by_rute_ids(array $rute_ids, int $company_id = 0): array
+{
+    rute_radius_ensure_schema();
+    $ids = array_values(array_unique(array_filter(array_map('intval', $rute_ids), static fn ($x) => $x > 0)));
+    if (!$ids) {
+        return [];
+    }
+    $ph    = implode(',', array_fill(0, count($ids), '?'));
+    $sql   = "SELECT rr.id, rr.rute_id, rr.radius_type, rr.district_id, rr.extra_price, rr.note, rr.sort_order,
+                     d.name AS district_name, d.city_id, c.name AS city_name
+                FROM `rute_radius_districts` rr
+                JOIN `districts` d ON d.id = rr.district_id
+                LEFT JOIN `cities` c ON c.id = d.city_id
+               WHERE rr.rute_id IN ({$ph})";
+    $types = str_repeat('i', count($ids));
+    $args  = $ids;
+    if ($company_id > 0) {
+        $sql   .= ' AND rr.company_id = ?';
+        $types .= 'i';
+        $args[] = $company_id;
+    }
+    $sql .= ' ORDER BY rr.radius_type ASC, rr.sort_order ASC, d.name ASC, rr.id ASC';
+    $st = db()->prepare($sql);
+    $st->bind_param($types, ...$args);
+    $st->execute();
+    $out = [];
+    foreach ($ids as $rid) {
+        $out[$rid] = ['pickup' => [], 'delivery' => []];
+    }
+    foreach ($st->get_result()->fetch_all(MYSQLI_ASSOC) as $r) {
+        $rid  = (int) $r['rute_id'];
+        $type = ($r['radius_type'] === 'delivery') ? 'delivery' : 'pickup';
+        $dist = (string) $r['district_name'];
+        $city = (string) ($r['city_name'] ?? '');
+        $out[$rid][$type][] = [
+            'id'            => (int) $r['id'],
+            'rute_id'       => $rid,
+            'radius_type'   => $type,
+            'district_id'   => (int) $r['district_id'],
+            'district_name' => $dist,
+            'city_id'       => (int) ($r['city_id'] ?? 0),
+            'city_name'     => $city,
+            'label'         => $city !== '' ? ($dist . ' — ' . $city) : $dist,
+            'extra_price'   => (float) $r['extra_price'],
+            'note'          => (string) ($r['note'] ?? ''),
+            'sort_order'    => (int) $r['sort_order'],
+        ];
+    }
+    $st->close();
+    return $out;
+}
+
+/** Ambil daftar kecamatan radius penjemputan & pengantaran milik satu rute. */
+function rute_radius_for_rute(int $rute_id, int $company_id = 0): array
+{
+    if ($rute_id <= 0) {
+        return ['pickup' => [], 'delivery' => []];
+    }
+    $map = rute_radius_by_rute_ids([$rute_id], $company_id);
+    return $map[$rute_id] ?? ['pickup' => [], 'delivery' => []];
+}
+
+/** Normalisasi & validasi baris kecamatan radius penjemputan atau pengantaran dari form rute. */
+function rute_radius_normalize_and_validate(array $rows, string $radius_type): array
+{
+    $type = ($radius_type === 'delivery') ? 'delivery' : 'pickup';
+    $areaLabel = ($type === 'delivery') ? 'pengantaran' : 'penjemputan';
+    $clean = [];
+    $seen  = [];
+    $needCheckIds = [];
+    $sort  = 1;
+
+    foreach ($rows as $raw) {
+        $distId = (int) ($raw['district_id'] ?? 0);
+        $extra  = round(rute_parse_signed_amount($raw['extra_price'] ?? 0), 2);
+        $note   = trim((string) ($raw['note'] ?? ''));
+
+        if ($distId <= 0 && $extra == 0.0 && $note === '') {
+            continue;
+        }
+        if ($distId <= 0) {
+            throw new InvalidArgumentException("Setiap baris radius {$areaLabel} wajib memilih kecamatan.");
+        }
+        if (isset($seen[$distId])) {
+            throw new InvalidArgumentException("Kecamatan pada daftar radius {$areaLabel} tidak boleh duplikat.");
+        }
+        if ($extra < 0) {
+            throw new InvalidArgumentException("Biaya tambahan radius {$areaLabel} tidak boleh negatif.");
+        }
+        if (mb_strlen($note) > 500) {
+            throw new InvalidArgumentException("Keterangan radius {$areaLabel} maksimal 500 karakter.");
+        }
+        $seen[$distId] = true;
+        $needCheckIds[] = $distId;
+        $clean[] = [
+            'radius_type' => $type,
+            'district_id' => $distId,
+            'extra_price' => $extra,
+            'note'        => $note,
+            'sort_order'  => $sort++,
+        ];
+    }
+
+    if ($needCheckIds) {
+        $ph = implode(',', array_fill(0, count($needCheckIds), '?'));
+        $st = db()->prepare("SELECT id FROM districts WHERE id IN ({$ph})");
+        $st->bind_param(str_repeat('i', count($needCheckIds)), ...$needCheckIds);
+        $st->execute();
+        $validSet = [];
+        foreach ($st->get_result()->fetch_all(MYSQLI_ASSOC) as $r) {
+            $validSet[(int) $r['id']] = true;
+        }
+        $st->close();
+        foreach ($needCheckIds as $did) {
+            if (empty($validSet[$did])) {
+                throw new InvalidArgumentException("Kecamatan #{$did} pada radius {$areaLabel} tidak ditemukan di master data.");
+            }
+        }
+    }
+
+    return $clean;
+}
+
+/** Sinkronkan daftar kecamatan radius penjemputan & pengantaran ke tabel `rute_radius_districts`. */
+function rute_radius_sync(int $rute_id, int $company_id, array $pickupRows, array $deliveryRows, ?string $user = null): void
+{
+    if ($rute_id <= 0 || $company_id <= 0) {
+        return;
+    }
+    rute_radius_ensure_schema();
+    $db = db();
+
+    $syncArea = static function (string $type, array $items) use ($db, $rute_id, $company_id, $user): void {
+        $keepIds = array_values(array_map(static fn ($x) => (int) $x['district_id'], $items));
+        if ($keepIds) {
+            $ph  = implode(',', array_fill(0, count($keepIds), '?'));
+            $stD = $db->prepare("DELETE FROM `rute_radius_districts` WHERE rute_id = ? AND radius_type = ? AND district_id NOT IN ({$ph})");
+            $stD->bind_param('is' . str_repeat('i', count($keepIds)), $rute_id, $type, ...$keepIds);
+            $stD->execute();
+            $stD->close();
+        } else {
+            $stD = $db->prepare('DELETE FROM `rute_radius_districts` WHERE rute_id = ? AND radius_type = ?');
+            $stD->bind_param('is', $rute_id, $type);
+            $stD->execute();
+            $stD->close();
+            return;
+        }
+
+        $stUp = $db->prepare(
+            "INSERT INTO `rute_radius_districts`
+                (company_id, rute_id, radius_type, district_id, extra_price, note, sort_order, created_user, modified_user, modified_date)
+             VALUES (?,?,?,?,?,?,?,?,?,NOW())
+             ON DUPLICATE KEY UPDATE
+                company_id = VALUES(company_id),
+                extra_price = VALUES(extra_price),
+                note = VALUES(note),
+                sort_order = VALUES(sort_order),
+                modified_user = VALUES(modified_user),
+                modified_date = NOW()"
+        );
+        foreach ($items as $it) {
+            $did   = (int) $it['district_id'];
+            $extra = (float) $it['extra_price'];
+            $note  = $it['note'] !== '' ? (string) $it['note'] : null;
+            $sort  = (int) $it['sort_order'];
+            $stUp->bind_param('iisidsiss', $company_id, $rute_id, $type, $did, $extra, $note, $sort, $user, $user);
+            $stUp->execute();
+        }
+        $stUp->close();
+    };
+
+    $syncArea('pickup', $pickupRows);
+    $syncArea('delivery', $deliveryRows);
+}
+
+/** Ringkasan daftar kecamatan radius untuk tabel daftar rute maupun export Excel/PDF. */
+function rute_format_district_radius_summary(
+    array $districts,
+    float $legacyFreeKm = 0,
+    float $legacyMaxKm = 0,
+    float $legacyExtraPerKm = 0,
+    bool $detailed = false
+): string {
+    if (!$districts) {
+        return rute_format_radius_summary($legacyFreeKm, $legacyMaxKm, $legacyExtraPerKm);
+    }
+    if ($detailed) {
+        $lines = [];
+        foreach ($districts as $d) {
+            $name  = trim((string) ($d['district_name'] ?? ''));
+            $extra = (float) ($d['extra_price'] ?? 0);
+            $tag   = $extra > 0 ? '+' . rupiah($extra) : 'Gratis';
+            $lines[] = ($name !== '' ? $name : ('Kec #' . (int) ($d['district_id'] ?? 0))) . ' (' . $tag . ')';
+        }
+        return implode('; ', $lines);
+    }
+    $count     = count($districts);
+    $freeCount = 0;
+    $paidExtras = [];
+    $names     = [];
+    foreach ($districts as $d) {
+        $extra = (float) ($d['extra_price'] ?? 0);
+        if ($extra <= 0) {
+            $freeCount++;
+        } else {
+            $paidExtras[] = $extra;
+        }
+        $n = trim((string) ($d['district_name'] ?? ''));
+        if ($n !== '' && count($names) < 2) {
+            $names[] = $n;
+        }
+    }
+    $feeText = 'Gratis';
+    if ($paidExtras) {
+        $minE = min($paidExtras);
+        $maxE = max($paidExtras);
+        $range = ($minE == $maxE) ? ('+' . rupiah($minE)) : ('+' . rupiah($minE) . '–' . rupiah($maxE));
+        $feeText = ($freeCount > 0) ? ("{$freeCount} gratis, {$range}") : $range;
+    }
+    $sample = $names ? (' · ' . implode(', ', $names) . ($count > 2 ? ', …' : '')) : '';
+    return "{$count} kec. ({$feeText}){$sample}";
+}
+
+/** Cari kecocokan biaya tambahan kecamatan pada daftar radius rute. */
+function rute_find_district_radius_extra(array $districts, int $district_id): array
+{
+    if ($district_id > 0) {
+        foreach ($districts as $d) {
+            if ((int) ($d['district_id'] ?? 0) === $district_id) {
+                return [
+                    'matched'       => true,
+                    'extra_price'   => (float) ($d['extra_price'] ?? 0),
+                    'note'          => (string) ($d['note'] ?? ''),
+                    'district_name' => (string) ($d['district_name'] ?? ''),
+                ];
+            }
+        }
+    }
+    return ['matched' => false, 'extra_price' => 0.0, 'note' => '', 'district_name' => ''];
+}
+
+/** Pastikan tabel terpisah `rute_schedules` (ENUM jam keberangkatan per rute) tersedia di DB. */
+function rute_schedule_ensure_schema(): void
+{
+    static $checked = false;
+    if ($checked) {
+        return;
+    }
+    $checked = true;
+    $enumList = "'" . implode("','", RUTE_SCHEDULE_SLOTS) . "'";
+    db()->query(
+        "CREATE TABLE IF NOT EXISTS `rute_schedules` (
+            `id` INT(11) NOT NULL AUTO_INCREMENT,
+            `company_id` INT(11) NOT NULL,
+            `rute_id` INT(11) NOT NULL,
+            `departure_time` ENUM({$enumList}) NOT NULL,
+            `created_user` VARCHAR(255) DEFAULT NULL,
+            `created_date` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            PRIMARY KEY (`id`),
+            UNIQUE KEY `uq_rute_schedules_slot` (`rute_id`, `departure_time`),
+            KEY `ix_rute_schedules_company` (`company_id`),
+            KEY `ix_rute_schedules_rute_time` (`rute_id`, `departure_time`),
+            CONSTRAINT `fk_rute_schedules_company` FOREIGN KEY (`company_id`) REFERENCES `companies` (`id`) ON DELETE RESTRICT,
+            CONSTRAINT `fk_rute_schedules_rute` FOREIGN KEY (`rute_id`) REFERENCES `rutes` (`id`) ON DELETE CASCADE
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci"
+    );
+}
+
+/** Pengelompokan periode jam keberangkatan ENUM rute untuk tampilan form. */
+function rute_schedule_periods(): array
+{
+    return [
+        ['label' => 'Pagi',      'slots' => ['05:00', '06:00', '07:00', '08:00', '09:00', '10:00', '11:00']],
+        ['label' => 'Siang',     'slots' => ['12:00', '13:00', '14:00']],
+        ['label' => 'Sore',      'slots' => ['15:00', '16:00', '17:00']],
+        ['label' => 'Malam',     'slots' => ['18:00', '19:00', '20:00', '21:00', '22:00', '23:00']],
+        ['label' => 'Dini Hari', 'slots' => ['00:00', '01:00', '02:00', '03:00', '04:00']],
+    ];
+}
+
+/** Validasi & urutkan daftar jam keberangkatan terhadap whitelist ENUM `RUTE_SCHEDULE_SLOTS`. */
+function rute_schedule_normalize_slots(array $rawSlots): array
+{
+    $seen = [];
+    foreach ($rawSlots as $raw) {
+        $val = trim((string) $raw);
+        if ($val === '') {
+            continue;
+        }
+        if (!in_array($val, RUTE_SCHEDULE_SLOTS, true)) {
+            throw new InvalidArgumentException("Jam keberangkatan '{$val}' tidak valid. Pilih slot ENUM per jam (00:00 - 23:00).");
+        }
+        $seen[$val] = true;
+    }
+    $slots = array_keys($seen);
+    sort($slots, SORT_STRING);
+    return $slots;
+}
+
+/** Ambil peta [rute_id => ['07:00', '08:00', ...]] dari tabel `rute_schedules`. */
+function rute_schedules_by_rute_ids(array $rute_ids, int $company_id = 0): array
+{
+    rute_schedule_ensure_schema();
+    $ids = array_values(array_unique(array_filter(array_map('intval', $rute_ids), static fn ($x) => $x > 0)));
+    if (!$ids) {
+        return [];
+    }
+    $ph    = implode(',', array_fill(0, count($ids), '?'));
+    $sql   = "SELECT rute_id, departure_time FROM rute_schedules WHERE rute_id IN ({$ph})";
+    $types = str_repeat('i', count($ids));
+    $args  = $ids;
+    if ($company_id > 0) {
+        $sql   .= ' AND company_id = ?';
+        $types .= 'i';
+        $args[] = $company_id;
+    }
+    $sql .= ' ORDER BY departure_time ASC';
+    $st = db()->prepare($sql);
+    $st->bind_param($types, ...$args);
+    $st->execute();
+    $out = [];
+    foreach ($st->get_result()->fetch_all(MYSQLI_ASSOC) as $row) {
+        $out[(int) $row['rute_id']][] = (string) $row['departure_time'];
+    }
+    $st->close();
+    return $out;
+}
+
+/** Ambil daftar jam keberangkatan ENUM milik satu rute. */
+function rute_schedule_times(int $rute_id, int $company_id = 0): array
+{
+    if ($rute_id <= 0) {
+        return [];
+    }
+    $map = rute_schedules_by_rute_ids([$rute_id], $company_id);
+    return $map[$rute_id] ?? [];
+}
+
+/** Sinkronkan daftar slot jam keberangkatan pada tabel `rute_schedules` untuk rute terkait. */
+function rute_schedule_sync(int $rute_id, int $company_id, array $slots, ?string $user = null): void
+{
+    if ($rute_id <= 0 || $company_id <= 0) {
+        return;
+    }
+    rute_schedule_ensure_schema();
+    $slots    = rute_schedule_normalize_slots($slots);
+    $existing = rute_schedule_times($rute_id, $company_id);
+    $db       = db();
+
+    $toDelete = array_values(array_diff($existing, $slots));
+    if ($toDelete) {
+        $ph = implode(',', array_fill(0, count($toDelete), '?'));
+        $stDel = $db->prepare("DELETE FROM rute_schedules WHERE rute_id = ? AND company_id = ? AND departure_time IN ({$ph})");
+        $stDel->bind_param('ii' . str_repeat('s', count($toDelete)), $rute_id, $company_id, ...$toDelete);
+        $stDel->execute();
+        $stDel->close();
+    }
+
+    $toInsert = array_values(array_diff($slots, $existing));
+    if ($toInsert) {
+        $stIns = $db->prepare('INSERT INTO rute_schedules (company_id, rute_id, departure_time, created_user) VALUES (?,?,?,?)');
+        foreach ($toInsert as $slot) {
+            $stIns->bind_param('iiss', $company_id, $rute_id, $slot, $user);
+            $stIns->execute();
+        }
+        $stIns->close();
+    }
+}
+
+/** Ambil saran kapasitas kursi terbanyak/tertinggi dari master armada (`vehicles.seat`) per kategori kendaraan. */
+function rute_category_default_seats(int $company_id): array
+{
+    if ($company_id <= 0) {
+        return [];
+    }
+    $st = db()->prepare(
+        'SELECT category_vehicle_id, MAX(seat) AS max_seat
+           FROM vehicles
+          WHERE company_id = ? AND is_active = 1 AND seat > 0
+          GROUP BY category_vehicle_id'
+    );
+    $st->bind_param('i', $company_id);
+    $st->execute();
+    $out = [];
+    foreach ($st->get_result()->fetch_all(MYSQLI_ASSOC) as $r) {
+        $out[(int) $r['category_vehicle_id']] = (int) $r['max_seat'];
+    }
+    $st->close();
+    return $out;
+}
+
+/** Cari rute aktif & aturan tarif kategori berdasarkan kota asal, kota tujuan, dan kategori kendaraan. */
+function travel_lookup_route_tariff(
+    int $company_id,
+    int $pickup_city_id,
+    int $delivery_city_id,
+    int $category_vehicle_id = 0,
+    int $pickup_district_id = 0,
+    int $delivery_district_id = 0
+): ?array {
+    if ($company_id <= 0 || $pickup_city_id <= 0 || $delivery_city_id <= 0) {
+        return null;
+    }
+    rute_ensure_schema();
+    $db    = db();
+    $route = null;
+    $categoryMatched = ($category_vehicle_id <= 0);
+
+    $cols = 'r.id, r.name, r.pickup_point_city_id, r.delivery_point_city_id, r.category_vehicle_id, r.price,
+             r.min_price, r.max_price, r.start_capacity_seat, r.end_capacity_seat, r.seat_capacity,
+             r.pickup_free_radius_km, r.pickup_max_radius_km, r.pickup_extra_price_per_km,
+             r.delivery_free_radius_km, r.delivery_max_radius_km, r.delivery_extra_price_per_km,
+             pp.name AS pickup_province_name, dp.name AS delivery_province_name';
+    $geoJoins = 'LEFT JOIN cities pc ON pc.id = r.pickup_point_city_id
+                 LEFT JOIN provinces pp ON pp.id = pc.province_id
+                 LEFT JOIN cities dc ON dc.id = r.delivery_point_city_id
+                 LEFT JOIN provinces dp ON dp.id = dc.province_id';
+
+    if ($category_vehicle_id > 0) {
+        $stTar = $db->prepare(
+            "SELECT {$cols},
+                    rt.category_vehicle_id AS t_category_id, rt.min_price AS t_min_price, rt.price AS t_price,
+                    rt.max_price AS t_max_price, rt.start_capacity_seat AS t_start_seat,
+                    rt.end_capacity_seat AS t_end_seat, rt.seat_capacity AS t_seat_cap
+               FROM rutes r
+               {$geoJoins}
+               JOIN rute_tariffs rt ON rt.rute_id = r.id
+              WHERE r.company_id = ? AND r.pickup_point_city_id = ? AND r.delivery_point_city_id = ? AND r.is_active = 1
+                AND rt.category_vehicle_id = ?
+              ORDER BY r.id ASC
+              LIMIT 1"
+        );
+        $stTar->bind_param('iiii', $company_id, $pickup_city_id, $delivery_city_id, $category_vehicle_id);
+        $stTar->execute();
+        $route = $stTar->get_result()->fetch_assoc() ?: null;
+        $stTar->close();
+
+        if ($route) {
+            $categoryMatched = true;
+        } else {
+            $stCat = $db->prepare(
+                "SELECT {$cols}
+                   FROM rutes r
+                   {$geoJoins}
+                  WHERE r.company_id = ? AND r.pickup_point_city_id = ? AND r.delivery_point_city_id = ? AND r.is_active = 1
+                    AND r.category_vehicle_id = ?
+                  ORDER BY r.id ASC
+                  LIMIT 1"
+            );
+            $stCat->bind_param('iiii', $company_id, $pickup_city_id, $delivery_city_id, $category_vehicle_id);
+            $stCat->execute();
+            $route = $stCat->get_result()->fetch_assoc() ?: null;
+            $stCat->close();
+            if ($route) {
+                $categoryMatched = true;
+            }
+        }
+    }
+
+    if (!$route) {
+        $st = $db->prepare(
+            "SELECT {$cols}
+               FROM rutes r
+               {$geoJoins}
+              WHERE r.company_id = ? AND r.pickup_point_city_id = ? AND r.delivery_point_city_id = ? AND r.is_active = 1
+              ORDER BY r.id ASC
+              LIMIT 1"
+        );
+        $st->bind_param('iii', $company_id, $pickup_city_id, $delivery_city_id);
+        $st->execute();
+        $route = $st->get_result()->fetch_assoc() ?: null;
+        $st->close();
+    }
+
+    if (!$route) {
+        return null;
+    }
+
+    $tariffs    = rute_tariffs_for_rute((int) $route['id'], $company_id);
+    $firstTar   = $tariffs[0] ?? [];
+    $effCat     = (int) ($route['t_category_id'] ?? ($firstTar['category_vehicle_id'] ?? $route['category_vehicle_id']));
+    $effPrc     = isset($route['t_price']) ? (float) $route['t_price'] : ($firstTar ? (float) $firstTar['price'] : (float) $route['price']);
+    $effMin     = isset($route['t_min_price']) ? (float) $route['t_min_price'] : ($firstTar ? (float) $firstTar['min_price'] : (float) $route['min_price']);
+    $effMax     = isset($route['t_max_price']) ? (float) $route['t_max_price'] : ($firstTar ? (float) $firstTar['max_price'] : (float) $route['max_price']);
+    $effSeatCap = 0;
+    if (isset($route['t_seat_cap']) && (int) $route['t_seat_cap'] > 0) {
+        $effSeatCap = (int) $route['t_seat_cap'];
+    } elseif (isset($route['t_end_seat']) && (int) $route['t_end_seat'] > 0) {
+        $effSeatCap = (int) $route['t_end_seat'];
+    } elseif (!empty($firstTar)) {
+        $effSeatCap = (int) ($firstTar['seat_capacity'] ?? $firstTar['end_capacity_seat'] ?? 0);
+    } else {
+        $effSeatCap = (int) ($route['seat_capacity'] ?? 0) > 0
+            ? (int) $route['seat_capacity']
+            : (int) ($route['end_capacity_seat'] ?? 0);
+    }
+    $effSeatS = $effSeatCap > 0 ? 1 : 0;
+    $radiusMap      = rute_radius_for_rute((int) $route['id'], $company_id);
+    $pickupDistRes  = rute_find_district_radius_extra($radiusMap['pickup'], $pickup_district_id);
+    $deliveryDistRes = rute_find_district_radius_extra($radiusMap['delivery'], $delivery_district_id);
+
+    return [
+        'id'                        => (int) $route['id'],
+        'name'                      => (string) $route['name'],
+        'pickup_point_city_id'      => (int) $route['pickup_point_city_id'],
+        'pickup_province_name'      => (string) ($route['pickup_province_name'] ?? ''),
+        'delivery_point_city_id'    => (int) $route['delivery_point_city_id'],
+        'delivery_province_name'    => (string) ($route['delivery_province_name'] ?? ''),
+        'category_vehicle_id'       => $effCat,
+        'category_matched'          => $categoryMatched,
+        'min_price'                 => $effMin,
+        'price'                     => $effPrc,
+        'max_price'                 => $effMax,
+        'seat_capacity'             => $effSeatCap,
+        'start_capacity_seat'       => $effSeatS,
+        'end_capacity_seat'         => $effSeatCap,
+        'tariffs'                   => $tariffs,
+        'schedules'                 => rute_schedule_times((int) $route['id'], $company_id),
+        'pickup_district_extra'     => (float) $pickupDistRes['extra_price'],
+        'pickup_district_in_radius' => ($pickup_district_id <= 0 || empty($radiusMap['pickup']) || $pickupDistRes['matched']),
+        'delivery_district_extra'   => (float) $deliveryDistRes['extra_price'],
+        'delivery_district_in_radius' => ($delivery_district_id <= 0 || empty($radiusMap['delivery']) || $deliveryDistRes['matched']),
+        'pickup_radius'             => [
+            'free_km'            => (float) $route['pickup_free_radius_km'],
+            'max_km'             => (float) $route['pickup_max_radius_km'],
+            'extra_price_per_km' => (float) $route['pickup_extra_price_per_km'],
+            'districts'          => $radiusMap['pickup'],
+        ],
+        'delivery_radius'           => [
+            'free_km'            => (float) $route['delivery_free_radius_km'],
+            'max_km'             => (float) $route['delivery_max_radius_km'],
+            'extra_price_per_km' => (float) $route['delivery_extra_price_per_km'],
+            'districts'          => $radiusMap['delivery'],
+        ],
+    ];
+}
+
+/** Validasi batas Harga Min dan Harga Maks rute (plus biaya tambahan kecamatan) untuk pemesanan tiket perjalanan. */
+function travel_validate_route_price_bounds(
+    int $company_id,
+    int $pickup_city_id,
+    int $delivery_city_id,
+    int $category_vehicle_id,
+    int $passenger_count,
+    float $total_price,
+    int $pickup_district_id = 0,
+    int $delivery_district_id = 0
+): void {
+    $matched = travel_lookup_route_tariff(
+        $company_id,
+        $pickup_city_id,
+        $delivery_city_id,
+        $category_vehicle_id,
+        $pickup_district_id,
+        $delivery_district_id
+    );
+    if (!$matched || ($category_vehicle_id > 0 && empty($matched['category_matched']))) {
+        return;
+    }
+    $paxCnt      = max(1, $passenger_count);
+    $minUnit     = (float) ($matched['min_price'] ?? 0);
+    $maxUnit     = (float) ($matched['max_price'] ?? 0);
+    $radiusExtra = round((float) ($matched['pickup_district_extra'] ?? 0) + (float) ($matched['delivery_district_extra'] ?? 0), 2);
+    $extraText   = $radiusExtra > 0 ? (' + radius ' . rupiah($radiusExtra)) : '';
+
+    if ($minUnit > 0) {
+        $minTotal = round($minUnit * $paxCnt + $radiusExtra, 2);
+        if ($total_price + 0.001 < $minTotal) {
+            throw new InvalidArgumentException(
+                'Total harga (' . rupiah($total_price) . ') di bawah Harga Min rute "' . $matched['name'] . '" untuk '
+                . $paxCnt . ' penumpang (' . rupiah($minTotal) . ' = ' . $paxCnt . ' x ' . rupiah($minUnit) . $extraText . ').'
+            );
+        }
+    }
+    if ($maxUnit > 0) {
+        $maxTotal = round($maxUnit * $paxCnt + $radiusExtra, 2);
+        if ($total_price - 0.001 > $maxTotal) {
+            throw new InvalidArgumentException(
+                'Total harga (' . rupiah($total_price) . ') melebihi Harga Maks rute "' . $matched['name'] . '" untuk '
+                . $paxCnt . ' penumpang (' . rupiah($maxTotal) . ' = ' . $paxCnt . ' x ' . rupiah($maxUnit) . $extraText . ').'
+            );
+        }
+    }
 }

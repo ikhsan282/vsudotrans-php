@@ -421,16 +421,18 @@ $d1 = new DateTime((string) $b['start_date']);
 $d2 = new DateTime((string) $b['end_date']);
 $duration_days = max(1, (int) $d1->diff($d2)->days + 1);
 
-$active = 'rental';
-$title  = 'Detail Pemesanan Sewa Kendaraan - ' . $b['document_number'];
+$active      = 'rental';
+$title       = 'Detail Pemesanan Sewa Kendaraan - ' . $b['document_number'];
+$openQrisNow = !empty($_GET['open_qris']) && $canManage && $status !== 'cancelled' && $qrisRemaining > 0 && !empty($qrisChannels);
 require __DIR__ . '/../../../includes/header.php';
 ?>
 
 <main class="p-2 p-md-3">
     <!-- Top Action Toolbar -->
     <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-2">
-        <div class="d-flex align-items-center gap-2">
+        <div class="d-flex flex-wrap align-items-center gap-2">
             <span class="badge bg-primary text-white"><i class="bi bi-car-front me-1"></i>Pemesanan Sewa Kendaraan</span>
+            <strong><?= e($b['document_number']) ?></strong>
             <span id="bookingStatusBadgeWrap"><?= status_badge($status) ?></span>
             <span class="small text-muted d-none d-md-inline">Akses: <strong><?= e($curCompany['label']) ?></strong></span>
         </div>
@@ -454,7 +456,7 @@ require __DIR__ . '/../../../includes/header.php';
         <!-- 5 SUB-TABS -->
         <ul class="nav nav-tabs erp-sub-tabs" id="rentalDetailTabs" role="tablist">
             <li class="nav-item" role="presentation">
-                <button class="nav-link active" id="tab-detail-btn" data-bs-toggle="tab" data-bs-target="#tab-detail" type="button" role="tab">
+                <button class="nav-link<?= $openQrisNow ? '' : ' active' ?>" id="tab-detail-btn" data-bs-toggle="tab" data-bs-target="#tab-detail" type="button" role="tab">
                     Detail
                 </button>
             </li>
@@ -464,7 +466,7 @@ require __DIR__ . '/../../../includes/header.php';
                 </button>
             </li>
             <li class="nav-item" role="presentation">
-                <button class="nav-link" id="tab-payment-btn" data-bs-toggle="tab" data-bs-target="#tab-payment" type="button" role="tab">
+                <button class="nav-link<?= $openQrisNow ? ' active' : '' ?>" id="tab-payment-btn" data-bs-toggle="tab" data-bs-target="#tab-payment" type="button" role="tab">
                     Pembayaran Sewa
                 </button>
             </li>
@@ -493,8 +495,9 @@ require __DIR__ . '/../../../includes/header.php';
 
             <div class="tab-content" id="rentalDetailTabContent">
                 <!-- ================= TAB 1: DETAIL ================= -->
-                <div class="tab-pane fade show active" id="tab-detail" role="tabpanel">
+                <div class="tab-pane fade<?= $openQrisNow ? '' : ' show active' ?>" id="tab-detail" role="tabpanel">
                     <div class="rnt-panel">
+                        <div class="rnt-panel-header"><span>Informasi Pemesanan</span></div>
                         <div class="rnt-panel-body">
                             <div class="rnt-row">
                                 <div class="rnt-label">Resi</div>
@@ -538,7 +541,7 @@ require __DIR__ . '/../../../includes/header.php';
                             <div class="rnt-row">
                                 <div class="rnt-label">Jam <span class="text-danger">*</span></div>
                                 <div class="rnt-field">
-                                    <input type="time" class="form-control form-control-sm" name="time" id="rentalTimeInput" form="rentalDetailForm" required value="<?= e(substr((string) $b['time'], 0, 5)) ?>" <?= $canManage ? '' : 'readonly' ?> style="max-width: 260px;">
+                                    <input type="time" class="form-control form-control-sm" name="time" id="rentalTimeInput" form="rentalDetailForm" required value="<?= e(substr((string) $b['time'], 0, 5)) ?>" <?= $canManage ? '' : 'readonly' ?> style="max-width:180px;">
                                 </div>
                             </div>
                             <div class="rnt-row">
@@ -555,9 +558,9 @@ require __DIR__ . '/../../../includes/header.php';
                     <div class="rnt-panel">
                         <div class="rnt-panel-header">
                             <span>Kendaraan</span>
-                            <?php if (can('masters.manage')): ?>
-                                <a href="<?= e(APP_URL) ?>/pages/masters/vehicles.php" target="_blank" class="text-primary text-decoration-none fw-normal small">
-                                    Tambah Kendaraan Baru
+                            <?php if (can('vehicles.manage')): ?>
+                                <a href="<?= e(APP_URL) ?>/pages/vehicles/form.php" target="_blank" class="rnt-header-action">
+                                    <i class="bi bi-plus-lg me-1"></i>Tambah Kendaraan Baru
                                 </a>
                             <?php endif; ?>
                         </div>
@@ -630,8 +633,8 @@ require __DIR__ . '/../../../includes/header.php';
                         <div class="rnt-panel-header">
                             <span>Pelanggan</span>
                             <?php if ($canManage): ?>
-                                <a href="#" class="text-primary text-decoration-none fw-normal small" data-bs-toggle="modal" data-bs-target="#quickPassengerModal">
-                                    Tambah Pelanggan Baru
+                                <a href="#" class="rnt-header-action" data-bs-toggle="modal" data-bs-target="#quickPassengerModal">
+                                    <i class="bi bi-person-plus me-1"></i>Tambah Pelanggan Baru
                                 </a>
                             <?php endif; ?>
                         </div>
@@ -832,11 +835,11 @@ require __DIR__ . '/../../../includes/header.php';
                                 <span id="crewRegStatusMsg" class="small text-muted fw-normal"></span>
                             </div>
                             <?php if ($canManage): ?>
-                            <div class="d-flex align-items-center gap-2">
-                                <button type="button" class="btn btn-sm btn-outline-success py-0 px-2" id="btnApplyRegulation" title="Hitung otomatis premi dan BBM sesuai peraturan komisi kategori armada">
+                            <div class="d-flex flex-wrap align-items-center gap-3">
+                                <button type="button" class="rnt-header-action" id="btnApplyRegulation" title="Hitung otomatis premi dan BBM sesuai peraturan komisi kategori armada">
                                     <i class="bi bi-calculator me-1"></i>Auto Hitung Komisi
                                 </button>
-                                <button type="button" class="btn btn-sm btn-outline-primary py-0 px-2" id="btnAddCrewRow">
+                                <button type="button" class="rnt-header-action" id="btnAddCrewRow">
                                     <i class="bi bi-plus-lg me-1"></i>Tambah Baris
                                 </button>
                             </div>
@@ -930,7 +933,7 @@ require __DIR__ . '/../../../includes/header.php';
                 </div>
 
                 <!-- ================= TAB 3: PEMBAYARAN SEWA ================= -->
-                <div class="tab-pane fade" id="tab-payment" role="tabpanel">
+                <div class="tab-pane fade<?= $openQrisNow ? ' show active' : '' ?>" id="tab-payment" role="tabpanel">
                     <div class="rnt-panel">
                         <div class="rnt-panel-body">
                             <div class="rnt-row">
@@ -963,17 +966,17 @@ require __DIR__ . '/../../../includes/header.php';
                         <div class="rnt-panel-header">
                             <span>Pembayaran Sewa</span>
                             <?php if ($canManage): ?>
-                            <div class="d-flex flex-wrap align-items-center gap-2">
+                            <div class="d-flex flex-wrap align-items-center gap-3">
                                 <?php if (!empty($qrisChannels)): ?>
-                                <button type="button" class="btn btn-sm btn-success py-0 px-2" id="btnPayQrisAuto" <?= ($status === 'cancelled' || $qrisRemaining <= 0) ? 'disabled' : '' ?>>
+                                <button type="button" class="rnt-header-action" id="btnPayQrisAuto" <?= ($status === 'cancelled' || $qrisRemaining <= 0) ? 'disabled' : '' ?>>
                                     <i class="bi bi-qr-code-scan me-1"></i>Bayar via QRIS Otomatis
                                 </button>
                                 <?php else: ?>
-                                <button type="button" class="btn btn-sm btn-outline-secondary py-0 px-2" disabled title="Konfigurasikan channel QRIS aktif di menu Payment Channel terlebih dahulu">
+                                <button type="button" class="rnt-header-action text-muted" disabled title="Konfigurasikan channel QRIS aktif di menu Payment Channel terlebih dahulu">
                                     <i class="bi bi-qr-code me-1"></i>QRIS Belum Aktif
                                 </button>
                                 <?php endif; ?>
-                                <button type="button" class="btn btn-sm btn-outline-primary py-0 px-2" id="btnAddPayRow">
+                                <button type="button" class="rnt-header-action" id="btnAddPayRow">
                                     <i class="bi bi-plus-lg me-1"></i>Tambah Pembayaran Manual
                                 </button>
                             </div>
@@ -1112,6 +1115,7 @@ require __DIR__ . '/../../../includes/header.php';
                 <!-- ================= TAB 5: AUDIT TRAIL ================= -->
                 <div class="tab-pane fade" id="tab-audit" role="tabpanel">
                     <div class="rnt-panel mb-0">
+                        <div class="rnt-panel-header"><span>Audit Trail Dokumen</span></div>
                         <div class="rnt-panel-body">
                             <div class="rnt-row">
                                 <label class="rnt-label">Dibuat Oleh</label>
@@ -2558,6 +2562,11 @@ document.addEventListener('DOMContentLoaded', () => {
             }
         });
     }
+    <?php if ($openQrisNow): ?>
+    if (btnPayQrisAuto) {
+        setTimeout(() => { btnPayQrisAuto.click(); }, 180);
+    }
+    <?php endif; ?>
 });
 </script>
 <?php require __DIR__ . '/../../../includes/footer.php'; ?>

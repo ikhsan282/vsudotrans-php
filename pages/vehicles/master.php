@@ -2,6 +2,7 @@
 /** Master kendaraan (merek, kategori, tipe mesin, model): CRUD sederhana per perusahaan. */
 require_once __DIR__ . '/../../config/config.php';
 require_once __DIR__ . '/_helpers.php';
+require_once __DIR__ . '/../../includes/transport_helpers.php';
 require_permission($_SERVER['REQUEST_METHOD'] === 'POST' ? 'vehicles.manage' : 'vehicles.view');
 
 // Whitelist: nama tabel tidak pernah berasal dari input langsung.
@@ -9,7 +10,7 @@ $MASTERS = [
     'brand'    => ['table' => 'brand_vehicles',    'label' => 'Merek',
                    'refs' => [['vehicles', 'brand_id'], ['model_units', 'brand_id']]],
     'category' => ['table' => 'category_vehicles', 'label' => 'Kategori',
-                   'refs' => [['vehicles', 'category_vehicle_id'], ['rutes', 'category_vehicle_id'],
+                   'refs' => [['vehicles', 'category_vehicle_id'], ['rutes', 'category_vehicle_id'], ['rute_tariffs', 'category_vehicle_id'],
                               ['rental_car_regulation_employees', 'category_vehicle_id'], ['premi_configs', 'category_vehicle_id']]],
     'engine'   => ['table' => 'type_engines',      'label' => 'Tipe Mesin',
                    'refs' => [['vehicles', 'type_engine_id']]],
@@ -52,6 +53,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         if (!$found) {
             flash('error', "{$m['label']} tidak ditemukan.");
             redirect("pages/vehicles/master.php?t={$key}");
+        }
+        if ($key === 'category') {
+            rute_tariff_ensure_schema();
         }
         // Cek relasi dulu (FK RESTRICT) agar tidak muncul error SQL mentah.
         $used = 0;
@@ -370,14 +374,14 @@ require __DIR__ . '/../../includes/header.php';
                         <td><?= e($r['name']) ?></td>
                         <?php if ($isModel): ?><td><?= e($r['brand_name']) ?></td><?php endif; ?>
                         <td><span class="badge bg-<?= $r['is_active'] ? 'success' : 'secondary' ?>"><?= $r['is_active'] ? 'Aktif' : 'Nonaktif' ?></span></td>
-                        <td class="text-end">
+                        <td class="text-end text-nowrap">
                             <?php if (can('vehicles.manage')): ?>
-                                <a class="btn btn-sm btn-outline-primary" href="?t=<?= e($key) ?>&edit=<?= (int) $r['id'] ?>">Ubah</a>
+                                <a class="btn btn-sm btn-outline-primary" href="?t=<?= e($key) ?>&edit=<?= (int) $r['id'] ?>" title="Ubah" aria-label="Ubah"><i class="bi bi-pencil-square"></i></a>
                                 <form method="post" action="<?= e(APP_URL) ?>/pages/vehicles/master.php?t=<?= e($key) ?>" class="d-inline" onsubmit="return confirm('Hapus data ini?')">
                                     <?= csrf_field() ?>
                                     <input type="hidden" name="action" value="delete">
                                     <input type="hidden" name="id" value="<?= (int) $r['id'] ?>">
-                                    <button type="submit" class="btn btn-sm btn-outline-danger">Hapus</button>
+                                    <button type="submit" class="btn btn-sm btn-outline-danger" title="Hapus" aria-label="Hapus"><i class="bi bi-trash"></i></button>
                                 </form>
                             <?php endif; ?>
                         </td>

@@ -66,11 +66,24 @@ if (!preg_match('/^\d{4}-\d{2}-\d{2}$/', $date)) {
 $time = trim((string) ($body['time'] ?? '08:00'));
 if (!empty($body['schedule_id'])) {
     $schId = (int) $body['schedule_id'];
-    $stSch = $db->prepare('SELECT start FROM schedules WHERE id = ? AND company_id = ? LIMIT 1');
-    $stSch->bind_param('ii', $schId, $cid);
-    $stSch->execute();
-    $schStart = $stSch->get_result()->fetch_column();
-    $stSch->close();
+    $schStart = null;
+    try {
+        require_once __DIR__ . '/../../includes/transport_helpers.php';
+        rute_schedule_ensure_schema();
+        $stRs = $db->prepare('SELECT departure_time FROM rute_schedules WHERE id = ? AND company_id = ? LIMIT 1');
+        $stRs->bind_param('ii', $schId, $cid);
+        $stRs->execute();
+        $schStart = $stRs->get_result()->fetch_column();
+        $stRs->close();
+    } catch (Throwable $ignore) {
+    }
+    if (!$schStart) {
+        $stSch = $db->prepare('SELECT start FROM schedules WHERE id = ? AND company_id = ? LIMIT 1');
+        $stSch->bind_param('ii', $schId, $cid);
+        $stSch->execute();
+        $schStart = $stSch->get_result()->fetch_column();
+        $stSch->close();
+    }
     if ($schStart) {
         $time = substr((string) $schStart, 0, 5);
     }
@@ -134,13 +147,38 @@ if ($pickupDistId <= 0 || $deliveryDistId <= 0) {
     bot_error(422, 'MISSING_LOCATION', 'Data kota/kecamatan jemput & tujuan belum tersedia.');
 }
 
-// Hitung harga total
+// Hitung harga total (perhatikan tarif kategori kendaraan & biaya tambahan kecamatan radius)
+$ruteTariffPrice = (float) ($rute['price'] ?? 0);
+$radiusExtra     = 0.0;
+if ($rute) {
+    try {
+        require_once __DIR__ . '/../../includes/transport_helpers.php';
+        if ($catVehicleId) {
+            rute_tariff_ensure_schema();
+            $stRt = $db->prepare('SELECT price FROM rute_tariffs WHERE rute_id = ? AND company_id = ? AND category_vehicle_id = ? LIMIT 1');
+            $stRt->bind_param('iii', $rute['id'], $cid, $catVehicleId);
+            $stRt->execute();
+            $foundTariff = $stRt->get_result()->fetch_column();
+            $stRt->close();
+            if ($foundTariff !== false) {
+                $ruteTariffPrice = (float) $foundTariff;
+            }
+        }
+        if ($bType === 'travel') {
+            $rRad   = rute_radius_for_rute((int) $rute['id'], $cid);
+            $pMatch = rute_find_district_radius_extra($rRad['pickup'], $pickupDistId);
+            $dMatch = rute_find_district_radius_extra($rRad['delivery'], $deliveryDistId);
+            $radiusExtra = round((float) $pMatch['extra_price'] + (float) $dMatch['extra_price'], 2);
+        }
+    } catch (Throwable $ignore) {
+    }
+}
 $unitPrice = isset($body['price']) && is_numeric($body['price'])
     ? (float) $body['price']
-    : (float) ($rute['price'] ?? 0);
+    : $ruteTariffPrice;
 $totalPrice = isset($body['total_price']) && is_numeric($body['total_price'])
     ? (float) $body['total_price']
-    : ($unitPrice * $seats);
+    : round(($unitPrice * $seats) + $radiusExtra, 2);
 
 if ($totalPrice <= 0) {
     bot_error(400, 'INVALID_PRICE', 'Harga rute/booking harus lebih dari Rp 0. Pilih rute yang valid.');
@@ -226,6 +264,7 @@ bot_reply(201, [
     'date'            => $date,
     'time'            => substr($time, 0, 5),
     'seats'           => $seats,
+    'radius_extra'    => bot_money($radiusExtra),
     'total'           => bot_money((float) ($inv['total'] ?? $totalPrice)),
     'booking_status'  => 'draft',
     'payment_status'  => 'unpaid',

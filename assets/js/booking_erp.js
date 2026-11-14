@@ -1132,6 +1132,16 @@
           return false;
         }
       }
+
+      if (typeof cfg.beforeSubmit === 'function') {
+        const res = cfg.beforeSubmit();
+        if (res && res.ok === false) {
+          e.preventDefault();
+          if (res.tabId) showTabById(res.tabId);
+          if (res.focusEl) focusInvalidElement(res.focusEl);
+          return false;
+        }
+      }
       return true;
     });
   }
@@ -1166,12 +1176,43 @@
     const cityEl = cfg.cityEl;
     const distEl = cfg.districtEl;
 
+    function syncProvinceFromCity() {
+      if (!provEl || !cityEl) return;
+      const cityVal = String(getFieldVal(cityEl) || '');
+      if (!cityVal) return;
+      let pId = '';
+      let pName = '';
+      if (cityEl.tomselect && cityEl.tomselect.options && cityEl.tomselect.options[cityVal]) {
+        const meta = cityEl.tomselect.options[cityVal];
+        if (meta.province_id) pId = String(meta.province_id);
+        if (meta.province_name) pName = String(meta.province_name);
+      }
+      if (!pId && cityEl.selectedIndex >= 0) {
+        const opt = cityEl.options[cityEl.selectedIndex];
+        if (opt && opt.dataset && opt.dataset.province) {
+          pId = String(opt.dataset.province);
+        }
+      }
+      if (!pId || String(getFieldVal(provEl) || '') === pId) return;
+      if (provEl.tomselect && !provEl.tomselect.options[pId] && pName) {
+        provEl.tomselect.addOption({ value: pId, id: pId, text: pName });
+      }
+      if (typeof window.setTsValueSilent === 'function') {
+        window.setTsValueSilent(provEl, pId);
+      } else {
+        provEl.value = pId;
+      }
+    }
+
     async function reloadCities() {
       if (!cityEl || typeof window.setTsOptions !== 'function') return;
       const provVal = String(getFieldVal(provEl) || '');
       if (distEl) window.setTsOptions(distEl, [], '', '-- Pilih Kecamatan --');
       try {
-        const qs = provVal ? ('limit=100&province_id=' + encodeURIComponent(provVal)) : 'limit=50&all=1';
+        let qs = provVal ? ('limit=100&province_id=' + encodeURIComponent(provVal)) : 'limit=50&all=1';
+        if (cityEl.dataset && cityEl.dataset.tsWithProvince === '1') {
+          qs += '&with_province=1';
+        }
         const res = await fetch((cfg.appUrl || '') + '/pages/masters/cities/options.php?' + qs);
         const data = await res.json();
         window.setTsOptions(cityEl, data, '', '-- Pilih Kota/Kab --');
@@ -1200,6 +1241,7 @@
     }
     if (cityEl) {
       cityEl.addEventListener('change', function () {
+        syncProvinceFromCity();
         reloadDistricts();
         if (typeof cfg.onCityChange === 'function') cfg.onCityChange();
       });
@@ -1210,6 +1252,8 @@
     const cfg = opts || {};
     const pCityEl = cfg.pickupCityEl;
     const dCityEl = cfg.deliveryCityEl;
+    const pDistEl = cfg.pickupDistrictEl || null;
+    const dDistEl = cfg.deliveryDistrictEl || null;
     const catEl = cfg.categoryEl;
     const primEl = cfg.primaryPassengerEl;
     const extraEl = cfg.extraPassengersEl;
@@ -1217,8 +1261,61 @@
     const btnApply = cfg.applyBtnEl;
     const priceDisp = cfg.priceDisplayEl;
     const priceVal = cfg.priceValueEl;
+    const schedBox = cfg.scheduleContainerEl || null;
+    const timeEl = cfg.timeInputEl || null;
     const routeCache = {};
     let routeReqSeq = 0;
+    let lastMatchedRoute = null;
+    let boundsWarnEl = null;
+
+    if (priceHint && priceHint.parentNode) {
+      boundsWarnEl = document.createElement('div');
+      boundsWarnEl.className = 'text-danger small mt-1 d-none';
+      priceHint.parentNode.insertBefore(boundsWarnEl, priceHint.nextSibling);
+    }
+
+    function syncScheduleHighlight() {
+      if (!schedBox || !timeEl) return;
+      const cur = String(timeEl.value || '').slice(0, 5);
+      schedBox.querySelectorAll('.btn-route-slot').forEach(function (b) {
+        const hit = b.getAttribute('data-slot') === cur;
+        b.classList.toggle('btn-primary', hit);
+        b.classList.toggle('btn-outline-primary', !hit);
+      });
+    }
+
+    function renderSchedules(slots) {
+      if (!schedBox) return;
+      if (!Array.isArray(slots) || !slots.length) {
+        schedBox.innerHTML = '';
+        schedBox.classList.remove('d-flex');
+        schedBox.classList.add('d-none');
+        return;
+      }
+      const isRo = !timeEl || timeEl.readOnly || timeEl.disabled;
+      let html = '<span class="small text-muted me-1">Jadwal Rute:</span>';
+      slots.forEach(function (s) {
+        html += '<button type="button" class="btn btn-sm btn-outline-primary font-monospace py-0 px-2 btn-route-slot" data-slot="' +
+          escHtml(s) + '"' + (isRo ? ' disabled' : '') + '>' + escHtml(s) + '</button>';
+      });
+      schedBox.innerHTML = html;
+      schedBox.classList.remove('d-none');
+      schedBox.classList.add('d-flex');
+      schedBox.querySelectorAll('.btn-route-slot').forEach(function (b) {
+        b.addEventListener('click', function () {
+          if (!timeEl || timeEl.readOnly || timeEl.disabled) return;
+          timeEl.value = b.getAttribute('data-slot') || '';
+          timeEl.dispatchEvent(new Event('change', { bubbles: true }));
+          syncScheduleHighlight();
+        });
+      });
+      syncScheduleHighlight();
+    }
+
+    if (timeEl && schedBox) {
+      timeEl.addEventListener('change', syncScheduleHighlight);
+      timeEl.addEventListener('input', syncScheduleHighlight);
+    }
 
     function getPassengerCount() {
       const primVal = String(getFieldVal(primEl) || '');
@@ -1228,23 +1325,99 @@
       return Math.max(1, (primVal ? 1 : 0) + extCnt);
     }
 
+    function getRadiusExtra(routeObj) {
+      if (!routeObj) return { pickup: 0, delivery: 0, total: 0 };
+      const pExtra = Math.round(parseFloat(routeObj.pickup_district_extra) || 0);
+      const dExtra = Math.round(parseFloat(routeObj.delivery_district_extra) || 0);
+      return { pickup: pExtra, delivery: dExtra, total: pExtra + dExtra };
+    }
+
+    function validatePriceBounds() {
+      const catVal = catEl ? (parseInt(getFieldVal(catEl) || '0', 10) || 0) : 0;
+      const applicable = Boolean(lastMatchedRoute && (catVal === 0 || lastMatchedRoute.category_matched !== false));
+      let msg = '';
+      if (applicable && priceVal && (!priceDisp || !priceDisp.readOnly)) {
+        const passCount = getPassengerCount();
+        const curVal = parseRp(priceVal.value);
+        const minUnit = parseFloat(lastMatchedRoute.min_price) || 0;
+        const maxUnit = parseFloat(lastMatchedRoute.max_price) || 0;
+        const radEx = getRadiusExtra(lastMatchedRoute);
+        const minTotal = minUnit > 0 ? (Math.round(passCount * minUnit) + radEx.total) : 0;
+        const maxTotal = maxUnit > 0 ? (Math.round(passCount * maxUnit) + radEx.total) : 0;
+        const radNote = radEx.total > 0 ? (' + radius Rp ' + (fmtRp(radEx.total) || '0')) : '';
+        if (minTotal > 0 && curVal < minTotal) {
+          msg = 'Di bawah Harga Min rute (' + passCount + ' x Rp ' + (fmtRp(Math.round(minUnit)) || '0') + radNote + ' = Rp ' + (fmtRp(minTotal) || '0') + ').';
+        } else if (maxTotal > 0 && curVal > maxTotal) {
+          msg = 'Melebihi Harga Maks rute (' + passCount + ' x Rp ' + (fmtRp(Math.round(maxUnit)) || '0') + radNote + ' = Rp ' + (fmtRp(maxTotal) || '0') + ').';
+        }
+      }
+      if (priceDisp) priceDisp.classList.toggle('is-invalid', msg !== '');
+      if (boundsWarnEl) {
+        if (msg !== '') {
+          boundsWarnEl.innerHTML = '<i class="bi bi-exclamation-octagon me-1"></i>' + escHtml(msg);
+          boundsWarnEl.classList.remove('d-none');
+        } else {
+          boundsWarnEl.textContent = '';
+          boundsWarnEl.classList.add('d-none');
+        }
+      }
+      return { ok: msg === '', message: msg, focusEl: priceDisp };
+    }
+
     function renderEstimate(matched, forceApply) {
+      lastMatchedRoute = matched || null;
+      renderSchedules(matched ? matched.schedules : null);
       if (!priceHint) return;
       if (!matched) {
         priceHint.textContent = cfg.notFoundText || 'Tidak ditemukan tarif rute aktif untuk pasangan kota ini.';
         priceHint.className = 'form-text text-muted small mt-1';
         priceHint.style.display = 'block';
         if (btnApply) btnApply.style.display = 'none';
+        validatePriceBounds();
         return;
       }
       const passCount = getPassengerCount();
       const unitPrice = parseFloat(matched.price) || 0;
-      const estTotal = Math.round(passCount * unitPrice);
+      const minUnit = parseFloat(matched.min_price) || 0;
+      const maxUnit = parseFloat(matched.max_price) || 0;
+      const radEx = getRadiusExtra(matched);
+      const estTotal = Math.round(passCount * unitPrice) + radEx.total;
+      const minTotal = minUnit > 0 ? (Math.round(passCount * minUnit) + radEx.total) : 0;
+      const maxTotal = maxUnit > 0 ? (Math.round(passCount * maxUnit) + radEx.total) : 0;
+
+      const radParts = [];
+      if (radEx.pickup > 0) radParts.push('Jemput +Rp ' + escHtml(fmtRp(radEx.pickup) || '0'));
+      if (radEx.delivery > 0) radParts.push('Antar +Rp ' + escHtml(fmtRp(radEx.delivery) || '0'));
+      const radiusExpr = radEx.total > 0 ? (' + radius Rp ' + escHtml(fmtRp(radEx.total) || '0')) : '';
+      const radiusDetail = radParts.length ? (' <span class="text-muted">(' + radParts.join(', ') + ')</span>') : '';
+
+      let boundsHtml = '';
+      if (minTotal > 0 || maxTotal > 0) {
+        const rangeParts = [];
+        if (minTotal > 0) rangeParts.push('Min Rp ' + escHtml(fmtRp(minTotal) || '0'));
+        if (maxTotal > 0) rangeParts.push('Maks Rp ' + escHtml(fmtRp(maxTotal) || '0'));
+        boundsHtml = ' <span class="text-muted ms-1">&middot; Batas: ' + rangeParts.join(' &ndash; ') + '</span>';
+      }
+      const catVal = catEl ? (parseInt(getFieldVal(catEl) || '0', 10) || 0) : 0;
+      const uncatNote = (catVal > 0 && matched.category_matched === false)
+        ? ' <span class="text-muted">(tarif kategori terpilih belum diatur khusus di rute ini)</span>'
+        : '';
+
+      const outZones = [];
+      if (pDistEl && parseInt(getFieldVal(pDistEl) || '0', 10) > 0 && matched.pickup_district_in_radius === false) {
+        outZones.push('penjemputan');
+      }
+      if (dDistEl && parseInt(getFieldVal(dDistEl) || '0', 10) > 0 && matched.delivery_district_in_radius === false) {
+        outZones.push('pengantaran');
+      }
+      const outZoneNote = outZones.length
+        ? ' <span class="text-warning-emphasis ms-1"><i class="bi bi-info-circle me-1"></i>Kecamatan ' + escHtml(outZones.join(' & ')) + ' di luar daftar radius standar (biaya menyesuaikan).</span>'
+        : '';
 
       priceHint.className = 'form-text small mt-1';
       priceHint.innerHTML = '<span class="text-primary fw-semibold"><i class="bi bi-calculator me-1"></i>Estimasi (' +
         escHtml(matched.name) + '): ' + passCount + ' penumpang &times; Rp ' + escHtml(fmtRp(Math.round(unitPrice)) || '0') +
-        ' = Rp ' + escHtml(fmtRp(estTotal) || '0') + '</span>';
+        radiusExpr + ' = Rp ' + escHtml(fmtRp(estTotal) || '0') + '</span>' + radiusDetail + boundsHtml + uncatNote + outZoneNote;
       priceHint.style.display = 'block';
       if (btnApply) btnApply.style.display = 'inline-block';
 
@@ -1255,19 +1428,25 @@
         priceDisp.value = fmtRp(estTotal) || '0';
         if (typeof cfg.onPriceApplied === 'function') cfg.onPriceApplied(estTotal);
       }
+      validatePriceBounds();
     }
 
     function lookup(forceApply) {
       if (!pCityEl || !dCityEl) return;
       const pcVal = parseInt(getFieldVal(pCityEl) || '0', 10) || 0;
       const dcVal = parseInt(getFieldVal(dCityEl) || '0', 10) || 0;
+      const pdVal = pDistEl ? (parseInt(getFieldVal(pDistEl) || '0', 10) || 0) : 0;
+      const ddVal = dDistEl ? (parseInt(getFieldVal(dDistEl) || '0', 10) || 0) : 0;
       const catVal = catEl ? (parseInt(getFieldVal(catEl) || '0', 10) || 0) : 0;
       if (!pcVal || !dcVal) {
+        lastMatchedRoute = null;
+        renderSchedules(null);
         if (priceHint) priceHint.style.display = 'none';
         if (btnApply) btnApply.style.display = 'none';
+        validatePriceBounds();
         return;
       }
-      const key = pcVal + '-' + dcVal + '-' + catVal;
+      const key = pcVal + '-' + dcVal + '-' + pdVal + '-' + ddVal + '-' + catVal;
       if (Object.prototype.hasOwnProperty.call(routeCache, key)) {
         renderEstimate(routeCache[key], forceApply);
         return;
@@ -1276,6 +1455,8 @@
       const baseLookup = cfg.lookupUrl || ((cfg.appUrl || '') + '/pages/travel/rutes/lookup.php');
       const url = baseLookup + '?company_id=' + Number(cfg.companyId || 0) +
         '&pickup_point_city_id=' + pcVal + '&delivery_point_city_id=' + dcVal +
+        (pdVal > 0 ? '&pickup_point_district_id=' + pdVal : '') +
+        (ddVal > 0 ? '&delivery_point_district_id=' + ddVal : '') +
         (catVal > 0 ? '&category_vehicle_id=' + catVal : '');
       fetch(url, { headers: { Accept: 'application/json' } })
         .then(function (r) { return r.ok ? r.json() : null; })
@@ -1288,6 +1469,12 @@
         .catch(function () {});
     }
 
+    if (pDistEl) pDistEl.addEventListener('change', function () { lookup(false); });
+    if (dDistEl) dDistEl.addEventListener('change', function () { lookup(false); });
+
+    if (priceDisp) priceDisp.addEventListener('input', validatePriceBounds);
+    if (priceVal) priceVal.addEventListener('change', validatePriceBounds);
+
     if (btnApply) {
       btnApply.addEventListener('click', function (e) {
         e.preventDefault();
@@ -1295,7 +1482,7 @@
       });
     }
 
-    return { lookup: lookup };
+    return { lookup: lookup, validateBounds: validatePriceBounds };
   }
 
   function initQuickPassengerModal(opts) {

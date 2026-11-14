@@ -578,8 +578,42 @@ body {
   font-weight: 600;
   color: #343a40;
   display: flex;
+  flex-wrap: wrap;
   justify-content: space-between;
   align-items: center;
+  gap: 6px;
+}
+
+.rnt-panel-header .rnt-header-action {
+  background: transparent;
+  border: 0;
+  padding: 0;
+  margin: 0;
+  display: inline-flex;
+  align-items: center;
+  font-size: 0.875em;
+  font-weight: 400;
+  line-height: 1.4;
+  color: var(--bs-primary, #0d6efd);
+  text-decoration: none;
+  cursor: pointer;
+}
+
+.rnt-panel-header .rnt-header-action.text-danger {
+  color: var(--bs-danger, #dc3545);
+}
+
+.rnt-panel-header .rnt-header-action.text-muted {
+  color: var(--bs-secondary-color, #6c757d);
+}
+
+.rnt-panel-header .rnt-header-action:hover:not(:disabled) {
+  text-decoration: underline;
+}
+
+.rnt-panel-header .rnt-header-action:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
 }
 
 .rnt-panel-body {
@@ -620,6 +654,34 @@ body {
   border: 1px solid #ced4da;
 }
 
+.rnt-field .input-group-sm > .input-group-text {
+  font-size: 0.82rem;
+  height: calc(1.5em + 0.5rem + 2px);
+  padding: 0.25rem 0.55rem;
+  border-radius: 0;
+  border: 1px solid #ced4da;
+}
+
+.rnt-field .input-group-sm > .input-group-text:first-child {
+  border-top-left-radius: 2px;
+  border-bottom-left-radius: 2px;
+}
+
+.rnt-field .input-group-sm > .input-group-text:last-child {
+  border-top-right-radius: 2px;
+  border-bottom-right-radius: 2px;
+}
+
+.rnt-field .input-group-sm > .form-control-sm:not(:first-child) {
+  border-top-left-radius: 0;
+  border-bottom-left-radius: 0;
+}
+
+.rnt-field .input-group-sm > .form-control-sm:not(:last-child) {
+  border-top-right-radius: 0;
+  border-bottom-right-radius: 0;
+}
+
 .rnt-field textarea.form-control-sm,
 .rnt-field textarea.form-control {
   height: auto;
@@ -638,6 +700,18 @@ body {
   font-size: 0.82rem;
   border-radius: 2px;
   border: 1px solid #ced4da;
+}
+
+.ts-wrapper.is-invalid .ts-control,
+.is-invalid + .ts-wrapper .ts-control {
+  border-color: var(--bs-danger, #dc3545);
+}
+
+.ts-dropdown .option[data-disabled],
+.ts-dropdown .option.disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+  background-color: #f8f9fa;
 }
 
 .rnt-tabs {

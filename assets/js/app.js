@@ -94,6 +94,7 @@ document.addEventListener('pointerdown', () => document.body.classList.remove('u
 // Alert flash dari flash_html() sudah alert-dismissible; alert statis di
 // halaman ditandai otomatis di sini supaya ikut hilang setelah 5 detik.
 document.querySelectorAll('.alert.alert-success, .alert.alert-danger, .alert.alert-warning, .alert.alert-info').forEach(el => {
+  if (el.classList.contains('d-none') || el.hasAttribute('data-no-autodismiss')) return;
   if (!el.classList.contains('alert-dismissible')) {
     el.classList.add('alert-dismissible', 'fade', 'show');
     const btn = document.createElement('button');
@@ -294,6 +295,8 @@ window.initTsSelect = function (el, overrides) {
         u.searchParams.set('limit', el.dataset.tsLimit || '30');
         if (el.dataset.tsCompany) u.searchParams.set('company_id', el.dataset.tsCompany);
         if (el.dataset.tsWithCode) u.searchParams.set('with_code', el.dataset.tsWithCode);
+        if (el.dataset.tsWithProvince) u.searchParams.set('with_province', el.dataset.tsWithProvince);
+        if (el.dataset.tsWithCity) u.searchParams.set('with_city', el.dataset.tsWithCity);
         if (paramName && parentVal) u.searchParams.set(paramName, parentVal);
 
         fetch(u.toString())

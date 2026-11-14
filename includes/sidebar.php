@@ -54,7 +54,6 @@ $menu = [
     // ── OPERASIONAL & ARMADA ────────────────────────────────────────────────
     ['key' => 'travel', 'section' => 'Operasional & Armada', 'label' => 'Travel', 'icon' => 'bus-front', 'perm' => 'travel.view', 'sub' => [
         ['label' => 'Pemesanan Tiket Perjalanan', 'href' => 'pages/travel/bookings/index.php',  'perms' => 'travel.view'],
-        ['label' => 'Jadwal',                     'href' => 'pages/travel/schedules/index.php', 'perms' => 'travel.view'],
         ['label' => 'Rute',                       'href' => 'pages/travel/rutes/index.php',     'perms' => 'travel.view'],
     ]],
     ['key' => 'rental', 'section' => 'Operasional & Armada', 'label' => 'Rental', 'icon' => 'car-front', 'perm' => 'rental.view', 'sub' => [
@@ -134,14 +133,6 @@ $menu = [
     ]],
 ];
 
-// $nav_icon dipakai topbar (header.php) untuk ikon di samping judul.
-$nav_icon = $active === 'profile' ? 'person-circle' : 'grid';
-foreach ($menu as $m) {
-    if (sidebar_is_active($m, $active)) {
-        $nav_icon = $m['icon'];
-        break;
-    }
-}
 $req_path = parse_url($_SERVER['REQUEST_URI'] ?? '', PHP_URL_PATH) ?: '';
 $default_brand_logo = APP_URL . '/assets/brand/logo-transmandiri.png';
 $sidebar_logo_url = $default_brand_logo;

@@ -123,13 +123,13 @@ require __DIR__ . '/../../includes/header.php';
                         <td class="fw-semibold"><?= e($r['code']) ?></td>
                         <td><?= e($r['name']) ?></td>
                         <td><span class="badge bg-<?= $r['is_active'] ? 'success' : 'secondary' ?>"><?= $r['is_active'] ? 'Aktif' : 'Nonaktif' ?></span></td>
-                        <td class="text-end">
+                        <td class="text-end text-nowrap">
                             <?php if (can('groups.manage')): ?>
-                                <a class="btn btn-sm btn-outline-primary" href="<?= e(APP_URL) ?>/pages/groups/form.php?id=<?= (int) $r['id'] ?>">Ubah</a>
+                                <a class="btn btn-sm btn-outline-primary" href="<?= e(APP_URL) ?>/pages/groups/form.php?id=<?= (int) $r['id'] ?>" title="Ubah" aria-label="Ubah"><i class="bi bi-pencil-square"></i></a>
                                 <form method="post" action="<?= e(APP_URL) ?>/pages/groups/delete.php" class="d-inline" onsubmit="return confirm('Hapus grup ini?')">
                                     <?= csrf_field() ?>
                                     <input type="hidden" name="id" value="<?= (int) $r['id'] ?>">
-                                    <button type="submit" class="btn btn-sm btn-outline-danger">Hapus</button>
+                                    <button type="submit" class="btn btn-sm btn-outline-danger" title="Hapus" aria-label="Hapus"><i class="bi bi-trash"></i></button>
                                 </form>
                             <?php endif; ?>
                         </td>

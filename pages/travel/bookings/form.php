@@ -100,6 +100,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $cat_id_post = (int) $in['category_vehicle_id'] ?: null;
         $veh_id_post = (int) $in['vehicle_id'] ?: null;
         $crewEmpIds  = array_values(array_filter(array_map('intval', array_column($parsedCrew, 'employee_id'))));
+        $p_loc       = resolve_district_info($pk_dist_resolved) ?: [];
+        $d_loc       = resolve_district_info($dl_dist_resolved) ?: [];
+        $pk_city_res = !empty($in['pickup_point_city_id']) ? (int) $in['pickup_point_city_id'] : (int) ($p_loc['city_id'] ?? 0);
+        $dl_city_res = !empty($in['delivery_point_city_id']) ? (int) $in['delivery_point_city_id'] : (int) ($d_loc['city_id'] ?? 0);
+        $allPaxIds   = array_values(array_unique(array_merge([(int) $in['passenger_id']], $in_passengers)));
         try {
             validate_booking_company_scope(
                 $cid,
@@ -111,15 +116,22 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $crewEmpIds
             );
             $in['category_vehicle_id'] = (string) ($cat_id_post ?? '');
+            travel_validate_route_price_bounds(
+                $cid,
+                $pk_city_res,
+                $dl_city_res,
+                (int) ($cat_id_post ?? 0),
+                count($allPaxIds),
+                (float) $in['total_price'],
+                $pk_dist_resolved,
+                $dl_dist_resolved
+            );
         } catch (InvalidArgumentException $ex) {
             $err = $ex->getMessage();
         }
     }
 
     if ($err === '') {
-        $p_loc = resolve_district_info($pk_dist_resolved) ?: [];
-        $d_loc = resolve_district_info($dl_dist_resolved) ?: [];
-
         $data = [
             'company_id'                 => $cid,
             'branch_id'                  => (int) $in['branch_id'],
@@ -127,17 +139,17 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             'time'                       => $in['time'] . ':00',
             'pickup_address'             => $in['pickup_address'],
             'pickup_point_province_id'   => !empty($in['pickup_point_province_id']) ? (int) $in['pickup_point_province_id'] : ($p_loc['province_id'] ?? null),
-            'pickup_point_city_id'       => !empty($in['pickup_point_city_id']) ? (int) $in['pickup_point_city_id'] : ($p_loc['city_id'] ?? null),
+            'pickup_point_city_id'       => $pk_city_res ?: null,
             'pickup_point_district_id'   => $pk_dist_resolved,
             'delivery_address'           => $in['delivery_address'],
             'delivery_point_province_id' => !empty($in['delivery_point_province_id']) ? (int) $in['delivery_point_province_id'] : ($d_loc['province_id'] ?? null),
-            'delivery_point_city_id'     => !empty($in['delivery_point_city_id']) ? (int) $in['delivery_point_city_id'] : ($d_loc['city_id'] ?? null),
+            'delivery_point_city_id'     => $dl_city_res ?: null,
             'delivery_point_district_id' => $dl_dist_resolved,
             'total_price'                => (float) $in['total_price'],
             'category_vehicle_id'        => (int) $in['category_vehicle_id'] ?: null,
             'vehicle_id'                 => (int) $in['vehicle_id'] ?: null,
             'passenger_id'               => (int) $in['passenger_id'],
-            'passenger_ids'              => array_values(array_merge([(int) $in['passenger_id']], $in_passengers)),
+            'passenger_ids'              => $allPaxIds,
             'note'                       => $in['note'],
             'created_user'               => $_SESSION['username'] ?? null,
         ];
@@ -303,13 +315,13 @@ require __DIR__ . '/../../../includes/header.php';
                             <div class="rnt-row">
                                 <label class="rnt-label">Resi</label>
                                 <div class="rnt-field">
-                                    <input type="text" class="form-control form-control-sm bg-light" value="(Dibuat otomatis saat disimpan)" readonly style="max-width:300px;">
+                                    <input type="text" class="form-control form-control-sm fw-bold bg-light" value="(Dibuat otomatis saat disimpan)" readonly>
                                 </div>
                             </div>
                             <div class="rnt-row">
                                 <label class="rnt-label">Perusahaan</label>
                                 <div class="rnt-field">
-                                    <select class="form-select form-select-sm bg-light" disabled style="max-width:380px;">
+                                    <select class="form-select form-select-sm bg-light" disabled>
                                         <option value="<?= (int) $curCompany['id'] ?>" selected><?= e($curCompany['label']) ?></option>
                                     </select>
                                 </div>
@@ -317,7 +329,7 @@ require __DIR__ . '/../../../includes/header.php';
                             <div class="rnt-row">
                                 <label class="rnt-label">Cabang <span class="text-danger">*</span></label>
                                 <div class="rnt-field">
-                                    <select class="form-select form-select-sm" name="branch_id" required style="max-width:380px;">
+                                    <select class="form-select form-select-sm" name="branch_id" required>
                                         <option value="">-- Pilih Cabang --</option>
                                         <?= select_options($branches, $in['branch_id']) ?>
                                     </select>
@@ -326,26 +338,29 @@ require __DIR__ . '/../../../includes/header.php';
                             <div class="rnt-row">
                                 <label class="rnt-label">Tanggal Keberangkatan <span class="text-danger">*</span></label>
                                 <div class="rnt-field">
-                                    <input type="text" class="form-control form-control-sm bg-white flatpickr-date" name="date" id="travel_date" required value="<?= e($in['date']) ?>" placeholder="dd-MMM-yyyy" style="max-width:260px;">
+                                    <input type="text" class="form-control form-control-sm bg-white flatpickr-date" name="date" id="travel_date" required value="<?= e($in['date']) ?>" placeholder="dd-MMM-yyyy">
                                 </div>
                             </div>
-                            <div class="rnt-row">
-                                <label class="rnt-label">Jam <span class="text-danger">*</span></label>
-                                <div class="rnt-field d-flex align-items-center gap-2">
-                                    <input type="time" class="form-control form-control-sm" name="time" id="travel_time" required value="<?= e(substr((string) $in['time'], 0, 5)) ?>" style="max-width:180px;">
-                                    <span id="travelTimePeriodBadge" class="badge bg-light text-dark border">--</span>
+                            <div class="rnt-row align-items-start">
+                                <label class="rnt-label pt-1">Jam <span class="text-danger">*</span></label>
+                                <div class="rnt-field">
+                                    <div class="d-flex align-items-center gap-2">
+                                        <input type="time" class="form-control form-control-sm" name="time" id="travel_time" required value="<?= e(substr((string) $in['time'], 0, 5)) ?>" style="max-width:180px;">
+                                        <span id="travelTimePeriodBadge" class="badge bg-light text-dark border">--</span>
+                                    </div>
+                                    <div id="travelRouteSchedulesBar" class="d-none flex-wrap align-items-center gap-1 mt-1"></div>
                                 </div>
                             </div>
                             <div class="rnt-row align-items-start">
                                 <label class="rnt-label pt-1">Harga <span class="text-danger">*</span></label>
                                 <div class="rnt-field">
-                                    <div class="d-flex flex-wrap align-items-center gap-2">
-                                        <div class="input-group input-group-sm" style="max-width:260px;">
+                                    <div class="d-flex flex-wrap flex-sm-nowrap align-items-center gap-2">
+                                        <div class="input-group input-group-sm flex-grow-1" style="min-width:0;">
                                             <span class="input-group-text">Rp</span>
-                                            <input type="text" inputmode="numeric" class="form-control form-control-sm fw-semibold text-end" id="totalPriceDisplay" placeholder="0" value="<?= e(format_nominal((float) $in['total_price'])) ?>" required>
+                                            <input type="text" inputmode="numeric" class="form-control form-control-sm fw-semibold" id="totalPriceDisplay" placeholder="0" value="<?= e(format_nominal((float) $in['total_price'])) ?>" required>
                                         </div>
                                         <input type="hidden" id="travel_total_price" name="total_price" value="<?= e($in['total_price']) ?>">
-                                        <button type="button" id="btn_apply_route_price" class="btn btn-sm btn-outline-primary" style="display:none;">
+                                        <button type="button" id="btn_apply_route_price" class="btn btn-sm btn-outline-primary flex-shrink-0 text-nowrap" style="display:none;">
                                             <i class="bi bi-magic me-1"></i>Terapkan Tarif Rute
                                         </button>
                                     </div>
@@ -359,9 +374,9 @@ require __DIR__ . '/../../../includes/header.php';
                     <div class="rnt-panel">
                         <div class="rnt-panel-header">
                             <span>Kendaraan</span>
-                            <?php if (can('masters.manage')): ?>
-                                <a href="<?= e(APP_URL) ?>/pages/masters/vehicles.php" target="_blank" class="text-primary text-decoration-none fw-normal small">
-                                    Tambah Kendaraan Baru
+                            <?php if (can('vehicles.manage')): ?>
+                                <a href="<?= e(APP_URL) ?>/pages/vehicles/form.php" target="_blank" class="rnt-header-action">
+                                    <i class="bi bi-plus-lg me-1"></i>Tambah Kendaraan Baru
                                 </a>
                             <?php endif; ?>
                         </div>
@@ -430,8 +445,8 @@ require __DIR__ . '/../../../includes/header.php';
                     <div class="rnt-panel">
                         <div class="rnt-panel-header">
                             <span>Pelanggan &amp; Penumpang</span>
-                            <a href="#" class="text-primary text-decoration-none fw-normal small" data-bs-toggle="modal" data-bs-target="#modalQuickPassenger">
-                                Tambah Pelanggan Baru
+                            <a href="#" class="rnt-header-action" data-bs-toggle="modal" data-bs-target="#modalQuickPassenger">
+                                <i class="bi bi-person-plus me-1"></i>Tambah Pelanggan Baru
                             </a>
                         </div>
                         <div class="rnt-panel-body">
@@ -648,25 +663,25 @@ require __DIR__ . '/../../../includes/header.php';
                             <div class="rnt-row">
                                 <label class="rnt-label">Dibuat Oleh</label>
                                 <div class="rnt-field">
-                                    <input type="text" class="form-control form-control-sm bg-light" value="<?= e($_SESSION['username'] ?? '-') ?>" readonly style="max-width:300px;">
+                                    <input type="text" class="form-control form-control-sm bg-light" value="<?= e($_SESSION['username'] ?? '-') ?>" readonly>
                                 </div>
                             </div>
                             <div class="rnt-row">
                                 <label class="rnt-label">Dibuat Tanggal</label>
                                 <div class="rnt-field">
-                                    <input type="text" class="form-control form-control-sm bg-light" value="<?= e(date('d-M-Y H:i')) ?>" readonly style="max-width:300px;">
+                                    <input type="text" class="form-control form-control-sm bg-light" value="<?= e(date('d-M-Y H:i')) ?>" readonly>
                                 </div>
                             </div>
                             <div class="rnt-row">
                                 <label class="rnt-label">Diubah Oleh</label>
                                 <div class="rnt-field">
-                                    <input type="text" class="form-control form-control-sm bg-light" value="-" readonly style="max-width:300px;">
+                                    <input type="text" class="form-control form-control-sm bg-light" value="-" readonly>
                                 </div>
                             </div>
                             <div class="rnt-row">
                                 <label class="rnt-label">Diubah Tanggal</label>
                                 <div class="rnt-field">
-                                    <input type="text" class="form-control form-control-sm bg-light" value="-" readonly style="max-width:300px;">
+                                    <input type="text" class="form-control form-control-sm bg-light" value="-" readonly>
                                 </div>
                             </div>
                         </div>
@@ -802,20 +817,26 @@ document.addEventListener('DOMContentLoaded', function () {
         });
     }
 
+    let routeCtrl = null;
     BookingErp.initFormTabValidation({
         formId: 'formTravelBooking',
         paymentCtrl: payCtrl,
         getBillTotal: function () {
             return priceHidden ? BookingErp.parseRp(priceHidden.value) : 0;
+        },
+        beforeSubmit: function () {
+            return routeCtrl ? routeCtrl.validateBounds() : { ok: true };
         }
     });
 
-    const routeCtrl = BookingErp.initTravelRouteLookup({
+    routeCtrl = BookingErp.initTravelRouteLookup({
         appUrl: appUrl,
         lookupUrl: appUrl + '/pages/travel/rutes/lookup.php',
         companyId: companyId,
         pickupCityEl: pCityEl,
         deliveryCityEl: dCityEl,
+        pickupDistrictEl: pDistEl,
+        deliveryDistrictEl: dDistEl,
         categoryEl: catSelect,
         primaryPassengerEl: passEl,
         extraPassengersEl: extraPassEl,
@@ -823,6 +844,8 @@ document.addEventListener('DOMContentLoaded', function () {
         applyBtnEl: btnApplyRt,
         priceDisplayEl: priceDisp,
         priceValueEl: priceHidden,
+        scheduleContainerEl: document.getElementById('travelRouteSchedulesBar'),
+        timeInputEl: timeEl,
         autoFillZero: true,
         notFoundText: 'Belum ada tarif rute aktif untuk pasangan kota & kategori ini.',
         onPriceApplied: function () { payCtrl.recalcPayTotals(); }

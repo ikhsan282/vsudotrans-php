@@ -162,6 +162,7 @@ function master_tables(): array
             ],
             'blockers' => [
                 ['table' => 'villages', 'col' => 'district_id', 'label' => 'desa'],
+                ['table' => 'rute_radius_districts', 'col' => 'district_id', 'label' => 'jangkauan radius rute'],
             ],
         ]),
         'villages' => $ref([
@@ -397,7 +398,7 @@ function master_lookup(string $source, ?int $cid = null, int $limit = 0): array
 }
 
 /** Query SELECT standar (beserta parent geo metadata) untuk dropdown wilayah. */
-function master_geo_select_query(string $source, bool $with_code = false): string
+function master_geo_select_query(string $source, bool $with_code = false, bool $with_province = false, bool $with_city = false): string
 {
     if ($source === 'provinces') {
         $name_expr = $with_code ? "CONCAT(t.code, ' - ', t.name) AS name" : 't.name';
@@ -406,7 +407,10 @@ function master_geo_select_query(string $source, bool $with_code = false): strin
                   LEFT JOIN countries co ON co.id = t.country_id";
     }
     if ($source === 'cities') {
-        return "SELECT t.id, t.name, t.province_id,
+        $city_name_expr = $with_province
+            ? "CONCAT(t.name, IF(p.name IS NOT NULL AND p.name <> '', CONCAT(' (', p.name, ')'), '')) AS name"
+            : 't.name';
+        return "SELECT t.id, {$city_name_expr}, t.province_id,
                        COALESCE(t.country_id, p.country_id) AS country_id,
                        p.name AS province_name, co.name AS country_name
                   FROM cities t
@@ -414,7 +418,10 @@ function master_geo_select_query(string $source, bool $with_code = false): strin
                   LEFT JOIN countries co ON co.id = COALESCE(t.country_id, p.country_id)";
     }
     if ($source === 'districts') {
-        return "SELECT t.id, t.name, t.city_id,
+        $dist_name_expr = $with_city
+            ? "CONCAT(t.name, IF(c.name IS NOT NULL AND c.name <> '', CONCAT(' — ', c.name), '')) AS name"
+            : 't.name';
+        return "SELECT t.id, {$dist_name_expr}, t.city_id,
                        COALESCE(t.province_id, c.province_id) AS province_id,
                        COALESCE(t.country_id, c.country_id, p.country_id) AS country_id,
                        c.name AS city_name, p.name AS province_name, co.name AS country_name
@@ -762,7 +769,7 @@ function master_list(string $key): void
                                 <?php endif; ?>
                                 </td>
                             <?php endforeach; ?>
-                            <td class="text-end">
+                            <td class="text-end text-nowrap">
                                 <?php if ($can_edit_this && !empty($spec['reorder'])): ?>
                                     <?php foreach ([['up', '↑', 'Naikkan urutan'], ['down', '↓', 'Turunkan urutan']] as [$dir, $icon, $tip]): ?>
                                         <form method="post" action="<?= e(master_base_url($spec)) ?>/move.php" class="d-inline">
@@ -774,11 +781,11 @@ function master_list(string $key): void
                                     <?php endforeach; ?>
                                 <?php endif; ?>
                                 <?php if ($can_edit_this): ?>
-                                    <a class="btn btn-sm btn-outline-primary" href="<?= e(master_base_url($spec)) ?>/form.php?id=<?= (int) $r['id'] ?>">Ubah</a>
+                                    <a class="btn btn-sm btn-outline-primary" href="<?= e(master_base_url($spec)) ?>/form.php?id=<?= (int) $r['id'] ?>" title="Ubah" aria-label="Ubah"><i class="bi bi-pencil-square"></i></a>
                                     <form method="post" action="<?= e(master_base_url($spec)) ?>/delete.php" class="d-inline" onsubmit="return confirm('Hapus data ini?')">
                                         <?= csrf_field() ?>
                                         <input type="hidden" name="id" value="<?= (int) $r['id'] ?>">
-                                        <button type="submit" class="btn btn-sm btn-outline-danger">Hapus</button>
+                                        <button type="submit" class="btn btn-sm btn-outline-danger" title="Hapus" aria-label="Hapus"><i class="bi bi-trash"></i></button>
                                     </form>
                                 <?php elseif ($is_global): ?>
                                     <span class="badge bg-light text-muted border">Bawaan Sistem</span>
@@ -1845,20 +1852,22 @@ function master_options_json(string $source, string $parent_col, string $param):
         return;
     }
 
-    $parent   = (int) ($_GET[$param] ?? 0);
-    $q        = trim((string) ($_GET['q'] ?? ''));
-    $allowAll = (($_GET['all'] ?? '') === '1');
-    $withCode = (($_GET['with_code'] ?? '') === '1');
-    $hasQuery = ($q !== '');
-    $limit    = isset($_GET['limit']) ? (int) $_GET['limit'] : ($hasQuery ? 50 : 200);
-    $limit    = max(1, min(200, $limit));
+    $parent       = (int) ($_GET[$param] ?? 0);
+    $q            = trim((string) ($_GET['q'] ?? ''));
+    $allowAll     = (($_GET['all'] ?? '') === '1');
+    $withCode     = (($_GET['with_code'] ?? '') === '1');
+    $withProvince = (($_GET['with_province'] ?? '') === '1');
+    $withCity     = (($_GET['with_city'] ?? '') === '1');
+    $hasQuery     = ($q !== '');
+    $limit        = isset($_GET['limit']) ? (int) $_GET['limit'] : ($hasQuery ? 50 : 200);
+    $limit        = max(1, min(200, $limit));
 
     if ($parent <= 0 && !$hasQuery && !$allowAll) {
         echo '[]';
         return;
     }
 
-    $baseSql   = master_geo_select_query($source, $withCode);
+    $baseSql   = master_geo_select_query($source, $withCode, $withProvince, $withCity);
     $parentSql = $parent > 0 ? "t.`{$parent_col}` = ?" : '1=1';
 
     $db   = db();

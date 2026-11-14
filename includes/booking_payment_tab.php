@@ -12,8 +12,6 @@
  * - string $tabTitle       (opsional) Judul panel ('Pembayaran Travel' / 'Pembayaran Sewa')
  * - string $activeTab      (opsional) Tab aktif saat ini
  * - array  $qrisChannels   (opsional) Daftar channel QRIS aktif
- * - int    $invoiceId      (opsional, mode detail) ID invoice terkait
- * - string $invoiceNumber  (opsional, mode detail) Nomor invoice terkait
  * - float  $invoiceTotal   (opsional, mode detail) Total tagihan invoice
  * - float  $paidTotal      (opsional, mode detail) Total terbayar di DB
  * - string $payBadgeHtml   (opsional, mode detail) Badge status lunas/dp/belum
@@ -27,8 +25,6 @@ $isDetailMode   = !empty($isDetailMode);
 $tabTitle       = (string) ($tabTitle ?? 'Pembayaran Travel');
 $activeTab      = (string) ($activeTab ?? 'detail');
 $qrisChannels   = is_array($qrisChannels ?? null) ? $qrisChannels : [];
-$invoiceId      = (int) ($invoiceId ?? 0);
-$invoiceNumber  = (string) ($invoiceNumber ?? '');
 $totalPrice     = max(0.0, (float) ($totalPrice ?? 0));
 $invoiceTotal   = isset($invoiceTotal) ? max(0.0, (float) $invoiceTotal) : $totalPrice;
 $paidTotalVal   = isset($paidTotal) ? max(0.0, (float) $paidTotal) : 0.0;
@@ -67,7 +63,7 @@ $isPayActive   = ($activeTab === 'payment');
                 <div class="rnt-label">Total Pembayaran</div>
                 <div class="rnt-field d-flex flex-wrap align-items-center gap-3">
                     <input type="text" class="form-control form-control-sm fw-bold bg-light" id="payTotalDisplay"
-                        value="<?= e(format_nominal($topPaidValue)) ?>" readonly style="max-width:<?= $isDetailMode ? '240px' : '320px' ?>;">
+                        value="<?= e(format_nominal($topPaidValue)) ?>" readonly<?= $isDetailMode ? ' style="max-width:240px;"' : '' ?>>
                     <?php if ($isDetailMode): ?>
                         <span class="small text-muted">
                             Sisa Tagihan:
@@ -81,11 +77,6 @@ $isPayActive   = ($activeTab === 'payment');
                         <span id="qrisLiveSyncBadge" class="badge bg-info-subtle text-info-emphasis border <?= $hasPendingQris ? '' : 'd-none' ?>">
                             <i class="bi bi-arrow-repeat me-1"></i>Pantau QRIS Otomatis Aktif
                         </span>
-                        <?php if ($invoiceId > 0): ?>
-                            <a href="<?= e(APP_URL . '/pages/finance/invoices/detail.php?id=' . $invoiceId) ?>" class="btn btn-sm btn-outline-secondary py-0 px-2 ms-auto">
-                                <i class="bi bi-receipt me-1"></i>Invoice<?= $invoiceNumber !== '' ? ': ' . e($invoiceNumber) : '' ?>
-                            </a>
-                        <?php endif; ?>
                     <?php endif; ?>
                 </div>
             </div>
@@ -104,23 +95,23 @@ $isPayActive   = ($activeTab === 'payment');
         <div class="rnt-panel-header">
             <span><?= e($tabTitle) ?></span>
             <?php if ($canManage): ?>
-                <div class="d-flex flex-wrap align-items-center gap-2">
+                <div class="d-flex flex-wrap align-items-center gap-3">
                     <?php if ($isDetailMode): ?>
                         <?php if (!empty($qrisChannels)): ?>
-                            <button type="button" class="btn btn-sm btn-success py-0 px-2" id="btnPayQrisAuto" <?= ($bookingStatus === 'cancelled' || $remainingVal <= 0) ? 'disabled' : '' ?>>
+                            <button type="button" class="rnt-header-action" id="btnPayQrisAuto" <?= ($bookingStatus === 'cancelled' || $remainingVal <= 0) ? 'disabled' : '' ?>>
                                 <i class="bi bi-qr-code-scan me-1"></i>Bayar via QRIS Otomatis
                             </button>
                         <?php else: ?>
-                            <button type="button" class="btn btn-sm btn-outline-secondary py-0 px-2" disabled title="Belum ada channel QRIS aktif di Payment Gateway Setup Perusahaan">
+                            <button type="button" class="rnt-header-action text-muted" disabled title="Belum ada channel QRIS aktif di Payment Gateway Setup Perusahaan">
                                 <i class="bi bi-qr-code me-1"></i>QRIS Belum Aktif
                             </button>
                         <?php endif; ?>
                     <?php elseif (!empty($qrisChannels)): ?>
-                        <button type="submit" name="redirect_qris" value="1" form="<?= e($formId) ?>" class="btn btn-sm btn-outline-success py-0 px-2" title="Simpan pemesanan terlebih dahulu lalu buka pembayaran QRIS otomatis">
+                        <button type="submit" name="redirect_qris" value="1" form="<?= e($formId) ?>" class="rnt-header-action" title="Simpan pemesanan terlebih dahulu lalu buka pembayaran QRIS otomatis">
                             <i class="bi bi-qr-code-scan me-1"></i>Simpan &amp; Bayar QRIS
                         </button>
                     <?php endif; ?>
-                    <button type="button" class="btn btn-sm btn-outline-primary py-0 px-2" id="btnAddPayRow">
+                    <button type="button" class="rnt-header-action" id="btnAddPayRow">
                         <i class="bi bi-plus-lg me-1"></i>Tambah Pembayaran Manual
                     </button>
                 </div>

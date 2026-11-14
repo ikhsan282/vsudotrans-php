@@ -191,9 +191,9 @@ require __DIR__ . '/../../../includes/header.php';
                             ?>
                             <span class="badge bg-<?= $badge ?>"><?= ucfirst($r['pay_status']) ?></span>
                         </td>
-                        <td class="text-end">
-                            <a class="btn btn-sm btn-outline-secondary" href="<?= e(APP_URL) ?>/pages/finance/invoices/detail.php?id=<?= (int) $r['id'] ?>">Detail</a>
-                            <a class="btn btn-sm btn-outline-danger" href="<?= e(APP_URL) ?>/pages/finance/invoices/pdf.php?id=<?= (int) $r['id'] ?>" target="_blank"><i class="bi bi-file-earmark-pdf"></i></a>
+                        <td class="text-end text-nowrap">
+                            <a class="btn btn-sm btn-outline-secondary" href="<?= e(APP_URL) ?>/pages/finance/invoices/detail.php?id=<?= (int) $r['id'] ?>" title="Detail" aria-label="Detail"><i class="bi bi-eye"></i></a>
+                            <a class="btn btn-sm btn-outline-danger" href="<?= e(APP_URL) ?>/pages/finance/invoices/pdf.php?id=<?= (int) $r['id'] ?>" target="_blank" title="Unduh PDF" aria-label="Unduh PDF"><i class="bi bi-file-earmark-pdf"></i></a>
                         </td>
                     </tr>
                 <?php endforeach; ?>

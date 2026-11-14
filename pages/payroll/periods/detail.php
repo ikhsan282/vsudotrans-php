@@ -206,8 +206,8 @@ require __DIR__ . '/../../../includes/header.php';
                             <?php endif; ?>
                         </td>
                         <?php if ($editable): ?>
-                            <td class="text-end">
-                                <button class="btn btn-sm btn-outline-primary" type="submit" form="<?= e($fid) ?>">Simpan</button>
+                            <td class="text-end text-nowrap">
+                                <button class="btn btn-sm btn-outline-primary" type="submit" form="<?= e($fid) ?>" title="Simpan" aria-label="Simpan"><i class="bi bi-check2"></i></button>
                             </td>
                         <?php endif; ?>
                     </tr>

@@ -11,7 +11,7 @@ CREATE DATABASE IF NOT EXISTS `vsudotrans` CHARACTER SET utf8mb4 COLLATE utf8mb4
 USE `vsudotrans`;
 
 SET FOREIGN_KEY_CHECKS = 0;
-DROP TABLE IF EXISTS `audit_trails`, `login_attempts`, `user_permissions`, `user_companies`, `employees`, `users`, `roles`, `permissions`, `branches`, `companies`, `groups`, `role_permissions`, `banks`, `countries`, `provinces`, `cities`, `districts`, `villages`, `unit_measures`, `brand_vehicles`, `category_vehicles`, `model_units`, `type_engines`, `vehicles`, `rutes`, `schedules`, `passengers`, `trip_schedules`, `travel_ticket_bookings`, `rental_car_bookings`, `rental_car_regulation_employees`, `booking_passengers`, `booking_status_history`, `trip_assignments`, `premi_configs`, `booking_cost_lines`, `document_sequences`, `payment_methods`, `payment_channels`, `payment_gateway_orders`, `bot_request_logs`, `invoices`, `invoice_revisions`, `job_grades`, `job_grade_amounts`, `job_titles`, `job_positions`, `organization_structures`, `employee_recognitions`, `employee_attendances`, `payroll_periods`, `payroll_items`, `cash_accounts`, `cash_transactions`, `wa_settings`, `wa_outbox`;
+DROP TABLE IF EXISTS `audit_trails`, `login_attempts`, `user_permissions`, `user_companies`, `employees`, `users`, `roles`, `permissions`, `branches`, `companies`, `groups`, `role_permissions`, `banks`, `countries`, `provinces`, `cities`, `districts`, `villages`, `unit_measures`, `brand_vehicles`, `category_vehicles`, `model_units`, `type_engines`, `vehicles`, `rute_radius_districts`, `rute_schedules`, `rute_tariffs`, `rutes`, `schedules`, `passengers`, `trip_schedules`, `travel_ticket_bookings`, `rental_car_bookings`, `rental_car_regulation_employees`, `booking_passengers`, `booking_status_history`, `trip_assignments`, `premi_configs`, `booking_cost_lines`, `document_sequences`, `payment_methods`, `payment_channels`, `payment_gateway_orders`, `bot_request_logs`, `invoices`, `invoice_revisions`, `job_grades`, `job_grade_amounts`, `job_titles`, `job_positions`, `organization_structures`, `employee_recognitions`, `employee_attendances`, `payroll_periods`, `payroll_items`, `cash_accounts`, `cash_transactions`, `wa_settings`, `wa_outbox`;
 SET FOREIGN_KEY_CHECKS = 1;
 SET NAMES utf8mb4;
 
@@ -620,6 +620,13 @@ CREATE TABLE `rutes` (
   `max_price` DECIMAL(18,2) NOT NULL DEFAULT 0,
   `start_capacity_seat` INT(11) NOT NULL DEFAULT 0,
   `end_capacity_seat` INT(11) NOT NULL DEFAULT 0,
+  `seat_capacity` INT(11) NOT NULL DEFAULT 0,
+  `pickup_free_radius_km` DECIMAL(10,2) NOT NULL DEFAULT 0.00,
+  `pickup_max_radius_km` DECIMAL(10,2) NOT NULL DEFAULT 0.00,
+  `pickup_extra_price_per_km` DECIMAL(18,2) NOT NULL DEFAULT 0.00,
+  `delivery_free_radius_km` DECIMAL(10,2) NOT NULL DEFAULT 0.00,
+  `delivery_max_radius_km` DECIMAL(10,2) NOT NULL DEFAULT 0.00,
+  `delivery_extra_price_per_km` DECIMAL(18,2) NOT NULL DEFAULT 0.00,
   `note` VARCHAR(2000) DEFAULT NULL,
   `is_active` TINYINT(1) NOT NULL DEFAULT 1,
   `created_user` VARCHAR(255) DEFAULT NULL,
@@ -637,6 +644,76 @@ CREATE TABLE `rutes` (
   CONSTRAINT `fk_rutes_pickup_city` FOREIGN KEY (`pickup_point_city_id`) REFERENCES `cities` (`id`) ON DELETE RESTRICT,
   CONSTRAINT `fk_rutes_delivery_city` FOREIGN KEY (`delivery_point_city_id`) REFERENCES `cities` (`id`) ON DELETE RESTRICT,
   CONSTRAINT `fk_rutes_category_vehicle` FOREIGN KEY (`category_vehicle_id`) REFERENCES `category_vehicles` (`id`) ON DELETE RESTRICT
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE `rute_tariffs` (
+  `id` INT(11) NOT NULL AUTO_INCREMENT,
+  `company_id` INT(11) NOT NULL,
+  `rute_id` INT(11) NOT NULL,
+  `category_vehicle_id` INT(11) NOT NULL,
+  `min_price` DECIMAL(18,2) NOT NULL DEFAULT 0.00,
+  `price` DECIMAL(18,2) NOT NULL DEFAULT 0.00,
+  `max_price` DECIMAL(18,2) NOT NULL DEFAULT 0.00,
+  `start_capacity_seat` INT(11) NOT NULL DEFAULT 0,
+  `end_capacity_seat` INT(11) NOT NULL DEFAULT 0,
+  `seat_capacity` INT(11) NOT NULL DEFAULT 0,
+  `note` VARCHAR(2000) DEFAULT NULL,
+  `sort_order` INT(11) NOT NULL DEFAULT 0,
+  `created_user` VARCHAR(255) DEFAULT NULL,
+  `created_date` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  `modified_user` VARCHAR(255) DEFAULT NULL,
+  `modified_date` DATETIME DEFAULT NULL,
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uq_rute_tariffs_cat` (`rute_id`, `category_vehicle_id`),
+  KEY `ix_rute_tariffs_company` (`company_id`),
+  KEY `ix_rute_tariffs_rute_cat` (`rute_id`, `category_vehicle_id`),
+  KEY `ix_rute_tariffs_category` (`category_vehicle_id`),
+  CONSTRAINT `fk_rute_tariffs_company` FOREIGN KEY (`company_id`) REFERENCES `companies` (`id`) ON DELETE RESTRICT,
+  CONSTRAINT `fk_rute_tariffs_rute` FOREIGN KEY (`rute_id`) REFERENCES `rutes` (`id`) ON DELETE CASCADE,
+  CONSTRAINT `fk_rute_tariffs_category` FOREIGN KEY (`category_vehicle_id`) REFERENCES `category_vehicles` (`id`) ON DELETE RESTRICT
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE `rute_schedules` (
+  `id` INT(11) NOT NULL AUTO_INCREMENT,
+  `company_id` INT(11) NOT NULL,
+  `rute_id` INT(11) NOT NULL,
+  `departure_time` ENUM(
+    '00:00','01:00','02:00','03:00','04:00','05:00',
+    '06:00','07:00','08:00','09:00','10:00','11:00',
+    '12:00','13:00','14:00','15:00','16:00','17:00',
+    '18:00','19:00','20:00','21:00','22:00','23:00'
+  ) NOT NULL,
+  `created_user` VARCHAR(255) DEFAULT NULL,
+  `created_date` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uq_rute_schedules_slot` (`rute_id`, `departure_time`),
+  KEY `ix_rute_schedules_company` (`company_id`),
+  KEY `ix_rute_schedules_rute_time` (`rute_id`, `departure_time`),
+  CONSTRAINT `fk_rute_schedules_company` FOREIGN KEY (`company_id`) REFERENCES `companies` (`id`) ON DELETE RESTRICT,
+  CONSTRAINT `fk_rute_schedules_rute` FOREIGN KEY (`rute_id`) REFERENCES `rutes` (`id`) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE `rute_radius_districts` (
+  `id` INT(11) NOT NULL AUTO_INCREMENT,
+  `company_id` INT(11) NOT NULL,
+  `rute_id` INT(11) NOT NULL,
+  `radius_type` ENUM('pickup','delivery') NOT NULL,
+  `district_id` INT(11) NOT NULL,
+  `extra_price` DECIMAL(18,2) NOT NULL DEFAULT 0.00,
+  `note` VARCHAR(500) DEFAULT NULL,
+  `sort_order` INT(11) NOT NULL DEFAULT 0,
+  `created_user` VARCHAR(255) DEFAULT NULL,
+  `created_date` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  `modified_user` VARCHAR(255) DEFAULT NULL,
+  `modified_date` DATETIME DEFAULT NULL,
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uq_rute_radius_area_dist` (`rute_id`, `radius_type`, `district_id`),
+  KEY `ix_rute_radius_company` (`company_id`),
+  KEY `ix_rute_radius_rute_type` (`rute_id`, `radius_type`),
+  KEY `ix_rute_radius_district` (`district_id`),
+  CONSTRAINT `fk_rute_radius_company` FOREIGN KEY (`company_id`) REFERENCES `companies` (`id`) ON DELETE RESTRICT,
+  CONSTRAINT `fk_rute_radius_rute` FOREIGN KEY (`rute_id`) REFERENCES `rutes` (`id`) ON DELETE CASCADE,
+  CONSTRAINT `fk_rute_radius_district` FOREIGN KEY (`district_id`) REFERENCES `districts` (`id`) ON DELETE RESTRICT
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 CREATE TABLE `schedules` (

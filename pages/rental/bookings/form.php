@@ -4,6 +4,7 @@ require_permission('rental.manage');
 require_once __DIR__ . '/../../../includes/transport_helpers.php';
 require_once __DIR__ . '/../../../includes/booking_service.php';
 require_once __DIR__ . '/../../../includes/invoice_service.php';
+require_once __DIR__ . '/../../../includes/payment_gateway.php';
 require_once __DIR__ . '/../../../includes/regulation_service.php';
 
 $cid = require_active_company();
@@ -322,8 +323,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             require_once __DIR__ . '/../../../includes/wa.php';
             wa_notify_booking('rental', (int) $res['id']);
             flash('success', "Booking {$res['document_number']} berhasil dibuat.");
-            if (!empty($_POST['redirect_qris']) && (int) $res['invoice_id'] > 0) {
-                redirect('pages/finance/invoices/gateway_pay.php?invoice_id=' . (int) $res['invoice_id']);
+            if (!empty($_POST['redirect_qris'])) {
+                redirect('pages/rental/bookings/detail.php?id=' . $res['id'] . '&open_qris=1#tab-payment');
             }
             redirect('pages/rental/bookings/detail.php?id=' . $res['id']);
         } catch (mysqli_sql_exception $ex) {
@@ -373,6 +374,7 @@ $delivery_cities = opts_cities(
     !empty($in['delivery_point_province_id']) ? 100 : 50
 );
 $company_regulations = regulation_list_by_company($cid);
+$qrisChannels        = gateway_active_channels($cid);
 
 $pickup_districts   = opts_districts_by_city((int) ($in['pickup_point_city_id'] ?? 0), [$p_form_dist], 100);
 $delivery_districts = opts_districts_by_city((int) ($in['delivery_point_city_id'] ?? 0), [$d_form_dist], 100);
@@ -445,6 +447,7 @@ require __DIR__ . '/../../../includes/header.php';
                     <!-- ========================================================== -->
                     <div class="tab-pane fade show active" id="tab-detail" role="tabpanel">
                         <div class="rnt-panel">
+                            <div class="rnt-panel-header"><span>Informasi Pemesanan</span></div>
                             <div class="rnt-panel-body">
                                 <!-- Resi -->
                                 <div class="rnt-row">
@@ -497,7 +500,7 @@ require __DIR__ . '/../../../includes/header.php';
                                 <div class="rnt-row">
                                     <label class="rnt-label">Jam <span class="text-danger">*</span></label>
                                     <div class="rnt-field">
-                                        <input type="time" class="form-control form-control-sm" name="time" id="rental_time_input" required value="<?= e($in['time']) ?>" style="max-width: 260px;">
+                                        <input type="time" class="form-control form-control-sm" name="time" id="rental_time_input" required value="<?= e($in['time']) ?>" style="max-width:180px;">
                                     </div>
                                 </div>
 
@@ -517,9 +520,11 @@ require __DIR__ . '/../../../includes/header.php';
                         <div class="rnt-panel">
                             <div class="rnt-panel-header">
                                 <span>Kendaraan</span>
-                                <a href="<?= e(APP_URL) ?>/pages/vehicles/form.php" target="_blank" class="text-primary text-decoration-none small fw-semibold">
-                                    Tambah Kendaraan Baru
-                                </a>
+                                <?php if (can('vehicles.manage')): ?>
+                                    <a href="<?= e(APP_URL) ?>/pages/vehicles/form.php" target="_blank" class="rnt-header-action">
+                                        <i class="bi bi-plus-lg me-1"></i>Tambah Kendaraan Baru
+                                    </a>
+                                <?php endif; ?>
                             </div>
                             <div class="rnt-panel-body">
                                 <div class="rnt-row">
@@ -560,8 +565,8 @@ require __DIR__ . '/../../../includes/header.php';
                         <div class="rnt-panel">
                             <div class="rnt-panel-header">
                                 <span>Pelanggan</span>
-                                <a href="#" data-bs-toggle="modal" data-bs-target="#modalQuickPassenger" class="text-primary text-decoration-none small fw-semibold">
-                                    Tambah Pelanggan Baru
+                                <a href="#" data-bs-toggle="modal" data-bs-target="#modalQuickPassenger" class="rnt-header-action">
+                                    <i class="bi bi-person-plus me-1"></i>Tambah Pelanggan Baru
                                 </a>
                             </div>
                             <div class="rnt-panel-body">
@@ -755,11 +760,11 @@ require __DIR__ . '/../../../includes/header.php';
                             <span>Karyawan</span>
                             <span id="crewRegStatusMsg" class="small text-muted fw-normal"></span>
                         </div>
-                        <div class="d-flex align-items-center gap-2">
-                            <button type="button" class="btn btn-sm btn-outline-success py-0 px-2" id="btnApplyRegulation" title="Hitung otomatis premi dan BBM sesuai peraturan komisi kategori armada">
+                        <div class="d-flex flex-wrap align-items-center gap-3">
+                            <button type="button" class="rnt-header-action" id="btnApplyRegulation" title="Hitung otomatis premi dan BBM sesuai peraturan komisi kategori armada">
                                 <i class="bi bi-calculator me-1"></i>Auto Hitung Komisi
                             </button>
-                            <button type="button" class="btn btn-sm btn-outline-primary py-0 px-2" id="btnAddCrewRow">
+                            <button type="button" class="rnt-header-action" id="btnAddCrewRow">
                                 <i class="bi bi-plus-lg me-1"></i>Tambah Baris
                             </button>
                         </div>
@@ -849,7 +854,7 @@ require __DIR__ . '/../../../includes/header.php';
                         <div class="rnt-row">
                             <label class="rnt-label">Total Pembayaran</label>
                             <div class="rnt-field">
-                                <input type="text" class="form-control form-control-sm fw-bold bg-light" id="pay_total_top_display" value="0" readonly style="max-width:320px;">
+                                <input type="text" class="form-control form-control-sm fw-bold bg-light" id="pay_total_top_display" value="0" readonly>
                             </div>
                         </div>
                     </div>
@@ -859,9 +864,16 @@ require __DIR__ . '/../../../includes/header.php';
                 <div class="rnt-panel mb-0">
                     <div class="rnt-panel-header">
                         <span>Pembayaran Sewa</span>
-                        <button type="button" class="btn btn-sm btn-outline-primary py-0 px-2" id="btnAddPayRow">
-                            <i class="bi bi-plus-lg me-1"></i>Tambah Pembayaran Manual
-                        </button>
+                        <div class="d-flex flex-wrap align-items-center gap-3">
+                            <?php if (!empty($qrisChannels)): ?>
+                                <button type="button" class="rnt-header-action" id="btnSaveAndPayQris" title="Simpan pemesanan terlebih dahulu lalu buka pembayaran QRIS otomatis">
+                                    <i class="bi bi-qr-code-scan me-1"></i>Simpan &amp; Bayar QRIS
+                                </button>
+                            <?php endif; ?>
+                            <button type="button" class="rnt-header-action" id="btnAddPayRow">
+                                <i class="bi bi-plus-lg me-1"></i>Tambah Pembayaran Manual
+                            </button>
+                        </div>
                     </div>
                     <div id="payOverpayAlert" class="alert alert-danger py-2 px-3 small d-none m-2 mb-0" role="alert">
                         <i class="bi bi-exclamation-octagon me-1"></i><span id="payOverpayMsg"></span>
@@ -960,6 +972,7 @@ require __DIR__ . '/../../../includes/header.php';
             <!-- ========================================================== -->
             <div class="tab-pane fade" id="tab-audit" role="tabpanel">
                 <div class="rnt-panel mb-0">
+                    <div class="rnt-panel-header"><span>Audit Trail Dokumen</span></div>
                     <div class="rnt-panel-body">
                         <div class="rnt-row">
                             <label class="rnt-label">Dibuat Oleh</label>

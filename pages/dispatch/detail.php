@@ -102,18 +102,20 @@ require __DIR__ . '/../../includes/header.php';
                         <td><span class="badge bg-<?= $is_active ? 'warning text-dark' : 'secondary' ?>"><?= $is_active ? 'sedang jalan' : 'selesai' ?></span></td>
                         <td><?= e((string) $r['reason']) ?></td>
                         <td><?= e((string) $r['created_user']) ?></td>
-                        <td class="text-end">
-                            <a class="btn btn-sm btn-outline-secondary py-0 px-2" target="_blank" href="<?= e(APP_URL) ?>/pages/dispatch/manifest.php?id=<?= (int) $r['id'] ?>" title="Cetak Surat Jalan"><i class="bi bi-printer"></i></a>
-                            <?php if ($is_active && can('dispatch.manage')): ?>
-                            <form method="post" action="<?= e($post_url) ?>" class="d-inline-flex gap-1 justify-content-end">
-                                <?= csrf_field() ?>
-                                <input type="hidden" name="type" value="<?= e($type) ?>">
-                                <input type="hidden" name="id" value="<?= $id ?>">
-                                <input type="hidden" name="assignment_id" value="<?= (int) $r['id'] ?>">
-                                <input class="form-control form-control-sm" name="reason" placeholder="Catatan selesai" maxlength="2000" style="max-width:10rem">
-                                <button class="btn btn-sm btn-outline-success" type="submit" data-confirm="Selesaikan tugas ini?">Selesaikan Tugas</button>
-                            </form>
-                            <?php endif; ?>
+                        <td class="text-end text-nowrap">
+                            <div class="d-inline-flex align-items-center gap-1 justify-content-end">
+                                <a class="btn btn-sm btn-outline-secondary" target="_blank" href="<?= e(APP_URL) ?>/pages/dispatch/manifest.php?id=<?= (int) $r['id'] ?>" title="Cetak Surat Jalan" aria-label="Cetak Surat Jalan"><i class="bi bi-printer"></i></a>
+                                <?php if ($is_active && can('dispatch.manage')): ?>
+                                <form method="post" action="<?= e($post_url) ?>" class="d-inline-flex gap-1 justify-content-end">
+                                    <?= csrf_field() ?>
+                                    <input type="hidden" name="type" value="<?= e($type) ?>">
+                                    <input type="hidden" name="id" value="<?= $id ?>">
+                                    <input type="hidden" name="assignment_id" value="<?= (int) $r['id'] ?>">
+                                    <input class="form-control form-control-sm" name="reason" placeholder="Catatan selesai" maxlength="2000" style="max-width:10rem">
+                                    <button class="btn btn-sm btn-outline-success" type="submit" title="Selesaikan Tugas" aria-label="Selesaikan Tugas" data-confirm="Selesaikan tugas ini?"><i class="bi bi-check2-circle"></i></button>
+                                </form>
+                                <?php endif; ?>
+                            </div>
                         </td>
                     </tr>
                 <?php endforeach; ?>

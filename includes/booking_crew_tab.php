@@ -79,12 +79,12 @@ $isCrewActive    = ($activeTab === 'crew');
                 <span id="crewRegStatusMsg" class="small text-muted fw-normal"></span>
             </div>
             <?php if ($canManage): ?>
-                <div class="d-flex align-items-center gap-2">
-                    <button type="button" class="btn btn-sm btn-outline-success py-0 px-2" id="btnApplyRegulation"
+                <div class="d-flex flex-wrap align-items-center gap-3">
+                    <button type="button" class="rnt-header-action" id="btnApplyRegulation"
                         title="<?= $showBbm ? 'Hitung otomatis premi dan BBM sesuai peraturan komisi kategori armada' : 'Hitung otomatis premi sesuai peraturan komisi kategori armada' ?>">
                         <i class="bi bi-calculator me-1"></i>Auto Hitung Komisi
                     </button>
-                    <button type="button" class="btn btn-sm btn-outline-primary py-0 px-2" id="btnAddCrewRow">
+                    <button type="button" class="rnt-header-action" id="btnAddCrewRow">
                         <i class="bi bi-plus-lg me-1"></i>Tambah Baris
                     </button>
                 </div>
@@ -198,7 +198,7 @@ $isCrewActive    = ($activeTab === 'crew');
             <div class="rnt-panel-header">
                 <span>Riwayat Penugasan Driver</span>
                 <?php if ($dispatchUrl !== ''): ?>
-                    <a href="<?= e($dispatchUrl) ?>" class="text-primary text-decoration-none fw-normal small">
+                    <a href="<?= e($dispatchUrl) ?>" class="rnt-header-action">
                         <i class="bi bi-calendar2-check me-1"></i>Kelola di Penjadwalan
                     </a>
                 <?php endif; ?>

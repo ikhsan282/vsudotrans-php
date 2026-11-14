@@ -112,8 +112,8 @@ require __DIR__ . '/../../../includes/header.php';
                         <td class="text-end"><?= (int) $r['item_count'] ?></td>
                         <td class="text-end"><?= e(rupiah((float) $r['total_net'])) ?></td>
                         <td class="small text-muted"><?= e((string) $r['created_date']) ?></td>
-                        <td class="text-end">
-                            <a class="btn btn-sm btn-outline-secondary" href="<?= e(APP_URL) ?>/pages/payroll/periods/detail.php?id=<?= (int) $r['id'] ?>">Detail</a>
+                        <td class="text-end text-nowrap">
+                            <a class="btn btn-sm btn-outline-secondary" href="<?= e(APP_URL) ?>/pages/payroll/periods/detail.php?id=<?= (int) $r['id'] ?>" title="Detail" aria-label="Detail"><i class="bi bi-eye"></i></a>
                         </td>
                     </tr>
                 <?php endforeach; ?>

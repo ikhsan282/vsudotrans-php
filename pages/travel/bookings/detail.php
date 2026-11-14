@@ -215,6 +215,18 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $dl_city = $dl_city_in > 0 ? $dl_city_in : (int) ($dl_info['city_id'] ?? 0);
             $dl_prov = $dl_prov_in > 0 ? $dl_prov_in : (int) ($dl_info['province_id'] ?? 0);
 
+            $allPaxIds = array_values(array_unique(array_merge([$passenger_id], $extra_pids)));
+            travel_validate_route_price_bounds(
+                $booking_cid,
+                $pk_city,
+                $dl_city,
+                $category_vehicle_id,
+                count($allPaxIds),
+                $total_price,
+                $pk_dist_in,
+                $dl_dist_in
+            );
+
             $db = db();
             $db->begin_transaction();
             try {
@@ -333,7 +345,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 }
 
 $status = booking_current_status('travel', $id);
-$next   = BOOKING_TRANSITIONS[$status] ?? [];
 
 $db  = db();
 $bt  = 'travel';
@@ -488,48 +499,9 @@ require __DIR__ . '/../../../includes/header.php';
                     <i class="bi bi-check2-circle me-1"></i>Simpan Perubahan
                 </button>
             <?php endif; ?>
-            <a class="btn btn-dark btn-sm" target="_blank" href="<?= e(APP_URL) ?>/pages/travel/bookings/tiket.php?no=<?= urlencode($b['document_number']) ?>&print=1">
+            <a class="btn btn-dark btn-sm" target="_blank" href="<?= e(APP_URL) ?>/tiket.php?no=<?= urlencode((string) $b['document_number']) ?>&print=1">
                 <i class="bi bi-printer me-1"></i>Cetak E-Tiket
             </a>
-            <?php if ($canManage): ?>
-                <div class="btn-group">
-                    <button type="button" class="btn btn-sm btn-outline-secondary dropdown-toggle" data-bs-toggle="dropdown" aria-expanded="false">
-                        <i class="bi bi-gear me-1"></i>Tindakan
-                    </button>
-                    <ul class="dropdown-menu dropdown-menu-end">
-                        <?php if ($next): ?>
-                            <li>
-                                <button type="button" class="dropdown-item" data-bs-toggle="modal" data-bs-target="#travelStatusModal">
-                                    <i class="bi bi-arrow-repeat me-2 text-primary"></i>Ubah Status
-                                </button>
-                            </li>
-                        <?php endif; ?>
-                        <?php if ($status !== 'cancelled'): ?>
-                            <li>
-                                <button type="button" class="dropdown-item" data-bs-toggle="modal" data-bs-target="#travelRescheduleModal">
-                                    <i class="bi bi-calendar-event me-2 text-info"></i>Reschedule Jadwal
-                                </button>
-                            </li>
-                            <li>
-                                <button type="button" class="dropdown-item" data-bs-toggle="modal" data-bs-target="#travelDriverModal">
-                                    <i class="bi bi-person-badge me-2 text-success"></i>Tugaskan Driver Cepat
-                                </button>
-                            </li>
-                            <li>
-                                <button type="button" class="dropdown-item text-warning-emphasis" data-bs-toggle="modal" data-bs-target="#travelCancelModal">
-                                    <i class="bi bi-slash-circle me-2 text-warning"></i>Batalkan Pemesanan
-                                </button>
-                            </li>
-                        <?php endif; ?>
-                        <li><hr class="dropdown-divider"></li>
-                        <li>
-                            <button type="button" class="dropdown-item text-danger" onclick="if (confirm('Hapus permanen pemesanan <?= e($b['document_number']) ?> beserta tagihan terkait?')) document.getElementById('travelDeleteForm').submit();">
-                                <i class="bi bi-trash me-2"></i>Hapus Pemesanan
-                            </button>
-                        </li>
-                    </ul>
-                </div>
-            <?php endif; ?>
         </div>
     </div>
 
@@ -578,13 +550,13 @@ require __DIR__ . '/../../../includes/header.php';
                             <div class="rnt-row">
                                 <label class="rnt-label">Resi</label>
                                 <div class="rnt-field">
-                                    <input type="text" class="form-control form-control-sm fw-bold bg-light" value="<?= e($b['document_number']) ?>" readonly style="max-width:300px;">
+                                    <input type="text" class="form-control form-control-sm fw-bold bg-light" value="<?= e($b['document_number']) ?>" readonly>
                                 </div>
                             </div>
                             <div class="rnt-row">
                                 <label class="rnt-label">Perusahaan</label>
                                 <div class="rnt-field">
-                                    <select class="form-select form-select-sm bg-light" disabled style="max-width:380px;">
+                                    <select class="form-select form-select-sm bg-light" disabled>
                                         <option value="<?= (int) $curCompany['id'] ?>" selected><?= e($curCompany['label']) ?></option>
                                     </select>
                                 </div>
@@ -592,7 +564,7 @@ require __DIR__ . '/../../../includes/header.php';
                             <div class="rnt-row">
                                 <label class="rnt-label">Cabang <span class="text-danger">*</span></label>
                                 <div class="rnt-field">
-                                    <select class="form-select form-select-sm" name="branch_id" form="travelDetailForm" style="max-width:380px;" <?= ($canManage && $status !== 'cancelled') ? 'required' : 'disabled' ?>>
+                                    <select class="form-select form-select-sm" name="branch_id" form="travelDetailForm" <?= ($canManage && $status !== 'cancelled') ? 'required' : 'disabled' ?>>
                                         <option value="">-- Pilih Cabang --</option>
                                         <?= select_options($branches, $b['branch_id']) ?>
                                     </select>
@@ -601,27 +573,30 @@ require __DIR__ . '/../../../includes/header.php';
                             <div class="rnt-row">
                                 <label class="rnt-label">Tanggal Keberangkatan <span class="text-danger">*</span></label>
                                 <div class="rnt-field">
-                                    <input type="text" class="form-control form-control-sm bg-white flatpickr-date" name="date" id="travelDateInput" form="travelDetailForm" required value="<?= e($b['date']) ?>" placeholder="dd-MMM-yyyy" style="max-width:260px;" <?= ($canManage && $status !== 'cancelled') ? '' : 'disabled' ?>>
+                                    <input type="text" class="form-control form-control-sm bg-white flatpickr-date" name="date" id="travelDateInput" form="travelDetailForm" required value="<?= e($b['date']) ?>" placeholder="dd-MMM-yyyy" <?= ($canManage && $status !== 'cancelled') ? '' : 'disabled' ?>>
                                 </div>
                             </div>
-                            <div class="rnt-row">
-                                <label class="rnt-label">Jam <span class="text-danger">*</span></label>
-                                <div class="rnt-field d-flex align-items-center gap-2">
-                                    <input type="time" class="form-control form-control-sm" name="time" id="travelTimeInput" form="travelDetailForm" required value="<?= e(substr((string) $b['time'], 0, 5)) ?>" style="max-width:180px;" <?= ($canManage && $status !== 'cancelled') ? '' : 'readonly' ?>>
-                                    <span id="travelTimePeriodBadge" class="badge bg-light text-dark border">--</span>
+                            <div class="rnt-row align-items-start">
+                                <label class="rnt-label pt-1">Jam <span class="text-danger">*</span></label>
+                                <div class="rnt-field">
+                                    <div class="d-flex align-items-center gap-2">
+                                        <input type="time" class="form-control form-control-sm" name="time" id="travelTimeInput" form="travelDetailForm" required value="<?= e(substr((string) $b['time'], 0, 5)) ?>" style="max-width:180px;" <?= ($canManage && $status !== 'cancelled') ? '' : 'readonly' ?>>
+                                        <span id="travelTimePeriodBadge" class="badge bg-light text-dark border">--</span>
+                                    </div>
+                                    <div id="travelRouteSchedulesBar" class="d-none flex-wrap align-items-center gap-1 mt-1"></div>
                                 </div>
                             </div>
                             <div class="rnt-row align-items-start">
                                 <label class="rnt-label pt-1">Harga <span class="text-danger">*</span></label>
                                 <div class="rnt-field">
-                                    <div class="d-flex flex-wrap align-items-center gap-2">
-                                        <div class="input-group input-group-sm" style="max-width:260px;">
+                                    <div class="d-flex flex-wrap flex-sm-nowrap align-items-center gap-2">
+                                        <div class="input-group input-group-sm flex-grow-1" style="min-width:0;">
                                             <span class="input-group-text">Rp</span>
-                                            <input type="text" inputmode="numeric" class="form-control form-control-sm fw-semibold text-end" id="totalPriceDisplay" value="<?= e(format_nominal((float) $b['total_price'])) ?>" placeholder="0" <?= ($canManage && $status !== 'cancelled') ? 'required' : 'readonly' ?>>
+                                            <input type="text" inputmode="numeric" class="form-control form-control-sm fw-semibold" id="totalPriceDisplay" value="<?= e(format_nominal((float) $b['total_price'])) ?>" placeholder="0" <?= ($canManage && $status !== 'cancelled') ? 'required' : 'readonly' ?>>
                                         </div>
                                         <input type="hidden" name="total_price" id="totalPriceValue" form="travelDetailForm" value="<?= (int) round((float) $b['total_price']) ?>">
                                         <?php if ($canManage && $status !== 'cancelled'): ?>
-                                            <button type="button" id="btn_apply_route_price" class="btn btn-sm btn-outline-primary" style="display:none;">
+                                            <button type="button" id="btn_apply_route_price" class="btn btn-sm btn-outline-primary flex-shrink-0 text-nowrap" style="display:none;">
                                                 <i class="bi bi-magic me-1"></i>Terapkan Tarif Rute
                                             </button>
                                         <?php endif; ?>
@@ -636,9 +611,9 @@ require __DIR__ . '/../../../includes/header.php';
                     <div class="rnt-panel">
                         <div class="rnt-panel-header">
                             <span>Kendaraan</span>
-                            <?php if (can('masters.manage')): ?>
-                                <a href="<?= e(APP_URL) ?>/pages/masters/vehicles.php" target="_blank" class="text-primary text-decoration-none fw-normal small">
-                                    Tambah Kendaraan Baru
+                            <?php if (can('vehicles.manage')): ?>
+                                <a href="<?= e(APP_URL) ?>/pages/vehicles/form.php" target="_blank" class="rnt-header-action">
+                                    <i class="bi bi-plus-lg me-1"></i>Tambah Kendaraan Baru
                                 </a>
                             <?php endif; ?>
                         </div>
@@ -712,8 +687,8 @@ require __DIR__ . '/../../../includes/header.php';
                                 <span class="badge bg-primary-subtle text-primary border" id="passengerCountPanelBadge"><?= 1 + count($extra_passengers) ?> Penumpang</span>
                             </div>
                             <?php if ($canManage && $status !== 'cancelled'): ?>
-                                <a href="#" class="text-primary text-decoration-none fw-normal small" data-bs-toggle="modal" data-bs-target="#quickPassengerModal">
-                                    Tambah Pelanggan Baru
+                                <a href="#" class="rnt-header-action" data-bs-toggle="modal" data-bs-target="#quickPassengerModal">
+                                    <i class="bi bi-person-plus me-1"></i>Tambah Pelanggan Baru
                                 </a>
                             <?php endif; ?>
                         </div>
@@ -910,8 +885,6 @@ require __DIR__ . '/../../../includes/header.php';
                 $payments      = $payment_rows;
                 $totalPrice    = (float) $b['total_price'];
                 $isDetailMode  = true;
-                $invoiceId     = $invId;
-                $invoiceNumber = $invDocNo;
                 $invoiceTotal  = $invTotal;
                 $bookingStatus = $status;
                 $tabTitle      = 'Pembayaran Travel';
@@ -942,25 +915,25 @@ require __DIR__ . '/../../../includes/header.php';
                             <div class="rnt-row">
                                 <label class="rnt-label">Dibuat Oleh</label>
                                 <div class="rnt-field">
-                                    <input type="text" class="form-control form-control-sm bg-light" value="<?= e($b['created_user'] ?? '-') ?>" readonly style="max-width:300px;">
+                                    <input type="text" class="form-control form-control-sm bg-light" value="<?= e($b['created_user'] ?? '-') ?>" readonly>
                                 </div>
                             </div>
                             <div class="rnt-row">
                                 <label class="rnt-label">Dibuat Tanggal</label>
                                 <div class="rnt-field">
-                                    <input type="text" class="form-control form-control-sm bg-light" value="<?= !empty($b['created_date']) ? e(date('d-M-Y H:i', strtotime((string) $b['created_date']))) : '-' ?>" readonly style="max-width:300px;">
+                                    <input type="text" class="form-control form-control-sm bg-light" value="<?= !empty($b['created_date']) ? e(date('d-M-Y H:i', strtotime((string) $b['created_date']))) : '-' ?>" readonly>
                                 </div>
                             </div>
                             <div class="rnt-row">
                                 <label class="rnt-label">Diubah Oleh</label>
                                 <div class="rnt-field">
-                                    <input type="text" class="form-control form-control-sm bg-light" value="<?= e($b['modified_user'] ?? '-') ?>" readonly style="max-width:300px;">
+                                    <input type="text" class="form-control form-control-sm bg-light" value="<?= e($b['modified_user'] ?? '-') ?>" readonly>
                                 </div>
                             </div>
                             <div class="rnt-row">
                                 <label class="rnt-label">Diubah Tanggal</label>
                                 <div class="rnt-field">
-                                    <input type="text" class="form-control form-control-sm bg-light" value="<?= !empty($b['modified_date']) ? e(date('d-M-Y H:i', strtotime((string) $b['modified_date']))) : '-' ?>" readonly style="max-width:300px;">
+                                    <input type="text" class="form-control form-control-sm bg-light" value="<?= !empty($b['modified_date']) ? e(date('d-M-Y H:i', strtotime((string) $b['modified_date']))) : '-' ?>" readonly>
                                 </div>
                             </div>
                         </div>
@@ -1035,155 +1008,6 @@ require __DIR__ . '/../../../includes/header.php';
                 </div>
             </form>
         </div>
-    </div>
-</div>
-
-<!-- Form Hapus Tersembunyi -->
-<form method="post" id="travelDeleteForm" class="d-none">
-    <?= csrf_field() ?>
-    <input type="hidden" name="id" value="<?= $id ?>">
-    <input type="hidden" name="act" value="delete">
-</form>
-
-<!-- Modal Ubah Status -->
-<?php if ($next): ?>
-<div class="modal fade" id="travelStatusModal" tabindex="-1" aria-hidden="true">
-    <div class="modal-dialog">
-        <form method="post" class="modal-content">
-            <?= csrf_field() ?>
-            <input type="hidden" name="id" value="<?= $id ?>">
-            <input type="hidden" name="act" value="status">
-            <input type="hidden" name="active_tab" value="audit">
-            <div class="modal-header">
-                <h5 class="modal-title fs-6 fw-semibold">Ubah Status Pemesanan</h5>
-                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
-            </div>
-            <div class="modal-body">
-                <div class="mb-3">
-                    <label class="form-label small fw-semibold">Status Baru</label>
-                    <select class="form-select" name="to_status" required>
-                        <?php foreach ($next as $stOpt): ?>
-                            <option value="<?= e($stOpt) ?>"><?= e(ucfirst($stOpt)) ?></option>
-                        <?php endforeach; ?>
-                    </select>
-                </div>
-                <div class="mb-0">
-                    <label class="form-label small fw-semibold">Catatan / Alasan</label>
-                    <input type="text" class="form-control" name="reason" placeholder="Opsional...">
-                </div>
-            </div>
-            <div class="modal-footer">
-                <button type="button" class="btn btn-sm btn-outline-secondary" data-bs-dismiss="modal">Batal</button>
-                <button type="submit" class="btn btn-sm btn-primary">Simpan Status</button>
-            </div>
-        </form>
-    </div>
-</div>
-<?php endif; ?>
-
-<!-- Modal Reschedule -->
-<div class="modal fade" id="travelRescheduleModal" tabindex="-1" aria-hidden="true">
-    <div class="modal-dialog">
-        <form method="post" class="modal-content">
-            <?= csrf_field() ?>
-            <input type="hidden" name="id" value="<?= $id ?>">
-            <input type="hidden" name="act" value="reschedule">
-            <input type="hidden" name="active_tab" value="detail">
-            <div class="modal-header">
-                <h5 class="modal-title fs-6 fw-semibold">Reschedule Jadwal Keberangkatan</h5>
-                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
-            </div>
-            <div class="modal-body">
-                <div class="mb-3">
-                    <label class="form-label small fw-semibold">Tanggal Baru <span class="text-danger">*</span></label>
-                    <input type="date" class="form-control" name="date" required value="<?= e($b['date']) ?>">
-                </div>
-                <div class="mb-3">
-                    <label class="form-label small fw-semibold">Jam Baru <span class="text-danger">*</span></label>
-                    <input type="time" class="form-control" name="time" required value="<?= e(substr((string) $b['time'], 0, 5)) ?>">
-                </div>
-                <div class="mb-0">
-                    <label class="form-label small fw-semibold">Alasan Reschedule</label>
-                    <input type="text" class="form-control" name="reason" placeholder="Permintaan penumpang / penyesuaian armada...">
-                </div>
-            </div>
-            <div class="modal-footer">
-                <button type="button" class="btn btn-sm btn-outline-secondary" data-bs-dismiss="modal">Batal</button>
-                <button type="submit" class="btn btn-sm btn-info text-white">Simpan Jadwal Baru</button>
-            </div>
-        </form>
-    </div>
-</div>
-
-<!-- Modal Tugaskan Driver Cepat -->
-<div class="modal fade" id="travelDriverModal" tabindex="-1" aria-hidden="true">
-    <div class="modal-dialog">
-        <form method="post" class="modal-content">
-            <?= csrf_field() ?>
-            <input type="hidden" name="id" value="<?= $id ?>">
-            <input type="hidden" name="act" value="driver">
-            <input type="hidden" name="active_tab" value="crew">
-            <div class="modal-header">
-                <h5 class="modal-title fs-6 fw-semibold">Tugaskan Driver &amp; Armada</h5>
-                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
-            </div>
-            <div class="modal-body">
-                <div class="mb-3">
-                    <label class="form-label small fw-semibold">Driver / Karyawan <span class="text-danger">*</span></label>
-                    <select class="form-select ts-select" name="employee_id"
-                        data-ts-url="<?= e(APP_URL) ?>/pages/employees/options.php"
-                        data-ts-company="<?= (int) $booking_cid ?>"
-                        data-ts-limit="30"
-                        required>
-                        <option value="">-- Pilih Driver --</option>
-                        <?php foreach ($employees as $em): ?>
-                            <option value="<?= (int) $em['id'] ?>"<?= ((int) $em['id'] === $assignedEmpId) ? ' selected' : '' ?>><?= e($em['name']) ?></option>
-                        <?php endforeach; ?>
-                    </select>
-                </div>
-                <div class="mb-0">
-                    <label class="form-label small fw-semibold">Armada</label>
-                    <select class="form-select ts-select" name="vehicle_id"
-                        data-ts-url="<?= e(APP_URL) ?>/pages/vehicles/options.php"
-                        data-ts-company="<?= (int) $booking_cid ?>"
-                        data-ts-limit="30">
-                        <option value="">-- Pertahankan / Pilih Armada --</option>
-                        <?php foreach ($vehicles as $v): ?>
-                            <option value="<?= (int) $v['id'] ?>"<?= ((int) $v['id'] === $displayVehId) ? ' selected' : '' ?>><?= e($v['name']) ?></option>
-                        <?php endforeach; ?>
-                    </select>
-                </div>
-            </div>
-            <div class="modal-footer">
-                <button type="button" class="btn btn-sm btn-outline-secondary" data-bs-dismiss="modal">Batal</button>
-                <button type="submit" class="btn btn-sm btn-success">Simpan Penugasan</button>
-            </div>
-        </form>
-    </div>
-</div>
-
-<!-- Modal Batalkan Pemesanan -->
-<div class="modal fade" id="travelCancelModal" tabindex="-1" aria-hidden="true">
-    <div class="modal-dialog">
-        <form method="post" class="modal-content">
-            <?= csrf_field() ?>
-            <input type="hidden" name="id" value="<?= $id ?>">
-            <input type="hidden" name="act" value="cancel">
-            <input type="hidden" name="active_tab" value="audit">
-            <div class="modal-header">
-                <h5 class="modal-title fs-6 fw-semibold text-danger">Batalkan Pemesanan Tiket Perjalanan</h5>
-                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
-            </div>
-            <div class="modal-body">
-                <p class="small text-muted">Pembatalan akan mengubah status menjadi <strong>cancelled</strong> dan membatalkan invoice terkait.</p>
-                <label class="form-label small fw-semibold">Alasan Pembatalan</label>
-                <input type="text" class="form-control" name="reason" placeholder="Contoh: Penumpang membatalkan perjalanan...">
-            </div>
-            <div class="modal-footer">
-                <button type="button" class="btn btn-sm btn-outline-secondary" data-bs-dismiss="modal">Tutup</button>
-                <button type="submit" class="btn btn-sm btn-danger">Ya, Batalkan</button>
-            </div>
-        </form>
     </div>
 </div>
 <?php endif; ?>
@@ -1309,20 +1133,26 @@ document.addEventListener('DOMContentLoaded', function () {
         });
     }
 
+    let routeCtrl = null;
     BookingErp.initFormTabValidation({
         formId: 'travelDetailForm',
         paymentCtrl: payCtrl,
         getBillTotal: function () {
             return priceValEl ? BookingErp.parseRp(priceValEl.value) : <?= (int) round($invTotal) ?>;
+        },
+        beforeSubmit: function () {
+            return routeCtrl ? routeCtrl.validateBounds() : { ok: true };
         }
     });
 
-    const routeCtrl = BookingErp.initTravelRouteLookup({
+    routeCtrl = BookingErp.initTravelRouteLookup({
         appUrl: appUrl,
         lookupUrl: appUrl + '/pages/travel/rutes/lookup.php',
         companyId: bookingCid,
         pickupCityEl: pCityEl,
         deliveryCityEl: dCityEl,
+        pickupDistrictEl: pDistEl,
+        deliveryDistrictEl: dDistEl,
         categoryEl: catSelect,
         primaryPassengerEl: primPaxSel,
         extraPassengersEl: extraPaxSel,
@@ -1330,6 +1160,8 @@ document.addEventListener('DOMContentLoaded', function () {
         applyBtnEl: btnApply,
         priceDisplayEl: priceDispEl,
         priceValueEl: priceValEl,
+        scheduleContainerEl: document.getElementById('travelRouteSchedulesBar'),
+        timeInputEl: travelTimeEl,
         autoFillZero: false,
         notFoundText: 'Tidak ditemukan tarif rute aktif untuk pasangan kota ini.',
         onPriceApplied: function () { payCtrl.recalcPayTotals(); }

@@ -129,13 +129,13 @@ require __DIR__ . '/../../../includes/header.php';
                         <td><?= e($r['name']) ?></td>
                         <td><?= e(trim($r['country_code'] . ' ' . (string) $r['phone_number'])) ?: '-' ?></td>
                         <td><?= e($r['email'] ?: '-') ?></td>
-                        <td class="text-end">
+                        <td class="text-end text-nowrap">
                             <?php if ($can_manage): ?>
-                                <a class="btn btn-sm btn-outline-primary" href="<?= e(APP_URL) ?>/pages/transport/passengers/form.php?id=<?= (int) $r['id'] ?>">Ubah</a>
+                                <a class="btn btn-sm btn-outline-primary" href="<?= e(APP_URL) ?>/pages/transport/passengers/form.php?id=<?= (int) $r['id'] ?>" title="Ubah" aria-label="Ubah"><i class="bi bi-pencil-square"></i></a>
                                 <form method="post" action="<?= e(APP_URL) ?>/pages/transport/passengers/delete.php" class="d-inline" onsubmit="return confirm('Hapus penumpang ini?')">
                                     <?= csrf_field() ?>
                                     <input type="hidden" name="id" value="<?= (int) $r['id'] ?>">
-                                    <button type="submit" class="btn btn-sm btn-outline-danger">Hapus</button>
+                                    <button type="submit" class="btn btn-sm btn-outline-danger" title="Hapus" aria-label="Hapus"><i class="bi bi-trash"></i></button>
                                 </form>
                             <?php endif; ?>
                         </td>

@@ -208,6 +208,13 @@ try {
     $cityGlobal = $httpGet('/pages/masters/cities/options.php?q=Bandung&limit=20');
     ts_check($cityGlobal['code'] === 200 && is_array($cityGlobal['json']) && count($cityGlobal['json']) >= 1 && !empty($cityGlobal['json'][0]['province_id']), 'cities/options.php global search works without province_id and includes province_id');
 
+    $cityWithProv = $httpGet('/pages/masters/cities/options.php?q=Bandung&with_province=1&limit=20');
+    ts_check(
+        $cityWithProv['code'] === 200 && is_array($cityWithProv['json']) && count($cityWithProv['json']) >= 1
+        && str_contains((string) ($cityWithProv['json'][0]['text'] ?? ''), '('),
+        'cities/options.php?with_province=1 includes province name in city label'
+    );
+
     $cityProv = $httpGet('/pages/masters/cities/options.php?province_id=32&limit=50');
     ts_check($cityProv['code'] === 200 && is_array($cityProv['json']) && count($cityProv['json']) >= 10, 'cities/options.php cascading ?province_id=32 works');
 
@@ -285,10 +292,16 @@ try {
     ts_check((bool) preg_match('/assets\/css\/style\.css\?v=\d+/', $tf['body']), 'includes/header.php appends ?v=<mtime> cache-buster on style.css');
     ts_check((bool) preg_match('/assets\/js\/app\.js\?v=\d+/', $tf['body']), 'includes/footer.php appends ?v=<mtime> cache-buster on app.js');
 
-    // 6. Rute form: kota remote search + LIMIT 50
+    // 6. Rute form: kota remote search + LIMIT 50 + provinsi + daftar tarif kategori
     $ruteForm = $httpGet('/pages/travel/rutes/form.php');
     ts_check($ruteForm['code'] === 200, 'travel/rutes/form.php returns HTTP 200');
-    ts_check(substr_count($ruteForm['body'], 'pages/masters/cities/options.php') >= 2, 'travel/rutes/form.php attaches cities/options.php remote search to pickup & delivery cities');
+    ts_check(
+        substr_count($ruteForm['body'], 'pages/masters/cities/options.php') >= 2
+        && substr_count($ruteForm['body'], 'pages/masters/provinces/options.php') >= 2
+        && str_contains($ruteForm['body'], 'data-ts-with-province="1"')
+        && str_contains($ruteForm['body'], 'id="ruteTariffBody"'),
+        'travel/rutes/form.php attaches province + city remote search (with_province) and vehicle-category tariff list'
+    );
     if (preg_match('/<select[^>]*name="pickup_point_city_id"[^>]*>([\s\S]*?)<\/select>/', $ruteForm['body'], $mRuteSel)) {
         $optCnt = substr_count($mRuteSel[1], '<option');
         ts_check($optCnt <= 52, "travel/rutes/form.php caps pickup_point_city_id initial options <= 52 (got {$optCnt})");
@@ -379,14 +392,51 @@ try {
     $p2Min = 300000.0; $p2Val = 425000.0; $p2Max = 500000.0;
     $stRt->bind_param('ssiiiddds', $rCode2, $rtName2, $rCityA, $rCityB, $catId, $p2Min, $p2Val, $p2Max, $uTest);
     $stRt->execute();
-    $createdRuteIds[] = (int) $db->insert_id;
+    $exactRtId = (int) $db->insert_id;
+    $createdRuteIds[] = $exactRtId;
     $stRt->close();
+    rute_schedule_sync($exactRtId, 1, ['07:00', '08:00', '09:00'], $uTest);
+    $distRadA = (int) ($db->query("SELECT id FROM districts WHERE city_id = {$rCityA} ORDER BY id ASC LIMIT 1")->fetch_column() ?: 0);
+    $distRadB = (int) ($db->query("SELECT id FROM districts WHERE city_id = {$rCityB} ORDER BY id ASC LIMIT 1")->fetch_column() ?: 0);
+    if ($distRadA > 0 && $distRadB > 0) {
+        rute_radius_sync(
+            $exactRtId,
+            1,
+            [['radius_type' => 'pickup', 'district_id' => $distRadA, 'extra_price' => 35000.0, 'note' => 'Jemput jauh', 'sort_order' => 1]],
+            [['radius_type' => 'delivery', 'district_id' => $distRadB, 'extra_price' => 45000.0, 'note' => 'Antar jauh', 'sort_order' => 1]],
+            $uTest
+        );
+    }
+
+    if ($distRadA > 0) {
+        $distCityOpt = $httpGet("/pages/masters/districts/options.php?city_id={$rCityA}&with_city=1&limit=50");
+        ts_check(
+            $distCityOpt['code'] === 200
+            && is_array($distCityOpt['json'])
+            && !empty($distCityOpt['json'])
+            && str_contains((string) ($distCityOpt['json'][0]['text'] ?? ''), '—'),
+            'districts/options.php?with_city=1 returns Kecamatan — Kota formatted labels'
+        );
+    }
 
     $expRute = $db->query("EXPLAIN SELECT id, name, pickup_point_city_id, delivery_point_city_id, category_vehicle_id, price FROM rutes FORCE INDEX (ix_rutes_lookup) WHERE company_id = 1 AND pickup_point_city_id = {$rCityA} AND delivery_point_city_id = {$rCityB} AND is_active = 1 ORDER BY id ASC LIMIT 1")->fetch_assoc();
     ts_check(($expRute['key'] ?? '') === 'ix_rutes_lookup' && !str_contains((string) ($expRute['Extra'] ?? ''), 'Using filesort'), 'EXPLAIN rutes lookup uses ix_rutes_lookup without filesort');
 
-    $lkExact = $httpGet("/pages/travel/rutes/lookup.php?company_id=1&pickup_point_city_id={$rCityA}&delivery_point_city_id={$rCityB}&category_vehicle_id={$catId}");
-    ts_check($lkExact['code'] === 200 && !empty($lkExact['json']['ok']) && (int) round((float) ($lkExact['json']['route']['price'] ?? 0)) === 425000, 'rutes/lookup.php returns exact category-matched route price 425000');
+    $lkUrl = "/pages/travel/rutes/lookup.php?company_id=1&pickup_point_city_id={$rCityA}&delivery_point_city_id={$rCityB}&category_vehicle_id={$catId}"
+        . ($distRadA > 0 ? "&pickup_point_district_id={$distRadA}" : '')
+        . ($distRadB > 0 ? "&delivery_point_district_id={$distRadB}" : '');
+    $lkExact = $httpGet($lkUrl);
+    ts_check(
+        $lkExact['code'] === 200
+        && !empty($lkExact['json']['ok'])
+        && (int) round((float) ($lkExact['json']['route']['price'] ?? 0)) === 425000
+        && ($lkExact['json']['route']['schedules'] ?? []) === ['07:00', '08:00', '09:00']
+        && is_array($lkExact['json']['route']['pickup_radius']['districts'] ?? null)
+        && is_array($lkExact['json']['route']['delivery_radius']['districts'] ?? null)
+        && ($distRadA <= 0 || abs((float) ($lkExact['json']['route']['pickup_district_extra'] ?? 0) - 35000.0) < 0.01)
+        && ($distRadB <= 0 || abs((float) ($lkExact['json']['route']['delivery_district_extra'] ?? 0) - 45000.0) < 0.01),
+        'rutes/lookup.php returns exact category-matched route price 425000, ENUM schedules [07:00, 08:00, 09:00], and kecamatan radius extra fees'
+    );
 
     $lkFallback = $httpGet("/pages/travel/rutes/lookup.php?company_id=1&pickup_point_city_id={$rCityA}&delivery_point_city_id={$rCityB}&category_vehicle_id=999999");
     ts_check($lkFallback['code'] === 200 && !empty($lkFallback['json']['ok']) && (int) round((float) ($lkFallback['json']['route']['price'] ?? 0)) === 275000, 'rutes/lookup.php falls back cleanly to first active route price 275000 when category unmatched');
@@ -698,9 +748,10 @@ try {
 
     // 13. Point 2 — Travel Detail Inline Edit, Route Estimation Hook, Quick Modal & Invoice/ExtraPax Sync
     $tdDetail = $httpGet('/pages/travel/bookings/detail.php?id=' . $tempTravelId);
-    foreach (['id="travelDetailForm"', 'id="primaryPassengerSelect"', 'id="extraPassengersSelect"', 'id="quickPassengerModal"', 'id="seatCapacityWarning"', 'rutes/lookup.php'] as $tdNeedle) {
+    foreach (['id="travelDetailForm"', 'id="primaryPassengerSelect"', 'id="extraPassengersSelect"', 'id="quickPassengerModal"', 'id="seatCapacityWarning"', 'id="travelRouteSchedulesBar"', 'rutes/lookup.php'] as $tdNeedle) {
         ts_check(str_contains($tdDetail['body'], $tdNeedle), "travel/bookings/detail.php contains {$tdNeedle}");
     }
+    ts_check(!str_contains($tdDetail['body'], 'pages/finance/invoices/detail.php'), 'travel/bookings/detail.php removes Invoice link button from Pembayaran Travel tab');
     if (preg_match('/name="csrf_token"\s+value="([^"]+)"/', $tdDetail['body'], $tdCsrfM)) {
         $tdCsrf = $tdCsrfM[1];
         $updOk = $httpPostForm('/pages/travel/bookings/detail.php?id=' . $tempTravelId, [
@@ -906,6 +957,203 @@ try {
             "{$expType}/bookings/index.php export=pdf returns valid PDF (>1KB)"
         );
     }
+
+    $ruteXlsx = $downloadExport('/pages/travel/rutes/index.php?company_id=1&export=xlsx');
+    [$rZipOk, $rXText] = $ruteXlsx['size'] > 0 ? $readXlsxXml($ruteXlsx['bytes']) : [false, ''];
+    @unlink($ruteXlsx['file']);
+    ts_check(
+        $ruteXlsx['code'] === 200 && $rZipOk && str_contains($rXText, 'Tarif per Kategori') && str_contains($rXText, 'Titik Jemput (Provinsi)') && str_contains($rXText, '10 kursi'),
+        'travel/rutes/index.php export=xlsx includes Provinces, Tarif per Kategori, and seat capacity (kursi)'
+    );
+    $rutePdf = $downloadExport('/pages/travel/rutes/index.php?company_id=1&export=pdf');
+    @unlink($rutePdf['file']);
+    ts_check(
+        $rutePdf['code'] === 200 && str_starts_with($rutePdf['bytes'], '%PDF-') && $rutePdf['size'] > 1000,
+        'travel/rutes/index.php export=pdf returns valid PDF (>1KB)'
+    );
+
+    // 15. Travel E-Tiket link & rendering via /tiket.php
+    $tempTravelDoc = (string) $db->query("SELECT document_number FROM travel_ticket_bookings WHERE id = {$tempTravelId}")->fetch_column();
+    $tdGetAfter    = $httpGet('/pages/travel/bookings/detail.php?id=' . $tempTravelId);
+    $expectedHref  = '/tiket.php?no=' . urlencode($tempTravelDoc) . '&print=1';
+    ts_check(
+        $tdGetAfter['code'] === 200
+        && str_contains($tdGetAfter['body'], $expectedHref)
+        && !str_contains($tdGetAfter['body'], '/pages/travel/bookings/tiket.php'),
+        'travel/bookings/detail.php E-Tiket button points to root /tiket.php?no=...&print=1'
+    );
+    $tkRes = $httpGet($expectedHref);
+    ts_check(
+        $tkRes['code'] === 200
+        && str_contains($tkRes['body'], 'E-TIKET')
+        && str_contains($tkRes['body'], 'Detail Tiket Perjalanan')
+        && str_contains($tkRes['body'], $tempTravelDoc),
+        'Root /tiket.php?no=...&print=1 renders Travel E-Tiket HTML (HTTP 200) cleanly'
+    );
+
+    // 16. Topbar renders menu title without leading icon
+    $tvIdxTop = $httpGet('/pages/travel/bookings/index.php');
+    $topHasPlainTitle = static function (string $html, string $expectedTitle): bool {
+        if (!preg_match('/<div class="topbar[^>]*>([\s\S]*?)<div id="sidebarOverlay"/i', $html, $tm)) {
+            return false;
+        }
+        if (!preg_match('/<h6 class="mb-0 fw-semibold">([\s\S]*?)<\/h6>/i', $tm[1], $hm)) {
+            return false;
+        }
+        return trim($hm[1]) === $expectedTitle && !str_contains($hm[1], '<i');
+    };
+    ts_check(
+        $tvIdxTop['code'] === 200
+        && $topHasPlainTitle($tvIdxTop['body'], 'Pemesanan Tiket Perjalanan')
+        && $topHasPlainTitle($tdGetAfter['body'], 'Pemesanan Tiket Perjalanan - ' . $tempTravelDoc),
+        'Topbar renders page title without leading icon on travel index & detail pages'
+    );
+
+    // 17. Travel Informasi Pemesanan & Audit Trail inputs stretch full width (except compact Jam time field)
+    $tvFormFull = $httpGet('/pages/travel/bookings/form.php');
+    $hasCleanFullFields = static function (string $html): bool {
+        foreach (['max-width:300px', 'max-width:380px', 'max-width:260px'] as $bad) {
+            if (str_contains($html, $bad)) {
+                return false;
+            }
+        }
+        return str_contains($html, 'input-group input-group-sm flex-grow-1')
+            && str_contains($html, 'style="max-width:180px;"');
+    };
+    ts_check(
+        $tvFormFull['code'] === 200
+        && $hasCleanFullFields($tvFormFull['body'])
+        && $hasCleanFullFields($tdGetAfter['body']),
+        'travel/bookings form & detail Informasi Pemesanan & Audit Trail render full-width inputs (Jam remains compact)'
+    );
+
+    // 18. Travel detail.php removes Tindakan dropdown and unused modals (manual edit via Simpan Perubahan only)
+    $noTindakanUi = !str_contains($tdGetAfter['body'], 'Tindakan')
+        && !str_contains($tdGetAfter['body'], 'travelStatusModal')
+        && !str_contains($tdGetAfter['body'], 'travelRescheduleModal')
+        && !str_contains($tdGetAfter['body'], 'travelDriverModal')
+        && !str_contains($tdGetAfter['body'], 'travelCancelModal')
+        && !str_contains($tdGetAfter['body'], 'travelDeleteForm');
+    ts_check($noTindakanUi, 'travel/bookings/detail.php removes Tindakan dropdown & unused action modals');
+
+    // 19. Every grid table with an Aksi column renders icon-only action buttons (no text labels)
+    $gridUrls = [
+        '/pages/dashboard/index.php',
+        '/pages/travel/rutes/index.php?company_id=1',
+        '/pages/travel/bookings/index.php?company_id=1',
+        '/pages/rental/bookings/index.php?company_id=1',
+        '/pages/employees/index.php?company_id=1',
+        '/pages/vehicles/index.php?company_id=1',
+        '/pages/vehicles/master.php?t=brand',
+        '/pages/transport/passengers/index.php?company_id=1',
+        '/pages/transport/regulations/index.php?company_id=1',
+        '/pages/dispatch/index.php?company_id=1',
+        '/pages/attendance/index.php?company_id=1',
+        '/pages/payroll/periods/index.php?company_id=1',
+        '/pages/finance/cash/index.php?company_id=1',
+        '/pages/finance/cash_accounts/index.php?company_id=1',
+        '/pages/finance/invoices/index.php?company_id=1',
+        '/pages/masters/countries/index.php',
+        '/pages/users/index.php',
+        '/pages/branches/index.php',
+        '/pages/companies/index.php',
+        '/pages/groups/index.php',
+    ];
+    $badGridMsgs = [];
+    $verifiedGridRows = 0;
+    foreach ($gridUrls as $gUrl) {
+        $gRes = $httpGet($gUrl);
+        if ($gRes['code'] !== 200) {
+            $badGridMsgs[] = "{$gUrl}: HTTP {$gRes['code']}";
+            continue;
+        }
+        if (preg_match_all('#<table\b[^>]*>(.*?)</table>#is', $gRes['body'], $tblMatches)) {
+            foreach ($tblMatches[1] as $tblHtml) {
+                if (!preg_match('#<thead\b[^>]*>.*?<th[^>]*>\s*Aksi\s*</th>.*?</thead>#is', $tblHtml)) {
+                    continue;
+                }
+                if (!preg_match('#<tbody\b[^>]*>(.*?)</tbody>#is', $tblHtml, $tbMatch)) {
+                    continue;
+                }
+                if (preg_match_all('#<tr\b[^>]*>(.*?)</tr>#is', $tbMatch[1], $trMatches)) {
+                    foreach ($trMatches[1] as $trHtml) {
+                        if (!preg_match_all('#<td\b[^>]*>(.*?)</td>#is', $trHtml, $tdMatches) || count($tdMatches[1]) <= 1) {
+                            continue;
+                        }
+                        $aksiTd = end($tdMatches[1]);
+                        if (preg_match_all('#<(a|button)\b([^>]*)>(.*?)</\1>#is', $aksiTd, $btnMatches, PREG_SET_ORDER)) {
+                            foreach ($btnMatches as $bm) {
+                                $verifiedGridRows++;
+                                $attrs = $bm[2];
+                                $inner = $bm[3];
+                                $txt = trim(html_entity_decode(strip_tags($inner), ENT_QUOTES, 'UTF-8'));
+                                $txt = trim(str_replace(['↑', '↓'], '', $txt));
+                                if ($txt !== '') {
+                                    $badGridMsgs[] = "{$gUrl}: text='{$txt}'";
+                                }
+                                if (stripos($attrs, 'title=') === false) {
+                                    $badGridMsgs[] = "{$gUrl}: missing title attribute";
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+    ts_check(
+        empty($badGridMsgs) && $verifiedGridRows > 0,
+        'All rendered grid Aksi buttons across 20 admin pages use icon-only buttons without text labels (' . $verifiedGridRows . ' action buttons checked)'
+        . (empty($badGridMsgs) ? '' : ' [' . implode('; ', array_slice($badGridMsgs, 0, 5)) . ']')
+    );
+
+    // 20. Panel header actions (Crew, Payment QRIS/Manual, Customer/Vehicle) & Rental cleanup checks
+    $cssText = (string) @file_get_contents(dirname(__DIR__) . '/assets/css/style.css');
+    $headerUiOk = str_contains($cssText, '.rnt-panel-header .rnt-header-action');
+    $headerUiReasons = [];
+    if (!$headerUiOk) {
+        $headerUiReasons[] = 'missing .rnt-panel-header .rnt-header-action CSS';
+    }
+    foreach ([
+        'travel_form'   => $tf['body'],
+        'travel_detail' => $tdGetAfter['body'],
+        'rental_form'   => $rf['body'],
+        'rental_detail' => $rd['body'],
+    ] as $pageKey => $htmlBody) {
+        foreach (['btnApplyRegulation', 'btnAddCrewRow', 'btnAddPayRow'] as $btnId) {
+            if (!preg_match('/<button\b(?=[^>]*\bid="' . preg_quote($btnId, '/') . '")(?=[^>]*\bclass="[^"]*\brnt-header-action\b)[^>]*>/i', $htmlBody)) {
+                $headerUiOk = false;
+                $headerUiReasons[] = "{$pageKey}:{$btnId}";
+            }
+        }
+        if (str_contains($htmlBody, '/pages/masters/vehicles.php')) {
+            $headerUiOk = false;
+            $headerUiReasons[] = "{$pageKey}:broken_masters_vehicles_link";
+        }
+        if (str_contains($htmlBody, 'id="btnPayQrisAuto"')
+            && !preg_match('/<button\b(?=[^>]*\bid="btnPayQrisAuto")(?=[^>]*\bclass="[^"]*\brnt-header-action\b)[^>]*>/i', $htmlBody)) {
+            $headerUiOk = false;
+            $headerUiReasons[] = "{$pageKey}:btnPayQrisAuto_not_rnt_header_action";
+        }
+        if (str_contains($htmlBody, 'id="btnSaveAndPayQris"')
+            && !preg_match('/<button\b(?=[^>]*\bid="btnSaveAndPayQris")(?=[^>]*\bclass="[^"]*\brnt-header-action\b)[^>]*>/i', $htmlBody)) {
+            $headerUiOk = false;
+            $headerUiReasons[] = "{$pageKey}:btnSaveAndPayQris_not_rnt_header_action";
+        }
+    }
+    foreach (['rental_form' => $rf['body'], 'rental_detail' => $rd['body']] as $pageKey => $htmlBody) {
+        if (!str_contains($htmlBody, '<span>Informasi Pemesanan</span>')
+            || !str_contains($htmlBody, '<span>Audit Trail Dokumen</span>')
+            || !str_contains($htmlBody, 'max-width:180px;')) {
+            $headerUiOk = false;
+            $headerUiReasons[] = "{$pageKey}:missing_rental_tidy_layout";
+        }
+    }
+    ts_check(
+        $headerUiOk,
+        'Crew & Payment header actions use .rnt-header-action and Rental form/detail layout matches Travel'
+        . (empty($headerUiReasons) ? '' : ' [' . implode(', ', $headerUiReasons) . ']')
+    );
 } finally {
     foreach ($createdOrders as $oid) {
         $esc = $db->real_escape_string($oid);

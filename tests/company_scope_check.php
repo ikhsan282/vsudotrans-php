@@ -13,6 +13,7 @@ require_once __DIR__ . '/../pages/travel/_helpers.php';
 $base = rtrim($argv[1] ?? 'http://127.0.0.1:8080/vsudotrans-php', '/');
 $db   = db();
 regulation_ensure_schema();
+rute_schedule_ensure_schema();
 
 $pass = 0;
 $fail = 0;
@@ -200,23 +201,25 @@ try {
     $r1Code = "RM{$uniq}"; $r1Name = "CSCOPE Route MTM {$uniq}"; $r1Price = 310000.0;
     $stR->bind_param('issiiids', $comp1, $r1Code, $r1Name, $cityA, $cityB, $cat1, $r1Price, $uTest);
     $stR->execute();
-    $tempRuteIds[] = (int) $db->insert_id;
+    $r1Id = (int) $db->insert_id;
+    $tempRuteIds[] = $r1Id;
 
     $r5Code = "RL{$uniq}"; $r5Name = "CSCOPE Route LIZ {$uniq}"; $r5Price = 590000.0;
     $stR->bind_param('issiiids', $comp5, $r5Code, $r5Name, $cityA, $cityB, $cat5, $r5Price, $uTest);
     $stR->execute();
-    $tempRuteIds[] = (int) $db->insert_id;
+    $r5Id = (int) $db->insert_id;
+    $tempRuteIds[] = $r5Id;
     $stR->close();
 
-    // 5. Seed schedules for MTM (04:17) & LIZ (21:43)
-    $stS = $db->prepare("INSERT INTO schedules (company_id, start, end, duration, total_duration, created_user) VALUES (?, ?, ?, 2, 2, ?)");
-    $s1Start = '04:17:00'; $s1End = '06:17:00';
-    $stS->bind_param('isss', $comp1, $s1Start, $s1End, $uTest);
+    // 5. Seed separated ENUM rute_schedules for MTM (04:00) & LIZ (21:00)
+    $stS = $db->prepare("INSERT INTO rute_schedules (company_id, rute_id, departure_time, created_user) VALUES (?, ?, ?, ?)");
+    $s1Time = '04:00';
+    $stS->bind_param('iiss', $comp1, $r1Id, $s1Time, $uTest);
     $stS->execute();
     $tempSchedIds[] = (int) $db->insert_id;
 
-    $s5Start = '21:43:00'; $s5End = '23:43:00';
-    $stS->bind_param('isss', $comp5, $s5Start, $s5End, $uTest);
+    $s5Time = '21:00';
+    $stS->bind_param('iiss', $comp5, $r5Id, $s5Time, $uTest);
     $stS->execute();
     $tempSchedIds[] = (int) $db->insert_id;
     $stS->close();
@@ -403,10 +406,9 @@ try {
     $ruteIdx5 = $httpGet($jarAdmin, '/pages/travel/rutes/index.php');
     cs_check($ruteIdx5['code'] === 200 && str_contains($ruteIdx5['body'], $r5Name) && !str_contains($ruteIdx5['body'], $r1Name),
         'travel/rutes/index.php defaults to active Company 5');
-
-    $schedIdx5 = $httpGet($jarAdmin, '/pages/travel/schedules/index.php');
-    cs_check($schedIdx5['code'] === 200 && str_contains($schedIdx5['body'], '21:43') && !str_contains($schedIdx5['body'], '04:17'),
-        'travel/schedules/index.php defaults to active Company 5');
+    cs_check(str_contains($ruteIdx5['body'], '21:00') && !str_contains($ruteIdx5['body'], '>04:00<')
+        && !str_contains($ruteIdx5['body'], 'pages/travel/schedules'),
+        'travel/rutes/index.php shows Company 5 rute_schedules (21:00), hides Company 1 (04:00), and sidebar removes Jadwal menu');
 
     $regIdx5 = $httpGet($jarAdmin, '/pages/transport/regulations/index.php');
     cs_check(
@@ -608,6 +610,356 @@ try {
     cs_check($pRtCross['code'] === 200 && $beforeRtCnt === $afterRtCnt,
         'travel/rutes/form.php rejects Company 5 category when active=1');
 
+    // Reject invalid non-ENUM departure_times[] slot & persist valid ENUM slots into separated rute_schedules
+    $rtF1b = $httpGet($jarAdmin, '/pages/travel/rutes/form.php');
+    $csrfRt1b = $extractCsrf($rtF1b['body']);
+    $pRtBadSlot = $httpPost($jarAdmin, '/pages/travel/rutes/form.php', [
+        'csrf_token'             => $csrfRt1b,
+        'code'                   => "XBAD{$uniq}",
+        'name'                   => 'Invalid Slot Route',
+        'pickup_point_city_id'   => $cityA,
+        'delivery_point_city_id' => $cityB,
+        'category_vehicle_id'    => $cat1,
+        'price'                  => '100000',
+        'departure_times'        => ['07:30'],
+    ]);
+    $afterRtBadCnt = (int) $db->query('SELECT COUNT(*) FROM rutes')->fetch_row()[0];
+    cs_check($pRtBadSlot['code'] === 200 && $afterRtBadCnt === $afterRtCnt,
+        'travel/rutes/form.php rejects invalid non-ENUM departure_times[] (07:30)');
+
+    $cat1RowB = $db->query("SELECT id FROM category_vehicles WHERE company_id = 1 AND is_active = 1 AND id <> {$cat1} ORDER BY id ASC LIMIT 1")->fetch_assoc();
+    $cat1b = (int) ($cat1RowB['id'] ?? 0);
+
+    $rtF1c = $httpGet($jarAdmin, '/pages/travel/rutes/form.php');
+    cs_check(
+        str_contains($rtF1c['body'], 'id="tab-rute-detail"')
+        && str_contains($rtF1c['body'], 'id="tab-rute-schedules"')
+        && str_contains($rtF1c['body'], 'id="tab-rute-radius"')
+        && str_contains($rtF1c['body'], 'id="tab-rute-audit"')
+        && str_contains($rtF1c['body'], 'name="pickup_point_province_id"')
+        && str_contains($rtF1c['body'], 'name="delivery_point_province_id"')
+        && str_contains($rtF1c['body'], 'id="ruteTariffBody"')
+        && str_contains($rtF1c['body'], 'name="tariff_category_vehicle_id[]"')
+        && str_contains($rtF1c['body'], 'name="tariff_seat_capacity[]"')
+        && str_contains($rtF1c['body'], 'id="ruteRadiusBody_pickup"')
+        && str_contains($rtF1c['body'], 'id="ruteRadiusBody_delivery"')
+        && str_contains($rtF1c['body'], 'btn-fill-city-districts')
+        && str_contains($rtF1c['body'], 'Jumlah Kursi')
+        && !str_contains($rtF1c['body'], 'Kursi Awal')
+        && !str_contains($rtF1c['body'], 'Kursi Akhir'),
+        'travel/rutes/form.php renders 4 tabs, origin/destination provinces, tariff list, district radius lists, and single Jumlah Kursi column'
+    );
+    cs_check(
+        preg_match('/<button\b(?=[^>]*\bid="btnAddRuteTariff")(?=[^>]*\bclass="[^"]*\brnt-header-action\b)[^>]*>/i', $rtF1c['body']) === 1
+        && (!str_contains($rtF1c['body'], 'id="btnFillAllTariffCats"') || preg_match('/<button\b(?=[^>]*\bid="btnFillAllTariffCats")(?=[^>]*\bclass="[^"]*\brnt-header-action\b)[^>]*>/i', $rtF1c['body']) === 1)
+        && preg_match('/<button\b[^>]*\bclass="[^"]*\brnt-header-action\b[^"]*\bbtn-fill-city-districts\b/i', $rtF1c['body']) === 1
+        && preg_match('/<button\b[^>]*\bclass="[^"]*\brnt-header-action\b[^"]*\bbtn-clear-radius-area\b/i', $rtF1c['body']) === 1
+        && preg_match('/<button\b[^>]*\bclass="[^"]*\brnt-header-action\b[^"]*\bbtn-add-radius-row\b/i', $rtF1c['body']) === 1
+        && preg_match('/<button\b[^>]*\bclass="[^"]*\brnt-header-action\b[^"]*\bbtn-rute-preset\b/i', $rtF1c['body']) === 1,
+        'travel/rutes/form.php Tariff, Schedule & Radius panel header actions use .rnt-header-action inline styling'
+    );
+    $posRadiusPickup   = strpos($rtF1c['body'], 'id="ruteRadiusBody_pickup"');
+    $posRadiusDelivery = strpos($rtF1c['body'], 'id="ruteRadiusBody_delivery"');
+    cs_check(
+        preg_match('/<div[^>]*\bid="tab-rute-radius"[^>]*>.*?<div class="row g-2">.*?<div class="col-12 col-lg-6">/s', $rtF1c['body']) === 1
+        && $posRadiusPickup !== false
+        && $posRadiusDelivery !== false
+        && $posRadiusPickup < $posRadiusDelivery
+        && str_contains($rtF1c['body'], 'id="ruteTariffDupWarn"')
+        && str_contains($rtF1c['body'], 'data-no-autodismiss="1"')
+        && str_contains($rtF1c['body'], 'id="ruteTariffDupMsg"')
+        && str_contains($rtF1c['body'], 'syncTariffOptionsAvailability'),
+        'travel/rutes/form.php renders Radius Penjemputan left & Radius Pengantaran right (col-12 col-lg-6) and enforces client duplicate-category validation'
+    );
+    $csrfRt1c = $extractCsrf($rtF1c['body']);
+    $enumCode = "ENM{$uniq}";
+    $postTariffCats  = [$cat1];
+    $postTariffMins  = ['150000'];
+    $postTariffPrcs  = ['180.000'];
+    $postTariffMaxs  = ['220000'];
+    $postTariffSeats = ['50'];
+    $postTariffNotes = ['Catatan Cat 1'];
+    if ($cat1b > 0) {
+        $postTariffCats[]  = $cat1b;
+        $postTariffMins[]  = '120000';
+        $postTariffPrcs[]  = '145.000';
+        $postTariffMaxs[]  = '180000';
+        $postTariffSeats[] = '30';
+        $postTariffNotes[] = 'Catatan Cat 2';
+    }
+    $pRtEnumOk = $httpPost($jarAdmin, '/pages/travel/rutes/form.php', [
+        'csrf_token'                  => $csrfRt1c,
+        'code'                        => $enumCode,
+        'name'                        => "CSCOPE Enum Route {$uniq}",
+        'pickup_point_city_id'        => $cityA,
+        'delivery_point_city_id'      => $cityB,
+        'tariff_category_vehicle_id'  => $postTariffCats,
+        'tariff_min_price'            => $postTariffMins,
+        'tariff_price'                => $postTariffPrcs,
+        'tariff_max_price'            => $postTariffMaxs,
+        'tariff_seat_capacity'        => $postTariffSeats,
+        'tariff_note'                 => $postTariffNotes,
+        'pickup_free_radius_km'       => '5',
+        'pickup_max_radius_km'        => '15',
+        'pickup_extra_price_per_km'   => '5000',
+        'delivery_free_radius_km'     => '3',
+        'delivery_max_radius_km'      => '10',
+        'delivery_extra_price_per_km' => '7500',
+        'radius_pickup_district_id'   => [$distA],
+        'radius_pickup_extra_price'   => ['30.000'],
+        'radius_pickup_note'          => ['Pinggiran jemput'],
+        'radius_delivery_district_id' => [$distB],
+        'radius_delivery_extra_price' => ['50.000'],
+        'radius_delivery_note'        => ['Pinggiran antar'],
+        'is_active'                   => '1',
+        'departure_times'             => ['09:00', '07:00', '08:00', '07:00'],
+    ]);
+    $savedEnumId = (int) $db->query("SELECT id FROM rutes WHERE company_id = 1 AND code = '" . $db->real_escape_string($enumCode) . "' LIMIT 1")->fetch_column();
+    if ($savedEnumId > 0) {
+        $tempRuteIds[] = $savedEnumId;
+    }
+    $savedEnumSlots = $savedEnumId > 0 ? rute_schedule_times($savedEnumId, 1) : [];
+    cs_check($savedEnumId > 0 && $savedEnumSlots === ['07:00', '08:00', '09:00'],
+        'travel/rutes/form.php saves sorted ENUM slots [07:00, 08:00, 09:00] into rute_schedules');
+
+    $savedTariffs = $savedEnumId > 0 ? rute_tariffs_for_rute($savedEnumId, 1) : [];
+    $expectedTariffCount = $cat1b > 0 ? 2 : 1;
+    cs_check(
+        count($savedTariffs) === $expectedTariffCount
+        && abs((float) ($savedTariffs[0]['price'] ?? 0) - 180000.0) < 0.01
+        && (int) ($savedTariffs[0]['seat_capacity'] ?? 0) === 50
+        && ($cat1b <= 0 || (abs((float) ($savedTariffs[1]['price'] ?? 0) - 145000.0) < 0.01 && (int) ($savedTariffs[1]['seat_capacity'] ?? 0) === 30)),
+        'travel/rutes/form.php persists multi-category tariffs (prices, seat_capacity, notes) into rute_tariffs'
+    );
+
+    $savedRadiusMap = $savedEnumId > 0 ? rute_radius_for_rute($savedEnumId, 1) : ['pickup' => [], 'delivery' => []];
+    cs_check(
+        count($savedRadiusMap['pickup']) === 1
+        && (int) ($savedRadiusMap['pickup'][0]['district_id'] ?? 0) === $distA
+        && abs((float) ($savedRadiusMap['pickup'][0]['extra_price'] ?? 0) - 30000.0) < 0.01
+        && count($savedRadiusMap['delivery']) === 1
+        && (int) ($savedRadiusMap['delivery'][0]['district_id'] ?? 0) === $distB
+        && abs((float) ($savedRadiusMap['delivery'][0]['extra_price'] ?? 0) - 50000.0) < 0.01,
+        'travel/rutes/form.php saves pickup & delivery kecamatan radius list & extra_price into rute_radius_districts'
+    );
+
+    if ($cat1b > 0) {
+        $lkCatB = $httpGet($jarAdmin, "/pages/travel/rutes/lookup.php?company_id=1&pickup_point_city_id={$cityA}&delivery_point_city_id={$cityB}&pickup_point_district_id={$distA}&delivery_point_district_id={$distB}&category_vehicle_id={$cat1b}");
+        cs_check(
+            $lkCatB['code'] === 200
+            && !empty($lkCatB['json']['ok'])
+            && !empty($lkCatB['json']['route']['category_matched'])
+            && (int) ($lkCatB['json']['route']['id'] ?? 0) === $savedEnumId
+            && abs((float) ($lkCatB['json']['route']['price'] ?? 0) - 145000.0) < 0.01
+            && (int) ($lkCatB['json']['route']['seat_capacity'] ?? 0) === 30
+            && count($lkCatB['json']['route']['tariffs'] ?? []) === 2
+            && abs((float) ($lkCatB['json']['route']['pickup_district_extra'] ?? 0) - 30000.0) < 0.01
+            && abs((float) ($lkCatB['json']['route']['delivery_district_extra'] ?? 0) - 50000.0) < 0.01
+            && !empty($lkCatB['json']['route']['pickup_district_in_radius'])
+            && !empty($lkCatB['json']['route']['delivery_district_in_radius'])
+            && count($lkCatB['json']['route']['pickup_radius']['districts'] ?? []) === 1
+            && count($lkCatB['json']['route']['delivery_radius']['districts'] ?? []) === 1
+            && !empty($lkCatB['json']['route']['pickup_province_name']),
+            'rutes/lookup.php matches secondary category tariff, seat_capacity, province metadata, and kecamatan radius extra fees'
+        );
+
+        // Enforce Harga Min & Harga Maks bounds (plus district radius surcharge 30k + 50k = 80k) on travel/bookings/form.php & detail.php
+        $tfBoundPg = $httpGet($jarAdmin, '/pages/travel/bookings/form.php');
+        $csrfBound = $extractCsrf($tfBoundPg['body']);
+        $cntBeforeB = (int) $db->query('SELECT COUNT(*) FROM travel_ticket_bookings')->fetch_column();
+        $postBoundLow = $httpPost($jarAdmin, '/pages/travel/bookings/form.php', array_merge($baseTravelPost, [
+            'csrf_token'          => $csrfBound,
+            'category_vehicle_id' => $cat1b,
+            'vehicle_id'          => '',
+            'total_price'         => '180000', // < Min 200.000 (120k + 80k radius)
+            'date'                => '2027-09-10',
+        ]));
+        $postBoundHigh = $httpPost($jarAdmin, '/pages/travel/bookings/form.php', array_merge($baseTravelPost, [
+            'csrf_token'          => $csrfBound,
+            'category_vehicle_id' => $cat1b,
+            'vehicle_id'          => '',
+            'total_price'         => '280000', // > Max 260.000 (180k + 80k radius)
+            'date'                => '2027-09-10',
+        ]));
+        $cntAfterInvalidB = (int) $db->query('SELECT COUNT(*) FROM travel_ticket_bookings')->fetch_column();
+        cs_check(
+            $postBoundLow['code'] === 200 && $postBoundHigh['code'] === 200
+            && str_contains($postBoundLow['body'], 'Harga Min')
+            && str_contains($postBoundHigh['body'], 'Harga Maks')
+            && $cntBeforeB === $cntAfterInvalidB,
+            'travel/bookings/form.php rejects prices below Harga Min + radius (180k < 200k) or above Harga Maks + radius (280k > 260k)'
+        );
+
+        $postBoundOk = $httpPost($jarAdmin, '/pages/travel/bookings/form.php', array_merge($baseTravelPost, [
+            'csrf_token'          => $csrfBound,
+            'category_vehicle_id' => $cat1b,
+            'vehicle_id'          => '',
+            'total_price'         => '225000', // 145k + 30k + 50k
+            'date'                => '2027-09-11',
+            'note'                => "CSCOPE_BOUND_{$uniq}",
+        ]));
+        $boundBkId = (int) $db->query("SELECT id FROM travel_ticket_bookings WHERE company_id = 1 AND note = '" . $db->real_escape_string("CSCOPE_BOUND_{$uniq}") . "' ORDER BY id DESC LIMIT 1")->fetch_column();
+        if ($boundBkId > 0) {
+            $tempTravelIds[] = $boundBkId;
+            $tdBoundPg = $httpGet($jarAdmin, "/pages/travel/bookings/detail.php?id={$boundBkId}");
+            $csrfTdB   = $extractCsrf($tdBoundPg['body']);
+            $httpPost($jarAdmin, "/pages/travel/bookings/detail.php?id={$boundBkId}", [
+                'csrf_token'                 => $csrfTdB,
+                'act'                        => 'update_detail',
+                'branch_id'                  => $br1,
+                'date'                       => '2027-09-11',
+                'time'                       => '09:00',
+                'pickup_address'             => 'Test Jl 1',
+                'pickup_point_district_id'   => $distA,
+                'delivery_address'           => 'Test Jl 2',
+                'delivery_point_district_id' => $distB,
+                'total_price'                => '150000', // < Min 200.000
+                'category_vehicle_id'        => $cat1b,
+                'vehicle_id'                 => '',
+                'passenger_id'               => $pax1Id,
+            ]);
+            $boundPriceAfter = (float) $db->query("SELECT total_price FROM travel_ticket_bookings WHERE id = {$boundBkId}")->fetch_column();
+            cs_check(abs($boundPriceAfter - 225000.0) < 0.01,
+                'travel/bookings/detail.php act=update_detail preserves 225k (145k + 80k radius) when rejecting out-of-range 150k');
+        } else {
+            cs_check(false, 'travel/bookings/form.php saves valid in-range 225k booking (145k + 80k radius) for detail bound check');
+        }
+    }
+
+    $savedRadiusRow = $savedEnumId > 0
+        ? $db->query("SELECT pickup_free_radius_km, pickup_max_radius_km, pickup_extra_price_per_km, delivery_free_radius_km, delivery_max_radius_km, delivery_extra_price_per_km FROM rutes WHERE id = {$savedEnumId} LIMIT 1")->fetch_assoc()
+        : null;
+    cs_check(
+        $savedRadiusRow
+        && abs((float) $savedRadiusRow['pickup_free_radius_km'] - 5.0) < 0.001
+        && abs((float) $savedRadiusRow['pickup_max_radius_km'] - 15.0) < 0.001
+        && abs((float) $savedRadiusRow['pickup_extra_price_per_km'] - 5000.0) < 0.001
+        && abs((float) $savedRadiusRow['delivery_free_radius_km'] - 3.0) < 0.001
+        && abs((float) $savedRadiusRow['delivery_max_radius_km'] - 10.0) < 0.001
+        && abs((float) $savedRadiusRow['delivery_extra_price_per_km'] - 7500.0) < 0.001,
+        'travel/rutes/form.php preserves legacy KM columns when supplied'
+    );
+    $rtIdx1 = $httpGet($jarAdmin, '/pages/travel/rutes/index.php?q=' . urlencode($enumCode));
+    $distAName = (string) ($db->query("SELECT name FROM districts WHERE id = {$distA} LIMIT 1")->fetch_column() ?: '');
+    $rtIdxDist = $distAName !== '' ? $httpGet($jarAdmin, '/pages/travel/rutes/index.php?q=' . urlencode($distAName)) : ['code' => 200, 'body' => $enumCode];
+    cs_check(
+        $rtIdx1['code'] === 200
+        && str_contains($rtIdx1['body'], 'Radius Jemput / Antar')
+        && str_contains($rtIdx1['body'], 'Tarif per Kategori Kendaraan')
+        && str_contains($rtIdx1['body'], 'Rp 180.000')
+        && str_contains($rtIdx1['body'], '(50 kursi)')
+        && ($cat1b <= 0 || (str_contains($rtIdx1['body'], 'Rp 145.000') && str_contains($rtIdx1['body'], '(30 kursi)')))
+        && str_contains($rtIdx1['body'], '1 kec.')
+        && str_contains($rtIdx1['body'], '+Rp 30.000')
+        && str_contains($rtIdx1['body'], '+Rp 50.000')
+        && str_contains($rtIdxDist['body'], $enumCode),
+        'travel/rutes/index.php renders Tarif per Kategori, Kecamatan Radius summary, and searches covered district names'
+    );
+
+    $rtF1dup = $httpGet($jarAdmin, '/pages/travel/rutes/form.php');
+    $csrfRt1dup = $extractCsrf($rtF1dup['body']);
+    $dupCode = "DUPCAT{$uniq}";
+    $httpPost($jarAdmin, '/pages/travel/rutes/form.php', [
+        'csrf_token'                 => $csrfRt1dup,
+        'code'                       => $dupCode,
+        'name'                       => "CSCOPE Dup Cat {$uniq}",
+        'pickup_point_city_id'       => $cityA,
+        'delivery_point_city_id'     => $cityB,
+        'tariff_category_vehicle_id' => [$cat1, $cat1],
+        'tariff_price'               => ['100000', '120000'],
+        'is_active'                  => '1',
+    ]);
+    $dupId = (int) $db->query("SELECT id FROM rutes WHERE company_id = 1 AND code = '" . $db->real_escape_string($dupCode) . "' LIMIT 1")->fetch_column();
+    if ($dupId > 0) {
+        $tempRuteIds[] = $dupId;
+    }
+    cs_check($dupId === 0, 'travel/rutes/form.php rejects duplicate category_vehicle_id rows in tariff list');
+
+    $rtF1d = $httpGet($jarAdmin, '/pages/travel/rutes/form.php');
+    $csrfRt1d = $extractCsrf($rtF1d['body']);
+    $badRadCode = "RADERR{$uniq}";
+    $pRtBadRad = $httpPost($jarAdmin, '/pages/travel/rutes/form.php', [
+        'csrf_token'             => $csrfRt1d,
+        'active_tab'             => 'radius',
+        'code'                   => $badRadCode,
+        'name'                   => "CSCOPE Bad Radius {$uniq}",
+        'pickup_point_city_id'   => $cityA,
+        'delivery_point_city_id' => $cityB,
+        'category_vehicle_id'    => $cat1,
+        'price'                  => '180000',
+        'pickup_free_radius_km'  => '20',
+        'pickup_max_radius_km'   => '10',
+        'is_active'              => '1',
+    ]);
+    $badRadId = (int) $db->query("SELECT id FROM rutes WHERE company_id = 1 AND code = '" . $db->real_escape_string($badRadCode) . "' LIMIT 1")->fetch_column();
+    if ($badRadId > 0) {
+        $tempRuteIds[] = $badRadId;
+    }
+    cs_check($badRadId === 0, 'travel/rutes/form.php rejects pickup_free_radius_km > pickup_max_radius_km');
+
+    $rtF1e = $httpGet($jarAdmin, '/pages/travel/rutes/form.php');
+    $csrfRt1e = $extractCsrf($rtF1e['body']);
+    $dupRadCode = "RDUP{$uniq}";
+    $httpPost($jarAdmin, '/pages/travel/rutes/form.php', [
+        'csrf_token'                  => $csrfRt1e,
+        'active_tab'                  => 'radius',
+        'code'                        => $dupRadCode,
+        'name'                        => "CSCOPE Dup Rad {$uniq}",
+        'pickup_point_city_id'        => $cityA,
+        'delivery_point_city_id'      => $cityB,
+        'category_vehicle_id'         => $cat1,
+        'price'                       => '180000',
+        'radius_pickup_district_id'   => [$distA, $distA],
+        'radius_pickup_extra_price'   => ['30000', '50000'],
+        'is_active'                   => '1',
+    ]);
+    $dupRadId = (int) $db->query("SELECT id FROM rutes WHERE company_id = 1 AND code = '" . $db->real_escape_string($dupRadCode) . "' LIMIT 1")->fetch_column();
+    if ($dupRadId > 0) {
+        $tempRuteIds[] = $dupRadId;
+    }
+    cs_check($dupRadId === 0, 'travel/rutes/form.php rejects duplicate district_id in radius_pickup_district_id[]');
+
+    $rtF1f = $httpGet($jarAdmin, '/pages/travel/rutes/form.php');
+    $csrfRt1f = $extractCsrf($rtF1f['body']);
+    $negRadCode = "RNEG{$uniq}";
+    $httpPost($jarAdmin, '/pages/travel/rutes/form.php', [
+        'csrf_token'                  => $csrfRt1f,
+        'active_tab'                  => 'radius',
+        'code'                        => $negRadCode,
+        'name'                        => "CSCOPE Neg Rad {$uniq}",
+        'pickup_point_city_id'        => $cityA,
+        'delivery_point_city_id'      => $cityB,
+        'category_vehicle_id'         => $cat1,
+        'price'                       => '180000',
+        'radius_pickup_district_id'   => [$distA],
+        'radius_pickup_extra_price'   => ['-10000'],
+        'is_active'                   => '1',
+    ]);
+    $negRadId = (int) $db->query("SELECT id FROM rutes WHERE company_id = 1 AND code = '" . $db->real_escape_string($negRadCode) . "' LIMIT 1")->fetch_column();
+    if ($negRadId > 0) {
+        $tempRuteIds[] = $negRadId;
+    }
+    cs_check($negRadId === 0, 'travel/rutes/form.php rejects negative extra_price in radius_pickup_extra_price[]');
+
+    $rolesRes = $httpGet($jarAdmin, '/pages/roles/index.php');
+    $rolesOk = $rolesRes['code'] === 200;
+    $rolesBtnCnt = 0;
+    if ($rolesOk && preg_match('#<tbody\b[^>]*>(.*?)</tbody>#is', $rolesRes['body'], $rtb)
+        && preg_match_all('#<td\b[^>]*text-end[^>]*>(.*?)</td>#is', $rtb[1], $rtds)) {
+        foreach ($rtds[1] as $rtd) {
+            if (preg_match_all('#<(a|button)\b([^>]*)>(.*?)</\1>#is', $rtd, $rbm, PREG_SET_ORDER)) {
+                foreach ($rbm as $m) {
+                    $rolesBtnCnt++;
+                    $txt = trim(html_entity_decode(strip_tags($m[3]), ENT_QUOTES, 'UTF-8'));
+                    if ($txt !== '' || stripos($m[2], 'title=') === false) {
+                        $rolesOk = false;
+                    }
+                }
+            }
+        }
+    }
+    cs_check($rolesOk && $rolesBtnCnt > 0, "roles/index.php renders icon-only Aksi buttons ({$rolesBtnCnt} buttons checked)");
+
     // D. Restricted User (only Company 1 access) cannot force ?company_id=5 or quick_create into 5
     $rUname = "cscope_u_{$uniq}";
     $rEmail = "cscope_u_{$uniq}@example.test";
@@ -656,10 +1008,11 @@ try {
     }
     if ($tempSchedIds) {
         $in = implode(',', array_map('intval', $tempSchedIds));
-        $db->query("DELETE FROM schedules WHERE id IN ({$in})");
+        $db->query("DELETE FROM rute_schedules WHERE id IN ({$in})");
     }
     if ($tempRuteIds) {
         $in = implode(',', array_map('intval', $tempRuteIds));
+        $db->query("DELETE FROM rute_schedules WHERE rute_id IN ({$in})");
         $db->query("DELETE FROM rutes WHERE id IN ({$in})");
     }
     if ($tempEmpIds) {
@@ -668,6 +1021,9 @@ try {
     }
     if ($tempPaxIds) {
         $in = implode(',', array_map('intval', $tempPaxIds));
+        foreach ($db->query("SELECT DISTINCT tb.id, tb.company_id FROM travel_ticket_bookings tb LEFT JOIN booking_passengers bp ON bp.booking_id = tb.id AND bp.booking_type = 'travel' WHERE tb.passenger_id IN ({$in}) OR bp.passenger_id IN ({$in})")->fetch_all(MYSQLI_ASSOC) as $ob) {
+            try { booking_delete('travel', (int) $ob['id'], (int) $ob['company_id']); } catch (Throwable $ex) {}
+        }
         $db->query("DELETE FROM passengers WHERE id IN ({$in})");
     }
     if ($tempVehIds) {

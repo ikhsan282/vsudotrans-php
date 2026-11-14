@@ -96,19 +96,21 @@ require __DIR__ . '/../../includes/header.php';
                             <td><span class="badge bg-<?= $is_active ? 'warning text-dark' : 'secondary' ?>"><?= $is_active ? 'Berjalan' : 'Selesai' ?></span></td>
                         <?php endif; ?>
                         <td><?= e((string) $r['reason']) ?></td>
-                        <td class="text-end">
-                            <?php if ($is_active && can('dispatch.manage')): ?>
-                            <form method="post" action="<?= e(APP_URL) ?>/pages/dispatch/index.php" class="d-flex gap-1 justify-content-end">
-                                <?= csrf_field() ?>
-                                <input type="hidden" name="assignment_id" value="<?= (int) $r['id'] ?>">
-                                <input class="form-control form-control-sm" name="reason" placeholder="Catatan selesai" maxlength="2000" style="max-width:10rem">
-                                <button class="btn btn-sm btn-outline-success" type="submit" data-confirm="Selesaikan tugas ini?">Selesaikan Tugas</button>
-                            </form>
-                            <?php elseif ($is_active): ?>
-                            <span class="badge bg-warning text-dark">sedang jalan</span>
-                            <?php endif; ?>
-                            <a class="btn btn-sm btn-outline-primary" target="_blank" href="<?= e(APP_URL) ?>/pages/dispatch/manifest.php?id=<?= (int) $r['id'] ?>" title="Cetak Surat Jalan"><i class="bi bi-printer"></i> Surat Jalan</a>
-                            <a class="btn btn-sm btn-outline-secondary" href="<?= e(APP_URL) ?>/pages/dispatch/detail.php?type=<?= e((string) $r['booking_type']) ?>&amp;id=<?= (int) $r['booking_id'] ?>">Detail</a>
+                        <td class="text-end text-nowrap">
+                            <div class="d-inline-flex align-items-center gap-1 justify-content-end">
+                                <?php if ($is_active && can('dispatch.manage')): ?>
+                                <form method="post" action="<?= e(APP_URL) ?>/pages/dispatch/index.php" class="d-inline-flex gap-1 justify-content-end">
+                                    <?= csrf_field() ?>
+                                    <input type="hidden" name="assignment_id" value="<?= (int) $r['id'] ?>">
+                                    <input class="form-control form-control-sm" name="reason" placeholder="Catatan selesai" maxlength="2000" style="max-width:10rem">
+                                    <button class="btn btn-sm btn-outline-success" type="submit" title="Selesaikan Tugas" aria-label="Selesaikan Tugas" data-confirm="Selesaikan tugas ini?"><i class="bi bi-check2-circle"></i></button>
+                                </form>
+                                <?php elseif ($is_active): ?>
+                                <span class="badge bg-warning text-dark">sedang jalan</span>
+                                <?php endif; ?>
+                                <a class="btn btn-sm btn-outline-primary" target="_blank" href="<?= e(APP_URL) ?>/pages/dispatch/manifest.php?id=<?= (int) $r['id'] ?>" title="Cetak Surat Jalan" aria-label="Cetak Surat Jalan"><i class="bi bi-printer"></i></a>
+                                <a class="btn btn-sm btn-outline-secondary" href="<?= e(APP_URL) ?>/pages/dispatch/detail.php?type=<?= e((string) $r['booking_type']) ?>&amp;id=<?= (int) $r['booking_id'] ?>" title="Detail" aria-label="Detail"><i class="bi bi-eye"></i></a>
+                            </div>
                         </td>
                     </tr>
                 <?php endforeach; ?>
