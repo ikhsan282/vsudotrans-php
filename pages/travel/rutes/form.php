@@ -364,19 +364,19 @@ $radiusAreas     = [
     [
         'type'       => 'pickup',
         'prefix'     => 'radius_pickup',
-        'title'      => 'Radius Penjemputan (Kota Asal & Sekitarnya)',
+        'title'      => 'Radius Penjemputan',
         'icon'       => 'bi-geo-alt text-primary',
         'cityInput'  => 'rute_pickup_city',
-        'fillLabel'  => 'Isi Kecamatan Kota Asal',
+        'fillLabel'  => 'Isi Kota Asal',
         'rows'       => $radiusRows['pickup'],
     ],
     [
         'type'       => 'delivery',
         'prefix'     => 'radius_delivery',
-        'title'      => 'Radius Pengantaran (Kota Tujuan & Sekitarnya)',
+        'title'      => 'Radius Pengantaran',
         'icon'       => 'bi-geo text-success',
         'cityInput'  => 'rute_delivery_city',
-        'fillLabel'  => 'Isi Kecamatan Kota Tujuan',
+        'fillLabel'  => 'Isi Kota Tujuan',
         'rows'       => $radiusRows['delivery'],
     ],
 ];
@@ -570,6 +570,9 @@ require __DIR__ . '/../../../includes/header.php';
                                 <div id="ruteTariffDupWarn" class="alert alert-warning py-1 px-3 small mb-0 rounded-0 border-0 border-bottom d-none" role="alert" data-no-autodismiss="1">
                                     <i class="bi bi-exclamation-triangle me-1"></i><span id="ruteTariffDupMsg">Terdapat kategori kendaraan ganda. Kategori kendaraan yang sama tidak boleh dipilih lebih dari 1 kali per rute.</span>
                                 </div>
+                                <div id="ruteTariffPriceWarn" class="alert alert-danger py-1 px-3 small mb-0 rounded-0 border-0 border-bottom d-none" role="alert" data-no-autodismiss="1">
+                                    <i class="bi bi-exclamation-octagon me-1"></i><span id="ruteTariffPriceMsg"></span>
+                                </div>
                                 <div class="table-responsive">
                                     <table class="table table-sm table-bordered align-middle mb-0">
                                         <thead class="table-light small">
@@ -644,6 +647,15 @@ require __DIR__ . '/../../../includes/header.php';
                                     <button type="button" class="rnt-header-action btn-rute-preset" data-preset="07:00,08:00,09:00">
                                         <i class="bi bi-sunrise me-1"></i>Pagi 07–09
                                     </button>
+                                    <button type="button" class="rnt-header-action btn-rute-preset" data-preset="15:00,16:00,17:00">
+                                        <i class="bi bi-sun me-1"></i>Sore 15–17
+                                    </button>
+                                    <button type="button" class="rnt-header-action btn-rute-preset" data-preset="19:00,20:00,21:00">
+                                        <i class="bi bi-moon-stars me-1"></i>Malam 19–21
+                                    </button>
+                                    <button type="button" class="rnt-header-action btn-rute-preset" data-preset="*">
+                                        <i class="bi bi-check2-all me-1"></i>Semua Jam
+                                    </button>
                                     <button type="button" class="rnt-header-action text-danger btn-rute-preset" data-preset="">
                                         <i class="bi bi-trash3 me-1"></i>Kosongkan
                                     </button>
@@ -674,21 +686,21 @@ require __DIR__ . '/../../../includes/header.php';
                         <div class="row g-2">
                             <?php foreach ($radiusAreas as $area): ?>
                                 <div class="col-12 col-lg-6">
-                                    <div class="rnt-panel h-100 mb-0 d-flex flex-column rute-radius-panel" data-area="<?= e($area['type']) ?>" data-prefix="<?= e($area['prefix']) ?>" data-city-input="<?= e($area['cityInput']) ?>">
+                                    <div class="rnt-panel h-100 mb-0 d-flex flex-column rute-radius-panel" data-area="<?= e($area['type']) ?>" data-prefix="<?= e($area['prefix']) ?>" data-city-input="<?= e($area['cityInput']) ?>" data-fill-label="<?= e($area['fillLabel']) ?>">
                                         <div class="rnt-panel-header">
-                                            <div class="d-flex flex-wrap align-items-center gap-2">
+                                            <div class="d-flex align-items-center gap-2 text-nowrap">
                                                 <span><i class="bi <?= e($area['icon']) ?> me-1"></i><?= e($area['title']) ?></span>
-                                                <span id="ruteRadiusCount_<?= e($area['type']) ?>" class="badge bg-info-subtle text-info-emphasis border"><?= count($area['rows']) ?> Kecamatan</span>
+                                                <span id="ruteRadiusCount_<?= e($area['type']) ?>" class="badge bg-info-subtle text-info-emphasis border"><?= count($area['rows']) ?> Kec.</span>
                                             </div>
-                                            <div class="d-flex flex-wrap align-items-center gap-3">
-                                                <button type="button" class="rnt-header-action btn-fill-city-districts">
+                                            <div class="d-flex align-items-center gap-2 text-nowrap">
+                                                <button type="button" class="rnt-header-action btn-fill-city-districts" title="Isi semua kecamatan sesuai <?= $area['type'] === 'pickup' ? 'Kota Asal' : 'Kota Tujuan' ?>">
                                                     <i class="bi bi-magic me-1"></i><?= e($area['fillLabel']) ?>
                                                 </button>
-                                                <button type="button" class="rnt-header-action text-danger btn-clear-radius-area">
+                                                <button type="button" class="rnt-header-action text-danger btn-clear-radius-area" title="Kosongkan daftar kecamatan">
                                                     <i class="bi bi-trash3 me-1"></i>Kosongkan
                                                 </button>
-                                                <button type="button" class="rnt-header-action btn-add-radius-row">
-                                                    <i class="bi bi-plus-lg me-1"></i>Tambah Kecamatan
+                                                <button type="button" class="rnt-header-action btn-add-radius-row" title="Tambah baris kecamatan">
+                                                    <i class="bi bi-plus-lg me-1"></i>Tambah
                                                 </button>
                                             </div>
                                         </div>
@@ -709,7 +721,7 @@ require __DIR__ . '/../../../includes/header.php';
                                                         <?php if (!$area['rows']): ?>
                                                             <tr class="rute-radius-empty">
                                                                 <td colspan="5" class="text-center text-muted small py-3">
-                                                                    Belum ada daftar kecamatan. Klik <strong><?= e($area['fillLabel']) ?></strong> atau <strong>Tambah Kecamatan</strong> untuk mengatur area &amp; biaya tambahan.
+                                                                    Belum ada daftar kecamatan. Klik <strong><?= e($area['fillLabel']) ?></strong> atau <strong>Tambah</strong> untuk mengatur area &amp; biaya tambahan.
                                                                 </td>
                                                             </tr>
                                                         <?php else: ?>
@@ -722,7 +734,7 @@ require __DIR__ . '/../../../includes/header.php';
                                                                 <tr class="rute-radius-row">
                                                                     <td class="text-center small text-muted radius-row-num"><?= $rIdx + 1 ?></td>
                                                                     <td>
-                                                                        <select class="form-select form-select-sm radius-dist-select" name="<?= e($area['prefix']) ?>_district_id[]" data-radius-field="district_id" data-ts-url="pages/masters/districts/options.php" data-ts-with-city="1" data-ts-limit="50" data-placeholder="Cari nama kecamatan...">
+                                                                        <select class="form-select form-select-sm radius-dist-select" name="<?= e($area['prefix']) ?>_district_id[]" data-radius-field="district_id" data-ts-url="<?= e(APP_URL) ?>/pages/masters/districts/options.php" data-ts-with-city="1" data-ts-limit="50" data-placeholder="Cari nama kecamatan...">
                                                                             <option value="">-- Pilih Kecamatan --</option>
                                                                             <?php if ($did > 0): ?>
                                                                                 <option value="<?= $did ?>" selected><?= e($dLbl !== '' ? $dLbl : ('Kecamatan #' . $did)) ?></option>
@@ -830,7 +842,7 @@ require __DIR__ . '/../../../includes/header.php';
     <tr class="rute-radius-row">
         <td class="text-center small text-muted radius-row-num">1</td>
         <td>
-            <select class="form-select form-select-sm radius-dist-select" data-radius-field="district_id" data-ts-url="pages/masters/districts/options.php" data-ts-with-city="1" data-ts-limit="50" data-placeholder="Cari nama kecamatan...">
+            <select class="form-select form-select-sm radius-dist-select" data-radius-field="district_id" data-ts-url="<?= e(APP_URL) ?>/pages/masters/districts/options.php" data-ts-with-city="1" data-ts-limit="50" data-placeholder="Cari nama kecamatan...">
                 <option value="">-- Pilih Kecamatan --</option>
             </select>
         </td>
@@ -891,7 +903,7 @@ document.addEventListener('DOMContentLoaded', function () {
             }
         }, 60);
     }
-    // Pengelola baris tarif per kategori kendaraan
+    // Pengelola daftar tarif per kategori kendaraan & radius kecamatan
     const tariffBody    = document.getElementById('ruteTariffBody');
     const tariffTpl     = document.getElementById('ruteTariffRowTpl');
     const btnAddTariff  = document.getElementById('btnAddRuteTariff');
@@ -899,12 +911,215 @@ document.addEventListener('DOMContentLoaded', function () {
     const tariffBadge   = document.getElementById('ruteTariffCountBadge');
     const dupWarnEl     = document.getElementById('ruteTariffDupWarn');
     const dupMsgEl      = document.getElementById('ruteTariffDupMsg');
+    const priceWarnEl   = document.getElementById('ruteTariffPriceWarn');
+    const priceMsgEl    = document.getElementById('ruteTariffPriceMsg');
     const allCatsList   = <?= json_encode(array_map(static fn (array $c): array => ['id' => (string) (int) $c['id'], 'name' => (string) $c['name']], $cats), JSON_UNESCAPED_UNICODE) ?>;
     const catSeatMap    = <?= json_encode($catDefaultSeats, JSON_FORCE_OBJECT) ?>;
     const catLabelMap   = {};
     allCatsList.forEach(function (c) { catLabelMap[String(c.id)] = String(c.name); });
     let stickyDupMsg    = '';
     let dupInvalidSel   = null;
+    const radiusValidators = [];
+
+    function getCatValue(sel) {
+        if (!sel) return '';
+        return String(sel.tomselect ? (sel.tomselect.getValue() || '') : (sel.value || '')).trim();
+    }
+
+    function setSelectInvalidState(sel, isInvalid) {
+        if (!sel) return;
+        sel.classList.toggle('is-invalid', isInvalid);
+        if (sel.tomselect && sel.tomselect.wrapper) {
+            sel.tomselect.wrapper.classList.toggle('is-invalid', isInvalid);
+        }
+    }
+
+    function stripDupSuffix(text) {
+        return String(text || '').replace(/\s*\(Sudah dipilih\)\s*$/, '').trim();
+    }
+
+    function syncSelectRowUniqueness(rows, selectSelector, labelMap, invalidSel) {
+        const counts = {};
+        const dupNames = [];
+        rows.forEach(function (tr) {
+            const sel = tr.querySelector(selectSelector);
+            const v = getCatValue(sel);
+            if (!v) return;
+            if (!labelMap[v] && sel) {
+                const curOpt = sel.querySelector('option[value="' + v.replace(/"/g, '\\"') + '"]');
+                if (curOpt) labelMap[v] = stripDupSuffix(curOpt.textContent);
+                else if (sel.tomselect && sel.tomselect.options[v]) labelMap[v] = stripDupSuffix(sel.tomselect.options[v].baseLabel || sel.tomselect.options[v].text);
+            }
+            counts[v] = (counts[v] || 0) + 1;
+            if (counts[v] > 1) {
+                const nm = labelMap[v] || ('#' + v);
+                if (dupNames.indexOf(nm) === -1) dupNames.push(nm);
+            }
+        });
+
+        rows.forEach(function (tr) {
+            const sel = tr.querySelector(selectSelector);
+            if (!sel) return;
+            const myVal = getCatValue(sel);
+            const bad = (myVal !== '' && (counts[myVal] || 0) > 1) || (invalidSel === sel);
+            setSelectInvalidState(sel, bad);
+
+            Array.from(sel.options || []).forEach(function (opt) {
+                const val = String(opt.value || '').trim();
+                if (!val) return;
+                if (!opt.dataset.baseLabel) opt.dataset.baseLabel = stripDupSuffix(opt.textContent);
+                const baseLabel = opt.dataset.baseLabel;
+                if (!labelMap[val] && baseLabel) labelMap[val] = baseLabel;
+                const usedByOther = (counts[val] || 0) > (val === myVal ? 1 : 0);
+                const shouldDisable = (val !== myVal) && usedByOther;
+                const nextText = shouldDisable ? (baseLabel + ' (Sudah dipilih)') : baseLabel;
+                opt.disabled = shouldDisable;
+                opt.textContent = nextText;
+            });
+
+            if (sel.tomselect) {
+                const ts = sel.tomselect;
+                let tsDirty = false;
+                Object.keys(ts.options || {}).forEach(function (val) {
+                    if (!val) return;
+                    const optData = ts.options[val];
+                    const baseLabel = optData.baseLabel || stripDupSuffix(labelMap[val] || optData.text || optData.name);
+                    if (!optData.baseLabel) optData.baseLabel = baseLabel;
+                    if (!labelMap[val] && baseLabel) labelMap[val] = baseLabel;
+                    const usedByOther = (counts[val] || 0) > (val === myVal ? 1 : 0);
+                    const shouldDisable = (val !== myVal) && usedByOther;
+                    const nextText = shouldDisable ? (baseLabel + ' (Sudah dipilih)') : baseLabel;
+                    if (Boolean(optData.disabled) !== shouldDisable || optData.text !== nextText || optData.name !== nextText) {
+                        tsDirty = true;
+                        ts.updateOption(val, Object.assign({}, optData, {
+                            baseLabel: baseLabel,
+                            text: nextText,
+                            name: nextText,
+                            disabled: shouldDisable
+                        }));
+                    }
+                });
+                if (tsDirty) {
+                    ts.refreshOptions(false);
+                }
+            }
+        });
+
+        return { counts: counts, hasDup: dupNames.length > 0, dupNames: dupNames };
+    }
+
+    function findFirstDuplicateInRows(rows, selectSelector, labelMap, noun) {
+        const seen = {};
+        for (let i = 0; i < rows.length; i++) {
+            const sel = rows[i].querySelector(selectSelector);
+            const v = getCatValue(sel);
+            if (!v) continue;
+            if (seen[v]) {
+                const lbl = labelMap[v] || ('#' + v);
+                return {
+                    ok: false,
+                    focusEl: sel,
+                    message: noun + ' "' + lbl + '" sudah dipilih pada baris #' + seen[v] + '. ' + noun + ' yang sama tidak boleh dipilih lebih dari 1 kali.'
+                };
+            }
+            seen[v] = i + 1;
+        }
+        return { ok: true, focusEl: null, message: '' };
+    }
+
+    function handleUniqueSelectChange(cfg) {
+        const sel = cfg.sel;
+        if (!sel || sel.dataset.reverting === '1') return;
+        const chosen = getCatValue(sel);
+        if (chosen && !cfg.labelMap[chosen]) {
+            const curOpt = sel.querySelector('option[value="' + chosen.replace(/"/g, '\\"') + '"]');
+            if (curOpt) cfg.labelMap[chosen] = stripDupSuffix(curOpt.textContent);
+            else if (sel.tomselect && sel.tomselect.options[chosen]) cfg.labelMap[chosen] = stripDupSuffix(sel.tomselect.options[chosen].baseLabel || sel.tomselect.options[chosen].text);
+        }
+        let dupRowIdx = -1;
+        if (chosen && cfg.tbody) {
+            const rows = Array.from(cfg.tbody.querySelectorAll(cfg.rowSelector));
+            for (let i = 0; i < rows.length; i++) {
+                const otherSel = rows[i].querySelector(cfg.selectSelector);
+                if (otherSel && otherSel !== sel && getCatValue(otherSel) === chosen) {
+                    dupRowIdx = i + 1;
+                    break;
+                }
+            }
+        }
+        if (dupRowIdx > 0) {
+            const lbl = cfg.labelMap[chosen] || ('#' + chosen);
+            const msg = cfg.noun + ' "' + lbl + '" sudah dipilih pada baris #' + dupRowIdx + '. ' + cfg.noun + ' yang sama tidak boleh dipilih lebih dari 1 kali.';
+            sel.dataset.reverting = '1';
+            try {
+                if (sel.tomselect) sel.tomselect.setValue('', true);
+                else sel.value = '';
+            } finally {
+                delete sel.dataset.reverting;
+            }
+            cfg.onReject(msg, sel);
+            if (sel.tomselect) {
+                try { sel.tomselect.focus(); } catch (err) {}
+            } else {
+                try { sel.focus(); } catch (err) {}
+            }
+            return;
+        }
+        cfg.onAccept(chosen);
+    }
+
+    function validateTariffPrices() {
+        if (!tariffBody) return { ok: true, focusEl: null, messages: [] };
+        const rows = Array.from(tariffBody.querySelectorAll('tr.rute-tariff-row'));
+        const errors = [];
+        let firstBadEl = null;
+
+        rows.forEach(function (tr, idx) {
+            const dispMin   = tr.querySelector('.tariff-rp-disp[data-target="min"]');
+            const dispPrice = tr.querySelector('.tariff-rp-disp[data-target="price"]');
+            const dispMax   = tr.querySelector('.tariff-rp-disp[data-target="max"]');
+            const hidMin    = tr.querySelector('input[name="tariff_min_price[]"]');
+            const hidPrice  = tr.querySelector('input[name="tariff_price[]"]');
+            const hidMax    = tr.querySelector('input[name="tariff_max_price[]"]');
+
+            const minVal   = parseFloat(hidMin ? hidMin.value : '0') || 0;
+            const priceVal = parseFloat(hidPrice ? hidPrice.value : '0') || 0;
+            const maxVal   = parseFloat(hidMax ? hidMax.value : '0') || 0;
+
+            const minOverPrice = (minVal > 0 && minVal > priceVal);
+            const priceOverMax = (maxVal > 0 && priceVal > maxVal);
+            const minOverMax   = (minVal > 0 && maxVal > 0 && minVal > maxVal);
+
+            if (dispMin) dispMin.classList.toggle('is-invalid', minOverPrice || minOverMax);
+            if (dispPrice) dispPrice.classList.toggle('is-invalid', minOverPrice || priceOverMax);
+            if (dispMax) dispMax.classList.toggle('is-invalid', priceOverMax || minOverMax);
+
+            const rowNum = idx + 1;
+            if (minOverPrice) {
+                errors.push('Baris #' + rowNum + ': Harga Min tidak boleh melebihi Harga Standar.');
+                if (!firstBadEl) firstBadEl = dispMin || dispPrice;
+            }
+            if (priceOverMax) {
+                errors.push('Baris #' + rowNum + ': Harga Standar tidak boleh melebihi Harga Maks.');
+                if (!firstBadEl) firstBadEl = dispPrice || dispMax;
+            }
+            if (!minOverPrice && !priceOverMax && minOverMax) {
+                errors.push('Baris #' + rowNum + ': Harga Min tidak boleh melebihi Harga Maks.');
+                if (!firstBadEl) firstBadEl = dispMin || dispMax;
+            }
+        });
+
+        if (priceWarnEl) {
+            if (errors.length) {
+                if (priceMsgEl) priceMsgEl.textContent = errors.join(' · ');
+                priceWarnEl.classList.remove('d-none');
+            } else {
+                if (priceMsgEl) priceMsgEl.textContent = '';
+                priceWarnEl.classList.add('d-none');
+            }
+        }
+        return { ok: errors.length === 0, focusEl: firstBadEl, messages: errors };
+    }
 
     if (formEl) {
         formEl.addEventListener('invalid', function (e) {
@@ -912,22 +1127,29 @@ document.addEventListener('DOMContentLoaded', function () {
         }, true);
         formEl.addEventListener('submit', function (e) {
             if (tariffBody) {
-                const seenCats = {};
                 const tRows = Array.from(tariffBody.querySelectorAll('tr.rute-tariff-row'));
-                for (let i = 0; i < tRows.length; i++) {
-                    const sel = tRows[i].querySelector('.tariff-cat-select');
-                    const v = getCatValue(sel);
-                    if (!v) continue;
-                    if (seenCats[v]) {
-                        e.preventDefault();
-                        const catName = catLabelMap[v] || ('#' + v);
-                        stickyDupMsg = 'Kategori "' + catName + '" sudah dipilih pada baris #' + seenCats[v] + '. Kategori kendaraan yang sama tidak boleh dipilih lebih dari 1 kali.';
-                        dupInvalidSel = sel;
-                        syncTariffMeta();
-                        focusFieldInPane(sel);
-                        return false;
-                    }
-                    seenCats[v] = i + 1;
+                const dupCheck = findFirstDuplicateInRows(tRows, '.tariff-cat-select', catLabelMap, 'Kategori');
+                if (!dupCheck.ok) {
+                    e.preventDefault();
+                    stickyDupMsg = dupCheck.message;
+                    dupInvalidSel = dupCheck.focusEl;
+                    syncTariffMeta();
+                    focusFieldInPane(dupCheck.focusEl);
+                    return false;
+                }
+                const priceCheck = validateTariffPrices();
+                if (!priceCheck.ok) {
+                    e.preventDefault();
+                    focusFieldInPane(priceCheck.focusEl);
+                    return false;
+                }
+            }
+            for (let i = 0; i < radiusValidators.length; i++) {
+                const rRes = radiusValidators[i]();
+                if (!rRes.ok) {
+                    e.preventDefault();
+                    focusFieldInPane(rRes.focusEl);
+                    return false;
                 }
             }
             const reqEls = formEl.querySelectorAll('[required]');
@@ -945,19 +1167,6 @@ document.addEventListener('DOMContentLoaded', function () {
         });
     }
 
-    function getCatValue(sel) {
-        if (!sel) return '';
-        return String(sel.tomselect ? (sel.tomselect.getValue() || '') : (sel.value || '')).trim();
-    }
-
-    function setSelectInvalidState(sel, isInvalid) {
-        if (!sel) return;
-        sel.classList.toggle('is-invalid', isInvalid);
-        if (sel.tomselect && sel.tomselect.wrapper) {
-            sel.tomselect.wrapper.classList.toggle('is-invalid', isInvalid);
-        }
-    }
-
     function suggestSeatForRow(tr, catId) {
         if (!tr || !catId) return;
         const seatEl = tr.querySelector('.tariff-seat-input');
@@ -967,69 +1176,22 @@ document.addEventListener('DOMContentLoaded', function () {
         }
     }
 
-    function syncTariffOptionsAvailability(rows, counts) {
-        rows.forEach(function (tr) {
-            const catSel = tr.querySelector('.tariff-cat-select');
-            if (!catSel) return;
-            const myVal = getCatValue(catSel);
-            Array.from(catSel.options || []).forEach(function (opt) {
-                const val = String(opt.value || '').trim();
-                if (!val) return;
-                if (!opt.dataset.baseLabel) {
-                    opt.dataset.baseLabel = String(opt.textContent || '').trim();
-                }
-                const baseLabel = opt.dataset.baseLabel;
-                if (!catLabelMap[val] && baseLabel) catLabelMap[val] = baseLabel;
-                const usedByOther = (counts[val] || 0) > (val === myVal ? 1 : 0);
-                const shouldDisable = (val !== myVal) && usedByOther;
-                const nextText = shouldDisable ? (baseLabel + ' (Sudah dipilih)') : baseLabel;
-                opt.disabled = shouldDisable;
-                opt.textContent = nextText;
-                if (catSel.tomselect && catSel.tomselect.options[val]) {
-                    catSel.tomselect.updateOption(val, Object.assign({}, catSel.tomselect.options[val], {
-                        text: nextText,
-                        name: nextText,
-                        disabled: shouldDisable
-                    }));
-                }
-            });
-            if (catSel.tomselect) {
-                catSel.tomselect.refreshOptions(false);
-            }
-        });
+    function syncTariffOptionsAvailability(rows) {
+        return syncSelectRowUniqueness(rows, '.tariff-cat-select', catLabelMap, dupInvalidSel);
     }
 
     function syncTariffMeta() {
         if (!tariffBody) return;
         const rows = Array.from(tariffBody.querySelectorAll('tr.rute-tariff-row'));
-        const counts = {};
-        let hasDup = false;
-        const dupNames = [];
         rows.forEach(function (tr, idx) {
             const numCell = tr.querySelector('.tariff-row-num');
             if (numCell) numCell.textContent = String(idx + 1);
-            const sel = tr.querySelector('.tariff-cat-select');
-            const v = getCatValue(sel);
-            if (v) {
-                counts[v] = (counts[v] || 0) + 1;
-                if (counts[v] > 1) {
-                    hasDup = true;
-                    const nm = catLabelMap[v] || ('#' + v);
-                    if (dupNames.indexOf(nm) === -1) dupNames.push(nm);
-                }
-            }
         });
-        rows.forEach(function (tr) {
-            const sel = tr.querySelector('.tariff-cat-select');
-            const v = getCatValue(sel);
-            const bad = (v !== '' && (counts[v] || 0) > 1) || (dupInvalidSel === sel);
-            setSelectInvalidState(sel, bad);
-        });
-        syncTariffOptionsAvailability(rows, counts);
+        const state = syncTariffOptionsAvailability(rows);
         if (tariffBadge) tariffBadge.textContent = rows.length + ' Kategori';
         if (dupWarnEl) {
-            if (hasDup) {
-                const msg = 'Kategori kendaraan tidak boleh ganda (' + dupNames.join(', ') + '). Pilih kategori berbeda di setiap baris.';
+            if (state.hasDup) {
+                const msg = 'Kategori kendaraan tidak boleh ganda (' + state.dupNames.join(', ') + '). Pilih kategori berbeda di setiap baris.';
                 if (dupMsgEl) dupMsgEl.textContent = msg;
                 dupWarnEl.classList.remove('d-none');
             } else if (stickyDupMsg) {
@@ -1039,14 +1201,17 @@ document.addEventListener('DOMContentLoaded', function () {
                 dupWarnEl.classList.add('d-none');
             }
         }
+        validateTariffPrices();
     }
 
-    function bindRupiahInputs(container) {
+    function bindRupiahInputs(container, onChange) {
         if (!container) return;
         container.querySelectorAll('.tariff-rp-disp').forEach(function (dispEl) {
+            if (dispEl.dataset.rpBound === '1') return;
             const hiddenEl = dispEl.parentElement ? dispEl.parentElement.querySelector('.tariff-rp-val') : null;
             if (hiddenEl && window.attachRupiahInput) {
-                window.attachRupiahInput(dispEl, hiddenEl);
+                dispEl.dataset.rpBound = '1';
+                window.attachRupiahInput(dispEl, hiddenEl, onChange);
             }
         });
     }
@@ -1061,46 +1226,29 @@ document.addEventListener('DOMContentLoaded', function () {
                 window.initTsSelect(catSel);
             }
             catSel.addEventListener('change', function () {
-                if (catSel.dataset.reverting === '1') return;
-                const chosen = getCatValue(catSel);
-                let dupRowIdx = -1;
-                if (chosen && tariffBody) {
-                    const rows = Array.from(tariffBody.querySelectorAll('tr.rute-tariff-row'));
-                    for (let i = 0; i < rows.length; i++) {
-                        const otherSel = rows[i].querySelector('.tariff-cat-select');
-                        if (otherSel && otherSel !== catSel && getCatValue(otherSel) === chosen) {
-                            dupRowIdx = i + 1;
-                            break;
-                        }
+                handleUniqueSelectChange({
+                    sel: catSel,
+                    rowSelector: 'tr.rute-tariff-row',
+                    selectSelector: '.tariff-cat-select',
+                    tbody: tariffBody,
+                    labelMap: catLabelMap,
+                    noun: 'Kategori',
+                    onReject: function (msg, badSel) {
+                        stickyDupMsg = msg;
+                        dupInvalidSel = badSel;
+                        syncTariffMeta();
+                    },
+                    onAccept: function (chosen) {
+                        stickyDupMsg = '';
+                        dupInvalidSel = null;
+                        suggestSeatForRow(tr, chosen);
+                        syncTariffMeta();
                     }
-                }
-                if (dupRowIdx > 0) {
-                    const catName = catLabelMap[chosen] || ('#' + chosen);
-                    stickyDupMsg = 'Kategori "' + catName + '" sudah dipilih pada baris #' + dupRowIdx + '. Kategori kendaraan yang sama tidak boleh dipilih lebih dari 1 kali.';
-                    dupInvalidSel = catSel;
-                    catSel.dataset.reverting = '1';
-                    try {
-                        if (catSel.tomselect) catSel.tomselect.setValue('', true);
-                        else catSel.value = '';
-                    } finally {
-                        delete catSel.dataset.reverting;
-                    }
-                    syncTariffMeta();
-                    if (catSel.tomselect) {
-                        try { catSel.tomselect.focus(); } catch (err) {}
-                    } else {
-                        try { catSel.focus(); } catch (err) {}
-                    }
-                    return;
-                }
-                stickyDupMsg = '';
-                dupInvalidSel = null;
-                suggestSeatForRow(tr, chosen);
-                syncTariffMeta();
+                });
             });
         }
 
-        bindRupiahInputs(tr);
+        bindRupiahInputs(tr, validateTariffPrices);
 
         const btnRem = tr.querySelector('.btn-remove-tariff');
         if (btnRem) {
@@ -1111,7 +1259,7 @@ document.addEventListener('DOMContentLoaded', function () {
                 if (rows.length <= 1) {
                     if (catSel && catSel.tomselect) catSel.tomselect.setValue('', true);
                     else if (catSel) catSel.value = '';
-                    tr.querySelectorAll('.tariff-rp-disp').forEach(function (d) { d.value = '0'; });
+                    tr.querySelectorAll('.tariff-rp-disp').forEach(function (d) { d.value = '0'; d.classList.remove('is-invalid'); });
                     tr.querySelectorAll('.tariff-rp-val').forEach(function (h) { h.value = '0'; });
                     tr.querySelectorAll('input[type="number"]').forEach(function (n) { n.value = '0'; });
                     const noteEl = tr.querySelector('input[name="tariff_note[]"]');
@@ -1197,8 +1345,12 @@ document.addEventListener('DOMContentLoaded', function () {
     document.querySelectorAll('.btn-rute-preset').forEach(function (btn) {
         btn.addEventListener('click', function () {
             const raw = (btn.getAttribute('data-preset') || '').trim();
-            const want = new Set(raw ? raw.split(',') : []);
-            checks.forEach(function (c) { c.checked = want.has(c.value); });
+            if (raw === '*') {
+                checks.forEach(function (c) { c.checked = true; });
+            } else {
+                const want = new Set(raw ? raw.split(',') : []);
+                checks.forEach(function (c) { c.checked = want.has(c.value); });
+            }
             refreshCount();
         });
     });
@@ -1218,12 +1370,23 @@ document.addEventListener('DOMContentLoaded', function () {
         const area          = panelEl.getAttribute('data-area') || 'pickup';
         const prefix        = panelEl.getAttribute('data-prefix') || ('radius_' + area);
         const cityInputId   = panelEl.getAttribute('data-city-input') || '';
+        const fillLabel     = panelEl.getAttribute('data-fill-label') || (area === 'delivery' ? 'Isi Kota Tujuan' : 'Isi Kota Asal');
         const tbody         = panelEl.querySelector('.rute-radius-body');
         const countBadge    = document.getElementById('ruteRadiusCount_' + area);
         const warnEl        = document.getElementById('ruteRadiusWarn_' + area);
         const btnAdd        = panelEl.querySelector('.btn-add-radius-row');
         const btnClear      = panelEl.querySelector('.btn-clear-radius-area');
         const btnFillCity   = panelEl.querySelector('.btn-fill-city-districts');
+        const distLabelMap  = {};
+        let stickyWarn      = '';
+        let dupInvalidSel   = null;
+        let incompleteInvalid = false;
+
+        function escapeHtml(str) {
+            return String(str || '').replace(/[&<>"']/g, function (ch) {
+                return ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[ch];
+            });
+        }
 
         function setWarn(msg) {
             if (!warnEl) return;
@@ -1243,31 +1406,135 @@ document.addEventListener('DOMContentLoaded', function () {
             if (!hasRows && !emptyRow) {
                 const tr = document.createElement('tr');
                 tr.className = 'rute-radius-empty';
-                tr.innerHTML = '<td colspan="5" class="text-center text-muted small py-3">Belum ada daftar kecamatan. Klik tombol <strong>Isi Kecamatan</strong> atau <strong>Tambah Kecamatan</strong> untuk menambahkan area.</td>';
+                tr.innerHTML = '<td colspan="5" class="text-center text-muted small py-3">Belum ada daftar kecamatan. Klik <strong>' + escapeHtml(fillLabel) + '</strong> atau <strong>Tambah</strong> untuk mengatur area &amp; biaya tambahan.</td>';
                 tbody.appendChild(tr);
             } else if (hasRows && emptyRow) {
                 emptyRow.remove();
             }
         }
 
+        function findIncompleteRow(rows) {
+            for (let i = 0; i < rows.length; i++) {
+                const tr = rows[i];
+                const sel = tr.querySelector('.radius-dist-select');
+                const distVal = getCatValue(sel);
+                if (distVal) continue;
+                const hidExtra = tr.querySelector('.radius-extra-val');
+                const dispExtra = tr.querySelector('.radius-extra-disp');
+                const noteInp = tr.querySelector('input[data-radius-field="note"]');
+                const extraVal = parseFloat(hidExtra ? hidExtra.value : (dispExtra ? dispExtra.value : '0')) || 0;
+                const noteVal = String(noteInp ? noteInp.value : '').trim();
+                if (extraVal !== 0 || noteVal !== '') {
+                    return {
+                        ok: false,
+                        focusEl: sel,
+                        message: 'Baris #' + (i + 1) + ': Pilih Kecamatan terlebih dahulu karena Biaya Tambahan atau Keterangan sudah diisi.'
+                    };
+                }
+            }
+            return { ok: true, focusEl: null, message: '' };
+        }
+
         function syncAreaMeta() {
             if (!tbody) return;
             ensureEmptyRow();
             const rows = Array.from(tbody.querySelectorAll('tr.rute-radius-row'));
-            const counts = {};
-            let hasDup = false;
             rows.forEach(function (tr, idx) {
                 const numCell = tr.querySelector('.radius-row-num');
                 if (numCell) numCell.textContent = String(idx + 1);
-                const val = getCatValue(tr.querySelector('.radius-dist-select'));
-                if (val) {
-                    counts[val] = (counts[val] || 0) + 1;
-                    if (counts[val] > 1) hasDup = true;
-                }
             });
-            if (countBadge) countBadge.textContent = rows.length + ' Kecamatan';
-            setWarn(hasDup ? 'Terdapat kecamatan duplikat pada daftar radius ini — pastikan setiap kecamatan hanya muncul satu kali.' : '');
+            const state = syncSelectRowUniqueness(rows, '.radius-dist-select', distLabelMap, dupInvalidSel);
+            if (countBadge) countBadge.textContent = rows.length + ' Kec.';
+            if (state.hasDup) {
+                setWarn('Kecamatan tidak boleh ganda pada radius ini (' + state.dupNames.join(', ') + ').');
+            } else if (stickyWarn) {
+                setWarn(stickyWarn);
+            } else {
+                setWarn('');
+            }
             refreshRadiusTotalBadge();
+        }
+
+        radiusValidators.push(function () {
+            if (!tbody) return { ok: true, focusEl: null };
+            const rows = Array.from(tbody.querySelectorAll('tr.rute-radius-row'));
+            const incCheck = findIncompleteRow(rows);
+            if (!incCheck.ok) {
+                stickyWarn = incCheck.message;
+                dupInvalidSel = incCheck.focusEl;
+                incompleteInvalid = true;
+                syncAreaMeta();
+                return { ok: false, focusEl: incCheck.focusEl };
+            }
+            const dupCheck = findFirstDuplicateInRows(rows, '.radius-dist-select', distLabelMap, 'Kecamatan');
+            if (!dupCheck.ok) {
+                stickyWarn = dupCheck.message;
+                dupInvalidSel = dupCheck.focusEl;
+                incompleteInvalid = false;
+                syncAreaMeta();
+                return { ok: false, focusEl: dupCheck.focusEl };
+            }
+            return { ok: true, focusEl: null };
+        });
+
+        const distDefaultCache = {};
+
+        function getAreaCityId() {
+            const cityEl = cityInputId ? document.getElementById(cityInputId) : null;
+            return getCatValue(cityEl);
+        }
+
+        function loadAreaDistricts(query, callback) {
+            const q = String(query || '').trim();
+            const cityId = getAreaCityId();
+            if (q === '') {
+                const cacheKey = cityId ? ('city:' + cityId) : 'all';
+                if (Object.prototype.hasOwnProperty.call(distDefaultCache, cacheKey)) {
+                    callback(distDefaultCache[cacheKey]);
+                    return cacheKey;
+                }
+                const url = new URL(appUrl.replace(/\/$/, '') + '/pages/masters/districts/options.php', window.location.origin);
+                if (cityId) {
+                    url.searchParams.set('city_id', cityId);
+                    url.searchParams.set('limit', '100');
+                } else {
+                    url.searchParams.set('all', '1');
+                    url.searchParams.set('limit', '50');
+                }
+                url.searchParams.set('with_city', '1');
+                fetch(url.toString())
+                    .then(function (r) { return r.ok ? r.json() : []; })
+                    .then(function (data) {
+                        const list = Array.isArray(data) ? data.map(function (it) {
+                            return Object.assign({}, it, {
+                                value: String(it.value != null ? it.value : (it.id != null ? it.id : '')),
+                                text: String(it.text != null ? it.text : (it.name != null ? it.name : ''))
+                            });
+                        }) : [];
+                        distDefaultCache[cacheKey] = list;
+                        callback(list);
+                    })
+                    .catch(function () { callback([]); });
+                return cacheKey;
+            }
+
+            const url = new URL(appUrl.replace(/\/$/, '') + '/pages/masters/districts/options.php', window.location.origin);
+            url.searchParams.set('q', q);
+            url.searchParams.set('limit', '50');
+            url.searchParams.set('with_city', '1');
+            fetch(url.toString())
+                .then(function (r) { return r.ok ? r.json() : []; })
+                .then(function (data) {
+                    const list = Array.isArray(data) ? data.map(function (it) {
+                        return Object.assign({}, it, {
+                            value: String(it.value != null ? it.value : (it.id != null ? it.id : '')),
+                            text: String(it.text != null ? it.text : (it.name != null ? it.name : ''))
+                        });
+                    }) : [];
+                    callback(list);
+                })
+                .catch(function () { callback([]); });
+            return null;
         }
 
         function bindRadiusRow(tr) {
@@ -1280,14 +1547,79 @@ document.addEventListener('DOMContentLoaded', function () {
             const sel = tr.querySelector('.radius-dist-select');
             if (sel) {
                 if (typeof window.initTsSelect === 'function' && !sel.tomselect) {
-                    window.initTsSelect(sel);
+                    window.initTsSelect(sel, {
+                        dropdownParent: 'body',
+                        preload: 'focus',
+                        shouldLoad: function (query) {
+                            return String(query || '').trim().length >= 1;
+                        },
+                        load: function (query, callback) {
+                            const key = loadAreaDistricts(query, callback);
+                            if (key) sel._tsLoadedDefaultKey = key;
+                        }
+                    });
                 }
-                sel.addEventListener('change', syncAreaMeta);
+                if (sel.tomselect) {
+                    const syncRemoteOpt = function () {
+                        const rows = tbody ? Array.from(tbody.querySelectorAll('tr.rute-radius-row')) : [];
+                        syncSelectRowUniqueness(rows, '.radius-dist-select', distLabelMap, dupInvalidSel);
+                    };
+                    sel.tomselect.on('load', syncRemoteOpt);
+                    sel.tomselect.on('dropdown_open', syncRemoteOpt);
+                    sel.tomselect.on('focus', function () {
+                        const curKey = getAreaCityId() ? ('city:' + getAreaCityId()) : 'all';
+                        if (sel._tsLoadedDefaultKey && sel._tsLoadedDefaultKey !== curKey && sel.tomselect) {
+                            delete sel.tomselect.loadedSearches[''];
+                            sel.tomselect.wrapper.classList.remove('preloaded');
+                            sel.tomselect.preload();
+                        }
+                        syncRemoteOpt();
+                    });
+                }
+                sel.addEventListener('change', function () {
+                    handleUniqueSelectChange({
+                        sel: sel,
+                        rowSelector: 'tr.rute-radius-row',
+                        selectSelector: '.radius-dist-select',
+                        tbody: tbody,
+                        labelMap: distLabelMap,
+                        noun: 'Kecamatan',
+                    onReject: function (msg, badSel) {
+                        stickyWarn = msg;
+                        dupInvalidSel = badSel;
+                        incompleteInvalid = false;
+                        syncAreaMeta();
+                    },
+                    onAccept: function () {
+                        stickyWarn = '';
+                        dupInvalidSel = null;
+                        incompleteInvalid = false;
+                        syncAreaMeta();
+                    }
+                });
+            });
             }
-            bindRupiahInputs(tr);
+            function clearIncompleteIfResolved() {
+                if (!incompleteInvalid || !tbody) return;
+                const curInc = findIncompleteRow(Array.from(tbody.querySelectorAll('tr.rute-radius-row')));
+                if (curInc.ok) {
+                    stickyWarn = '';
+                    dupInvalidSel = null;
+                    incompleteInvalid = false;
+                    syncAreaMeta();
+                }
+            }
+            bindRupiahInputs(tr, clearIncompleteIfResolved);
+            const noteInp = tr.querySelector('input[data-radius-field="note"]');
+            if (noteInp) {
+                noteInp.addEventListener('input', clearIncompleteIfResolved);
+            }
             const btnRem = tr.querySelector('.btn-remove-radius');
             if (btnRem) {
                 btnRem.addEventListener('click', function () {
+                    stickyWarn = '';
+                    if (dupInvalidSel === sel) dupInvalidSel = null;
+                    incompleteInvalid = false;
                     if (sel && sel.tomselect) {
                         try { sel.tomselect.destroy(); } catch (err) {}
                     }
@@ -1303,9 +1635,11 @@ document.addEventListener('DOMContentLoaded', function () {
             const tr = frag.querySelector('tr.rute-radius-row');
             const sel = tr.querySelector('.radius-dist-select');
             if (item && item.id && sel) {
+                const labelTxt = String(item.text || ('Kecamatan #' + item.id));
+                distLabelMap[String(item.id)] = stripDupSuffix(labelTxt);
                 const opt = document.createElement('option');
                 opt.value = String(item.id);
-                opt.textContent = String(item.text || ('Kecamatan #' + item.id));
+                opt.textContent = labelTxt;
                 opt.selected = true;
                 sel.appendChild(opt);
             }
@@ -1332,11 +1666,20 @@ document.addEventListener('DOMContentLoaded', function () {
         }
         if (btnAdd) {
             btnAdd.addEventListener('click', function () {
-                appendRadiusRow(null, true);
+                stickyWarn = '';
+                dupInvalidSel = null;
+                incompleteInvalid = false;
+                const addedTr = appendRadiusRow(null, false);
+                if (addedTr && addedTr.scrollIntoView) {
+                    try { addedTr.scrollIntoView({ block: 'nearest' }); } catch (err) {}
+                }
             });
         }
         if (btnClear) {
             btnClear.addEventListener('click', function () {
+                stickyWarn = '';
+                dupInvalidSel = null;
+                incompleteInvalid = false;
                 if (!tbody) return;
                 tbody.querySelectorAll('tr.rute-radius-row').forEach(function (tr) {
                     const sel = tr.querySelector('.radius-dist-select');
@@ -1351,9 +1694,14 @@ document.addEventListener('DOMContentLoaded', function () {
                 const cityEl = document.getElementById(cityInputId);
                 const cityId = getCatValue(cityEl);
                 if (!cityId) {
-                    setWarn('Pilih Kota ' + (area === 'pickup' ? 'Asal' : 'Tujuan') + ' terlebih dahulu di Tab Detail.');
+                    stickyWarn = 'Pilih Kota ' + (area === 'pickup' ? 'Asal' : 'Tujuan') + ' terlebih dahulu di Tab Detail.';
+                    incompleteInvalid = false;
+                    setWarn(stickyWarn);
                     return;
                 }
+                stickyWarn = '';
+                dupInvalidSel = null;
+                incompleteInvalid = false;
                 setWarn('');
                 btnFillCity.disabled = true;
                 const url = appUrl.replace(/\/$/, '') + '/pages/masters/districts/options.php?city_id=' + encodeURIComponent(cityId) + '&with_city=1&limit=200';
@@ -1361,7 +1709,8 @@ document.addEventListener('DOMContentLoaded', function () {
                     .then(function (r) { return r.ok ? r.json() : []; })
                     .then(function (items) {
                         if (!Array.isArray(items) || !items.length) {
-                            setWarn('Tidak ada data kecamatan terdaftar untuk kota yang dipilih.');
+                            stickyWarn = 'Tidak ada data kecamatan terdaftar untuk kota yang dipilih.';
+                            setWarn(stickyWarn);
                             return;
                         }
                         const existing = new Set();
@@ -1377,7 +1726,8 @@ document.addEventListener('DOMContentLoaded', function () {
                         });
                     })
                     .catch(function () {
-                        setWarn('Gagal memuat daftar kecamatan kota.');
+                        stickyWarn = 'Gagal memuat daftar kecamatan kota.';
+                        setWarn(stickyWarn);
                     })
                     .finally(function () {
                         btnFillCity.disabled = false;

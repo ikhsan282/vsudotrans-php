@@ -222,7 +222,7 @@ require __DIR__ . '/../../../includes/header.php';
             </li>
         </ul>
 
-        <div class="p-3 bg-white">
+        <div class="erp-content-body">
             <form method="post" action="" id="regulationForm">
                 <?= csrf_field() ?>
                 <input type="hidden" name="id" value="<?= $id ?>">
@@ -231,82 +231,102 @@ require __DIR__ . '/../../../includes/header.php';
                 <div class="tab-content">
                     <!-- ================= TAB 1: DETAIL ================= -->
                     <div class="tab-pane fade show active" id="tab-reg-detail" role="tabpanel">
-                        <!-- Panel 1: Parameter Peraturan -->
-                        <div class="card border mb-3">
-                            <div class="card-header bg-light py-2 px-3 fw-semibold small text-dark d-flex align-items-center">
-                                <i class="bi bi-sliders2 me-2 text-primary"></i>Parameter & Masa Berlaku Peraturan
+                        <!-- Panel 1: Parameter Peraturan (2 Kolom Seimbang) -->
+                        <div class="row g-2 mb-3">
+                            <div class="col-12 col-lg-6">
+                                <div class="rnt-panel h-100 mb-0">
+                                    <div class="rnt-panel-header"><span>Lingkup Peraturan</span></div>
+                                    <div class="rnt-panel-body">
+                                        <div class="rnt-row">
+                                            <label class="rnt-label">Perusahaan <span class="text-danger">*</span></label>
+                                            <div class="rnt-field">
+                                                <select class="form-select form-select-sm" name="company_id" id="regCompanySelect" <?= $canManage ? 'required' : 'disabled' ?>>
+                                                    <?php foreach ($companies as $c): ?>
+                                                        <option value="<?= (int) $c['id'] ?>" <?= (int) $c['id'] === $curCompanyId ? 'selected' : '' ?>>
+                                                            <?= e($c['code'] . ' - ' . $c['name']) ?>
+                                                        </option>
+                                                    <?php endforeach; ?>
+                                                </select>
+                                            </div>
+                                        </div>
+                                        <div class="rnt-row">
+                                            <label class="rnt-label">Kategori Kendaraan <span class="text-danger">*</span></label>
+                                            <div class="rnt-field">
+                                                <select class="form-select form-select-sm" name="category_vehicle_id" id="regCategorySelect" <?= $canManage ? 'required' : 'disabled' ?>>
+                                                    <option value="">-- Pilih Kategori Kendaraan --</option>
+                                                    <?php foreach ($allCategories as $cv): ?>
+                                                        <?php if ((int) $cv['company_id'] === $curCompanyId || (int) $cv['id'] === $curCategoryId): ?>
+                                                            <option value="<?= (int) $cv['id'] ?>" <?= (int) $cv['id'] === $curCategoryId ? 'selected' : '' ?>>
+                                                                <?= e($cv['label']) ?>
+                                                            </option>
+                                                        <?php endif; ?>
+                                                    <?php endforeach; ?>
+                                                </select>
+                                            </div>
+                                        </div>
+                                        <div class="rnt-row">
+                                            <label class="rnt-label">Trip ke- <span class="text-danger">*</span></label>
+                                            <div class="rnt-field">
+                                                <input type="number" min="1" step="1" class="form-control form-control-sm" name="trip" value="<?= $curTrip ?>" <?= $canManage ? 'required' : 'readonly' ?> style="max-width:140px;">
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
                             </div>
-                            <div class="card-body p-3">
-                                <div class="row g-3">
-                                    <div class="col-12 col-md-4">
-                                        <label class="form-label small fw-semibold mb-1">Perusahaan <span class="text-danger">*</span></label>
-                                        <select class="form-select form-select-sm" name="company_id" id="regCompanySelect" <?= $canManage ? 'required' : 'disabled' ?>>
-                                            <?php foreach ($companies as $c): ?>
-                                                <option value="<?= (int) $c['id'] ?>" <?= (int) $c['id'] === $curCompanyId ? 'selected' : '' ?>>
-                                                    <?= e($c['code'] . ' - ' . $c['name']) ?>
-                                                </option>
-                                            <?php endforeach; ?>
-                                        </select>
+                            <div class="col-12 col-lg-6">
+                                <div class="rnt-panel h-100 mb-0">
+                                    <div class="rnt-panel-header">
+                                        <span>Masa Berlaku &amp; Ringkasan</span>
+                                        <?php if ($canManage): ?>
+                                            <button type="button" class="rnt-header-action" id="btnAutoSummaryNote">
+                                                <i class="bi bi-magic me-1"></i>Isi Otomatis Ringkasan
+                                            </button>
+                                        <?php endif; ?>
                                     </div>
-                                    <div class="col-12 col-md-5">
-                                        <label class="form-label small fw-semibold mb-1">Kategori Kendaraan <span class="text-danger">*</span></label>
-                                        <select class="form-select form-select-sm" name="category_vehicle_id" id="regCategorySelect" <?= $canManage ? 'required' : 'disabled' ?>>
-                                            <option value="">-- Pilih Kategori Kendaraan --</option>
-                                            <?php foreach ($allCategories as $cv): ?>
-                                                <?php if ((int) $cv['company_id'] === $curCompanyId || (int) $cv['id'] === $curCategoryId): ?>
-                                                    <option value="<?= (int) $cv['id'] ?>" <?= (int) $cv['id'] === $curCategoryId ? 'selected' : '' ?>>
-                                                        <?= e($cv['label']) ?>
-                                                    </option>
-                                                <?php endif; ?>
-                                            <?php endforeach; ?>
-                                        </select>
-                                    </div>
-                                    <div class="col-12 col-md-3">
-                                        <label class="form-label small fw-semibold mb-1">Trip ke- <span class="text-danger">*</span></label>
-                                        <input type="number" min="1" step="1" class="form-control form-control-sm" name="trip" value="<?= $curTrip ?>" <?= $canManage ? 'required' : 'readonly' ?>>
-                                    </div>
-                                    <div class="col-12 col-md-3">
-                                        <label class="form-label small fw-semibold mb-1">Tanggal Mulai Berlaku <span class="text-danger">*</span></label>
-                                        <div class="input-group input-group-sm">
-                                            <span class="input-group-text bg-light"><i class="bi bi-calendar-event"></i></span>
-                                            <input type="text" class="form-control bg-white flatpickr-date" name="start_date" value="<?= e($curStartDate) ?>" placeholder="dd-MMM-yyyy" <?= $canManage ? 'required' : 'disabled' ?>>
+                                    <div class="rnt-panel-body">
+                                        <div class="rnt-row">
+                                            <label class="rnt-label">Tgl Mulai Berlaku <span class="text-danger">*</span></label>
+                                            <div class="rnt-field">
+                                                <div class="input-group input-group-sm" style="max-width:220px;">
+                                                    <span class="input-group-text bg-light"><i class="bi bi-calendar-event"></i></span>
+                                                    <input type="text" class="form-control bg-white flatpickr-date" name="start_date" value="<?= e($curStartDate) ?>" placeholder="dd-MMM-yyyy" <?= $canManage ? 'required' : 'disabled' ?>>
+                                                </div>
+                                            </div>
                                         </div>
-                                    </div>
-                                    <div class="col-12 col-md-3">
-                                        <label class="form-label small fw-semibold mb-1">Tanggal Selesai Berlaku <span class="text-danger">*</span></label>
-                                        <div class="input-group input-group-sm">
-                                            <span class="input-group-text bg-light"><i class="bi bi-calendar-check"></i></span>
-                                            <input type="text" class="form-control bg-white flatpickr-date" name="end_date" value="<?= e($curEndDate) ?>" placeholder="dd-MMM-yyyy" <?= $canManage ? 'required' : 'disabled' ?>>
+                                        <div class="rnt-row">
+                                            <label class="rnt-label">Tgl Selesai Berlaku <span class="text-danger">*</span></label>
+                                            <div class="rnt-field">
+                                                <div class="input-group input-group-sm" style="max-width:220px;">
+                                                    <span class="input-group-text bg-light"><i class="bi bi-calendar-check"></i></span>
+                                                    <input type="text" class="form-control bg-white flatpickr-date" name="end_date" value="<?= e($curEndDate) ?>" placeholder="dd-MMM-yyyy" <?= $canManage ? 'required' : 'disabled' ?>>
+                                                </div>
+                                            </div>
                                         </div>
-                                    </div>
-                                    <div class="col-12 col-md-6">
-                                        <div class="d-flex justify-content-between align-items-center mb-1">
-                                            <label class="form-label small fw-semibold mb-0">Catatan Ringkasan Peraturan</label>
-                                            <?php if ($canManage): ?>
-                                                <button type="button" class="btn btn-link btn-sm p-0 text-decoration-none" id="btnAutoSummaryNote" style="font-size: 0.76rem;">
-                                                    <i class="bi bi-magic me-1"></i>Isi Otomatis Ringkasan
-                                                </button>
-                                            <?php endif; ?>
+                                        <div class="rnt-row">
+                                            <label class="rnt-label">Catatan Ringkasan</label>
+                                            <div class="rnt-field">
+                                                <input type="text" class="form-control form-control-sm" name="note" id="regNoteInput" maxlength="2000" placeholder="Contoh: Sopir 13.5%, Kernet 150k, Montir 145k, BBM 26.5%" value="<?= e($curNote) ?>" <?= $canManage ? '' : 'readonly' ?>>
+                                            </div>
                                         </div>
-                                        <input type="text" class="form-control form-control-sm" name="note" id="regNoteInput" maxlength="2000" placeholder="Contoh: Sopir 13.5%, Kernet 150k, Montir 145k, BBM 26.5%" value="<?= e($curNote) ?>" <?= $canManage ? '' : 'readonly' ?>>
                                     </div>
                                 </div>
                             </div>
                         </div>
 
                         <!-- Panel 2: Komponen Komisi / Premi per Trip -->
-                        <div class="card border mb-2">
-                            <div class="card-header bg-light py-2 px-3 d-flex flex-wrap justify-content-between align-items-center gap-2">
-                                <div class="fw-semibold small text-dark d-flex align-items-center">
-                                    <i class="bi bi-table me-2 text-primary"></i>Komponen Komisi / Premi per Trip
+                        <div class="rnt-panel mb-0">
+                            <div class="rnt-panel-header">
+                                <div class="d-flex flex-wrap align-items-center gap-2">
+                                    <span>Komponen Komisi / Premi per Trip</span>
+                                    <span id="regTotalRowsBadge" class="badge bg-primary-subtle text-primary border">0 Komponen</span>
                                 </div>
                                 <?php if ($canManage): ?>
-                                    <div class="d-flex align-items-center gap-2">
-                                        <button type="button" class="btn btn-xs btn-outline-secondary py-1 px-2" id="btnLoadDefaultPreset" title="Preset Standar LIZ" style="font-size: 0.78rem;">
+                                    <div class="d-flex flex-wrap align-items-center gap-3">
+                                        <button type="button" class="rnt-header-action" id="btnLoadDefaultPreset" title="Preset Standar LIZ">
                                             <i class="bi bi-arrow-repeat me-1"></i>Preset LIZ
                                         </button>
-                                        <button type="button" class="btn btn-sm btn-primary py-1 px-2" id="btnAddRegRow" style="font-size: 0.78rem;">
-                                            <i class="bi bi-plus-circle me-1"></i>Tambah Baris Komisi
+                                        <button type="button" class="rnt-header-action" id="btnAddRegRow">
+                                            <i class="bi bi-plus-lg me-1"></i>Tambah Baris Komisi
                                         </button>
                                     </div>
                                 <?php endif; ?>
@@ -367,8 +387,8 @@ require __DIR__ . '/../../../includes/header.php';
                                             </td>
                                             <?php if ($canManage): ?>
                                             <td class="text-center">
-                                                <button type="button" class="btn btn-sm btn-outline-danger border-0 btn-remove-reg-row py-0 px-2" title="Hapus baris">
-                                                    <i class="bi bi-trash"></i>
+                                                <button type="button" class="btn btn-sm btn-link text-danger p-0 btn-remove-reg-row" title="Hapus baris" aria-label="Hapus baris">
+                                                    <i class="bi bi-x-lg"></i>
                                                 </button>
                                             </td>
                                             <?php endif; ?>
@@ -377,10 +397,7 @@ require __DIR__ . '/../../../includes/header.php';
                                     </tbody>
                                     <tfoot class="table-light border-top">
                                         <tr>
-                                            <td colspan="3" class="py-2 text-muted small">
-                                                <span id="regTotalRowsBadge" class="badge bg-secondary-subtle text-secondary border">0 Komponen</span>
-                                            </td>
-                                            <td colspan="<?= $canManage ? '3' : '2' ?>" class="py-2 text-end">
+                                            <td colspan="<?= $canManage ? '6' : '5' ?>" class="py-2 text-end">
                                                 <div class="d-inline-flex flex-wrap gap-2 align-items-center justify-content-end">
                                                     <span class="badge bg-primary-subtle text-primary border px-2 py-1" style="font-size: 0.82rem;">
                                                         Total Persentase: <strong id="regTotalPctDisplay">0.00%</strong>
@@ -400,6 +417,7 @@ require __DIR__ . '/../../../includes/header.php';
                     <!-- ================= TAB 2: AUDIT TRAIL ================= -->
                     <div class="tab-pane fade" id="tab-reg-audit" role="tabpanel">
                         <div class="rnt-panel mb-0">
+                            <div class="rnt-panel-header"><span>Audit Trail Dokumen</span></div>
                             <div class="rnt-panel-body">
                                 <div class="rnt-row">
                                     <label class="rnt-label">Dibuat Oleh</label>
@@ -655,8 +673,8 @@ document.addEventListener('DOMContentLoaded', () => {
                 <span class="reg-preview-text small text-muted"></span>
             </td>
             <td class="text-center">
-                <button type="button" class="btn btn-sm btn-outline-danger border-0 btn-remove-reg-row py-0 px-2" title="Hapus baris">
-                    <i class="bi bi-trash"></i>
+                <button type="button" class="btn btn-sm btn-link text-danger p-0 btn-remove-reg-row" title="Hapus baris" aria-label="Hapus baris">
+                    <i class="bi bi-x-lg"></i>
                 </button>
             </td>
         `;

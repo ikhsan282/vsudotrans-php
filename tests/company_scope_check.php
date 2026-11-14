@@ -428,6 +428,15 @@ try {
         && !str_contains($mRegCat[1], 'Bus Besar'),
         'transport/regulations/form.php (active=5) renders ONLY Company 5 category options'
     );
+    cs_check(
+        str_contains($regForm5['body'], 'class="rnt-panel')
+        && str_contains($regForm5['body'], 'class="rnt-panel-header"')
+        && preg_match('/<button\b(?=[^>]*\bid="btnAutoSummaryNote")(?=[^>]*\bclass="[^"]*\brnt-header-action\b)[^>]*>/i', $regForm5['body']) === 1
+        && preg_match('/<button\b(?=[^>]*\bid="btnLoadDefaultPreset")(?=[^>]*\bclass="[^"]*\brnt-header-action\b)[^>]*>/i', $regForm5['body']) === 1
+        && preg_match('/<button\b(?=[^>]*\bid="btnAddRegRow")(?=[^>]*\bclass="[^"]*\brnt-header-action\b)[^>]*>/i', $regForm5['body']) === 1
+        && !str_contains($regForm5['body'], '.rnt-panel {'),
+        'transport/regulations/form.php harmonizes panels (.rnt-panel) & inline actions (.rnt-header-action) without duplicating .rnt-panel CSS'
+    );
 
     // Crucial Detail Page Check: while active session = 5, viewing MTM booking #1 MUST stay strictly scoped to MTM ($booking_cid = 1)!
     $td1 = $httpGet($jarAdmin, "/pages/travel/bookings/detail.php?id={$travel1Id}");
@@ -665,11 +674,22 @@ try {
         && $posRadiusPickup !== false
         && $posRadiusDelivery !== false
         && $posRadiusPickup < $posRadiusDelivery
+        && str_contains($rtF1c['body'], 'Radius Penjemputan')
+        && str_contains($rtF1c['body'], 'Radius Pengantaran')
+        && !str_contains($rtF1c['body'], 'Kota Asal &amp; Sekitarnya')
+        && !str_contains($rtF1c['body'], 'Kota Tujuan &amp; Sekitarnya')
         && str_contains($rtF1c['body'], 'id="ruteTariffDupWarn"')
+        && str_contains($rtF1c['body'], 'id="ruteTariffPriceWarn"')
+        && str_contains($rtF1c['body'], 'id="ruteRadiusWarn_pickup"')
+        && str_contains($rtF1c['body'], 'id="ruteRadiusWarn_delivery"')
         && str_contains($rtF1c['body'], 'data-no-autodismiss="1"')
         && str_contains($rtF1c['body'], 'id="ruteTariffDupMsg"')
-        && str_contains($rtF1c['body'], 'syncTariffOptionsAvailability'),
-        'travel/rutes/form.php renders Radius Penjemputan left & Radius Pengantaran right (col-12 col-lg-6) and enforces client duplicate-category validation'
+        && str_contains($rtF1c['body'], 'syncTariffOptionsAvailability')
+        && str_contains($rtF1c['body'], 'syncSelectRowUniqueness')
+        && str_contains($rtF1c['body'], 'validateTariffPrices')
+        && !str_contains($rtF1c['body'], 'Biaya seragam (Rp)')
+        && !str_contains($rtF1c['body'], 'radius-bulk-disp'),
+        'travel/rutes/form.php renders Radius Penjemputan left & Radius Pengantaran right, client price hierarchy & duplicate category/radius validation, without bulk surcharge toolbar'
     );
     $csrfRt1c = $extractCsrf($rtF1c['body']);
     $enumCode = "ENM{$uniq}";
@@ -845,7 +865,10 @@ try {
     cs_check(
         $rtIdx1['code'] === 200
         && str_contains($rtIdx1['body'], 'Radius Jemput / Antar')
-        && str_contains($rtIdx1['body'], 'Tarif per Kategori Kendaraan')
+        && str_contains($rtIdx1['body'], '<th>Daftar Harga</th>')
+        && !str_contains($rtIdx1['body'], 'Tarif per Kategori Kendaraan')
+        && (str_contains($rtIdx1['body'], 'bi-check-circle-fill') || str_contains($rtIdx1['body'], 'bi-x-circle-fill'))
+        && !str_contains($rtIdx1['body'], '<span class="badge bg-success">Aktif</span>')
         && str_contains($rtIdx1['body'], 'Rp 180.000')
         && str_contains($rtIdx1['body'], '(50 kursi)')
         && ($cat1b <= 0 || (str_contains($rtIdx1['body'], 'Rp 145.000') && str_contains($rtIdx1['body'], '(30 kursi)')))
@@ -853,8 +876,54 @@ try {
         && str_contains($rtIdx1['body'], '+Rp 30.000')
         && str_contains($rtIdx1['body'], '+Rp 50.000')
         && str_contains($rtIdxDist['body'], $enumCode),
-        'travel/rutes/index.php renders Tarif per Kategori, Kecamatan Radius summary, and searches covered district names'
+        'travel/rutes/index.php renders Daftar Harga, icon-only Status, Kecamatan Radius summary, and searches covered district names'
     );
+
+    $otherCityId = (int) $db->query("SELECT id FROM cities WHERE id != {$cityA} ORDER BY id DESC LIMIT 1")->fetch_column();
+    $rtFilterMatch = $httpGet(
+        $jarAdmin,
+        '/pages/travel/rutes/index.php?q=' . urlencode($enumCode)
+        . "&pickup_city_id={$cityA}&delivery_city_id={$cityB}&category_vehicle_id=" . ($cat1b > 0 ? $cat1b : $cat1)
+    );
+    $rtFilterMiss = $httpGet(
+        $jarAdmin,
+        '/pages/travel/rutes/index.php?q=' . urlencode($enumCode)
+        . ($otherCityId > 0 ? "&pickup_city_id={$otherCityId}" : "&category_vehicle_id={$cat5}")
+    );
+    $enumRowName = "CSCOPE Enum Route {$uniq}";
+    cs_check(
+        $rtFilterMatch['code'] === 200
+        && str_contains($rtFilterMatch['body'], $enumRowName)
+        && $rtFilterMiss['code'] === 200
+        && !str_contains($rtFilterMiss['body'], $enumRowName)
+        && str_contains($rtFilterMiss['body'], 'Belum ada data rute.')
+        && str_contains($rtFilterMiss['body'], 'Total <strong>0</strong> data'),
+        'travel/rutes/index.php filters accurately by pickup_city_id, delivery_city_id & category_vehicle_id (including secondary tariffs)'
+    );
+
+    if ($savedEnumId > 0) {
+        $csrfTog1 = $extractCsrf($rtIdx1['body']);
+        $togOff = $httpPost($jarAdmin, '/pages/travel/rutes/toggle_status.php', [
+            'csrf_token'   => $csrfTog1,
+            'id'           => $savedEnumId,
+            'return_query' => 'q=' . urlencode($enumCode),
+        ]);
+        $activeAfterOff = (int) $db->query("SELECT is_active FROM rutes WHERE id = {$savedEnumId} LIMIT 1")->fetch_column();
+        $togOn = $httpPost($jarAdmin, '/pages/travel/rutes/toggle_status.php', [
+            'csrf_token'   => $csrfTog1,
+            'id'           => $savedEnumId,
+            'return_query' => 'q=' . urlencode($enumCode),
+        ]);
+        $activeAfterOn = (int) $db->query("SELECT is_active FROM rutes WHERE id = {$savedEnumId} LIMIT 1")->fetch_column();
+        cs_check(
+            $togOff['code'] === 302
+            && str_contains($togOff['location'], 'q=' . urlencode($enumCode))
+            && $activeAfterOff === 0
+            && $togOn['code'] === 302
+            && $activeAfterOn === 1,
+            'travel/rutes/toggle_status.php toggles is_active cleanly and preserves return_query'
+        );
+    }
 
     $rtF1dup = $httpGet($jarAdmin, '/pages/travel/rutes/form.php');
     $csrfRt1dup = $extractCsrf($rtF1dup['body']);
@@ -994,6 +1063,15 @@ try {
     $restrQcRow = $restrQc5Id > 0 ? $db->query("SELECT company_id FROM passengers WHERE id = {$restrQc5Id}")->fetch_assoc() : null;
     cs_check($restrQc5['code'] === 200 && (int) ($restrQcRow['company_id'] ?? 0) === 1,
         'Restricted Company-1 user quick_create with spoofed company_id=5 falls back to active company 1');
+    $restrTog5 = $httpPost($jarRestricted, '/pages/travel/rutes/toggle_status.php', [
+        'csrf_token' => $extractCsrf($restrTf['body']),
+        'id'         => $r5Id,
+    ]);
+    $r5ActiveAfter = (int) $db->query("SELECT is_active FROM rutes WHERE id = {$r5Id} LIMIT 1")->fetch_column();
+    cs_check(
+        $restrTog5['code'] === 403 && $r5ActiveAfter === 1,
+        'Restricted Company-1 user toggle_status.php on Company 5 route is rejected with HTTP 403'
+    );
 } finally {
     foreach ($tempTravelIds as $id) {
         try { booking_delete('travel', $id, 1); } catch (Throwable $ex) {}

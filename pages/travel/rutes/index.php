@@ -13,8 +13,11 @@ $active_cid        = $scope['active_cid'];
 
 rute_ensure_schema();
 
-$q = trim((string) ($_GET['q'] ?? ''));
-$status = trim((string) ($_GET['status'] ?? ''));
+$q                  = trim((string) ($_GET['q'] ?? ''));
+$status             = trim((string) ($_GET['status'] ?? ''));
+$filter_pickup_city = max(0, (int) ($_GET['pickup_city_id'] ?? 0));
+$filter_deliv_city  = max(0, (int) ($_GET['delivery_city_id'] ?? 0));
+$filter_category_id = max(0, (int) ($_GET['category_vehicle_id'] ?? 0));
 
 if ($q !== '') {
     $q_like = '%' . $q . '%';
@@ -30,6 +33,22 @@ if ($status === '1' || $status === '0') {
     $where .= ' AND r.is_active = ?';
     $types .= 'i';
     $params[] = (int) $status;
+}
+if ($filter_pickup_city > 0) {
+    $where .= ' AND r.pickup_point_city_id = ?';
+    $types .= 'i';
+    $params[] = $filter_pickup_city;
+}
+if ($filter_deliv_city > 0) {
+    $where .= ' AND r.delivery_point_city_id = ?';
+    $types .= 'i';
+    $params[] = $filter_deliv_city;
+}
+if ($filter_category_id > 0) {
+    $where .= ' AND (r.category_vehicle_id = ? OR EXISTS (SELECT 1 FROM rute_tariffs rt_f WHERE rt_f.rute_id = r.id AND rt_f.category_vehicle_id = ?))';
+    $types .= 'ii';
+    $params[] = $filter_category_id;
+    $params[] = $filter_category_id;
 }
 
 $st = db()->prepare("SELECT COUNT(*) FROM rutes r
@@ -117,7 +136,7 @@ if (in_array($export_format, ['xlsx', 'pdf'], true)) {
     $sub = $q !== '' ? 'Pencarian: "' . $q . '"' : 'Semua Data';
     grid_export_send(
         'Daftar Rute Travel',
-        ['Kode', 'Nama Rute', 'Titik Jemput (Provinsi)', 'Titik Antar (Provinsi)', 'Jadwal Keberangkatan', 'Radius Jemput', 'Radius Antar', 'Tarif per Kategori', 'Status'],
+        ['Kode', 'Nama Rute', 'Titik Jemput (Provinsi)', 'Titik Antar (Provinsi)', 'Jadwal Keberangkatan', 'Radius Jemput', 'Radius Antar', 'Daftar Harga', 'Status'],
         $row_stream,
         $export_format,
         'landscape',
@@ -149,6 +168,35 @@ $ruteScheduleMap = rute_schedules_by_rute_ids($ruteIds);
 $ruteTariffMap   = rute_tariffs_by_rute_ids($ruteIds);
 $ruteRadiusMap   = rute_radius_by_rute_ids($ruteIds);
 
+$pickupCityOpts = opts_cities(null, $filter_pickup_city > 0 ? [$filter_pickup_city] : [], 50, true);
+$delivCityOpts  = opts_cities(null, $filter_deliv_city > 0 ? [$filter_deliv_city] : [], 50, true);
+
+$catFilterOpts = [];
+if ($filter_company_id > 0) {
+    $catFilterOpts = array_map(
+        static fn (array $cv): array => ['id' => (int) $cv['id'], 'label' => (string) ($cv['name'] ?? '')],
+        opts_categories($filter_company_id, $filter_category_id > 0 ? [$filter_category_id] : [], 200)
+    );
+} else {
+    $allowedCids = accessible_company_ids($active_cid ?? 0);
+    if ($allowedCids) {
+        $phCat = implode(',', array_fill(0, count($allowedCids), '?'));
+        $stCat = db()->prepare(
+            "SELECT cv.id, CONCAT(c.code, ' | ', cv.code, ' - ', cv.name) AS label
+               FROM category_vehicles cv
+               LEFT JOIN companies c ON c.id = cv.company_id
+              WHERE cv.company_id IN ({$phCat})
+                AND (cv.is_active = 1 OR cv.id = ?)
+              ORDER BY c.code, cv.code, cv.name
+              LIMIT 200"
+        );
+        $stCat->bind_param(str_repeat('i', count($allowedCids)) . 'i', ...[...$allowedCids, $filter_category_id]);
+        $stCat->execute();
+        $catFilterOpts = $stCat->get_result()->fetch_all(MYSQLI_ASSOC);
+        $stCat->close();
+    }
+}
+
 $header_actions = ui_export_actions();
 if (can('travel.manage') && active_company_id() !== null) {
     $header_actions[] = ['label' => 'Tambah', 'icon' => 'plus-lg', 'href' => 'pages/travel/rutes/form.php', 'class' => 'btn btn-primary btn-sm'];
@@ -156,10 +204,18 @@ if (can('travel.manage') && active_company_id() !== null) {
 
 $has_explicit_company = isset($_GET['company_id']);
 $query_base = http_build_query(array_filter(
-    ['q' => $q, 'status' => $status, 'company_id' => $has_explicit_company ? (string) $filter_company_id : null],
+    [
+        'q'                   => $q,
+        'status'              => $status,
+        'pickup_city_id'      => $filter_pickup_city > 0 ? (string) $filter_pickup_city : null,
+        'delivery_city_id'    => $filter_deliv_city > 0 ? (string) $filter_deliv_city : null,
+        'category_vehicle_id' => $filter_category_id > 0 ? (string) $filter_category_id : null,
+        'company_id'          => $has_explicit_company ? (string) $filter_company_id : null,
+    ],
     static fn($v) => $v !== null && $v !== ''
 ));
-$has_active_filter = ($q !== '' || $status !== '' || ($has_explicit_company && $filter_company_id !== ($active_cid ?? 0)));
+$return_query = $query_base . ($p['current'] > 1 ? (($query_base !== '' ? '&' : '') . 'page=' . $p['current']) : '');
+$has_active_filter = ($q !== '' || $status !== '' || $filter_pickup_city > 0 || $filter_deliv_city > 0 || $filter_category_id > 0 || ($has_explicit_company && $filter_company_id !== ($active_cid ?? 0)));
 
 $active = 'travel';
 $title  = 'Rute';
@@ -174,26 +230,58 @@ require __DIR__ . '/../../../includes/header.php';
     ) ?>
     <div class="card shadow-sm border-0 mb-3">
         <div class="card-body py-2 px-3">
-            <form method="get" class="row g-2 align-items-center">
-                <div class="col-12 col-md-4">
+            <form method="get" id="rutesFilterForm" class="row g-2 align-items-center">
+                <div class="col-12 col-md-6 col-lg-4">
                     <div class="input-group input-group-sm">
                         <span class="input-group-text bg-white text-muted"><i class="bi bi-search"></i></span>
                         <input type="text" name="q" class="form-control" placeholder="Cari kode, rute, kota, kecamatan..." value="<?= e($q) ?>">
                     </div>
                 </div>
-                <div class="col-6 col-md-3">
-                    <select name="company_id" class="form-select form-select-sm" onchange="this.form.submit()" title="Pilih Perusahaan">
+                <div class="col-6 col-md-3 col-lg-3">
+                    <select name="company_id" class="form-select form-select-sm" onchange="var f=this.form,c=f.querySelector('[name=category_vehicle_id]');if(c)c.value='';f.submit()" title="Pilih Perusahaan">
                         <?= ui_company_filter_options($companies, $filter_company_id, $has_explicit_company) ?>
                     </select>
                 </div>
-                <div class="col-6 col-md-2">
-                    <select name="status" class="form-select form-select-sm" onchange="this.form.submit()">
+                <div class="col-6 col-md-3 col-lg-3">
+                    <select name="category_vehicle_id" class="form-select form-select-sm" onchange="this.form.submit()" title="Filter Kategori Kendaraan">
+                        <option value="">Semua Kategori Kendaraan</option>
+                        <?php foreach ($catFilterOpts as $cv): ?>
+                            <option value="<?= (int) $cv['id'] ?>" <?= ((int) $cv['id'] === $filter_category_id) ? 'selected' : '' ?>><?= e($cv['label']) ?></option>
+                        <?php endforeach; ?>
+                    </select>
+                </div>
+                <div class="col-6 col-md-4 col-lg-2">
+                    <select name="status" class="form-select form-select-sm" onchange="this.form.submit()" title="Filter Status">
                         <option value="">Semua Status</option>
                         <option value="1" <?= $status === '1' ? 'selected' : '' ?>>Aktif</option>
                         <option value="0" <?= $status === '0' ? 'selected' : '' ?>>Nonaktif</option>
                     </select>
                 </div>
-                <div class="col-auto d-flex gap-1">
+                <div class="col-12 col-sm-6 col-md-4 col-lg-4">
+                    <select name="pickup_city_id" id="filterRutePickupCity" class="form-select form-select-sm ts-select"
+                        data-ts-url="<?= e(APP_URL) ?>/pages/masters/cities/options.php"
+                        data-ts-with-province="1"
+                        data-ts-limit="50"
+                        data-ts-placeholder="Semua Kota Asal">
+                        <option value="">Semua Kota Asal</option>
+                        <?php foreach ($pickupCityOpts as $ct): ?>
+                            <option value="<?= (int) $ct['id'] ?>" <?= ((int) $ct['id'] === $filter_pickup_city) ? 'selected' : '' ?>><?= e($ct['name']) ?></option>
+                        <?php endforeach; ?>
+                    </select>
+                </div>
+                <div class="col-12 col-sm-6 col-md-4 col-lg-4">
+                    <select name="delivery_city_id" id="filterRuteDeliveryCity" class="form-select form-select-sm ts-select"
+                        data-ts-url="<?= e(APP_URL) ?>/pages/masters/cities/options.php"
+                        data-ts-with-province="1"
+                        data-ts-limit="50"
+                        data-ts-placeholder="Semua Kota Tujuan">
+                        <option value="">Semua Kota Tujuan</option>
+                        <?php foreach ($delivCityOpts as $ct): ?>
+                            <option value="<?= (int) $ct['id'] ?>" <?= ((int) $ct['id'] === $filter_deliv_city) ? 'selected' : '' ?>><?= e($ct['name']) ?></option>
+                        <?php endforeach; ?>
+                    </select>
+                </div>
+                <div class="col-auto d-flex gap-1 ms-lg-auto">
                     <button type="submit" class="btn btn-sm btn-secondary">Filter</button>
                     <?php if ($has_active_filter): ?>
                         <a href="<?= e(APP_URL) ?>/pages/travel/rutes/index.php" class="btn btn-sm btn-outline-danger" title="Reset"><i class="bi bi-x-lg"></i> Reset</a>
@@ -202,10 +290,11 @@ require __DIR__ . '/../../../includes/header.php';
             </form>
         </div>
     </div>
+    <div id="ruteIndexStatusFeedback" class="alert d-none mb-2 py-2 px-3 small" role="alert"></div>
     <div class="card shadow-sm border-0">
         <div class="table-responsive">
             <table class="table table-hover mb-0 align-middle">
-                <thead class="table-light"><tr><th class="text-center" style="width: 52px;">No</th><th>Kode</th><th>Nama</th><th>Asal</th><th>Tujuan</th><th>Jadwal Keberangkatan</th><th>Radius Jemput / Antar</th><th>Tarif per Kategori Kendaraan</th><th>Status</th><th class="text-end">Aksi</th></tr></thead>
+                <thead class="table-light"><tr><th class="text-center" style="width: 52px;">No</th><th>Kode</th><th>Nama</th><th>Asal</th><th>Tujuan</th><th>Jadwal Keberangkatan</th><th>Radius Jemput / Antar</th><th>Daftar Harga</th><th class="text-center text-nowrap" style="width: 68px;">Status</th><th class="text-end">Aksi</th></tr></thead>
                 <tbody>
                 <?php foreach ($rows as $idx => $r):
                     $slots   = $ruteScheduleMap[(int) $r['id']] ?? [];
@@ -276,7 +365,25 @@ require __DIR__ . '/../../../includes/header.php';
                                 <span class="text-muted">-</span>
                             <?php endif; ?>
                         </td>
-                        <td><span class="badge bg-<?= $r['is_active'] ? 'success' : 'secondary' ?>"><?= $r['is_active'] ? 'Aktif' : 'Nonaktif' ?></span></td>
+                        <td class="text-center">
+                            <?php $isAct = !empty($r['is_active']); ?>
+                            <?php if (can('travel.manage')): ?>
+                                <form method="post" action="<?= e(APP_URL) ?>/pages/travel/rutes/toggle_status.php" class="d-inline rute-status-form">
+                                    <?= csrf_field() ?>
+                                    <input type="hidden" name="id" value="<?= (int) $r['id'] ?>">
+                                    <input type="hidden" name="return_query" value="<?= e($return_query) ?>">
+                                    <button type="submit"
+                                        class="btn btn-link p-0 border-0 shadow-none text-decoration-none rute-toggle-status <?= $isAct ? 'text-success' : 'text-danger' ?>"
+                                        data-active="<?= $isAct ? '1' : '0' ?>"
+                                        title="<?= $isAct ? 'Aktif — klik untuk nonaktifkan' : 'Nonaktif — klik untuk aktifkan' ?>"
+                                        aria-label="<?= $isAct ? 'Aktif' : 'Nonaktif' ?>">
+                                        <i class="bi <?= $isAct ? 'bi-check-circle-fill' : 'bi-x-circle-fill' ?> fs-6"></i>
+                                    </button>
+                                </form>
+                            <?php else: ?>
+                                <span class="<?= $isAct ? 'text-success' : 'text-danger' ?> fs-6" title="<?= $isAct ? 'Aktif' : 'Nonaktif' ?>" aria-label="<?= $isAct ? 'Aktif' : 'Nonaktif' ?>"><i class="bi <?= $isAct ? 'bi-check-circle-fill' : 'bi-x-circle-fill' ?>"></i></span>
+                            <?php endif; ?>
+                        </td>
                         <td class="text-end text-nowrap">
                             <?php if (can('travel.manage')): ?>
                                 <a class="btn btn-sm btn-outline-primary" href="<?= e(APP_URL) ?>/pages/travel/rutes/form.php?id=<?= (int) $r['id'] ?>" title="Ubah" aria-label="Ubah"><i class="bi bi-pencil-square"></i></a>
@@ -307,4 +414,76 @@ require __DIR__ . '/../../../includes/header.php';
         </div>
     </div>
 </main>
+<script>
+document.addEventListener('DOMContentLoaded', function () {
+    const filterForm = document.getElementById('rutesFilterForm');
+    if (filterForm && typeof window.bindTsChange === 'function') {
+        ['filterRutePickupCity', 'filterRuteDeliveryCity'].forEach(function (elId) {
+            const el = document.getElementById(elId);
+            if (el) {
+                window.bindTsChange(el, function () {
+                    filterForm.submit();
+                });
+            }
+        });
+    }
+
+    const feedbackEl = document.getElementById('ruteIndexStatusFeedback');
+    let feedbackTimer = null;
+    function showFeedback(ok, msg) {
+        if (!feedbackEl || !msg) return;
+        feedbackEl.className = 'alert ' + (ok ? 'alert-success' : 'alert-danger') + ' mb-2 py-2 px-3 small';
+        feedbackEl.textContent = msg;
+        if (feedbackTimer) clearTimeout(feedbackTimer);
+        feedbackTimer = setTimeout(function () {
+            feedbackEl.classList.add('d-none');
+        }, 3500);
+    }
+
+    document.querySelectorAll('.rute-status-form').forEach(function (form) {
+        form.addEventListener('submit', function (e) {
+            e.preventDefault();
+            const btn = form.querySelector('.rute-toggle-status');
+            if (!btn || btn.disabled) return;
+            btn.disabled = true;
+            fetch(form.action, {
+                method: 'POST',
+                body: new FormData(form),
+                headers: {
+                    'Accept': 'application/json',
+                    'X-Requested-With': 'XMLHttpRequest'
+                }
+            })
+                .then(function (resp) {
+                    return resp.json().catch(function () { return null; }).then(function (data) {
+                        return { ok: resp.ok, data: data };
+                    });
+                })
+                .then(function (res) {
+                    if (!res.ok || !res.data || !res.data.ok) {
+                        throw new Error((res.data && res.data.message) ? res.data.message : 'Gagal mengubah status rute.');
+                    }
+                    const active = Number(res.data.is_active) === 1;
+                    btn.setAttribute('data-active', active ? '1' : '0');
+                    btn.classList.toggle('text-success', active);
+                    btn.classList.toggle('text-danger', !active);
+                    btn.setAttribute('title', active ? 'Aktif — klik untuk nonaktifkan' : 'Nonaktif — klik untuk aktifkan');
+                    btn.setAttribute('aria-label', active ? 'Aktif' : 'Nonaktif');
+                    const icon = btn.querySelector('i.bi');
+                    if (icon) {
+                        icon.classList.toggle('bi-check-circle-fill', active);
+                        icon.classList.toggle('bi-x-circle-fill', !active);
+                    }
+                    showFeedback(true, res.data.message || 'Status rute diperbarui.');
+                })
+                .catch(function (err) {
+                    showFeedback(false, err && err.message ? err.message : 'Gagal mengubah status rute.');
+                })
+                .finally(function () {
+                    btn.disabled = false;
+                });
+        });
+    });
+});
+</script>
 <?php require __DIR__ . '/../../../includes/footer.php'; ?>

@@ -962,8 +962,8 @@ try {
     [$rZipOk, $rXText] = $ruteXlsx['size'] > 0 ? $readXlsxXml($ruteXlsx['bytes']) : [false, ''];
     @unlink($ruteXlsx['file']);
     ts_check(
-        $ruteXlsx['code'] === 200 && $rZipOk && str_contains($rXText, 'Tarif per Kategori') && str_contains($rXText, 'Titik Jemput (Provinsi)') && str_contains($rXText, '10 kursi'),
-        'travel/rutes/index.php export=xlsx includes Provinces, Tarif per Kategori, and seat capacity (kursi)'
+        $ruteXlsx['code'] === 200 && $rZipOk && str_contains($rXText, 'Daftar Harga') && str_contains($rXText, 'Titik Jemput (Provinsi)') && str_contains($rXText, '10 kursi'),
+        'travel/rutes/index.php export=xlsx includes Provinces, Daftar Harga, and seat capacity (kursi)'
     );
     $rutePdf = $downloadExport('/pages/travel/rutes/index.php?company_id=1&export=pdf');
     @unlink($rutePdf['file']);

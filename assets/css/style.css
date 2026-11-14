@@ -584,7 +584,8 @@ body {
   gap: 6px;
 }
 
-.rnt-panel-header .rnt-header-action {
+.rnt-panel-header .rnt-header-action,
+.rnt-panel .rnt-header-action {
   background: transparent;
   border: 0;
   padding: 0;
@@ -599,19 +600,23 @@ body {
   cursor: pointer;
 }
 
-.rnt-panel-header .rnt-header-action.text-danger {
+.rnt-panel-header .rnt-header-action.text-danger,
+.rnt-panel .rnt-header-action.text-danger {
   color: var(--bs-danger, #dc3545);
 }
 
-.rnt-panel-header .rnt-header-action.text-muted {
+.rnt-panel-header .rnt-header-action.text-muted,
+.rnt-panel .rnt-header-action.text-muted {
   color: var(--bs-secondary-color, #6c757d);
 }
 
-.rnt-panel-header .rnt-header-action:hover:not(:disabled) {
+.rnt-panel-header .rnt-header-action:hover:not(:disabled),
+.rnt-panel .rnt-header-action:hover:not(:disabled) {
   text-decoration: underline;
 }
 
-.rnt-panel-header .rnt-header-action:disabled {
+.rnt-panel-header .rnt-header-action:disabled,
+.rnt-panel .rnt-header-action:disabled {
   opacity: 0.55;
   cursor: not-allowed;
 }
@@ -700,6 +705,13 @@ body {
   font-size: 0.82rem;
   border-radius: 2px;
   border: 1px solid #ced4da;
+}
+
+.ts-wrapper.form-select-sm .ts-control {
+  min-height: calc(1.5em + 0.5rem + 2px);
+  padding: 0.25rem 0.5rem;
+  font-size: 0.875rem;
+  line-height: 1.5;
 }
 
 .ts-wrapper.is-invalid .ts-control,
