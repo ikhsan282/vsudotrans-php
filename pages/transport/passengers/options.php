@@ -72,6 +72,8 @@ if ($q === '') {
     $isPhoneLike = (bool) preg_match('/^[0-9+]/', $q);
 
     if ($isPhoneLike) {
+        $phoneNormPfx = phone_search_prefix($q);
+        $phonePrefix  = $phoneNormPfx !== null ? (addcslashes($phoneNormPfx, '%_\\') . '%') : $prefix;
         // Query 1: prefix match via ix_passengers_company_phone
         $st = $db->prepare(
             "SELECT id, code, name, phone_number
@@ -80,10 +82,25 @@ if ($q === '') {
               ORDER BY phone_number ASC
               LIMIT ?"
         );
-        $st->bind_param('isi', $cid, $prefix, $limit);
+        $st->bind_param('isi', $cid, $phonePrefix, $limit);
         $st->execute();
         $append($st->get_result()->fetch_all(MYSQLI_ASSOC));
         $st->close();
+
+        if ($phonePrefix !== $prefix && count($rows) < $limit) {
+            $rem = $limit - count($rows);
+            $st = $db->prepare(
+                "SELECT id, code, name, phone_number
+                   FROM passengers
+                  WHERE company_id = ? AND phone_number LIKE ?
+                  ORDER BY phone_number ASC
+                  LIMIT ?"
+            );
+            $st->bind_param('isi', $cid, $prefix, $rem);
+            $st->execute();
+            $append($st->get_result()->fetch_all(MYSQLI_ASSOC));
+            $st->close();
+        }
 
         if (count($rows) < $limit) {
             $rem = $limit - count($rows);

@@ -105,13 +105,14 @@ function grid_query_stream(
  * Kirim unduhan hasil export grid dalam format XLSX atau PDF, lalu exit.
  * Mendukung $rows berupa array biasa maupun Generator/Traversable (streaming O(1) RAM).
  *
- * @param string   $title      Judul laporan/daftar (mis. "Daftar Perusahaan")
- * @param array    $headers    Daftar nama kolom header (tanpa kolom No, karena No ditambahkan otomatis)
- * @param iterable $rows       Array 2D atau Generator baris data (urutan elemen sesuai $headers)
- * @param string   $format     'xlsx' atau 'pdf'
- * @param string   $orient     'portrait' atau 'landscape' (untuk PDF)
- * @param string   $subtitle   Subjudul opsional (mis. filter aktif)
- * @param ?int     $total_rows Total baris keseluruhan di DB (opsional, untuk info apabila PDF dibatasi)
+ * @param string   $title             Judul laporan/daftar (mis. "Daftar Perusahaan")
+ * @param array    $headers           Daftar nama kolom header (di luar kolom nomor baris opsional)
+ * @param iterable $rows              Array 2D atau Generator baris data (urutan elemen sesuai $headers)
+ * @param string   $format            'xlsx' atau 'pdf'
+ * @param string   $orient            'portrait' atau 'landscape' (untuk PDF)
+ * @param string   $subtitle          Subjudul opsional (mis. filter aktif)
+ * @param ?int     $total_rows        Total baris keseluruhan di DB (opsional, untuk info apabila PDF dibatasi)
+ * @param ?string  $row_number_header Label kolom nomor urut otomatis (default '#', null/'' untuk menonaktifkan)
  */
 function grid_export_send(
     string $title,
@@ -120,8 +121,10 @@ function grid_export_send(
     string $format = 'xlsx',
     string $orient = 'portrait',
     string $subtitle = '',
-    ?int $total_rows = null
+    ?int $total_rows = null,
+    ?string $row_number_header = '#'
 ): void {
+    $has_row_no = ($row_number_header !== null && $row_number_header !== '');
     $format = strtolower(trim($format));
     $date_str = date('Y-m-d');
     $base_name = preg_replace('/[^\w\s\-]/u', '', $title) . ' - ' . $date_str;
@@ -169,7 +172,10 @@ function grid_export_send(
             td.no-col, th.no-col { width: 32px; text-align: center; }
         ';
 
-        $thead = '<thead><tr><th class="no-col">No</th>';
+        $thead = '<thead><tr>';
+        if ($has_row_no) {
+            $thead .= '<th class="no-col">' . htmlspecialchars((string) $row_number_header, ENT_QUOTES, 'UTF-8') . '</th>';
+        }
         foreach ($headers as $h) {
             $thead .= '<th>' . htmlspecialchars((string) $h, ENT_QUOTES, 'UTF-8') . '</th>';
         }
@@ -177,16 +183,19 @@ function grid_export_send(
 
         $tbody = '<tbody>';
         if (!$pdf_rows) {
-            $colspan = count($headers) + 1;
+            $colspan = count($headers) + ($has_row_no ? 1 : 0);
             $tbody .= '<tr><td colspan="' . $colspan . '" class="center muted">Tidak ada data.</td></tr>';
         } else {
             foreach ($pdf_rows as $idx => $r) {
-                $tbody .= '<tr><td class="no-col">' . ($idx + 1) . '</td>';
+                $tbody .= '<tr>';
+                if ($has_row_no) {
+                    $tbody .= '<td class="no-col">' . ($idx + 1) . '</td>';
+                }
                 foreach (array_values($r) as $cell) {
                     $is_num = is_int($cell) || is_float($cell);
                     $val = $cell === null ? '' : (string) $cell;
                     $tbody .= '<td' . ($is_num ? ' class="right"' : '') . '>'
-                        . htmlspecialchars($val, ENT_QUOTES, 'UTF-8') . '</td>';
+                        . nl2br(htmlspecialchars($val, ENT_QUOTES, 'UTF-8'), false) . '</td>';
                 }
                 $tbody .= '</tr>';
             }
@@ -218,13 +227,15 @@ function grid_export_send(
     $sheet_title = mb_substr(preg_replace('/[\\\\\\/?*\\[\\]:]/', '', $title), 0, 31) ?: 'Data';
     $written_data_rows = 0;
 
-    $row_generator = (static function () use ($headers, $rows, &$written_data_rows): Generator {
-        yield array_merge(['No'], array_values($headers));
+    $row_generator = (static function () use ($headers, $rows, $has_row_no, $row_number_header, &$written_data_rows): Generator {
+        $header_vals = array_values($headers);
+        yield $has_row_no ? array_merge([(string) $row_number_header], $header_vals) : $header_vals;
         $no = 0;
         foreach ($rows as $r) {
             $no++;
             $written_data_rows++;
-            yield array_merge([$no], array_values($r));
+            $row_vals = array_values($r);
+            yield $has_row_no ? array_merge([$no], $row_vals) : $row_vals;
         }
     })();
 

@@ -54,15 +54,15 @@ $errors = [];
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     verify_csrf();
     $in = fn (string $k, int $max): string => mb_substr(trim((string) ($_POST[$k] ?? '')), 0, $max);
-    $row = [
+    $row = array_merge($row, [
         'username'     => strtolower($in('username', 50)),
         'email'        => $in('email', 100),
         'full_name'    => $in('full_name', 100),
-        'phone_number' => $in('phone_number', 20),
+        'phone_number' => normalize_phone_62($in('phone_number', 30)) ?? '',
         'role_id'      => (int) ($_POST['role_id'] ?? 0),
         'company_id'   => (string) (int) ($_POST['company_id'] ?? 0),
         'is_active'    => isset($_POST['is_active']) ? 1 : 0,
-    ];
+    ]);
     $password = (string) ($_POST['password'] ?? '');
     $confirm  = (string) ($_POST['password_confirm'] ?? '');
     $company_id = (int) $row['company_id'];
@@ -75,6 +75,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     }
     if (!filter_var($row['email'], FILTER_VALIDATE_EMAIL)) {
         $errors[] = 'Format email tidak valid.';
+    }
+    if (strlen($row['phone_number']) > 20) {
+        $errors[] = 'No. Telepon maksimal 20 digit (format 62...).';
     }
     if (!in_array($row['role_id'], array_column($roles, 'id'), false)) {
         $errors[] = 'Role tidak valid.';
@@ -189,93 +192,149 @@ $active = 'users';
 $title  = $id > 0 ? 'Ubah Pengguna' : 'Tambah Pengguna';
 require __DIR__ . '/../../includes/header.php';
 ?>
-<main class="col-12 col-md-9 col-lg-10 p-4">
-    <div class="d-flex justify-content-between align-items-center mb-3">
-        <h4 class="fw-bold mb-0"><?= e($title) ?></h4>
-        <div class="d-flex gap-2">
-            <a class="btn btn-outline-secondary btn-sm" href="<?= e(APP_URL) ?>/pages/users/index.php">
-                <i class="bi bi-arrow-left me-1"></i>Batal
-            </a>
-            <button type="submit" form="formUser" class="btn btn-primary btn-sm px-3">
-                <i class="bi bi-check2 me-1"></i>Simpan
-            </button>
-        </div>
-    </div>
+<main class="p-2 p-md-3">
+    <?= ui_erp_toolbar(
+        'Pengguna',
+        'person-badge',
+        $title,
+        $id > 0 ? [['text' => !empty($row['is_active']) ? 'Aktif' : 'Nonaktif', 'class' => !empty($row['is_active']) ? 'bg-success-subtle text-success' : 'bg-secondary-subtle text-secondary']] : [],
+        [
+            ['label' => 'Batal', 'icon' => 'arrow-left', 'href' => APP_URL . '/pages/users/index.php', 'class' => 'btn-outline-secondary'],
+            ['label' => 'Simpan', 'icon' => 'check2', 'type' => 'submit', 'form' => 'formUser', 'class' => 'btn-primary'],
+        ]
+    ) ?>
     <?php if ($errors): ?>
-        <div class="alert alert-danger"><ul class="mb-0">
+        <div class="alert alert-danger py-2 mb-2"><ul class="mb-0">
             <?php foreach ($errors as $err): ?><li><?= e($err) ?></li><?php endforeach; ?>
         </ul></div>
     <?php endif; ?>
-    <div class="card shadow-sm border-0">
-        <div class="card-body">
-            <form method="post" id="formUser">
-                <?= csrf_field() ?>
-                <input type="hidden" name="id" value="<?= (int) $id ?>">
-                <div class="row g-3">
-                    <div class="col-md-6">
-                        <label class="form-label">Username</label>
-                        <input type="text" name="username" class="form-control" value="<?= e($row['username']) ?>" required>
-                    </div>
-                    <div class="col-md-6">
-                        <label class="form-label">Nama Lengkap</label>
-                        <input type="text" name="full_name" class="form-control" value="<?= e($row['full_name']) ?>" required>
-                    </div>
-                    <div class="col-md-6">
-                        <label class="form-label">Email</label>
-                        <input type="email" name="email" class="form-control" value="<?= e($row['email']) ?>" required>
-                    </div>
-                    <div class="col-md-6">
-                        <label class="form-label">No. Telepon</label>
-                        <input type="text" name="phone_number" class="form-control" value="<?= e($row['phone_number'] ?? '') ?>">
-                    </div>
-                    <div class="col-md-6">
-                        <label class="form-label">Role</label>
-                        <select name="role_id" class="form-select" required>
-                            <option value="">— pilih role —</option>
-                            <?php foreach ($roles as $r): ?>
-                                <?php if (!is_super_admin() && ((int) $r['level'] < $actorLevel)) continue; ?>
-                                <option value="<?= (int) $r['id'] ?>"<?= (int) $row['role_id'] === (int) $r['id'] ? ' selected' : '' ?>>
-                                    <?= e($r['name']) ?>
-                                </option>
-                            <?php endforeach; ?>
-                        </select>
-                    </div>
-                    <div class="col-md-6">
-                        <label class="form-label">Perusahaan</label>
-                        <select name="company_id" class="form-select"<?= is_super_admin() ? '' : ' required' ?>>
-                            <?php if (is_super_admin()): ?>
-                                <option value="0"<?= !$row['company_id'] ? ' selected' : '' ?>>— lintas perusahaan —</option>
-                            <?php endif; ?>
-                            <?php foreach ($companies as $c): ?>
-                                <option value="<?= (int) $c['id'] ?>"<?= (int) $row['company_id'] === (int) $c['id'] ? ' selected' : '' ?>>
-                                    <?= e($c['name']) ?> (<?= e($c['code']) ?>)
-                                </option>
-                            <?php endforeach; ?>
-                        </select>
-                    </div>
-                    <div class="col-md-6">
-                        <label class="form-label">Password <?= $id > 0 ? '(kosongkan bila tidak diubah)' : '' ?></label>
-                        <input type="password" name="password" class="form-control" autocomplete="new-password"<?= $id === 0 ? ' required' : '' ?>>
-                    </div>
-                    <div class="col-md-6">
-                        <label class="form-label">Konfirmasi Password</label>
-                        <input type="password" name="password_confirm" class="form-control" autocomplete="new-password">
-                    </div>
-                    <?php if ($id > 0 && $id === $uid && !is_super_admin()): ?>
-                    <div class="col-md-6">
-                        <label class="form-label">Password Lama (wajib jika mengubah password sendiri)</label>
-                        <input type="password" name="current_password" class="form-control" autocomplete="current-password">
-                    </div>
-                    <?php endif; ?>
-                    <div class="col-12">
-                        <div class="form-check">
-                            <input class="form-check-input" type="checkbox" name="is_active" id="is_active" value="1"<?= $row['is_active'] ? ' checked' : '' ?>>
-                            <label class="form-check-label" for="is_active">Aktif</label>
+    <form method="post" id="formUser">
+        <?= csrf_field() ?>
+        <input type="hidden" name="id" value="<?= (int) $id ?>">
+        <div class="erp-window-card">
+            <ul class="nav nav-tabs erp-sub-tabs" role="tablist">
+                <li class="nav-item" role="presentation">
+                    <button class="nav-link active" id="tab-user-detail" data-bs-toggle="tab" data-bs-target="#pane-user-detail" type="button" role="tab">Detail</button>
+                </li>
+                <?php if ($id > 0): ?>
+                    <li class="nav-item" role="presentation">
+                        <button class="nav-link" id="tab-user-audit" data-bs-toggle="tab" data-bs-target="#pane-user-audit" type="button" role="tab">Audit Trail</button>
+                    </li>
+                <?php endif; ?>
+            </ul>
+            <div class="erp-content-body tab-content">
+                <div class="tab-pane fade show active" id="pane-user-detail" role="tabpanel">
+                    <div class="row g-3">
+                        <div class="col-lg-6">
+                            <div class="rnt-panel h-100 mb-0">
+                                <div class="rnt-panel-header"><i class="bi bi-person-lines-fill"></i> Identitas Pengguna</div>
+                                <div class="rnt-panel-body">
+                                    <div class="rnt-row">
+                                        <div class="rnt-label">Username <span class="text-danger">*</span></div>
+                                        <div class="rnt-field">
+                                            <input type="text" name="username" class="form-control form-control-sm" value="<?= e($row['username']) ?>" required>
+                                        </div>
+                                    </div>
+                                    <div class="rnt-row">
+                                        <div class="rnt-label">Nama Lengkap <span class="text-danger">*</span></div>
+                                        <div class="rnt-field">
+                                            <input type="text" name="full_name" class="form-control form-control-sm" value="<?= e($row['full_name']) ?>" required>
+                                        </div>
+                                    </div>
+                                    <div class="rnt-row">
+                                        <div class="rnt-label">Email <span class="text-danger">*</span></div>
+                                        <div class="rnt-field">
+                                            <input type="email" name="email" class="form-control form-control-sm" value="<?= e($row['email']) ?>" required>
+                                        </div>
+                                    </div>
+                                    <div class="rnt-row">
+                                        <div class="rnt-label">No. Telepon</div>
+                                        <div class="rnt-field">
+                                            <input type="text" name="phone_number" class="form-control form-control-sm" maxlength="20" placeholder="62812xxxxxxxx" value="<?= e($row['phone_number'] ?? '') ?>">
+                                        </div>
+                                    </div>
+                                    <div class="rnt-row">
+                                        <div class="rnt-label">Status</div>
+                                        <div class="rnt-field">
+                                            <div class="rnt-check-wrap">
+                                                <div class="form-check mb-0">
+                                                    <input class="form-check-input" type="checkbox" name="is_active" id="is_active" value="1"<?= $row['is_active'] ? ' checked' : '' ?>>
+                                                    <label class="form-check-label small" for="is_active">Aktif</label>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="col-lg-6">
+                            <div class="rnt-panel h-100 mb-0">
+                                <div class="rnt-panel-header"><i class="bi bi-shield-lock"></i> Akses &amp; Keamanan</div>
+                                <div class="rnt-panel-body">
+                                    <div class="rnt-row">
+                                        <div class="rnt-label">Role <span class="text-danger">*</span></div>
+                                        <div class="rnt-field">
+                                            <select name="role_id" class="form-select form-select-sm" required>
+                                                <option value="">— pilih role —</option>
+                                                <?php foreach ($roles as $r): ?>
+                                                    <?php if (!is_super_admin() && ((int) $r['level'] < $actorLevel)) continue; ?>
+                                                    <option value="<?= (int) $r['id'] ?>"<?= (int) $row['role_id'] === (int) $r['id'] ? ' selected' : '' ?>>
+                                                        <?= e($r['name']) ?>
+                                                    </option>
+                                                <?php endforeach; ?>
+                                            </select>
+                                        </div>
+                                    </div>
+                                    <div class="rnt-row">
+                                        <div class="rnt-label">Perusahaan<?= !is_super_admin() ? ' <span class="text-danger">*</span>' : '' ?></div>
+                                        <div class="rnt-field">
+                                            <select name="company_id" class="form-select form-select-sm"<?= is_super_admin() ? '' : ' required' ?>>
+                                                <?php if (is_super_admin()): ?>
+                                                    <option value="0"<?= !$row['company_id'] ? ' selected' : '' ?>>— lintas perusahaan —</option>
+                                                <?php endif; ?>
+                                                <?php foreach ($companies as $c): ?>
+                                                    <option value="<?= (int) $c['id'] ?>"<?= (int) $row['company_id'] === (int) $c['id'] ? ' selected' : '' ?>>
+                                                        <?= e($c['name']) ?> (<?= e($c['code']) ?>)
+                                                    </option>
+                                                <?php endforeach; ?>
+                                            </select>
+                                        </div>
+                                    </div>
+                                    <div class="rnt-row rnt-row-top">
+                                        <div class="rnt-label">Password<?= $id === 0 ? ' <span class="text-danger">*</span>' : '' ?></div>
+                                        <div class="rnt-field">
+                                            <input type="password" name="password" class="form-control form-control-sm" autocomplete="new-password"<?= $id === 0 ? ' required' : '' ?>>
+                                            <?php if ($id > 0): ?><div class="form-text small">Kosongkan bila tidak diubah.</div><?php endif; ?>
+                                        </div>
+                                    </div>
+                                    <div class="rnt-row">
+                                        <div class="rnt-label">Konfirmasi Password</div>
+                                        <div class="rnt-field">
+                                            <input type="password" name="password_confirm" class="form-control form-control-sm" autocomplete="new-password">
+                                        </div>
+                                    </div>
+                                    <?php if ($id > 0 && $id === $uid && !is_super_admin()): ?>
+                                        <div class="rnt-row rnt-row-top">
+                                            <div class="rnt-label">Password Lama</div>
+                                            <div class="rnt-field">
+                                                <input type="password" name="current_password" class="form-control form-control-sm" autocomplete="current-password">
+                                                <div class="form-text small">Wajib diisi jika mengubah password sendiri.</div>
+                                            </div>
+                                        </div>
+                                    <?php endif; ?>
+                                </div>
+                            </div>
                         </div>
                     </div>
                 </div>
-            </form>
+                <?php if ($id > 0): ?>
+                    <div class="tab-pane fade" id="pane-user-audit" role="tabpanel">
+                        <?= ui_erp_audit_panel($row, 'mb-0', ui_erp_ro_row('Login Terakhir', $row['last_login'] ?? null)) ?>
+                    </div>
+                <?php endif; ?>
+            </div>
         </div>
-    </div>
+    </form>
 </main>
 <?php require __DIR__ . '/../../includes/footer.php'; ?>

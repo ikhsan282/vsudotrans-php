@@ -60,14 +60,13 @@ require __DIR__ . '/../../includes/header.php';
     </ul>
 
     <?php if ($tab === 'riwayat'): ?>
-    <form class="row g-2 mb-3" method="get">
+    <form class="row g-2 align-items-center mb-3" method="get">
         <input type="hidden" name="tab" value="riwayat">
         <div class="col-auto"><label class="col-form-label-sm" for="dispatch-from">Dari</label></div>
         <div class="col-auto"><input id="dispatch-from" type="date" class="form-control form-control-sm" name="from" value="<?= e($from) ?>"></div>
         <div class="col-auto"><label class="col-form-label-sm" for="dispatch-to">Sampai</label></div>
         <div class="col-auto"><input id="dispatch-to" type="date" class="form-control form-control-sm" name="to" value="<?= e($to) ?>"></div>
-        <div class="col-auto"><button class="btn btn-sm btn-outline-secondary">Filter</button></div>
-        <div class="col-auto"><a class="btn btn-sm btn-link" href="?tab=riwayat">Reset</a></div>
+        <?= ui_filter_actions('?tab=riwayat', (($_GET['from'] ?? '') !== '' || ($_GET['to'] ?? '') !== ''), 'col-auto d-flex gap-1 erp-filter-actions') ?>
     </form>
     <?php endif; ?>
 

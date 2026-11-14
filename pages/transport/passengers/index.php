@@ -15,10 +15,19 @@ $active_cid        = $scope['active_cid'];
 
 $q = trim((string) ($_GET['q'] ?? ''));
 if ($q !== '') {
-    $where .= ' AND (p.code LIKE ? OR p.name LIKE ? OR p.phone_number LIKE ? OR p.email LIKE ?)';
-    $types .= 'ssss';
-    $q_like = '%' . $q . '%';
-    array_push($params, $q_like, $q_like, $q_like, $q_like);
+    $phoneNorm = phone_search_prefix($q);
+    if ($phoneNorm !== null && $phoneNorm !== $q) {
+        $where .= ' AND (p.code LIKE ? OR p.name LIKE ? OR p.phone_number LIKE ? OR p.phone_number LIKE ? OR p.email LIKE ?)';
+        $types .= 'sssss';
+        $q_like = '%' . $q . '%';
+        $p_like = '%' . $phoneNorm . '%';
+        array_push($params, $q_like, $q_like, $q_like, $p_like, $q_like);
+    } else {
+        $where .= ' AND (p.code LIKE ? OR p.name LIKE ? OR p.phone_number LIKE ? OR p.email LIKE ?)';
+        $types .= 'ssss';
+        $q_like = '%' . $q . '%';
+        array_push($params, $q_like, $q_like, $q_like, $q_like);
+    }
 }
 
 $st = db()->prepare("SELECT COUNT(*) FROM passengers p WHERE {$where}");
@@ -31,7 +40,7 @@ $st->close();
 
 $export_format = strtolower(trim((string) ($_GET['export'] ?? '')));
 if (in_array($export_format, ['xlsx', 'pdf'], true)) {
-    $sql_export = "SELECT p.code, p.name, p.country_code, p.phone_number, p.email
+    $sql_export = "SELECT p.code, p.name, p.phone_number, p.email
                    FROM passengers p WHERE {$where} ORDER BY p.name";
     $max_export_rows = $export_format === 'pdf' ? GRID_PDF_MAX_ROWS : null;
 
@@ -40,7 +49,7 @@ if (in_array($export_format, ['xlsx', 'pdf'], true)) {
         $types,
         $params,
         static function (array $r): array {
-            $phone = trim(($r['country_code'] ?? '') . ' ' . ($r['phone_number'] ?? ''));
+            $phone = trim((string) ($r['phone_number'] ?? ''));
             return [
                 $r['code'],
                 $r['name'],
@@ -54,7 +63,7 @@ if (in_array($export_format, ['xlsx', 'pdf'], true)) {
     $sub = $q !== '' ? 'Pencarian: "' . $q . '"' : 'Semua Data';
     grid_export_send(
         'Daftar Penumpang',
-        ['Kode', 'Nama Penumpang', 'Telepon', 'Email'],
+        ['Kode', 'Nama', 'Telepon', 'Email'],
         $row_stream,
         $export_format,
         'portrait',
@@ -64,7 +73,7 @@ if (in_array($export_format, ['xlsx', 'pdf'], true)) {
 }
 
 $p = paginate($total, (int) ($_GET['page'] ?? 1));
-$st = db()->prepare("SELECT p.id, p.code, p.name, p.country_code, p.phone_number, p.email
+$st = db()->prepare("SELECT p.id, p.code, p.name, p.phone_number, p.email
                      FROM passengers p WHERE {$where} ORDER BY p.name LIMIT ? OFFSET ?");
 $st->bind_param($types . 'ii', ...[...$params, $p['per_page'], $p['offset']]);
 $st->execute();
@@ -96,7 +105,7 @@ require __DIR__ . '/../../../includes/header.php';
     ) ?>
     <div class="card shadow-sm border-0 mb-3">
         <div class="card-body py-2 px-3">
-            <form method="get" class="row g-2 align-items-center">
+            <form method="get" class="row g-2 align-items-center erp-filter-bar">
                 <div class="col-12 col-md-4">
                     <div class="input-group input-group-sm">
                         <span class="input-group-text bg-white text-muted"><i class="bi bi-search"></i></span>
@@ -108,26 +117,21 @@ require __DIR__ . '/../../../includes/header.php';
                         <?= ui_company_filter_options($companies, $filter_company_id, $has_explicit_company) ?>
                     </select>
                 </div>
-                <div class="col-auto d-flex gap-1">
-                    <button type="submit" class="btn btn-sm btn-secondary">Filter</button>
-                    <?php if ($has_active_filter): ?>
-                        <a href="<?= e(APP_URL) ?>/pages/transport/passengers/index.php" class="btn btn-sm btn-outline-danger" title="Reset"><i class="bi bi-x-lg"></i> Reset</a>
-                    <?php endif; ?>
-                </div>
+                <?= ui_filter_actions(APP_URL . '/pages/transport/passengers/index.php', $has_active_filter) ?>
             </form>
         </div>
     </div>
     <div class="card shadow-sm border-0">
         <div class="table-responsive">
             <table class="table table-hover mb-0 align-middle">
-                <thead class="table-light"><tr><th class="text-center" style="width: 52px;">No</th><th>Kode</th><th>Nama</th><th>Telepon</th><th>Email</th><th class="text-end">Aksi</th></tr></thead>
+                <thead class="table-light"><tr><th class="text-center" style="width: 52px;">#</th><th>Kode</th><th>Nama</th><th>Telepon</th><th>Email</th><th class="text-end">Aksi</th></tr></thead>
                 <tbody>
                 <?php foreach ($rows as $idx => $r): ?>
                     <tr>
                         <td class="text-center text-muted small"><?= number_format($p['offset'] + $idx + 1, 0, ',', '.') ?></td>
                         <td class="fw-semibold"><?= e($r['code']) ?></td>
                         <td><?= e($r['name']) ?></td>
-                        <td><?= e(trim($r['country_code'] . ' ' . (string) $r['phone_number'])) ?: '-' ?></td>
+                        <td><?= e(trim((string) ($r['phone_number'] ?? ''))) ?: '-' ?></td>
                         <td><?= e($r['email'] ?: '-') ?></td>
                         <td class="text-end text-nowrap">
                             <?php if ($can_manage): ?>

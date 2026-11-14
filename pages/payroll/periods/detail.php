@@ -79,151 +79,192 @@ if ($can_manage && $period['status'] === 'final') {
 $active = 'payroll';
 $title  = 'Detail Payroll — ' . payroll_period_label($period);
 require __DIR__ . '/../../../includes/header.php';
+
+$payActions = [
+    ['label' => 'Kembali', 'icon' => 'arrow-left', 'href' => 'pages/payroll/periods/index.php', 'class' => 'btn btn-outline-secondary btn-sm'],
+];
+if ($can_manage && $period['status'] === 'draft') {
+    $payActions[] = [
+        'html' => '<form method="post" action="" class="d-inline" onsubmit="return confirm(\'Tarik hari hadir dari Absensi dan timpa Hari Hadir semua item periode ini?\')">'
+            . csrf_field()
+            . '<input type="hidden" name="id" value="' . $id . '">'
+            . '<input type="hidden" name="act" value="pull_attendance">'
+            . '<button class="btn btn-sm btn-primary" type="submit"><i class="bi bi-calendar-check me-1"></i>Tarik dari Absensi</button></form>',
+    ];
+}
+$payActions[] = ['label' => 'Cetak', 'icon' => 'printer', 'href' => 'pages/payroll/periods/print.php?id=' . $id, 'target' => '_blank', 'class' => 'btn btn-dark btn-sm'];
+$payActions[] = ['label' => 'CSV', 'icon' => 'filetype-csv', 'href' => 'pages/payroll/periods/export.php?id=' . $id . '&format=csv', 'class' => 'btn btn-outline-success btn-sm'];
+$payActions[] = ['label' => 'Excel', 'icon' => 'file-earmark-excel', 'href' => 'pages/payroll/periods/export.php?id=' . $id . '&format=xlsx', 'class' => 'btn btn-outline-success btn-sm'];
+$payActions[] = ['label' => 'PDF', 'icon' => 'filetype-pdf', 'href' => 'pages/payroll/periods/print.php?id=' . $id . '&format=pdf', 'class' => 'btn btn-danger btn-sm'];
 ?>
-<main class="col-12 col-md-9 col-lg-10 p-4">
-    <div class="d-flex justify-content-between align-items-center mb-3">
-        <h4 class="fw-bold mb-0">Payroll <?= e(payroll_period_label($period)) ?> <?= payroll_status_badge($period['status']) ?></h4>
-        <div class="d-flex gap-2">
-            <?php if ($can_manage && $period['status'] === 'draft'): ?>
-            <form method="post" action="" class="d-inline"
-                  onsubmit="return confirm('Tarik hari hadir dari Absensi dan timpa Hari Hadir semua item periode ini?')">
-                <?= csrf_field() ?>
-                <input type="hidden" name="id" value="<?= $id ?>">
-                <input type="hidden" name="act" value="pull_attendance">
-                <button class="btn btn-sm btn-primary" type="submit"><i class="bi bi-calendar-check"></i> Tarik dari Absensi</button>
-            </form>
-            <?php endif; ?>
-            <a class="btn btn-outline-secondary btn-sm" href="<?= e(APP_URL) ?>/pages/payroll/periods/print.php?id=<?= $id ?>" target="_blank">
-                <i class="bi bi-printer"></i> Cetak
-            </a>
-            <a class="btn btn-outline-success btn-sm" href="export.php?id=<?= $id ?>&format=csv"><i class="bi bi-filetype-csv"></i> CSV</a>
-            <a class="btn btn-outline-success btn-sm" href="export.php?id=<?= $id ?>&format=xlsx"><i class="bi bi-file-earmark-excel"></i> Excel</a>
-            <a class="btn btn-danger btn-sm" href="print.php?id=<?= $id ?>&format=pdf"><i class="bi bi-filetype-pdf"></i> PDF</a>
-            <a class="btn btn-outline-secondary btn-sm" href="<?= e(APP_URL) ?>/pages/payroll/periods/index.php">Kembali</a>
-        </div>
-    </div>
+<main class="p-2 p-md-3">
+    <?= ui_erp_toolbar(
+        'Payroll',
+        'cash-coin',
+        'Periode ' . payroll_period_label($period),
+        [
+            ['html' => payroll_status_badge($period['status'])],
+            ['text' => (int) $period['item_count'] . ' Karyawan', 'class' => 'bg-info-subtle text-info-emphasis border'],
+        ],
+        $payActions
+    ) ?>
 
     <?php if ($errors): ?>
-        <div class="alert alert-danger py-2"><?php foreach ($errors as $err): ?><div><?= e($err) ?></div><?php endforeach; ?></div>
+        <div class="alert alert-danger py-2 px-3 small mb-2"><?php foreach ($errors as $err): ?><div><?= e($err) ?></div><?php endforeach; ?></div>
     <?php endif; ?>
 
-    <div class="card shadow-sm border-0 mb-3"><div class="card-body d-flex flex-wrap gap-4 align-items-center">
-        <div><div class="text-muted small">Jumlah Karyawan</div><div class="fw-semibold"><?= (int) $period['item_count'] ?></div></div>
-        <div><div class="text-muted small">Total Gaji Bersih</div><div class="fw-semibold"><?= e(rupiah($total_net)) ?></div></div>
-        <div><div class="text-muted small">Dibuat</div><div><?= e((string) $period['created_date']) ?> oleh <?= e((string) $period['created_user']) ?></div></div>
-        <?php if (!empty($period['modified_date'])): ?>
-        <div><div class="text-muted small">Terakhir Diubah</div><div><?= e((string) $period['modified_date']) ?> oleh <?= e((string) $period['modified_user']) ?></div></div>
-        <?php endif; ?>
-        <?php if ($period['status'] === 'paid'): ?>
-            <div class="ms-auto text-success small"><i class="bi bi-check-circle"></i> Periode terkunci — item tidak bisa diubah lagi.</div>
-        <?php endif; ?>
-    </div></div>
+    <div class="erp-window-card">
+        <ul class="nav nav-tabs erp-sub-tabs" id="payrollDetailTabs" role="tablist">
+            <li class="nav-item" role="presentation">
+                <button class="nav-link active" id="tab-pay-detail-btn" data-bs-toggle="tab" data-bs-target="#tab-pay-detail" type="button" role="tab">Detail Payroll</button>
+            </li>
+            <li class="nav-item" role="presentation">
+                <button class="nav-link" id="tab-pay-audit-btn" data-bs-toggle="tab" data-bs-target="#tab-pay-audit" type="button" role="tab">Audit Trail</button>
+            </li>
+        </ul>
 
-    <?php if ($can_manage && $period['status'] !== 'paid'): ?>
-    <div class="card shadow-sm border-0 mb-3"><div class="card-body d-flex gap-2 align-items-center flex-wrap">
-        <?php if ($period['status'] === 'draft'): ?>
-            <form method="post" action="" onsubmit="return confirm('Finalkan periode ini? Pastikan angka sudah benar.')">
-                <?= csrf_field() ?>
-                <input type="hidden" name="id" value="<?= $id ?>">
-                <input type="hidden" name="act" value="final">
-                <button class="btn btn-sm btn-primary" type="submit"><i class="bi bi-lock"></i> Finalkan</button>
-            </form>
-        <?php endif; ?>
-        <?php if ($period['status'] === 'final'): ?>
-            <form method="post" action="" class="d-inline-flex align-items-center gap-2 flex-wrap" onsubmit="return confirm('Tandai periode ini SUDAH DIBAYAR? Data payroll akan dikunci.')">
-                <?= csrf_field() ?>
-                <input type="hidden" name="id" value="<?= $id ?>">
-                <input type="hidden" name="act" value="pay">
-                <div class="input-group input-group-sm" style="max-width: 320px;">
-                    <span class="input-group-text bg-light text-muted"><i class="bi bi-wallet2"></i></span>
-                    <select class="form-select form-select-sm" name="cash_account_id" title="Pilih akun Kas/Bank untuk mencatat pengeluaran otomatis">
-                        <option value="">— Jangan potong Kas/Bank —</option>
-                        <?php foreach ($cash_accounts as $ca): ?>
-                            <option value="<?= (int) $ca['id'] ?>"><?= e($ca['name']) ?><?= $ca['account_number'] ? ' (' . e($ca['account_number']) . ')' : '' ?></option>
-                        <?php endforeach; ?>
-                    </select>
+        <div class="erp-content-body">
+            <div class="tab-content" id="payrollDetailTabContent">
+                <div class="tab-pane fade show active" id="tab-pay-detail" role="tabpanel" aria-labelledby="tab-pay-detail-btn">
+                    <div class="rnt-panel">
+                        <div class="rnt-panel-header">
+                            <span>Ringkasan Periode Payroll</span>
+                            <?php if ($period['status'] === 'paid'): ?>
+                                <span class="text-success small fw-normal"><i class="bi bi-lock-fill me-1"></i>Periode terkunci</span>
+                            <?php endif; ?>
+                        </div>
+                        <div class="rnt-panel-body">
+                            <div class="row g-3">
+                                <div class="col-12 col-lg-6">
+                                    <?= ui_erp_ro_row('Periode', payroll_period_label($period)) ?>
+                                    <?= ui_erp_ro_row('Jumlah Karyawan', (string) ((int) $period['item_count']) . ' Orang') ?>
+                                </div>
+                                <div class="col-12 col-lg-6">
+                                    <?= ui_erp_ro_row('Total Gaji Bersih', rupiah($total_net)) ?>
+                                    <?= ui_erp_ro_html_row('Status Periode', payroll_status_badge($period['status']) . ($period['status'] === 'paid' ? '<span class="small text-success">Periode terkunci — item tidak dapat diubah.</span>' : '')) ?>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <?php if ($can_manage && $period['status'] !== 'paid'): ?>
+                    <div class="rnt-panel">
+                        <div class="rnt-panel-header"><span>Proses Status &amp; Pembayaran Payroll</span></div>
+                        <div class="rnt-panel-body d-flex gap-2 align-items-center flex-wrap">
+                            <?php if ($period['status'] === 'draft'): ?>
+                                <form method="post" action="" onsubmit="return confirm('Finalkan periode ini? Pastikan angka sudah benar.')">
+                                    <?= csrf_field() ?>
+                                    <input type="hidden" name="id" value="<?= $id ?>">
+                                    <input type="hidden" name="act" value="final">
+                                    <button class="btn btn-sm btn-primary" type="submit"><i class="bi bi-lock me-1"></i>Finalkan</button>
+                                </form>
+                            <?php endif; ?>
+                            <?php if ($period['status'] === 'final'): ?>
+                                <form method="post" action="" class="d-inline-flex align-items-center gap-2 flex-wrap" onsubmit="return confirm('Tandai periode ini SUDAH DIBAYAR? Data payroll akan dikunci.')">
+                                    <?= csrf_field() ?>
+                                    <input type="hidden" name="id" value="<?= $id ?>">
+                                    <input type="hidden" name="act" value="pay">
+                                    <div class="input-group input-group-sm" style="max-width: 320px;">
+                                        <span class="input-group-text bg-light text-muted"><i class="bi bi-wallet2"></i></span>
+                                        <select class="form-select form-select-sm" name="cash_account_id" title="Pilih akun Kas/Bank untuk mencatat pengeluaran otomatis">
+                                            <option value="">— Jangan potong Kas/Bank —</option>
+                                            <?php foreach ($cash_accounts as $ca): ?>
+                                                <option value="<?= (int) $ca['id'] ?>"><?= e($ca['name']) ?><?= $ca['account_number'] ? ' (' . e($ca['account_number']) . ')' : '' ?></option>
+                                            <?php endforeach; ?>
+                                        </select>
+                                    </div>
+                                    <button class="btn btn-sm btn-success" type="submit"><i class="bi bi-cash-coin me-1"></i>Tandai Dibayar</button>
+                                </form>
+                            <?php endif; ?>
+                            <span class="text-muted small">Alur: draft → final → dibayar. Nilai bersih: gaji pokok + (uang harian × hari hadir) − potongan.</span>
+                        </div>
+                    </div>
+                    <?php endif; ?>
+
+                    <div class="rnt-panel mb-0">
+                        <div class="rnt-panel-header"><span>Rincian Item Gaji Karyawan</span></div>
+                        <div class="rnt-panel-body p-0">
+                            <div class="table-responsive">
+                                <table class="erp-grid-table">
+                                    <thead><tr>
+                                        <th>Karyawan</th>
+                                        <th class="text-end">Gaji Pokok</th>
+                                        <th class="text-end">Uang Harian</th>
+                                        <th class="text-end">Hari Hadir</th>
+                                        <th class="text-end">Potongan</th>
+                                        <th class="text-end">Gaji Bersih</th>
+                                        <th>Catatan</th>
+                                        <?php if ($editable): ?><th class="text-end">Aksi</th><?php endif; ?>
+                                    </tr></thead>
+                                    <tbody>
+                                    <?php foreach ($items as $it): $fid = 'row-' . (int) $it['id']; ?>
+                                        <tr>
+                                            <td>
+                                                <?php if ($editable): ?>
+                                                    <form id="<?= e($fid) ?>" method="post" action=""></form>
+                                                    <input type="hidden" name="csrf_token" value="<?= e(csrf_token()) ?>" form="<?= e($fid) ?>">
+                                                    <input type="hidden" name="id" value="<?= $id ?>" form="<?= e($fid) ?>">
+                                                    <input type="hidden" name="act" value="save_item" form="<?= e($fid) ?>">
+                                                    <input type="hidden" name="item_id" value="<?= (int) $it['id'] ?>" form="<?= e($fid) ?>">
+                                                <?php endif; ?>
+                                                <div class="fw-semibold"><?= e($it['employee_name']) ?></div>
+                                                <div class="small text-muted"><?= e((string) $it['employee_code']) ?><?= $it['account_number'] ? ' · ' . e((string) $it['bank_name']) . ' ' . e((string) $it['account_number']) : '' ?></div>
+                                            </td>
+                                            <td class="text-end"><?= e(rupiah((float) $it['basic_salary'])) ?></td>
+                                            <td class="text-end"><?= e(rupiah((float) $it['daily_allowance'])) ?></td>
+                                            <td class="text-end">
+                                                <?php if ($editable): ?>
+                                                    <input type="number" name="days_present" class="form-control form-control-sm text-end ms-auto" style="width: 90px"
+                                                           min="0" max="31" value="<?= (int) $it['days_present'] ?>" form="<?= e($fid) ?>">
+                                                <?php else: ?>
+                                                    <?= (int) $it['days_present'] ?>
+                                                <?php endif; ?>
+                                            </td>
+                                            <td class="text-end">
+                                                <?php if ($editable): ?>
+                                                    <input type="text" inputmode="numeric" name="deductions" class="form-control form-control-sm text-end ms-auto" style="width: 130px"
+                                                           value="<?= e(number_format((float) $it['deductions'], 0, ',', '.')) ?>" form="<?= e($fid) ?>">
+                                                <?php else: ?>
+                                                    <?= e(rupiah((float) $it['deductions'])) ?>
+                                                <?php endif; ?>
+                                            </td>
+                                            <td class="text-end fw-semibold"><?= e(rupiah((float) $it['net_salary'])) ?></td>
+                                            <td>
+                                                <?php if ($editable): ?>
+                                                    <input type="text" name="note" class="form-control form-control-sm" maxlength="2000"
+                                                           value="<?= e((string) $it['note']) ?>" placeholder="—" form="<?= e($fid) ?>">
+                                                <?php else: ?>
+                                                    <?= e((string) $it['note']) ?>
+                                                <?php endif; ?>
+                                            </td>
+                                            <?php if ($editable): ?>
+                                                <td class="text-end text-nowrap">
+                                                    <button class="btn btn-sm btn-outline-primary" type="submit" form="<?= e($fid) ?>" title="Simpan" aria-label="Simpan"><i class="bi bi-check2"></i></button>
+                                                </td>
+                                            <?php endif; ?>
+                                        </tr>
+                                    <?php endforeach; ?>
+                                    <?php if (!$items): ?>
+                                        <tr><td colspan="<?= $cols ?>" class="text-center text-muted py-4">Belum ada item pada periode ini.</td></tr>
+                                    <?php endif; ?>
+                                    </tbody>
+                                    <tfoot class="table-light">
+                                        <tr class="fw-bold">
+                                            <td colspan="5" class="text-end">Total Gaji Bersih</td>
+                                            <td class="text-end"><?= e(rupiah($total_net)) ?></td>
+                                            <td colspan="<?= $editable ? 2 : 1 ?>"></td>
+                                        </tr>
+                                    </tfoot>
+                                </table>
+                            </div>
+                        </div>
+                    </div>
                 </div>
-                <button class="btn btn-sm btn-success" type="submit"><i class="bi bi-cash-coin"></i> Tandai Dibayar</button>
-            </form>
-        <?php endif; ?>
-        <span class="text-muted small">Alur status: draft → final → dibayar (tidak bisa mundur).</span>
-        <span class="text-muted small">Nilai per baris dihitung ulang saat disimpan: gaji pokok + (uang harian × hari hadir) − potongan. Hasil baru muncul setelah halaman dimuat ulang.</span>
-    </div></div>
-    <?php endif; ?>
 
-    <div class="card shadow-sm border-0">
-        <div class="table-responsive">
-            <table class="table table-hover mb-0 align-middle">
-                <thead><tr>
-                    <th>Karyawan</th>
-                    <th class="text-end">Gaji Pokok</th>
-                    <th class="text-end">Uang Harian</th>
-                    <th class="text-end">Hari Hadir</th>
-                    <th class="text-end">Potongan</th>
-                    <th class="text-end">Gaji Bersih</th>
-                    <th>Catatan</th>
-                    <?php if ($editable): ?><th class="text-end">Aksi</th><?php endif; ?>
-                </tr></thead>
-                <tbody>
-                <?php foreach ($items as $it): $fid = 'row-' . (int) $it['id']; ?>
-                    <tr>
-                        <td>
-                            <?php if ($editable): ?>
-                                <form id="<?= e($fid) ?>" method="post" action=""></form>
-                                <input type="hidden" name="csrf_token" value="<?= e(csrf_token()) ?>" form="<?= e($fid) ?>">
-                                <input type="hidden" name="id" value="<?= $id ?>" form="<?= e($fid) ?>">
-                                <input type="hidden" name="act" value="save_item" form="<?= e($fid) ?>">
-                                <input type="hidden" name="item_id" value="<?= (int) $it['id'] ?>" form="<?= e($fid) ?>">
-                            <?php endif; ?>
-                            <div class="fw-semibold"><?= e($it['employee_name']) ?></div>
-                            <div class="small text-muted"><?= e((string) $it['employee_code']) ?><?= $it['account_number'] ? ' · ' . e((string) $it['bank_name']) . ' ' . e((string) $it['account_number']) : '' ?></div>
-                        </td>
-                        <td class="text-end"><?= e(rupiah((float) $it['basic_salary'])) ?></td>
-                        <td class="text-end"><?= e(rupiah((float) $it['daily_allowance'])) ?></td>
-                        <td class="text-end">
-                            <?php if ($editable): ?>
-                                <input type="number" name="days_present" class="form-control form-control-sm text-end ms-auto" style="width: 90px"
-                                       min="0" max="31" value="<?= (int) $it['days_present'] ?>" form="<?= e($fid) ?>">
-                            <?php else: ?>
-                                <?= (int) $it['days_present'] ?>
-                            <?php endif; ?>
-                        </td>
-                        <td class="text-end">
-                            <?php if ($editable): ?>
-                                <input type="text" inputmode="numeric" name="deductions" class="form-control form-control-sm text-end ms-auto" style="width: 130px"
-                                       value="<?= e(number_format((float) $it['deductions'], 0, ',', '.')) ?>" form="<?= e($fid) ?>">
-                            <?php else: ?>
-                                <?= e(rupiah((float) $it['deductions'])) ?>
-                            <?php endif; ?>
-                        </td>
-                        <td class="text-end fw-semibold"><?= e(rupiah((float) $it['net_salary'])) ?></td>
-                        <td>
-                            <?php if ($editable): ?>
-                                <input type="text" name="note" class="form-control form-control-sm" maxlength="2000"
-                                       value="<?= e((string) $it['note']) ?>" placeholder="—" form="<?= e($fid) ?>">
-                            <?php else: ?>
-                                <?= e((string) $it['note']) ?>
-                            <?php endif; ?>
-                        </td>
-                        <?php if ($editable): ?>
-                            <td class="text-end text-nowrap">
-                                <button class="btn btn-sm btn-outline-primary" type="submit" form="<?= e($fid) ?>" title="Simpan" aria-label="Simpan"><i class="bi bi-check2"></i></button>
-                            </td>
-                        <?php endif; ?>
-                    </tr>
-                <?php endforeach; ?>
-                <?php if (!$items): ?>
-                    <tr><td colspan="<?= $cols ?>" class="text-center text-muted py-4">Belum ada item pada periode ini.</td></tr>
-                <?php endif; ?>
-                </tbody>
-                <tfoot class="table-light">
-                    <tr class="fw-bold">
-                        <td colspan="5" class="text-end">Total Gaji Bersih</td>
-                        <td class="text-end"><?= e(rupiah($total_net)) ?></td>
-                        <td colspan="<?= $editable ? 2 : 1 ?>"></td>
-                    </tr>
-                </tfoot>
-            </table>
+                <div class="tab-pane fade" id="tab-pay-audit" role="tabpanel" aria-labelledby="tab-pay-audit-btn">
+                    <?= ui_erp_audit_panel($period) ?>
+                </div>
+            </div>
         </div>
     </div>
 </main>

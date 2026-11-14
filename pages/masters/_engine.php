@@ -610,12 +610,17 @@ function master_list(string $key): void
     $total = (int) $st->get_result()->fetch_row()[0];
     $st->close();
 
+    $list_cols = array_values(array_filter($spec['fields'], fn ($f) => !in_array($f['type'] ?? '', ['textarea', 'money', 'blob', 'file', 'hidden'], true)));
+
     // -----------------------------------------------------------------
     // Export Grid (Excel .xlsx & PDF .pdf)
     // -----------------------------------------------------------------
     $export_format = strtolower(trim((string) ($_GET['export'] ?? '')));
     if (in_array($export_format, ['xlsx', 'pdf'], true)) {
-        $export_cols = array_values(array_filter($spec['fields'], fn ($f) => !in_array($f['type'] ?? '', ['blob', 'file', 'hidden'], true)));
+        $isPdf = $export_format === 'pdf';
+        $export_cols = $isPdf
+            ? $list_cols
+            : array_values(array_filter($spec['fields'], fn ($f) => !in_array($f['type'] ?? '', ['blob', 'file', 'hidden'], true)));
         $export_headers = array_map(fn ($f) => $f['label'], $export_cols);
 
         $lookup_maps = [];
@@ -626,7 +631,7 @@ function master_list(string $key): void
         }
 
         $sql_export = "SELECT * FROM `{$table}` WHERE {$where} ORDER BY {$order}";
-        $max_export_rows = $export_format === 'pdf' ? GRID_PDF_MAX_ROWS : null;
+        $max_export_rows = $isPdf ? GRID_PDF_MAX_ROWS : null;
 
         $row_stream = grid_query_stream(
             $sql_export,
@@ -661,7 +666,8 @@ function master_list(string $key): void
             $export_format,
             'landscape',
             $sub,
-            $total
+            $total,
+            null
         );
     }
 
@@ -710,7 +716,6 @@ function master_list(string $key): void
 
     $active = $spec['module'];
     $title  = $spec['title'];
-    $list_cols = array_values(array_filter($spec['fields'], fn ($f) => !in_array($f['type'] ?? '', ['textarea', 'money', 'blob', 'file', 'hidden'], true)));
     $query_base = $q !== '' ? 'q=' . urlencode($q) : '';
     require __DIR__ . '/../../includes/header.php';
     ?>
@@ -724,14 +729,11 @@ function master_list(string $key): void
         <?= master_tabs($key) ?>
         <div class="card shadow-sm border-0 mb-3">
             <div class="card-body py-2">
-                <form method="get" class="row g-2 align-items-center">
-                    <div class="col-auto">
+                <form method="get" class="row g-2 align-items-center erp-filter-bar">
+                    <div class="col-12 col-md-4 erp-filter-q">
                         <div class="input-group input-group-sm">
-                            <input type="text" name="q" class="form-control" placeholder="Cari kode atau nama..." value="<?= e($q) ?>" style="min-width: 220px;">
-                            <button class="btn btn-outline-secondary" type="submit"><i class="bi bi-search"></i> Cari</button>
-                            <?php if ($q !== ''): ?>
-                                <a class="btn btn-outline-danger" href="<?= e(master_base_url($spec)) ?>/index.php" title="Reset pencarian"><i class="bi bi-x-lg"></i></a>
-                            <?php endif; ?>
+                            <span class="input-group-text bg-white text-muted"><i class="bi bi-search"></i></span>
+                            <input type="text" name="q" class="form-control" placeholder="Cari kode atau nama..." value="<?= e($q) ?>">
                         </div>
                     </div>
                     <?php if ($q !== ''): ?>
@@ -739,6 +741,7 @@ function master_list(string $key): void
                             <span class="small text-muted">Menampilkan hasil untuk: <strong><?= e($q) ?></strong> (<?= $total ?> data)</span>
                         </div>
                     <?php endif; ?>
+                    <?= ui_filter_actions(master_base_url($spec) . '/index.php', $q !== '') ?>
                 </form>
             </div>
         </div>
@@ -908,92 +911,122 @@ function master_form(string $key): void
     }
     require __DIR__ . '/../../includes/header.php';
     ?>
-    <main class="col-12 col-md-9 col-lg-10 p-3 p-lg-4">
-        <?= ui_page_header(
+    <main class="p-2 p-md-3">
+        <?= ui_erp_toolbar(
+            $spec['title'],
+            'database',
             $title,
-            ['Dashboard' => 'pages/dashboard/index.php', $spec['title'] => master_base_url($spec) . '/index.php', ($id > 0 ? 'Ubah' : 'Tambah Baru') => null],
             $id > 0 ? array_values(array_filter([
-                !empty($row['code']) ? ['text' => $row['code'], 'class' => 'bg-primary-subtle text-primary border border-primary-subtle font-monospace'] : null,
-                ['text' => 'ID #' . $id, 'class' => 'bg-light text-secondary border'],
-                isset($row['is_active']) ? ['text' => !empty($row['is_active']) ? 'Aktif' : 'Nonaktif', 'class' => 'bg-' . (!empty($row['is_active']) ? 'success' : 'secondary') . '-subtle text-' . (!empty($row['is_active']) ? 'success' : 'secondary') . ' border'] : null,
+                !empty($row['code']) ? ['text' => (string) $row['code'], 'class' => 'bg-primary-subtle text-primary font-monospace'] : null,
+                'ID #' . $id,
+                isset($row['is_active']) ? ['text' => !empty($row['is_active']) ? 'Aktif' : 'Nonaktif', 'class' => !empty($row['is_active']) ? 'bg-success-subtle text-success' : 'bg-secondary-subtle text-secondary'] : null,
             ])) : [],
             [
-                ['label' => 'Batal', 'icon' => 'arrow-left', 'href' => master_base_url($spec) . '/index.php', 'class' => 'btn btn-sm btn-outline-secondary'],
-                ['label' => 'Simpan', 'icon' => 'check2', 'type' => 'submit', 'form' => 'formMasterEngine', 'class' => 'btn btn-sm btn-primary'],
+                ['label' => 'Batal', 'icon' => 'arrow-left', 'href' => master_base_url($spec) . '/index.php', 'class' => 'btn-outline-secondary'],
+                ['label' => 'Simpan', 'icon' => 'check2', 'type' => 'submit', 'form' => 'formMasterEngine', 'class' => 'btn-primary'],
             ]
         ) ?>
         <?php if ($errors): ?>
-            <div class="alert alert-danger py-2"><?php foreach ($errors as $err): ?><div><?= e($err) ?></div><?php endforeach; ?></div>
+            <div class="alert alert-danger py-2 mb-2"><?php foreach ($errors as $err): ?><div><?= e($err) ?></div><?php endforeach; ?></div>
         <?php endif; ?>
-        <div class="card shadow-sm border-0" style="max-width: 720px;">
-            <div class="card-body">
-                <form method="post" action="<?= e(master_base_url($spec)) ?>/form.php<?= $id > 0 ? '?id=' . $id : '' ?>" id="formMasterEngine" enctype="multipart/form-data">
-                    <?= csrf_field() ?>
-                    <input type="hidden" name="id" value="<?= $id ?>">
-                    <?php foreach ($spec['fields'] as $f): $col = $f['col']; $val = $row[$col] ?? null; ?>
-                        <?php if (($f['type'] ?? '') === 'hidden'): ?>
-                            <input type="hidden" name="<?= e($col) ?>" value="<?= e((string) $val) ?>">
-                            <?php continue; ?>
-                        <?php endif; ?>
-                        <?php if (($f['type'] ?? '') === 'checkbox'): ?>
-                            <div class="form-check mb-3">
-                                <input class="form-check-input" type="checkbox" id="<?= e($col) ?>" name="<?= e($col) ?>" <?= $val ? 'checked' : '' ?>>
-                                <label class="form-check-label" for="<?= e($col) ?>"><?= e($f['label']) ?></label>
-                            </div>
-                            <?php continue; ?>
-                        <?php endif; ?>
-                        <?php if (($f['type'] ?? '') === 'blob'): ?>
-                            <div class="mb-3">
-                                <label class="form-label" for="<?= e($col) ?>"><?= e($f['label']) ?></label>
-                                <input class="form-control" type="file" id="<?= e($col) ?>" name="<?= e($col) ?>" accept="image/*">
-                                <?php if ($id > 0 && !empty($val)): ?>
-                                    <div class="form-text d-flex align-items-center gap-2 mt-1">
-                                        <img src="<?= e(azure_blob_url((string) $val)) ?>" alt="" style="height:48px;width:48px;object-fit:contain" class="border rounded bg-white">
-                                        <span>Tersimpan di Azure Blob (<code><?= e((string) $val) ?></code>). Unggah ulang untuk mengganti.</span>
-                                        <a href="<?= e(azure_blob_url((string) $val)) ?>" target="_blank" class="btn btn-xs btn-outline-primary py-0 px-2">Lihat</a>
+        <form method="post" action="<?= e(master_base_url($spec)) ?>/form.php<?= $id > 0 ? '?id=' . $id : '' ?>" id="formMasterEngine" enctype="multipart/form-data">
+            <?= csrf_field() ?>
+            <input type="hidden" name="id" value="<?= $id ?>">
+            <?php foreach ($spec['fields'] as $f): $col = $f['col']; $val = $row[$col] ?? null; ?>
+                <?php if (($f['type'] ?? '') === 'hidden'): ?>
+                    <input type="hidden" name="<?= e($col) ?>" value="<?= e((string) $val) ?>">
+                <?php endif; ?>
+            <?php endforeach; ?>
+            <div class="erp-window-card">
+                <ul class="nav nav-tabs erp-sub-tabs" role="tablist">
+                    <li class="nav-item" role="presentation">
+                        <button class="nav-link active" id="tab-master-detail" data-bs-toggle="tab" data-bs-target="#pane-master-detail" type="button" role="tab">Detail</button>
+                    </li>
+                    <?php if ($id > 0): ?>
+                        <li class="nav-item" role="presentation">
+                            <button class="nav-link" id="tab-master-audit" data-bs-toggle="tab" data-bs-target="#pane-master-audit" type="button" role="tab">Audit Trail</button>
+                        </li>
+                    <?php endif; ?>
+                </ul>
+                <div class="erp-content-body tab-content">
+                    <div class="tab-pane fade show active" id="pane-master-detail" role="tabpanel">
+                        <div class="row g-3">
+                            <div class="col-lg-8">
+                                <div class="rnt-panel mb-0">
+                                    <div class="rnt-panel-header"><i class="bi bi-card-list"></i> Detail <?= e($spec['title']) ?></div>
+                                    <div class="rnt-panel-body">
+                                        <?php foreach ($spec['fields'] as $f): $col = $f['col']; $val = $row[$col] ?? null; ?>
+                                            <?php if (($f['type'] ?? '') === 'hidden') continue; ?>
+                                            <?php $ftype = $f['type'] ?? ''; ?>
+                                            <?php $isTop = in_array($ftype, ['textarea', 'blob'], true); ?>
+                                            <div class="rnt-row<?= $isTop ? ' rnt-row-top' : '' ?>">
+                                                <div class="rnt-label">
+                                                    <?= e($f['label']) ?><?php if (!empty($f['required']) && $ftype !== 'checkbox'): ?> <span class="text-danger">*</span><?php endif; ?>
+                                                </div>
+                                                <div class="rnt-field">
+                                                    <?php if ($ftype === 'checkbox'): ?>
+                                                        <div class="rnt-check-wrap">
+                                                            <div class="form-check mb-0">
+                                                                <input class="form-check-input" type="checkbox" id="<?= e($col) ?>" name="<?= e($col) ?>" <?= $val ? 'checked' : '' ?>>
+                                                                <label class="form-check-label small" for="<?= e($col) ?>"><?= e($f['label']) ?></label>
+                                                            </div>
+                                                        </div>
+                                                    <?php elseif ($ftype === 'blob'): ?>
+                                                        <input class="form-control form-control-sm" type="file" id="<?= e($col) ?>" name="<?= e($col) ?>" accept="image/*">
+                                                        <?php if ($id > 0 && !empty($val)): ?>
+                                                            <div class="form-text small d-flex align-items-center gap-2 mt-1">
+                                                                <img src="<?= e(azure_blob_url((string) $val)) ?>" alt="" style="height:40px;width:40px;object-fit:contain" class="border rounded bg-white">
+                                                                <span>Azure Blob (<code><?= e((string) $val) ?></code>)</span>
+                                                                <a href="<?= e(azure_blob_url((string) $val)) ?>" target="_blank" class="btn btn-outline-primary btn-sm py-0 px-2">Lihat</a>
+                                                            </div>
+                                                        <?php endif; ?>
+                                                    <?php elseif ($ftype === 'textarea'): ?>
+                                                        <textarea class="form-control form-control-sm rnt-ta-compact" id="<?= e($col) ?>" name="<?= e($col) ?>" rows="2" maxlength="<?= (int) ($f['max'] ?? 2000) ?>"><?= e((string) $val) ?></textarea>
+                                                    <?php elseif ($ftype === 'select'): ?>
+                                                        <select class="form-select form-select-sm ts-select" id="<?= e($col) ?>" name="<?= e($col) ?>"
+                                                            data-ts-placeholder="— pilih —"
+                                                            <?= isset($f['child']) ? 'data-child="' . e($f['child']) . '"' : '' ?>
+                                                            <?php if (isset($f['endpoint'])): ?>
+                                                                data-endpoint="<?= e(APP_URL . '/' . $f['endpoint']) ?>" data-param="<?= e($f['param']) ?>" data-ts-url="<?= e(APP_URL . '/' . $f['endpoint']) ?>" data-ts-parent="#<?= e($f['param']) ?>" data-ts-param="<?= e($f['param']) ?>" data-ts-limit="50"
+                                                            <?php elseif (($f['source'] ?? '') === 'employees'): ?>
+                                                                data-ts-url="<?= e(APP_URL . '/pages/employees/options.php?status=all') ?>" data-ts-limit="50"<?= $cid ? ' data-ts-company="' . (int) $cid . '"' : '' ?>
+                                                            <?php endif; ?>>
+                                                            <option value="">— pilih —</option>
+                                                            <?php foreach ($options[$col] as $oid => $oname):
+                                                                $m = $option_meta[$col][(int) $oid] ?? [];
+                                                                $attrs = '';
+                                                                foreach (['country_id' => 'data-country-id', 'country_name' => 'data-country-name', 'province_id' => 'data-province-id', 'province_name' => 'data-province-name', 'city_id' => 'data-city-id', 'city_name' => 'data-city-name'] as $mk => $attrName) {
+                                                                    if (!empty($m[$mk])) {
+                                                                        $attrs .= ' ' . $attrName . '="' . e((string) $m[$mk]) . '"';
+                                                                    }
+                                                                }
+                                                            ?>
+                                                                <option value="<?= (int) $oid ?>"<?= $attrs ?> <?= (int) $val === (int) $oid ? 'selected' : '' ?>><?= e($oname) ?></option>
+                                                            <?php endforeach; ?>
+                                                        </select>
+                                                    <?php elseif ($ftype === 'money' || $ftype === 'number'): ?>
+                                                        <input class="form-control form-control-sm" type="number" step="<?= $ftype === 'money' ? '0.01' : '1' ?>" id="<?= e($col) ?>" name="<?= e($col) ?>"
+                                                            value="<?= e((string) ($val ?? '0')) ?>" <?= !empty($f['required']) ? 'required' : '' ?>>
+                                                    <?php else: ?>
+                                                        <input class="form-control form-control-sm<?= !empty($f['upper']) ? ' text-uppercase' : '' ?>" id="<?= e($col) ?>" name="<?= e($col) ?>"
+                                                            maxlength="<?= (int) ($f['max'] ?? 255) ?>" value="<?= e((string) $val) ?>" <?= !empty($f['required']) ? 'required' : '' ?>>
+                                                    <?php endif; ?>
+                                                </div>
+                                            </div>
+                                        <?php endforeach; ?>
                                     </div>
-                                <?php endif; ?>
+                                </div>
                             </div>
-                            <?php continue; ?>
-                        <?php endif; ?>
-                        <div class="mb-3">
-                            <label class="form-label" for="<?= e($col) ?>"><?= e($f['label']) ?><?php if (!empty($f['required'])): ?> <span class="text-danger">*</span><?php endif; ?></label>
-                            <?php if (($f['type'] ?? '') === 'textarea'): ?>
-                                <textarea class="form-control" id="<?= e($col) ?>" name="<?= e($col) ?>" rows="2" maxlength="<?= (int) ($f['max'] ?? 2000) ?>"><?= e((string) $val) ?></textarea>
-                            <?php elseif (($f['type'] ?? '') === 'select'): ?>
-                                <select class="form-select ts-select" id="<?= e($col) ?>" name="<?= e($col) ?>"
-                                    data-ts-placeholder="— pilih —"
-                                    <?= isset($f['child']) ? 'data-child="' . e($f['child']) . '"' : '' ?>
-                                    <?php if (isset($f['endpoint'])): ?>
-                                        data-endpoint="<?= e(APP_URL . '/' . $f['endpoint']) ?>" data-param="<?= e($f['param']) ?>" data-ts-url="<?= e(APP_URL . '/' . $f['endpoint']) ?>" data-ts-parent="#<?= e($f['param']) ?>" data-ts-param="<?= e($f['param']) ?>" data-ts-limit="50"
-                                    <?php elseif (($f['source'] ?? '') === 'employees'): ?>
-                                        data-ts-url="<?= e(APP_URL . '/pages/employees/options.php?status=all') ?>" data-ts-limit="50"<?= $cid ? ' data-ts-company="' . (int) $cid . '"' : '' ?>
-                                    <?php endif; ?>>
-                                    <option value="">— pilih —</option>
-                                    <?php foreach ($options[$col] as $oid => $oname):
-                                        $m = $option_meta[$col][(int) $oid] ?? [];
-                                        $attrs = '';
-                                        foreach (['country_id' => 'data-country-id', 'country_name' => 'data-country-name', 'province_id' => 'data-province-id', 'province_name' => 'data-province-name', 'city_id' => 'data-city-id', 'city_name' => 'data-city-name'] as $mk => $attrName) {
-                                            if (!empty($m[$mk])) {
-                                                $attrs .= ' ' . $attrName . '="' . e((string) $m[$mk]) . '"';
-                                            }
-                                        }
-                                    ?>
-                                        <option value="<?= (int) $oid ?>"<?= $attrs ?> <?= (int) $val === (int) $oid ? 'selected' : '' ?>><?= e($oname) ?></option>
-                                    <?php endforeach; ?>
-                                </select>
-                            <?php elseif (($f['type'] ?? '') === 'money' || ($f['type'] ?? '') === 'number'): ?>
-                                <input class="form-control" type="number" step="<?= ($f['type'] ?? '') === 'money' ? '0.01' : '1' ?>" id="<?= e($col) ?>" name="<?= e($col) ?>"
-                                    value="<?= e((string) ($val ?? '0')) ?>" <?= !empty($f['required']) ? 'required' : '' ?>>
-                            <?php else: ?>
-                                <input class="form-control<?= !empty($f['upper']) ? ' text-uppercase' : '' ?>" id="<?= e($col) ?>" name="<?= e($col) ?>"
-                                    maxlength="<?= (int) ($f['max'] ?? 255) ?>" value="<?= e((string) $val) ?>" <?= !empty($f['required']) ? 'required' : '' ?>>
-                            <?php endif; ?>
                         </div>
-                    <?php endforeach; ?>
-                </form>
+                    </div>
+                    <?php if ($id > 0): ?>
+                        <div class="tab-pane fade" id="pane-master-audit" role="tabpanel">
+                            <?= ui_erp_audit_panel($row) ?>
+                        </div>
+                    <?php endif; ?>
+                </div>
             </div>
-        </div>
+        </form>
     </main>
     <script>
     // Dropdown bertingkat (Tom Select v2.3.1): isi ulang select anak dari endpoint JSON & sinkron cucu + auto-sync induk ke atas.

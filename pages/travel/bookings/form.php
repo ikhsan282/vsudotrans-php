@@ -710,7 +710,7 @@ require __DIR__ . '/../../../includes/header.php';
                     </div>
                     <div class="mb-3">
                         <label class="form-label small fw-semibold">No. Telepon / WhatsApp</label>
-                        <input type="text" class="form-control" id="qp_phone" placeholder="08xxxxxxxxxx">
+                        <input type="text" class="form-control" id="qp_phone" placeholder="62812xxxxxxxx">
                     </div>
                     <div class="mb-3">
                         <label class="form-label small fw-semibold">Email (Opsional)</label>

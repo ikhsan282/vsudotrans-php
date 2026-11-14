@@ -41,15 +41,15 @@ require __DIR__ . '/../../includes/header.php';
     <div class="card shadow-sm border-0 mb-3">
         <div class="card-body">
             <form class="row g-2 align-items-end" method="get">
-                <div class="col-6 col-lg-3">
+                <div class="col-6 col-lg-2">
                     <label class="form-label small mb-1">Dari Tanggal</label>
                     <input type="date" class="form-control form-control-sm" name="from" value="<?= e($from) ?>">
                 </div>
-                <div class="col-6 col-lg-3">
+                <div class="col-6 col-lg-2">
                     <label class="form-label small mb-1">Sampai Tanggal</label>
                     <input type="date" class="form-control form-control-sm" name="to" value="<?= e($to) ?>">
                 </div>
-                <div class="col-6 col-lg-3">
+                <div class="col-6 col-lg-4">
                     <label class="form-label small mb-1">Karyawan</label>
                     <select class="form-select form-select-sm ts-select" name="employee_id"
                         data-ts-url="<?= e(APP_URL) ?>/pages/employees/options.php"
@@ -71,9 +71,7 @@ require __DIR__ . '/../../includes/header.php';
                         <?php endforeach; ?>
                     </select>
                 </div>
-                <div class="col-12 col-lg-1">
-                    <button type="submit" class="btn btn-sm btn-primary w-100">Filter</button>
-                </div>
+                <?= ui_filter_actions(APP_URL . '/pages/attendance/index.php', ($from !== date('Y-m-01') || $to !== date('Y-m-t') || $emp_filter > 0 || $status !== '')) ?>
             </form>
         </div>
     </div>

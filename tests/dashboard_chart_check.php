@@ -71,14 +71,14 @@ try {
     $c->query("INSERT IGNORE INTO provinces (id, country_id, code, name) VALUES (1, 1, 'BANTEN', 'Banten')");
     $c->query("INSERT IGNORE INTO cities (id, country_id, province_id, code, name) VALUES (1, 1, 1, 'TNG', 'Tangerang')");
     $c->query("INSERT IGNORE INTO districts (id, country_id, province_id, city_id, code, name) VALUES (1, 1, 1, 1, 'CBT', 'Cibodas')");
-    $c->query("INSERT INTO companies (id, group_id, code, name, country_code, is_active)
-               SELECT 9991, 1, 'CHART-B', 'Perusahaan Chart B', '+62', 1
+    $c->query("INSERT INTO companies (id, group_id, code, name, is_active)
+               SELECT 9991, 1, 'CHART-B', 'Perusahaan Chart B', 1
                WHERE NOT EXISTS (SELECT 1 FROM companies WHERE id = 9991)");
     $c->query("INSERT INTO branches (id, company_id, code, name)
                SELECT 99911, 9991, 'CHART-BR', 'Cabang Chart'
                WHERE NOT EXISTS (SELECT 1 FROM branches WHERE id = 99911)");
     $c->query("INSERT INTO passengers (id, company_id, code, name, phone_number)
-               SELECT 9991, 9991, 'CHART-PAX', 'Pax Chart', '0800'
+               SELECT 9991, 9991, 'CHART-PAX', 'Pax Chart', '62800'
                WHERE NOT EXISTS (SELECT 1 FROM passengers WHERE id = 9991)");
     $c->query("INSERT INTO travel_ticket_bookings
         (company_id, branch_id, document_number, date, time, pickup_point_district_id, delivery_point_district_id,

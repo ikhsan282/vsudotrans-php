@@ -94,91 +94,140 @@ $active = 'finance';
 $title  = ($id > 0 ? 'Ubah' : 'Tambah') . ' Akun Kas/Bank';
 require __DIR__ . '/../../../includes/header.php';
 ?>
-<main class="col-12 col-md-9 col-lg-10 p-4">
-    <div class="d-flex justify-content-between align-items-center mb-3">
-        <h4 class="fw-bold mb-0"><?= e($title) ?></h4>
-        <div class="d-flex gap-2">
-            <a class="btn btn-outline-secondary btn-sm" href="index.php">
-                <i class="bi bi-arrow-left me-1"></i>Batal
-            </a>
-            <button type="submit" form="formCashAccount" class="btn btn-primary btn-sm px-3">
-                <i class="bi bi-check2 me-1"></i>Simpan
-            </button>
-        </div>
-    </div>
+<main class="p-2 p-md-3">
+    <?= ui_erp_toolbar(
+        'Akun Kas & Bank',
+        'bank',
+        $title,
+        $id > 0 ? array_values(array_filter([
+            $form['code'] ?: null,
+            ['text' => $form['is_active'] ? 'Aktif' : 'Nonaktif', 'class' => $form['is_active'] ? 'bg-success-subtle text-success' : 'bg-secondary-subtle text-secondary'],
+        ])) : [],
+        [
+            ['label' => 'Batal', 'icon' => 'arrow-left', 'href' => 'index.php', 'class' => 'btn-outline-secondary'],
+            ['label' => 'Simpan', 'icon' => 'check2', 'type' => 'submit', 'form' => 'formCashAccount', 'class' => 'btn-primary'],
+        ]
+    ) ?>
     <?php if ($errors): ?>
-        <div class="alert alert-danger py-2"><?php foreach ($errors as $err): ?><div><?= e($err) ?></div><?php endforeach; ?></div>
+        <div class="alert alert-danger py-2 mb-2"><?php foreach ($errors as $err): ?><div><?= e($err) ?></div><?php endforeach; ?></div>
     <?php endif; ?>
-    <div class="card shadow-sm border-0" style="max-width: 720px;">
-        <div class="card-body">
-            <form method="post" action="form.php<?= $id > 0 ? '?id=' . $id : '' ?>" id="formCashAccount">
-                <?= csrf_field() ?>
-                <input type="hidden" name="id" value="<?= $id ?>">
-                <div class="row g-3">
-                    <div class="col-md-4 mb-3">
-                        <label class="form-label" for="code">Kode <span class="text-danger">*</span></label>
-                        <input class="form-control text-uppercase" id="code" name="code" maxlength="15"
-                               value="<?= e($form['code']) ?>" required>
-                    </div>
-                    <div class="col-md-8 mb-3">
-                        <label class="form-label" for="name">Nama <span class="text-danger">*</span></label>
-                        <input class="form-control" id="name" name="name" maxlength="255" value="<?= e($form['name']) ?>" required>
-                    </div>
-                </div>
-                <div class="row g-3">
-                    <div class="col-md-4 mb-3">
-                        <label class="form-label" for="type">Tipe <span class="text-danger">*</span></label>
-                        <select class="form-select" id="type" name="type" required>
-                            <?php foreach (cash_types() as $k => $lbl): ?>
-                                <option value="<?= e($k) ?>"<?= $form['type'] === $k ? ' selected' : '' ?>><?= e($lbl) ?></option>
-                            <?php endforeach; ?>
-                        </select>
-                    </div>
-                    <div class="col-md-4 mb-3">
-                        <label class="form-label" for="opening_balance">Saldo Awal</label>
-                        <input class="form-control" type="number" step="0.01" id="opening_balance" name="opening_balance"
-                               value="<?= e($form['opening_balance']) ?>">
-                    </div>
-                    <div class="col-md-4 mb-3">
-                        <div class="form-check mt-4">
-                            <input class="form-check-input" type="checkbox" id="is_active" name="is_active" <?= $form['is_active'] ? 'checked' : '' ?>>
-                            <label class="form-check-label" for="is_active">Aktif</label>
+    <form method="post" action="form.php<?= $id > 0 ? '?id=' . $id : '' ?>" id="formCashAccount">
+        <?= csrf_field() ?>
+        <input type="hidden" name="id" value="<?= $id ?>">
+        <div class="erp-window-card">
+            <ul class="nav nav-tabs erp-sub-tabs" role="tablist">
+                <li class="nav-item" role="presentation">
+                    <button class="nav-link active" id="tab-ca-detail" data-bs-toggle="tab" data-bs-target="#pane-ca-detail" type="button" role="tab">Detail</button>
+                </li>
+                <?php if ($id > 0): ?>
+                    <li class="nav-item" role="presentation">
+                        <button class="nav-link" id="tab-ca-audit" data-bs-toggle="tab" data-bs-target="#pane-ca-audit" type="button" role="tab">Audit Trail</button>
+                    </li>
+                <?php endif; ?>
+            </ul>
+            <div class="erp-content-body tab-content">
+                <div class="tab-pane fade show active" id="pane-ca-detail" role="tabpanel">
+                    <div class="row g-3">
+                        <div class="col-lg-6">
+                            <div class="rnt-panel h-100 mb-0">
+                                <div class="rnt-panel-header"><i class="bi bi-wallet"></i> Informasi Akun</div>
+                                <div class="rnt-panel-body">
+                                    <div class="rnt-row">
+                                        <div class="rnt-label">Kode <span class="text-danger">*</span></div>
+                                        <div class="rnt-field">
+                                            <input class="form-control form-control-sm text-uppercase font-monospace" id="code" name="code" maxlength="15"
+                                                   value="<?= e($form['code']) ?>" required>
+                                        </div>
+                                    </div>
+                                    <div class="rnt-row">
+                                        <div class="rnt-label">Nama <span class="text-danger">*</span></div>
+                                        <div class="rnt-field">
+                                            <input class="form-control form-control-sm" id="name" name="name" maxlength="255" value="<?= e($form['name']) ?>" required>
+                                        </div>
+                                    </div>
+                                    <div class="rnt-row">
+                                        <div class="rnt-label">Tipe <span class="text-danger">*</span></div>
+                                        <div class="rnt-field">
+                                            <select class="form-select form-select-sm" id="type" name="type" required>
+                                                <?php foreach (cash_types() as $k => $lbl): ?>
+                                                    <option value="<?= e($k) ?>"<?= $form['type'] === $k ? ' selected' : '' ?>><?= e($lbl) ?></option>
+                                                <?php endforeach; ?>
+                                            </select>
+                                        </div>
+                                    </div>
+                                    <div class="rnt-row">
+                                        <div class="rnt-label">Saldo Awal</div>
+                                        <div class="rnt-field">
+                                            <input class="form-control form-control-sm" type="number" step="0.01" id="opening_balance" name="opening_balance"
+                                                   value="<?= e($form['opening_balance']) ?>">
+                                        </div>
+                                    </div>
+                                    <div class="rnt-row">
+                                        <div class="rnt-label">Status</div>
+                                        <div class="rnt-field">
+                                            <div class="rnt-check-wrap">
+                                                <div class="form-check mb-0">
+                                                    <input class="form-check-input" type="checkbox" id="is_active" name="is_active" <?= $form['is_active'] ? 'checked' : '' ?>>
+                                                    <label class="form-check-label small" for="is_active">Aktif</label>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="col-lg-6">
+                            <div class="rnt-panel h-100 mb-0">
+                                <div class="rnt-panel-header"><i class="bi bi-bank2"></i> Rekening Bank &amp; Catatan</div>
+                                <div class="rnt-panel-body">
+                                    <div class="rnt-row rnt-row-top">
+                                        <div class="rnt-label">Nama Bank</div>
+                                        <div class="rnt-field">
+                                            <?php
+                                            $bank_list = master_bank_options();
+                                            $cur_bank = (string) ($form['bank_name'] ?? '');
+                                            $matched_bank = false;
+                                            ?>
+                                            <select class="form-select form-select-sm ts-select" id="bank_name" name="bank_name">
+                                                <option value="">— Pilih Bank (Khusus Akun Bank) —</option>
+                                                <?php foreach ($bank_list as $bk):
+                                                    $is_sel = ($cur_bank === $bk['name'] || $cur_bank === $bk['code'] || $cur_bank === ($bk['code'] . ' — ' . $bk['name']));
+                                                    if ($is_sel) $matched_bank = true;
+                                                ?>
+                                                    <option value="<?= e($bk['name']) ?>" <?= $is_sel ? 'selected' : '' ?>><?= e($bk['code'] . ' — ' . $bk['name']) ?></option>
+                                                <?php endforeach; ?>
+                                                <?php if ($cur_bank !== '' && !$matched_bank): ?>
+                                                    <option value="<?= e($cur_bank) ?>" selected><?= e($cur_bank) ?> (Bank Lain)</option>
+                                                <?php endif; ?>
+                                            </select>
+                                            <div class="form-text small">Pilih bank jika tipe akun adalah Bank.</div>
+                                        </div>
+                                    </div>
+                                    <div class="rnt-row">
+                                        <div class="rnt-label">Nomor Rekening</div>
+                                        <div class="rnt-field">
+                                            <input class="form-control form-control-sm font-monospace" id="account_number" name="account_number" maxlength="50" value="<?= e($form['account_number']) ?>">
+                                        </div>
+                                    </div>
+                                    <div class="rnt-row rnt-row-top">
+                                        <div class="rnt-label">Catatan</div>
+                                        <div class="rnt-field">
+                                            <textarea class="form-control form-control-sm rnt-ta-compact" id="note" name="note" rows="2" maxlength="2000"><?= e($form['note']) ?></textarea>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
                         </div>
                     </div>
                 </div>
-                <div class="row g-3">
-                    <div class="col-md-6 mb-3">
-                        <label class="form-label" for="bank_name">Nama Bank</label>
-                        <?php
-                        $bank_list = master_bank_options();
-                        $cur_bank = (string) ($form['bank_name'] ?? '');
-                        $matched_bank = false;
-                        ?>
-                        <select class="form-select ts-select" id="bank_name" name="bank_name">
-                            <option value="">— Pilih Bank (Khusus Akun Bank) —</option>
-                            <?php foreach ($bank_list as $bk):
-                                $is_sel = ($cur_bank === $bk['name'] || $cur_bank === $bk['code'] || $cur_bank === ($bk['code'] . ' — ' . $bk['name']));
-                                if ($is_sel) $matched_bank = true;
-                            ?>
-                                <option value="<?= e($bk['name']) ?>" <?= $is_sel ? 'selected' : '' ?>><?= e($bk['code'] . ' — ' . $bk['name']) ?></option>
-                            <?php endforeach; ?>
-                            <?php if ($cur_bank !== '' && !$matched_bank): ?>
-                                <option value="<?= e($cur_bank) ?>" selected><?= e($cur_bank) ?> (Bank Lain)</option>
-                            <?php endif; ?>
-                        </select>
-                        <div class="form-text small">Pilih bank jika tipe akun adalah Bank.</div>
+                <?php if ($id > 0): ?>
+                    <div class="tab-pane fade" id="pane-ca-audit" role="tabpanel">
+                        <?= ui_erp_audit_panel($row) ?>
                     </div>
-                    <div class="col-md-6 mb-3">
-                        <label class="form-label" for="account_number">Nomor Rekening</label>
-                        <input class="form-control" id="account_number" name="account_number" maxlength="50" value="<?= e($form['account_number']) ?>">
-                    </div>
-                </div>
-                <div class="mb-3">
-                    <label class="form-label" for="note">Catatan</label>
-                    <textarea class="form-control" id="note" name="note" rows="2" maxlength="2000"><?= e($form['note']) ?></textarea>
-                </div>
-            </form>
+                <?php endif; ?>
+            </div>
         </div>
-    </div>
+    </form>
 </main>
 <?php require __DIR__ . '/../../../includes/footer.php'; ?>

@@ -29,7 +29,6 @@ $cleanup = static function () use ($c): void {
     $c->query("DELETE FROM model_units WHERE id = 2 AND code = 'DRCHK-MDL'");
     $c->query("DELETE FROM brand_vehicles WHERE id = 2 AND code = 'DRCHK-BRAND'");
     $c->query("DELETE FROM category_vehicles WHERE id = 2 AND code = 'DRCHK-CAT'");
-    $c->query("DELETE FROM type_engines WHERE id = 2 AND code = 'DRCHK-ENG'");
     $c->query("DELETE FROM companies WHERE id = 990 OR code = 'DRCHK-A'");
 };
 $cleanup();
@@ -37,19 +36,18 @@ $cleanup();
 $c->query("INSERT IGNORE INTO brand_vehicles (id, company_id, code, name) VALUES (2, 1, 'DRCHK-BRAND', 'Merek Drchk')");
 $c->query("INSERT IGNORE INTO category_vehicles (id, company_id, code, name) VALUES (2, 1, 'DRCHK-CAT', 'Kategori Drchk')");
 $c->query("INSERT IGNORE INTO model_units (id, company_id, brand_id, code, name) VALUES (2, 1, 2, 'DRCHK-MDL', 'Model Drchk')");
-$c->query("INSERT IGNORE INTO type_engines (id, company_id, code, name) VALUES (2, 1, 'DRCHK-ENG', 'Mesin Drchk')");
 
 // Perusahaan lain (990) untuk uji scoping.
-$c->query("INSERT INTO companies (id, group_id, code, name, country_code, is_active)
-           VALUES (990, 1, 'DRCHK-A', 'Perusahaan Drchk A', '+62', 1)");
+$c->query("INSERT INTO companies (id, group_id, code, name, is_active)
+           VALUES (990, 1, 'DRCHK-A', 'Perusahaan Drchk A', 1)");
 $c->query("INSERT INTO branches (id, company_id, code, name) VALUES (990000, 990, 'DRCHK-BR', 'Cabang Drchk')");
-$c->query("INSERT INTO passengers (id, company_id, code, name, phone_number) VALUES (990000, 990, 'DRCHK-PAX', 'Pax Drchk', '0800')");
+$c->query("INSERT INTO passengers (id, company_id, code, name, phone_number) VALUES (990000, 990, 'DRCHK-PAX', 'Pax Drchk', '62800')");
 
 // Kendaraan company 1 + company 990.
 $veh = static function (int $id, int $cid, string $no) use ($c): void {
-    $c->query("INSERT INTO vehicles (id, company_id, brand_id, model_unit_id, type_engine_id, category_vehicle_id,
+    $c->query("INSERT INTO vehicles (id, company_id, brand_id, model_unit_id, category_vehicle_id,
         frame_number, machine_number, seat, production_year, vehicle_color, vehicle_number, ownership, is_active)
-        VALUES ($id, $cid, 2, 2, 2, 2, 'DRCHK-F$id', 'DRCHK-M$id', 12, 2021, 'Putih', '$no', 'milik', 1)");
+        VALUES ($id, $cid, 2, 2, 2, 'DRCHK-F$id', 'DRCHK-M$id', 12, 2021, 'Putih', '$no', 'milik', 1)");
 };
 $veh(990000, 1, 'D 1 DRCHK');
 $veh(990001, 990, 'D 2 DRCHK');

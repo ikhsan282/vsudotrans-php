@@ -22,18 +22,8 @@ if (!defined('BOT_RATE_PER_MIN')) define('BOT_RATE_PER_MIN', 60);  // per nomor 
  */
 function bot_normalize_phone(string $raw): ?string
 {
-    $raw = preg_replace('/@.*$/', '', trim($raw));
-    $d   = preg_replace('/\D+/', '', (string) $raw);
-    if ($d === '' || $d === null) return null;
-    if (str_starts_with($d, '00')) {
-        $d = substr($d, 2);
-    }
-    if (str_starts_with($d, '0')) {
-        $d = '62' . substr($d, 1);
-    } elseif (str_starts_with($d, '8')) {
-        $d = '62' . $d;
-    }
-    if (!preg_match('/^628\d{6,12}$/', $d)) {
+    $d = normalize_phone_62($raw);
+    if ($d === null || !preg_match('/^628\d{6,12}$/', $d)) {
         return null;
     }
     return $d;
@@ -380,7 +370,6 @@ function bot_ensure_passenger(mysqli $db, int $companyId, string $canonicalPhone
     }
 
     $cleanName = trim($name) !== '' ? mb_substr(trim($name), 0, 255) : ('Pelanggan WA ' . substr($canonicalPhone, -4));
-    $localPhone = '0' . substr($canonicalPhone, 2);
 
     for ($i = 0; $i < 10; $i++) {
         $code = 'WA-' . strtoupper( substr(bin2hex(random_bytes(4)), 0, 7) );
@@ -391,10 +380,10 @@ function bot_ensure_passenger(mysqli $db, int $companyId, string $canonicalPhone
         $st->close();
         if (!$exists) {
             $ins = $db->prepare(
-                "INSERT INTO passengers (company_id, code, name, country_code, phone_number, note, created_user)
-                 VALUES (?, ?, ?, '+62', ?, 'Auto-registered via WhatsApp Bot Hermes', 'hermes-bot')"
+                "INSERT INTO passengers (company_id, code, name, phone_number, note, created_user)
+                 VALUES (?, ?, ?, ?, 'Auto-registered via WhatsApp Bot Hermes', 'hermes-bot')"
             );
-            $ins->bind_param('isss', $companyId, $code, $cleanName, $localPhone);
+            $ins->bind_param('isss', $companyId, $code, $cleanName, $canonicalPhone);
             $ins->execute();
             $id = (int) $ins->insert_id;
             $ins->close();
@@ -403,7 +392,7 @@ function bot_ensure_passenger(mysqli $db, int $companyId, string $canonicalPhone
                 'id'           => $id,
                 'code'         => $code,
                 'name'         => $cleanName,
-                'phone_number' => $localPhone,
+                'phone_number' => $canonicalPhone,
                 'email'        => null,
             ];
         }

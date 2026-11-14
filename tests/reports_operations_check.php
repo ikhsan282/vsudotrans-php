@@ -36,21 +36,20 @@ $c->query("INSERT IGNORE INTO districts (id, country_id, province_id, city_id, c
 $c->query("INSERT IGNORE INTO brand_vehicles (id, company_id, code, name) VALUES (1, 1, 'OCHK-BRAND', 'Merek Ochk')");
 $c->query("INSERT IGNORE INTO category_vehicles (id, company_id, code, name) VALUES (1, 1, 'OCHK-CAT', 'Kategori Ochk')");
 $c->query("INSERT IGNORE INTO model_units (id, company_id, brand_id, code, name) VALUES (1, 1, 1, 'OCHK-MDL', 'Model Ochk')");
-$c->query("INSERT IGNORE INTO type_engines (id, company_id, code, name) VALUES (1, 1, 'OCHK-ENG', 'Mesin Ochk')");
 
 // Perusahaan lain untuk uji scoping.
-$c->query("INSERT INTO companies (id, group_id, code, name, country_code, is_active)
-           VALUES (992, 1, 'OCHK-B', 'Perusahaan Ochk B', '+62', 1)");
+$c->query("INSERT INTO companies (id, group_id, code, name, is_active)
+           VALUES (992, 1, 'OCHK-B', 'Perusahaan Ochk B', 1)");
 $c->query("INSERT INTO branches (id, company_id, code, name) VALUES (990010, 992, 'OCHK-BR', 'Cabang Ochk')");
-$c->query("INSERT INTO passengers (id, company_id, code, name, phone_number) VALUES (990010, 992, 'OCHK-PAX', 'Pax Ochk', '0800')");
+$c->query("INSERT INTO passengers (id, company_id, code, name, phone_number) VALUES (990010, 992, 'OCHK-PAX', 'Pax Ochk', '62800')");
 // Penumpang milik perusahaan 1 (target FK passenger_id pada booking ops di bawah).
-$c->query("INSERT INTO passengers (id, company_id, code, name, phone_number) VALUES (991, 1, 'OCHK-PAX1', 'Pax Ochk 1', '0801')");
+$c->query("INSERT INTO passengers (id, company_id, code, name, phone_number) VALUES (991, 1, 'OCHK-PAX1', 'Pax Ochk 1', '62801')");
 
 // Dua kendaraan: satu dipakai 2 tugas (1 selesai, 1 berjalan), satu menganggur.
 $veh = static function (int $id, string $no) use ($c): void {
-    $c->query("INSERT INTO vehicles (id, company_id, brand_id, model_unit_id, type_engine_id, category_vehicle_id,
+    $c->query("INSERT INTO vehicles (id, company_id, brand_id, model_unit_id, category_vehicle_id,
         frame_number, machine_number, seat, production_year, vehicle_color, vehicle_number, ownership, is_active)
-        VALUES ($id, 1, 1, 1, 1, 1, 'OCHK-F$id', 'OCHK-M$id', 12, 2020, 'Putih', '$no', 'milik', 1)");
+        VALUES ($id, 1, 1, 1, 1, 'OCHK-F$id', 'OCHK-M$id', 12, 2020, 'Putih', '$no', 'milik', 1)");
 };
 $veh(990010, 'B 1 OCHK');
 $veh(990011, 'B 2 OCHK');

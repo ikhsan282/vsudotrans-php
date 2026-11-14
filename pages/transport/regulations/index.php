@@ -180,7 +180,7 @@ require __DIR__ . '/../../../includes/header.php';
     <!-- Filter -->
     <div class="card shadow-sm border-0 mb-3">
         <div class="card-body py-2 px-3">
-            <form method="get" class="row g-2 align-items-center">
+            <form method="get" class="row g-2 align-items-center erp-filter-bar">
                 <div class="col-12 col-md-4">
                     <div class="input-group input-group-sm">
                         <span class="input-group-text bg-white text-muted"><i class="bi bi-search"></i></span>
@@ -202,16 +202,7 @@ require __DIR__ . '/../../../includes/header.php';
                         <?php endforeach; ?>
                     </select>
                 </div>
-                <div class="col-auto d-flex gap-1 ms-auto">
-                    <button type="submit" class="btn btn-sm btn-primary">
-                        <i class="bi bi-funnel-fill me-1"></i>Filter
-                    </button>
-                    <?php if ($has_active_filter): ?>
-                        <a href="<?= e(APP_URL) ?>/pages/transport/regulations/index.php" class="btn btn-sm btn-outline-danger" title="Reset filter">
-                            <i class="bi bi-x-lg"></i>
-                        </a>
-                    <?php endif; ?>
-                </div>
+                <?= ui_filter_actions(APP_URL . '/pages/transport/regulations/index.php', $has_active_filter) ?>
             </form>
         </div>
     </div>
@@ -222,12 +213,12 @@ require __DIR__ . '/../../../includes/header.php';
             <table class="table table-hover mb-0 align-middle">
                 <thead class="table-light">
                     <tr>
-                        <th class="text-center" style="width: 52px;">No</th>
+                        <th class="text-center" style="width: 52px;">#</th>
                         <th>Perusahaan</th>
                         <th>Kategori Kendaraan</th>
                         <th class="text-center">Trip</th>
-                        <th>Berlaku</th>
-                        <th>Catatan / Rincian Komisi &amp; Premi</th>
+                        <th>Masa Berlaku</th>
+                        <th>Rincian Komisi &amp; Premi</th>
                         <th class="text-end">Aksi</th>
                     </tr>
                 </thead>
@@ -240,7 +231,6 @@ require __DIR__ . '/../../../includes/header.php';
                         <td class="text-center text-muted small"><?= number_format($p['offset'] + $idx + 1, 0, ',', '.') ?></td>
                         <td>
                             <span class="badge bg-light text-dark border fw-semibold"><?= e($r['company_code']) ?></span>
-                            <div class="small text-muted"><?= e($r['company_name']) ?></div>
                         </td>
                         <td>
                             <a class="fw-semibold text-decoration-none" href="<?= e(APP_URL) ?>/pages/transport/regulations/form.php?id=<?= $rid ?>">
@@ -256,9 +246,6 @@ require __DIR__ . '/../../../includes/header.php';
                             <?= !empty($r['end_date']) ? date('d-M-Y', strtotime($r['end_date'])) : '-' ?>
                         </td>
                         <td>
-                            <?php if (!empty($r['note'])): ?>
-                                <div class="fw-semibold small mb-1"><?= e((string) $r['note']) ?></div>
-                            <?php endif; ?>
                             <?php if ($dets): ?>
                                 <div class="d-flex flex-wrap gap-1">
                                     <?php foreach ($dets as $d):
@@ -270,11 +257,13 @@ require __DIR__ . '/../../../includes/header.php';
                                             ? 'bg-warning-subtle text-dark border'
                                             : 'bg-light text-secondary border';
                                     ?>
-                                        <span class="badge <?= $bCls ?> fw-normal">
+                                        <span class="badge reg-detail-badge <?= $bCls ?> fw-normal">
                                             <strong><?= e($d['employee_type']) ?>:</strong> <?= e($valTxt) ?>
                                         </span>
                                     <?php endforeach; ?>
                                 </div>
+                            <?php else: ?>
+                                <span class="text-muted small">-</span>
                             <?php endif; ?>
                         </td>
                         <td class="text-end text-nowrap">

@@ -181,7 +181,7 @@ function employee_map_input(array $post): array
         'code'             => trim((string) ($post['code'] ?? '')),
         'name'             => trim((string) ($post['name'] ?? '')),
         'email'            => $str('email'),
-        'phone_number'     => $str('phone_number'),
+        'phone_number'     => normalize_phone_62((string) ($post['phone_number'] ?? '')),
         'join_date'        => $dates['join_date'] === '' || $dates['join_date'] === false ? '' : $dates['join_date'],
         'resignation_date' => $dates['resignation_date'] === '' || $dates['resignation_date'] === false ? null : $dates['resignation_date'],
         'job_title'        => $str('job_title'),
@@ -262,6 +262,9 @@ function employee_validate(array $mapped): array
     }
     if ($mapped['data']['email'] !== null && !filter_var($mapped['data']['email'], FILTER_VALIDATE_EMAIL)) {
         $errors[] = 'Format email tidak valid.';
+    }
+    if ($mapped['data']['phone_number'] !== null && strlen($mapped['data']['phone_number']) > 20) {
+        $errors[] = 'No. Telepon maksimal 20 digit (format 62...).';
     }
     return $errors;
 }

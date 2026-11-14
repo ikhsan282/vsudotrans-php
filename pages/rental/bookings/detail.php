@@ -1168,7 +1168,7 @@ require __DIR__ . '/../../../includes/header.php';
                 <div class="row g-2 mb-3">
                     <div class="col-7">
                         <label class="form-label">No. HP / WhatsApp</label>
-                        <input type="text" class="form-control" name="phone_number" id="qpPhone" maxlength="50" placeholder="0812xxxxxxxx">
+                        <input type="text" class="form-control" name="phone_number" id="qpPhone" maxlength="50" placeholder="62812xxxxxxxx">
                     </div>
                     <div class="col-5">
                         <label class="form-label">Gender</label>

@@ -38,29 +38,47 @@ if (in_array($export_format, ['xlsx', 'pdf'], true)) {
                    JOIN roles r ON r.id = u.role_id
                    LEFT JOIN companies c ON c.id = u.company_id
                    WHERE {$where} ORDER BY u.username";
-    $max_export_rows = $export_format === 'pdf' ? GRID_PDF_MAX_ROWS : null;
+    $isPdf = $export_format === 'pdf';
+    $max_export_rows = $isPdf ? GRID_PDF_MAX_ROWS : null;
 
     $row_stream = grid_query_stream(
         $sql_export,
         $types,
         $params,
-        static fn (array $r): array => [
-            $r['username'],
-            $r['full_name'],
-            $r['email'] ?: '-',
-            $r['phone_number'] ?: '-',
-            $r['role_name'],
-            $r['company_name'] ?: 'Lintas Perusahaan',
-            $r['last_login'] ?: '-',
-            $r['is_active'] ? 'Aktif' : 'Nonaktif',
-        ],
+        static function (array $r) use ($isPdf): array {
+            $company = $r['company_name'] ?: 'Lintas Perusahaan';
+            $status  = $r['is_active'] ? 'Aktif' : 'Nonaktif';
+            if ($isPdf) {
+                return [
+                    $r['username'],
+                    $r['full_name'],
+                    $r['email'] ?: '-',
+                    $r['role_name'],
+                    $company,
+                    $status,
+                ];
+            }
+            return [
+                $r['username'],
+                $r['full_name'],
+                $r['email'] ?: '-',
+                $r['phone_number'] ?: '-',
+                $r['role_name'],
+                $company,
+                $r['last_login'] ?: '-',
+                $status,
+            ];
+        },
         $max_export_rows
     );
 
     $sub = $q !== '' ? 'Pencarian: "' . $q . '"' : 'Semua Data';
+    $headers = $isPdf
+        ? ['Username', 'Nama', 'Email', 'Role', 'Perusahaan', 'Status']
+        : ['Username', 'Nama', 'Email', 'Telepon', 'Role', 'Perusahaan', 'Login Terakhir', 'Status'];
     grid_export_send(
         'Daftar Pengguna',
-        ['Username', 'Nama Lengkap', 'Email', 'Telepon', 'Role', 'Perusahaan', 'Login Terakhir', 'Status'],
+        $headers,
         $row_stream,
         $export_format,
         'landscape',
@@ -101,7 +119,7 @@ require __DIR__ . '/../../includes/header.php';
     ) ?>
     <div class="card shadow-sm border-0 mb-3">
         <div class="card-body py-2 px-3">
-            <form method="get" class="row g-2 align-items-center">
+            <form method="get" class="row g-2 align-items-center erp-filter-bar">
                 <div class="col-12 col-md-4">
                     <div class="input-group input-group-sm">
                         <span class="input-group-text bg-white text-muted"><i class="bi bi-search"></i></span>
@@ -115,19 +133,14 @@ require __DIR__ . '/../../includes/header.php';
                         <option value="0" <?= $status === '0' ? 'selected' : '' ?>>Nonaktif</option>
                     </select>
                 </div>
-                <div class="col-auto d-flex gap-1">
-                    <button type="submit" class="btn btn-sm btn-secondary">Filter</button>
-                    <?php if ($q !== '' || $status !== ''): ?>
-                        <a href="<?= e(APP_URL) ?>/pages/users/index.php" class="btn btn-sm btn-outline-danger" title="Reset"><i class="bi bi-x-lg"></i> Reset</a>
-                    <?php endif; ?>
-                </div>
+                <?= ui_filter_actions(APP_URL . '/pages/users/index.php', ($q !== '' || $status !== '')) ?>
             </form>
         </div>
     </div>
     <div class="card shadow-sm border-0">
         <div class="table-responsive">
             <table class="table table-hover mb-0 align-middle">
-                <thead class="table-light"><tr><th class="text-center" style="width: 52px;">No</th><th>Username</th><th>Nama</th><th>Email</th><th>Role</th><th>Perusahaan</th><th>Status</th><th class="text-end">Aksi</th></tr></thead>
+                <thead class="table-light"><tr><th class="text-center" style="width: 52px;">#</th><th>Username</th><th>Nama</th><th>Email</th><th>Role</th><th>Perusahaan</th><th>Status</th><th class="text-end">Aksi</th></tr></thead>
                 <tbody>
                 <?php foreach ($rows as $idx => $r): ?>
                     <tr>

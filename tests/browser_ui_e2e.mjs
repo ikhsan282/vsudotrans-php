@@ -381,7 +381,7 @@ async function main() {
             const panels = content ? content.querySelectorAll('.rnt-panel') : [];
             const headers = content ? content.querySelectorAll('.rnt-panel-header') : [];
             const cards = content ? content.querySelectorAll('.card') : [];
-            const btns = ['btnAutoSummaryNote', 'btnLoadDefaultPreset', 'btnAddRegRow'].map((id) => {
+            const btns = ['btnAutoSummaryNote', 'btnAddRegRow'].map((id) => {
                 const el = document.getElementById(id);
                 if (!el) return { id, exists: false };
                 const cs = getComputedStyle(el);
@@ -866,6 +866,36 @@ async function main() {
             const hasDelivFilterTs = Boolean(document.getElementById('filterRuteDeliveryCity')?.tomselect);
             const hasCatFilter = Boolean(document.querySelector('select[name="category_vehicle_id"]'));
             const toggleBtn = document.querySelector('.rute-toggle-status');
+            const codeEl = document.querySelector('.rute-code-cell');
+            const codeFontSize = codeEl ? parseFloat(getComputedStyle(codeEl).fontSize) : null;
+            const trFontSize = codeEl && codeEl.parentElement ? parseFloat(getComputedStyle(codeEl.parentElement).fontSize) : null;
+            const provEl = document.querySelector('.rute-province-name');
+            const cityEl = document.querySelector('.rute-city-name');
+            const provFontSize = provEl ? parseFloat(getComputedStyle(provEl).fontSize) : null;
+            const cityFontSize = cityEl ? parseFloat(getComputedStyle(cityEl).fontSize) : null;
+            const provAboveCity = provEl && cityEl
+                ? provEl.getBoundingClientRect().top < cityEl.getBoundingClientRect().top
+                : null;
+            const slotEl = document.querySelector('.rute-slot-badge');
+            const slotFontSize = slotEl ? parseFloat(getComputedStyle(slotEl).fontSize) : null;
+            const maxVisibleEnumSlots = rows.reduce((max, tr) => {
+                const n = tr.querySelectorAll('.rute-slot-badge:not(.rute-slot-more)').length;
+                return n > max ? n : max;
+            }, 0);
+            const noEl = document.querySelector('table > tbody > tr > td:first-child.text-center.text-muted.small:not([colspan])');
+            const noFontSize = noEl ? parseFloat(getComputedStyle(noEl).fontSize) : null;
+            const filterItems = Array.from(document.querySelectorAll('#rutesFilterForm > div'));
+            const filterTops = filterItems.map((el) => Math.round(el.getBoundingClientRect().top));
+            const filterAlignedOneRow = filterTops.length >= 6 && (Math.max(...filterTops) - Math.min(...filterTops)) <= 4;
+            const hargaIdx = headers.indexOf('Daftar Harga');
+            const radiusIdx = headers.indexOf('Radius Jemput / Antar');
+            const hargaTexts = hargaIdx >= 0 ? rows.map((tr) => tr.children[hargaIdx]?.innerText || '') : [];
+            const radiusTexts = radiusIdx >= 0 ? rows.map((tr) => {
+                const td = tr.children[radiusIdx];
+                if (!td) return '';
+                const tips = Array.from(td.querySelectorAll('[title]')).map((el) => el.getAttribute('title') || '').join(' ');
+                return (td.innerText || '') + ' ' + tips;
+            }) : [];
             return {
                 headers,
                 statusCount: statusCells.length,
@@ -875,12 +905,46 @@ async function main() {
                 hasCatFilter,
                 hasToggleBtn: Boolean(toggleBtn),
                 initialActive: toggleBtn ? toggleBtn.getAttribute('data-active') : null,
+                codeFontSize,
+                trFontSize,
+                provFontSize,
+                cityFontSize,
+                provAboveCity,
+                slotFontSize,
+                maxVisibleEnumSlots,
+                noFontSize,
+                filterAlignedOneRow,
+                filterTops,
+                hargaTexts,
+                radiusTexts,
             };
         })()`);
+        assert.ok(rutesIdxCheck.headers.includes('#') && !rutesIdxCheck.headers.includes('No'), `Header kolom nomor wajib "#" dan bukan "No" (${rutesIdxCheck.headers.join(', ')})`);
         assert.ok(rutesIdxCheck.headers.includes('Daftar Harga'), `Header "Daftar Harga" harus muncul di rutes/index.php (${rutesIdxCheck.headers.join(', ')})`);
+        assert.ok(!rutesIdxCheck.headers.includes('Nama') && !rutesIdxCheck.headers.includes('Nama Rute'), `Kolom Nama rute harus tersembunyi di grid rutes/index.php (${rutesIdxCheck.headers.join(', ')})`);
         assert.ok(!rutesIdxCheck.headers.includes('Tarif per Kategori Kendaraan'), 'Header lama "Tarif per Kategori Kendaraan" tidak boleh ada lagi');
+        assert.ok(!rutesIdxCheck.hargaTexts.some((t) => /\bkursi\b/i.test(t)), 'Grid Daftar Harga wajib mengganti kata "kursi" menjadi "seat"');
+        assert.ok(!rutesIdxCheck.hargaTexts.some((t) => /\bRp\.?/i.test(t)), 'Grid Daftar Harga tidak boleh menampilkan prefix Rp / Rp. pada nominal harga');
+        assert.ok(!rutesIdxCheck.radiusTexts.some((t) => /\bgratis\b|\+Rp\b/i.test(t)), 'Grid Radius Jemput / Antar tidak boleh menampilkan teks "gratis" atau biaya tambahan (+Rp)');
+        assert.ok(!rutesIdxCheck.radiusTexts.some((t) => /\bkec\./i.test(t)), 'Grid Radius Jemput / Antar tidak boleh menampilkan jumlah total kecamatan (X kec.)');
         assert.ok(rutesIdxCheck.statusCount === 0 || rutesIdxCheck.allStatusIconOnly, 'Kolom Status di rutes/index.php hanya menampilkan icon ceklis/silang tanpa teks');
         assert.ok(rutesIdxCheck.hasPickupFilterTs && rutesIdxCheck.hasDelivFilterTs && rutesIdxCheck.hasCatFilter, 'Filter Kota Asal/Tujuan (TomSelect) & Kategori Kendaraan tampil di rutes/index.php');
+        if (rutesIdxCheck.codeFontSize !== null && rutesIdxCheck.trFontSize !== null) {
+            const codeDiff = rutesIdxCheck.trFontSize - rutesIdxCheck.codeFontSize;
+            assert.ok(codeDiff >= 0.9 && codeDiff <= 1.1, `Value kolom Kode wajib lebih kecil 1px dari sel default (tr=${rutesIdxCheck.trFontSize}px, code=${rutesIdxCheck.codeFontSize}px)`);
+        }
+        if (rutesIdxCheck.provFontSize !== null && rutesIdxCheck.cityFontSize !== null) {
+            assert.strictEqual(rutesIdxCheck.provAboveCity, true, 'Kolom Asal/Tujuan wajib menempatkan Provinsi di atas Kota');
+            assert.ok(rutesIdxCheck.provFontSize > rutesIdxCheck.cityFontSize, `Provinsi wajib lebih besar dari Kota di bawahnya (prov=${rutesIdxCheck.provFontSize}px, city=${rutesIdxCheck.cityFontSize}px)`);
+        }
+        if (rutesIdxCheck.slotFontSize !== null) {
+            assert.ok(rutesIdxCheck.slotFontSize <= 11.2, `Badge Jadwal Keberangkatan wajib lebih kecil dari default 12px (actual=${rutesIdxCheck.slotFontSize}px)`);
+        }
+        assert.ok(rutesIdxCheck.maxVisibleEnumSlots <= 7, `Grid Jadwal Keberangkatan maksimal menampilkan 7 slot enum (actual=${rutesIdxCheck.maxVisibleEnumSlots})`);
+        assert.ok(rutesIdxCheck.filterAlignedOneRow, `Baris filter rutes/index.php wajib sejajar 1 baris di desktop 1440px (tops=${JSON.stringify(rutesIdxCheck.filterTops)})`);
+        if (rutesIdxCheck.noFontSize !== null) {
+            assert.ok(rutesIdxCheck.noFontSize >= 10.5 && rutesIdxCheck.noFontSize <= 11.2, `Value kolom No pada grid wajib 11px (actual=${rutesIdxCheck.noFontSize}px)`);
+        }
 
         if (rutesIdxCheck.hasToggleBtn) {
             const expectedFlipped = rutesIdxCheck.initialActive === '1' ? '0' : '1';

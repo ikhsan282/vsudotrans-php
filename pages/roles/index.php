@@ -22,7 +22,7 @@ if (in_array($export_format, ['xlsx', 'pdf'], true)) {
     }
     grid_export_send(
         'Daftar Role dan Hak Akses',
-        ['Nama Role', 'Deskripsi', 'Level', 'Jumlah Permission', 'Jumlah Pengguna'],
+        ['Nama', 'Deskripsi', 'Level', 'Permission', 'Pengguna'],
         $export_rows,
         $export_format,
         'portrait'
@@ -46,7 +46,7 @@ require __DIR__ . '/../../includes/header.php';
     <div class="card shadow-sm border-0">
         <div class="table-responsive">
             <table class="table table-hover mb-0 align-middle">
-                <thead class="table-light"><tr><th class="text-center" style="width: 52px;">No</th><th>Nama</th><th>Deskripsi</th><th>Level</th><th>Permission</th><th>Pengguna</th><th class="text-end">Aksi</th></tr></thead>
+                <thead class="table-light"><tr><th class="text-center" style="width: 52px;">#</th><th>Nama</th><th>Deskripsi</th><th>Level</th><th>Permission</th><th>Pengguna</th><th class="text-end">Aksi</th></tr></thead>
                 <tbody>
                 <?php foreach ($rows as $idx => $r): ?>
                     <?php $is_super = $r['name'] === ROLE_SUPER_ADMIN; ?>

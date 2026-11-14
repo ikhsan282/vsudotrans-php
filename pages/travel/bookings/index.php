@@ -103,10 +103,12 @@ $st->close();
 
 $export_format = strtolower(trim((string) ($_GET['export'] ?? '')));
 if (in_array($export_format, ['xlsx', 'pdf'], true)) {
-    $extra_pax_sql = booking_extra_passengers_export_sql('travel');
+    $isPdf     = $export_format === 'pdf';
+    $pax_subq  = $isPdf ? booking_extra_passenger_count_sql('travel') : booking_extra_passengers_export_sql('travel');
+    $pax_alias = $isPdf ? 'extra_cnt' : 'extra_passengers';
     $sql_export = "SELECT b.document_number, b.date, b.time,
                           p.name AS passenger_name, p.phone_number AS passenger_phone,
-                          {$extra_pax_sql} AS extra_passengers,
+                          {$pax_subq} AS {$pax_alias},
                           bv.name AS brand_name, mu.name AS model_name,
                           v.vehicle_number, cv.name AS category_name,
                           pc.name AS pickup_city_name, dc.name AS delivery_city_name,
@@ -122,31 +124,15 @@ if (in_array($export_format, ['xlsx', 'pdf'], true)) {
                      LEFT JOIN cities pc ON pc.id = b.pickup_point_city_id
                      LEFT JOIN cities dc ON dc.id = b.delivery_point_city_id
                      WHERE {$where} ORDER BY b.date DESC, b.id DESC";
-    $max_export_rows = $export_format === 'pdf' ? GRID_PDF_MAX_ROWS : null;
+    $max_export_rows = $isPdf ? GRID_PDF_MAX_ROWS : null;
 
     $row_stream = grid_query_stream(
         $sql_export,
         $types,
         $params,
-        static function (array $r): array {
-            $vehLabel = trim(implode(' · ', array_filter([
-                $r['vehicle_number'] ?? '',
-                trim(implode(' ', array_filter([$r['brand_name'] ?? '', $r['model_name'] ?? '']))),
-            ])));
-            $extraPax = trim((string) ($r['extra_passengers'] ?? ''));
-            return [
-                $r['document_number'],
-                trim($r['passenger_name'] . ($r['passenger_phone'] ? ' (' . $r['passenger_phone'] . ')' : '')),
-                $extraPax !== '' ? $extraPax : '-',
-                $vehLabel !== '' ? $vehLabel : ($r['category_name'] ?: '-'),
-                !empty($r['time']) ? substr($r['time'], 0, 5) : '-',
-                !empty($r['date']) ? date('d-M-Y', strtotime($r['date'])) : '-',
-                $r['pickup_city_name'] ?: '-',
-                $r['delivery_city_name'] ?: '-',
-                (float) $r['total_price'],
-                (float) $r['total_payment'],
-                ucfirst((string) $r['status']),
-            ];
+        static function (array $r) use ($isPdf): array {
+            $dateLabel = !empty($r['date']) ? date('d-M-Y', strtotime($r['date'])) : '-';
+            return booking_export_row($r, $isPdf, $dateLabel);
         },
         $max_export_rows
     );
@@ -159,7 +145,7 @@ if (in_array($export_format, ['xlsx', 'pdf'], true)) {
 
     grid_export_send(
         'Pemesanan Tiket Perjalanan',
-        ['Resi', 'Penumpang (Nama & HP)', 'Penumpang Tambahan', 'Kendaraan', 'Jam', 'Tanggal', 'Penjemputan', 'Pengantaran', 'Total Harga', 'Total Pembayaran', 'Status'],
+        booking_export_headers($isPdf, 'Asal', 'Tujuan'),
         $row_stream,
         $export_format,
         'landscape',
@@ -222,7 +208,7 @@ require __DIR__ . '/../../../includes/header.php';
     ) ?>
     <div class="card shadow-sm border-0 mb-3">
         <div class="card-body py-2 px-3">
-            <form method="get" class="row g-2 align-items-center">
+            <form method="get" class="row g-2 align-items-center erp-filter-bar erp-filter-bar-wide">
                 <div class="col-12 col-md-3">
                     <div class="input-group input-group-sm">
                         <span class="input-group-text bg-white text-muted"><i class="bi bi-search"></i></span>
@@ -255,16 +241,7 @@ require __DIR__ . '/../../../includes/header.php';
                         <?php endforeach; ?>
                     </select>
                 </div>
-                <div class="col-auto d-flex gap-1 ms-auto">
-                    <button type="submit" class="btn btn-sm btn-primary" title="Terapkan Filter">
-                        <i class="bi bi-funnel-fill me-1"></i>Filter
-                    </button>
-                    <?php if ($has_active_filter): ?>
-                        <a href="<?= e(APP_URL) ?>/pages/travel/bookings/index.php" class="btn btn-sm btn-outline-danger" title="Reset filter">
-                            <i class="bi bi-x-lg"></i>
-                        </a>
-                    <?php endif; ?>
-                </div>
+                <?= ui_filter_actions(APP_URL . '/pages/travel/bookings/index.php', $has_active_filter) ?>
             </form>
         </div>
     </div>
@@ -273,7 +250,7 @@ require __DIR__ . '/../../../includes/header.php';
             <table class="table table-hover mb-0 align-middle">
                 <thead class="table-light">
                     <tr>
-                        <th class="text-center" style="width: 48px;">No</th>
+                        <th class="text-center" style="width: 48px;">#</th>
                         <th>Resi</th>
                         <th>Penumpang</th>
                         <th class="text-center">Kendaraan</th>

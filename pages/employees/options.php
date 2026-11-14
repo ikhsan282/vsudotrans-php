@@ -115,8 +115,13 @@ if ($q === '') {
     $isPhoneLike = (bool) preg_match('/^[0-9+]/', $q);
 
     if ($isPhoneLike) {
+        $phoneNormPfx = phone_search_prefix($q);
+        $phonePrefix  = $phoneNormPfx !== null ? (addcslashes($phoneNormPfx, '%_\\') . '%') : $prefix;
         // Query 1: prefix nomor telepon (ix_employees_company_phone)
-        $runQuery(' AND phone_number LIKE ?', 's', [$prefix], 'phone_number', $limit);
+        $runQuery(' AND phone_number LIKE ?', 's', [$phonePrefix], 'phone_number', $limit);
+        if ($phonePrefix !== $prefix && count($rows) < $limit) {
+            $runQuery(' AND phone_number LIKE ?', 's', [$prefix], 'phone_number', $limit - count($rows));
+        }
 
         // Query 2: prefix kode/NIK karyawan (uq_employees_company_code)
         if (count($rows) < $limit) {

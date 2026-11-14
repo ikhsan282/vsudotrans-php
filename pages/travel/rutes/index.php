@@ -66,31 +66,26 @@ $st->close();
 
 $export_format = strtolower(trim((string) ($_GET['export'] ?? '')));
 if (in_array($export_format, ['xlsx', 'pdf'], true)) {
-    $sql_export = "SELECT r.code, r.name, pc.name AS pickup, pp.name AS pickup_province,
+    $isPdf = $export_format === 'pdf';
+    $sql_export = "SELECT r.code, pc.name AS pickup, pp.name AS pickup_province,
                           dc.name AS delivery, dp.name AS delivery_province,
                           (SELECT GROUP_CONCAT(
                                     CONCAT(
-                                        cv.name, ': Rp ', FORMAT(rt.price, 0),
-                                        CASE WHEN COALESCE(NULLIF(rt.seat_capacity, 0), rt.end_capacity_seat, 0) > 0
-                                             THEN CONCAT(' (', COALESCE(NULLIF(rt.seat_capacity, 0), rt.end_capacity_seat), ' kursi)')
-                                             ELSE '' END
+                                        cv.name, '~|~', rt.price, '~|~',
+                                        COALESCE(NULLIF(rt.seat_capacity, 0), rt.end_capacity_seat, 0)
                                     )
-                                    ORDER BY rt.sort_order ASC, rt.id ASC SEPARATOR '; ')
+                                    ORDER BY rt.sort_order ASC, rt.id ASC SEPARATOR '~;~')
                              FROM rute_tariffs rt
                              JOIN category_vehicles cv ON cv.id = rt.category_vehicle_id
-                            WHERE rt.rute_id = r.id) AS tariffs_csv,
+                            WHERE rt.rute_id = r.id) AS tariffs_raw,
                           (SELECT GROUP_CONCAT(rs.departure_time ORDER BY rs.departure_time ASC SEPARATOR ', ')
                              FROM rute_schedules rs WHERE rs.rute_id = r.id) AS schedules_csv,
-                          (SELECT GROUP_CONCAT(
-                                    CONCAT(d.name, ' (', CASE WHEN rr.extra_price > 0 THEN CONCAT('+Rp ', FORMAT(rr.extra_price, 0)) ELSE 'Gratis' END, ')')
-                                    ORDER BY rr.sort_order ASC, d.name ASC SEPARATOR '; ')
+                          (SELECT GROUP_CONCAT(d.name ORDER BY rr.sort_order ASC, d.name ASC SEPARATOR '~;~')
                              FROM rute_radius_districts rr JOIN districts d ON d.id = rr.district_id
-                            WHERE rr.rute_id = r.id AND rr.radius_type = 'pickup') AS pickup_radius_csv,
-                          (SELECT GROUP_CONCAT(
-                                    CONCAT(d.name, ' (', CASE WHEN rr.extra_price > 0 THEN CONCAT('+Rp ', FORMAT(rr.extra_price, 0)) ELSE 'Gratis' END, ')')
-                                    ORDER BY rr.sort_order ASC, d.name ASC SEPARATOR '; ')
+                            WHERE rr.rute_id = r.id AND rr.radius_type = 'pickup') AS pickup_radius_raw,
+                          (SELECT GROUP_CONCAT(d.name ORDER BY rr.sort_order ASC, d.name ASC SEPARATOR '~;~')
                              FROM rute_radius_districts rr JOIN districts d ON d.id = rr.district_id
-                            WHERE rr.rute_id = r.id AND rr.radius_type = 'delivery') AS delivery_radius_csv,
+                            WHERE rr.rute_id = r.id AND rr.radius_type = 'delivery') AS delivery_radius_raw,
                           r.pickup_free_radius_km, r.pickup_max_radius_km, r.pickup_extra_price_per_km,
                           r.delivery_free_radius_km, r.delivery_max_radius_km, r.delivery_extra_price_per_km,
                           r.price, COALESCE(NULLIF(r.seat_capacity, 0), r.end_capacity_seat, 0) AS seat_capacity,
@@ -102,41 +97,61 @@ if (in_array($export_format, ['xlsx', 'pdf'], true)) {
                    LEFT JOIN provinces dp ON dp.id = dc.province_id
                    LEFT JOIN category_vehicles cv_def ON cv_def.id = r.category_vehicle_id
                    WHERE {$where} ORDER BY r.code";
-    $max_export_rows = $export_format === 'pdf' ? GRID_PDF_MAX_ROWS : null;
+    $max_export_rows = $isPdf ? GRID_PDF_MAX_ROWS : null;
 
     $row_stream = grid_query_stream(
         $sql_export,
         $types,
         $params,
-        static function (array $r): array {
-            $pickupLbl = $r['pickup'] . (!empty($r['pickup_province']) ? ' (' . $r['pickup_province'] . ')' : '');
-            $delivLbl  = $r['delivery'] . (!empty($r['delivery_province']) ? ' (' . $r['delivery_province'] . ')' : '');
-            $tariffsText = trim((string) ($r['tariffs_csv'] ?? ''));
-            if ($tariffsText === '') {
-                $sc = (int) ($r['seat_capacity'] ?? 0);
-                $tariffsText = (!empty($r['def_cat_name']) ? $r['def_cat_name'] . ': ' : '') . rupiah((float) $r['price']) . ($sc > 0 ? " ({$sc} kursi)" : '');
+        static function (array $r) use ($isPdf): array {
+            $asal   = rute_format_loc_cell((string) $r['pickup'], (string) ($r['pickup_province'] ?? ''), $isPdf);
+            $tujuan = rute_format_loc_cell((string) $r['delivery'], (string) ($r['delivery_province'] ?? ''), $isPdf);
+            $jadwal = rute_format_schedules_text((string) ($r['schedules_csv'] ?? ''), $isPdf ? RUTE_GRID_MAX_VISIBLE_SLOTS : 0);
+            $pRad   = rute_format_district_names_export((string) ($r['pickup_radius_raw'] ?? ''), (float) $r['pickup_free_radius_km'], (float) $r['pickup_max_radius_km'], (float) $r['pickup_extra_price_per_km'], $isPdf);
+            $dRad   = rute_format_district_names_export((string) ($r['delivery_radius_raw'] ?? ''), (float) $r['delivery_free_radius_km'], (float) $r['delivery_max_radius_km'], (float) $r['delivery_extra_price_per_km'], $isPdf);
+            $harga  = rute_format_tariffs_export_cell($r, $isPdf ? "\n" : '; ');
+            $status = $r['is_active'] ? 'Aktif' : 'Nonaktif';
+
+            if ($isPdf) {
+                $radLines = [];
+                if ($pRad !== '-') {
+                    $radLines[] = 'Jemput: ' . $pRad;
+                }
+                if ($dRad !== '-') {
+                    $radLines[] = 'Antar: ' . $dRad;
+                }
+                return [
+                    $r['code'],
+                    $asal,
+                    $tujuan,
+                    $jadwal,
+                    $radLines ? implode("\n", $radLines) : '-',
+                    $harga,
+                    $status,
+                ];
             }
-            $pRadCsv = trim((string) ($r['pickup_radius_csv'] ?? ''));
-            $dRadCsv = trim((string) ($r['delivery_radius_csv'] ?? ''));
+
             return [
                 $r['code'],
-                $r['name'],
-                $pickupLbl,
-                $delivLbl,
-                trim((string) ($r['schedules_csv'] ?? '')) !== '' ? $r['schedules_csv'] : '-',
-                $pRadCsv !== '' ? $pRadCsv : rute_format_radius_summary((float) $r['pickup_free_radius_km'], (float) $r['pickup_max_radius_km'], (float) $r['pickup_extra_price_per_km']),
-                $dRadCsv !== '' ? $dRadCsv : rute_format_radius_summary((float) $r['delivery_free_radius_km'], (float) $r['delivery_max_radius_km'], (float) $r['delivery_extra_price_per_km']),
-                $tariffsText,
-                $r['is_active'] ? 'Aktif' : 'Nonaktif',
+                $asal,
+                $tujuan,
+                $jadwal,
+                $pRad,
+                $dRad,
+                $harga,
+                $status,
             ];
         },
         $max_export_rows
     );
 
     $sub = $q !== '' ? 'Pencarian: "' . $q . '"' : 'Semua Data';
+    $headers = $isPdf
+        ? ['Kode', 'Asal', 'Tujuan', 'Jadwal Keberangkatan', 'Radius Jemput / Antar', 'Daftar Harga', 'Status']
+        : ['Kode', 'Asal', 'Tujuan', 'Jadwal Keberangkatan', 'Radius Jemput', 'Radius Antar', 'Daftar Harga', 'Status'];
     grid_export_send(
         'Daftar Rute Travel',
-        ['Kode', 'Nama Rute', 'Titik Jemput (Provinsi)', 'Titik Antar (Provinsi)', 'Jadwal Keberangkatan', 'Radius Jemput', 'Radius Antar', 'Daftar Harga', 'Status'],
+        $headers,
         $row_stream,
         $export_format,
         'landscape',
@@ -230,19 +245,19 @@ require __DIR__ . '/../../../includes/header.php';
     ) ?>
     <div class="card shadow-sm border-0 mb-3">
         <div class="card-body py-2 px-3">
-            <form method="get" id="rutesFilterForm" class="row g-2 align-items-center">
-                <div class="col-12 col-md-6 col-lg-4">
+            <form method="get" id="rutesFilterForm" class="row g-2 align-items-center rutes-filter-bar">
+                <div class="col-12 col-sm-6 col-md-4 rutes-filter-q">
                     <div class="input-group input-group-sm">
                         <span class="input-group-text bg-white text-muted"><i class="bi bi-search"></i></span>
-                        <input type="text" name="q" class="form-control" placeholder="Cari kode, rute, kota, kecamatan..." value="<?= e($q) ?>">
+                        <input type="text" name="q" class="form-control" placeholder="Cari kode, rute, kota, kec..." value="<?= e($q) ?>">
                     </div>
                 </div>
-                <div class="col-6 col-md-3 col-lg-3">
+                <div class="col-6 col-sm-6 col-md-4 rutes-filter-item">
                     <select name="company_id" class="form-select form-select-sm" onchange="var f=this.form,c=f.querySelector('[name=category_vehicle_id]');if(c)c.value='';f.submit()" title="Pilih Perusahaan">
                         <?= ui_company_filter_options($companies, $filter_company_id, $has_explicit_company) ?>
                     </select>
                 </div>
-                <div class="col-6 col-md-3 col-lg-3">
+                <div class="col-6 col-sm-6 col-md-4 rutes-filter-item">
                     <select name="category_vehicle_id" class="form-select form-select-sm" onchange="this.form.submit()" title="Filter Kategori Kendaraan">
                         <option value="">Semua Kategori Kendaraan</option>
                         <?php foreach ($catFilterOpts as $cv): ?>
@@ -250,14 +265,7 @@ require __DIR__ . '/../../../includes/header.php';
                         <?php endforeach; ?>
                     </select>
                 </div>
-                <div class="col-6 col-md-4 col-lg-2">
-                    <select name="status" class="form-select form-select-sm" onchange="this.form.submit()" title="Filter Status">
-                        <option value="">Semua Status</option>
-                        <option value="1" <?= $status === '1' ? 'selected' : '' ?>>Aktif</option>
-                        <option value="0" <?= $status === '0' ? 'selected' : '' ?>>Nonaktif</option>
-                    </select>
-                </div>
-                <div class="col-12 col-sm-6 col-md-4 col-lg-4">
+                <div class="col-12 col-sm-6 col-md-4 rutes-filter-item">
                     <select name="pickup_city_id" id="filterRutePickupCity" class="form-select form-select-sm ts-select"
                         data-ts-url="<?= e(APP_URL) ?>/pages/masters/cities/options.php"
                         data-ts-with-province="1"
@@ -269,7 +277,7 @@ require __DIR__ . '/../../../includes/header.php';
                         <?php endforeach; ?>
                     </select>
                 </div>
-                <div class="col-12 col-sm-6 col-md-4 col-lg-4">
+                <div class="col-12 col-sm-6 col-md-4 rutes-filter-item">
                     <select name="delivery_city_id" id="filterRuteDeliveryCity" class="form-select form-select-sm ts-select"
                         data-ts-url="<?= e(APP_URL) ?>/pages/masters/cities/options.php"
                         data-ts-with-province="1"
@@ -281,12 +289,14 @@ require __DIR__ . '/../../../includes/header.php';
                         <?php endforeach; ?>
                     </select>
                 </div>
-                <div class="col-auto d-flex gap-1 ms-lg-auto">
-                    <button type="submit" class="btn btn-sm btn-secondary">Filter</button>
-                    <?php if ($has_active_filter): ?>
-                        <a href="<?= e(APP_URL) ?>/pages/travel/rutes/index.php" class="btn btn-sm btn-outline-danger" title="Reset"><i class="bi bi-x-lg"></i> Reset</a>
-                    <?php endif; ?>
+                <div class="col-6 col-sm-6 col-md-2 rutes-filter-status">
+                    <select name="status" class="form-select form-select-sm" onchange="this.form.submit()" title="Filter Status">
+                        <option value="">Semua Status</option>
+                        <option value="1" <?= $status === '1' ? 'selected' : '' ?>>Aktif</option>
+                        <option value="0" <?= $status === '0' ? 'selected' : '' ?>>Nonaktif</option>
+                    </select>
                 </div>
+                <?= ui_filter_actions(APP_URL . '/pages/travel/rutes/index.php', $has_active_filter, 'col-auto d-flex gap-1 ms-auto rutes-filter-actions erp-filter-actions') ?>
             </form>
         </div>
     </div>
@@ -294,7 +304,7 @@ require __DIR__ . '/../../../includes/header.php';
     <div class="card shadow-sm border-0">
         <div class="table-responsive">
             <table class="table table-hover mb-0 align-middle">
-                <thead class="table-light"><tr><th class="text-center" style="width: 52px;">No</th><th>Kode</th><th>Nama</th><th>Asal</th><th>Tujuan</th><th>Jadwal Keberangkatan</th><th>Radius Jemput / Antar</th><th>Daftar Harga</th><th class="text-center text-nowrap" style="width: 68px;">Status</th><th class="text-end">Aksi</th></tr></thead>
+                <thead class="table-light"><tr><th class="text-center" style="width: 52px;">#</th><th>Kode</th><th>Asal</th><th>Tujuan</th><th>Jadwal Keberangkatan</th><th>Radius Jemput / Antar</th><th>Daftar Harga</th><th class="text-center text-nowrap" style="width: 68px;">Status</th><th class="text-end">Aksi</th></tr></thead>
                 <tbody>
                 <?php foreach ($rows as $idx => $r):
                     $slots   = $ruteScheduleMap[(int) $r['id']] ?? [];
@@ -310,29 +320,36 @@ require __DIR__ . '/../../../includes/header.php';
                         ]];
                     }
                     $rRad   = $ruteRadiusMap[(int) $r['id']] ?? ['pickup' => [], 'delivery' => []];
-                    $pRad   = rute_format_district_radius_summary($rRad['pickup'], (float) $r['pickup_free_radius_km'], (float) $r['pickup_max_radius_km'], (float) $r['pickup_extra_price_per_km']);
-                    $dRad   = rute_format_district_radius_summary($rRad['delivery'], (float) $r['delivery_free_radius_km'], (float) $r['delivery_max_radius_km'], (float) $r['delivery_extra_price_per_km']);
-                    $pTip   = $rRad['pickup'] ? rute_format_district_radius_summary($rRad['pickup'], 0, 0, 0, true) : '';
-                    $dTip   = $rRad['delivery'] ? rute_format_district_radius_summary($rRad['delivery'], 0, 0, 0, true) : '';
+                    $pRad   = rute_format_district_radius_summary($rRad['pickup'], (float) $r['pickup_free_radius_km'], (float) $r['pickup_max_radius_km'], (float) $r['pickup_extra_price_per_km'], false, false, false);
+                    $dRad   = rute_format_district_radius_summary($rRad['delivery'], (float) $r['delivery_free_radius_km'], (float) $r['delivery_max_radius_km'], (float) $r['delivery_extra_price_per_km'], false, false, false);
+                    $pTip   = $rRad['pickup'] ? rute_format_district_radius_summary($rRad['pickup'], 0, 0, 0, true, false, false) : '';
+                    $dTip   = $rRad['delivery'] ? rute_format_district_radius_summary($rRad['delivery'], 0, 0, 0, true, false, false) : '';
                 ?>
                     <tr>
                         <td class="text-center text-muted small"><?= number_format($p['offset'] + $idx + 1, 0, ',', '.') ?></td>
-                        <td class="fw-semibold"><?= e($r['code']) ?></td>
-                        <td><?= e($r['name']) ?></td>
+                        <td class="fw-semibold rute-code-cell" title="<?= e($r['name']) ?>"><?= e($r['code']) ?></td>
+                        <?php foreach ([[$r['pickup'], (string) ($r['pickup_province'] ?? '')], [$r['delivery'], (string) ($r['delivery_province'] ?? '')]] as [$locCity, $locProv]): ?>
+                            <td>
+                                <?php if (trim($locProv) !== ''): ?>
+                                    <div class="rute-province-name"><?= e($locProv) ?></div>
+                                    <div class="text-muted rute-city-name"><?= e($locCity) ?></div>
+                                <?php else: ?>
+                                    <div class="rute-province-name"><?= e($locCity) ?></div>
+                                <?php endif; ?>
+                            </td>
+                        <?php endforeach; ?>
                         <td>
-                            <div><?= e($r['pickup']) ?></div>
-                            <?php if (!empty($r['pickup_province'])): ?><div class="text-muted small"><?= e($r['pickup_province']) ?></div><?php endif; ?>
-                        </td>
-                        <td>
-                            <div><?= e($r['delivery']) ?></div>
-                            <?php if (!empty($r['delivery_province'])): ?><div class="text-muted small"><?= e($r['delivery_province']) ?></div><?php endif; ?>
-                        </td>
-                        <td>
-                            <?php if ($slots): ?>
-                                <div class="d-flex flex-wrap gap-1">
-                                    <?php foreach ($slots as $slot): ?>
-                                        <span class="badge bg-info-subtle text-info-emphasis border font-monospace"><?= e($slot) ?></span>
+                            <?php if ($slots):
+                                $visibleSlots   = array_slice($slots, 0, RUTE_GRID_MAX_VISIBLE_SLOTS);
+                                $extraSlotCount = count($slots) - count($visibleSlots);
+                            ?>
+                                <div class="d-flex flex-wrap gap-1 rute-slots-wrap"<?= $extraSlotCount > 0 ? ' title="' . e(implode(', ', $slots)) . '"' : '' ?>>
+                                    <?php foreach ($visibleSlots as $slot): ?>
+                                        <span class="badge rute-slot-badge bg-info-subtle text-info-emphasis border font-monospace"><?= e($slot) ?></span>
                                     <?php endforeach; ?>
+                                    <?php if ($extraSlotCount > 0): ?>
+                                        <span class="badge rute-slot-badge rute-slot-more bg-light text-muted border">+<?= $extraSlotCount ?></span>
+                                    <?php endif; ?>
                                 </div>
                             <?php else: ?>
                                 <span class="text-muted small">-</span>
@@ -355,9 +372,9 @@ require __DIR__ . '/../../../includes/header.php';
                                         <div class="d-flex justify-content-between align-items-baseline gap-2">
                                             <span>
                                                 <span class="fw-medium"><?= e($tf['category_name']) ?></span>
-                                                <?php if ($seatCap > 0): ?><span class="text-muted">(<?= $seatCap ?> kursi)</span><?php endif; ?>
+                                                <?php if ($seatCap > 0): ?><span class="text-muted">(<?= $seatCap ?> seat)</span><?php endif; ?>
                                             </span>
-                                            <span class="fw-semibold text-nowrap"><?= e(rupiah((float) $tf['price'])) ?></span>
+                                            <span class="fw-semibold text-nowrap"><?= e(format_nominal((float) $tf['price'])) ?></span>
                                         </div>
                                     <?php endforeach; ?>
                                 </div>
@@ -397,7 +414,7 @@ require __DIR__ . '/../../../includes/header.php';
                     </tr>
                 <?php endforeach; ?>
                 <?php if (!$rows): ?>
-                    <tr><td colspan="10" class="text-center text-muted py-4">Belum ada data rute.</td></tr>
+                    <tr><td colspan="9" class="text-center text-muted py-4">Belum ada data rute.</td></tr>
                 <?php endif; ?>
                 </tbody>
             </table>

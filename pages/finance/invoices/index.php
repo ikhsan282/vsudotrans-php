@@ -66,7 +66,8 @@ if (in_array($export_format, ['xlsx', 'pdf'], true)) {
                    WHERE {$where_full}
                    ORDER BY i.issued_at DESC, i.id DESC";
 
-    $max_export_rows = $export_format === 'pdf' ? GRID_PDF_MAX_ROWS : null;
+    $isPdf = $export_format === 'pdf';
+    $max_export_rows = $isPdf ? GRID_PDF_MAX_ROWS : null;
     $row_stream = grid_query_stream(
         $sql_export,
         $types_full,
@@ -76,8 +77,8 @@ if (in_array($export_format, ['xlsx', 'pdf'], true)) {
             $r['issued_at'] ? date('d/m/Y', strtotime($r['issued_at'])) : '-',
             $r['due_date'] ? date('d/m/Y', strtotime($r['due_date'])) : '-',
             $r['customer_name'] ?: '-',
-            (float) $r['total'],
-            (float) $r['paid_total'],
+            $isPdf ? rupiah((float) $r['total']) : (float) $r['total'],
+            $isPdf ? rupiah((float) $r['paid_total']) : (float) $r['paid_total'],
             ucfirst($r['pay_status']),
         ],
         $max_export_rows
@@ -94,7 +95,7 @@ if (in_array($export_format, ['xlsx', 'pdf'], true)) {
 
     grid_export_send(
         'Daftar Invoice Tagihan',
-        ['No Invoice', 'Tgl Terbit', 'Jatuh Tempo', 'Pelanggan', 'Total Tagihan', 'Total Dibayar', 'Status Bayar'],
+        ['Nomor', 'Terbit', 'Jatuh Tempo', 'Pelanggan', 'Total', 'Dibayar', 'Status'],
         $row_stream,
         $export_format,
         'landscape',
@@ -142,7 +143,7 @@ require __DIR__ . '/../../../includes/header.php';
     ) ?>
     <div class="card shadow-sm border-0 mb-3">
         <div class="card-body py-2 px-3">
-            <form method="get" class="row g-2 align-items-center">
+            <form method="get" class="row g-2 align-items-center erp-filter-bar">
                 <div class="col-12 col-md-4">
                     <div class="input-group input-group-sm">
                         <span class="input-group-text bg-white text-muted"><i class="bi bi-search"></i></span>
@@ -157,19 +158,14 @@ require __DIR__ . '/../../../includes/header.php';
                         <option value="paid" <?= $filter === 'paid' ? 'selected' : '' ?>>Lunas</option>
                     </select>
                 </div>
-                <div class="col-auto d-flex gap-1">
-                    <button type="submit" class="btn btn-sm btn-secondary">Filter</button>
-                    <?php if ($q !== '' || $filter !== ''): ?>
-                        <a href="<?= e(APP_URL) ?>/pages/finance/invoices/index.php" class="btn btn-sm btn-outline-danger" title="Reset"><i class="bi bi-x-lg"></i> Reset</a>
-                    <?php endif; ?>
-                </div>
+                <?= ui_filter_actions(APP_URL . '/pages/finance/invoices/index.php', ($q !== '' || $filter !== '')) ?>
             </form>
         </div>
     </div>
     <div class="card shadow-sm border-0">
         <div class="table-responsive">
             <table class="table table-hover mb-0 align-middle">
-                <thead class="table-light"><tr><th class="text-center" style="width: 52px;">No</th><th>Nomor</th><th>Terbit</th><th>Jatuh Tempo</th><th>Pelanggan</th><th class="text-end">Total</th><th class="text-end">Dibayar</th><th>Status</th><th class="text-end">Aksi</th></tr></thead>
+                <thead class="table-light"><tr><th class="text-center" style="width: 52px;">#</th><th>Nomor</th><th>Terbit</th><th>Jatuh Tempo</th><th>Pelanggan</th><th class="text-end">Total</th><th class="text-end">Dibayar</th><th>Status</th><th class="text-end">Aksi</th></tr></thead>
                 <tbody>
                 <?php foreach ($rows as $idx => $r): ?>
                     <tr>

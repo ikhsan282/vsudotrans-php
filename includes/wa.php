@@ -92,17 +92,7 @@ function wa_send(int $cid, string $booking_type, int $booking_id, string $phone,
 /** Nomor Indonesia: 08xx / 8xx -> 628xx (tanpa + dan tanpa pemisah). */
 function wa_phone_normalize(string $phone): string
 {
-    $d = preg_replace('/[^0-9]/', '', $phone);
-    if ($d === '' || $d === null) {
-        return '';
-    }
-    if (str_starts_with($d, '0')) {
-        return '62' . substr($d, 1);
-    }
-    if (str_starts_with($d, '8')) {
-        return '62' . $d;
-    }
-    return $d;
+    return normalize_phone_62($phone) ?? '';
 }
 
 /**

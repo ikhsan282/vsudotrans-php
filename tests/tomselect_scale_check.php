@@ -71,7 +71,6 @@ $viewerJar = tempnam(sys_get_temp_dir(), 'ts_vjar_');
 try {
     $brandId = (int) $db->query('SELECT id FROM brand_vehicles LIMIT 1')->fetch_column();
     $modelId = (int) $db->query('SELECT id FROM model_units LIMIT 1')->fetch_column();
-    $engId   = (int) $db->query('SELECT id FROM type_engines LIMIT 1')->fetch_column();
     $catId   = (int) $db->query('SELECT id FROM category_vehicles WHERE company_id = 1 AND is_active = 1 LIMIT 1')->fetch_column();
     $branchId = (int) $db->query('SELECT id FROM branches WHERE company_id = 1 LIMIT 1')->fetch_column();
 
@@ -102,8 +101,8 @@ try {
         $plate = sprintf('ZZ %04d SC', $i);
         $frame = sprintf('FRMZZSC%05d%d', $i, random_int(10, 99));
         $mach  = sprintf('MCHZZSC%05d%d', $i, random_int(10, 99));
-        $st = $db->prepare("INSERT INTO vehicles (company_id, brand_id, model_unit_id, type_engine_id, category_vehicle_id, frame_number, machine_number, seat, production_year, vehicle_color, vehicle_number, ownership, is_active) VALUES (1, ?, ?, ?, ?, ?, ?, 7, 2024, 'Hitam', ?, 'Milik Sendiri', 1)");
-        $st->bind_param('iiiisss', $brandId, $modelId, $engId, $catId, $frame, $mach, $plate);
+        $st = $db->prepare("INSERT INTO vehicles (company_id, brand_id, model_unit_id, category_vehicle_id, frame_number, machine_number, seat, production_year, vehicle_color, vehicle_number, ownership, is_active) VALUES (1, ?, ?, ?, ?, ?, 7, 2024, 'Hitam', ?, 'Milik Sendiri', 1)");
+        $st->bind_param('iiisss', $brandId, $modelId, $catId, $frame, $mach, $plate);
         $st->execute();
         $createdVehIds[] = (int) $db->insert_id;
         $st->close();
@@ -962,8 +961,8 @@ try {
     [$rZipOk, $rXText] = $ruteXlsx['size'] > 0 ? $readXlsxXml($ruteXlsx['bytes']) : [false, ''];
     @unlink($ruteXlsx['file']);
     ts_check(
-        $ruteXlsx['code'] === 200 && $rZipOk && str_contains($rXText, 'Daftar Harga') && str_contains($rXText, 'Titik Jemput (Provinsi)') && str_contains($rXText, '10 kursi'),
-        'travel/rutes/index.php export=xlsx includes Provinces, Daftar Harga, and seat capacity (kursi)'
+        $ruteXlsx['code'] === 200 && $rZipOk && str_contains($rXText, 'Daftar Harga') && str_contains($rXText, 'Asal') && str_contains($rXText, '10 seat') && !str_contains($rXText, 'Nama Rute'),
+        'travel/rutes/index.php export=xlsx aligns Asal/Daftar Harga/seat columns and hides Nama Rute'
     );
     $rutePdf = $downloadExport('/pages/travel/rutes/index.php?company_id=1&export=pdf');
     @unlink($rutePdf['file']);
@@ -1044,7 +1043,9 @@ try {
         '/pages/rental/bookings/index.php?company_id=1',
         '/pages/employees/index.php?company_id=1',
         '/pages/vehicles/index.php?company_id=1',
-        '/pages/vehicles/master.php?t=brand',
+        '/pages/vehicles/brands/index.php?company_id=1',
+        '/pages/vehicles/categories/index.php?company_id=1',
+        '/pages/vehicles/models/index.php?company_id=1',
         '/pages/transport/passengers/index.php?company_id=1',
         '/pages/transport/regulations/index.php?company_id=1',
         '/pages/dispatch/index.php?company_id=1',
@@ -1069,6 +1070,9 @@ try {
         }
         if (preg_match_all('#<table\b[^>]*>(.*?)</table>#is', $gRes['body'], $tblMatches)) {
             foreach ($tblMatches[1] as $tblHtml) {
+                if (preg_match('#<thead\b[^>]*>.*?<th[^>]*>\s*No\s*</th>.*?</thead>#is', $tblHtml)) {
+                    $badGridMsgs[] = "{$gUrl}: still uses header 'No' instead of '#'";
+                }
                 if (!preg_match('#<thead\b[^>]*>.*?<th[^>]*>\s*Aksi\s*</th>.*?</thead>#is', $tblHtml)) {
                     continue;
                 }
@@ -1103,7 +1107,7 @@ try {
     }
     ts_check(
         empty($badGridMsgs) && $verifiedGridRows > 0,
-        'All rendered grid Aksi buttons across 20 admin pages use icon-only buttons without text labels (' . $verifiedGridRows . ' action buttons checked)'
+        'All rendered grid Aksi buttons across ' . count($gridUrls) . ' admin pages use icon-only buttons without text labels (' . $verifiedGridRows . ' action buttons checked)'
         . (empty($badGridMsgs) ? '' : ' [' . implode('; ', array_slice($badGridMsgs, 0, 5)) . ']')
     );
 

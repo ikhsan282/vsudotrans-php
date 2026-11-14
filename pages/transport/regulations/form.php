@@ -189,19 +189,6 @@ require __DIR__ . '/../../../includes/header.php';
                 <button type="submit" form="regulationForm" class="btn btn-sm btn-primary px-3">
                     <i class="bi bi-check2-circle me-1"></i>Simpan Peraturan
                 </button>
-                <?php if ($id > 0): ?>
-                    <a href="<?= e(APP_URL) ?>/pages/transport/regulations/form.php" class="btn btn-sm btn-outline-primary">
-                        <i class="bi bi-plus-lg me-1"></i>Buat Baru
-                    </a>
-                    <form method="post" action="" class="d-inline" onsubmit="return confirm('Hapus Peraturan Komisi Karyawan ini?');">
-                        <?= csrf_field() ?>
-                        <input type="hidden" name="id" value="<?= $id ?>">
-                        <input type="hidden" name="act" value="delete">
-                        <button type="submit" class="btn btn-sm btn-outline-danger">
-                            <i class="bi bi-trash me-1"></i>Hapus
-                        </button>
-                    </form>
-                <?php endif; ?>
             <?php endif; ?>
         </div>
     </div>
@@ -321,14 +308,9 @@ require __DIR__ . '/../../../includes/header.php';
                                     <span id="regTotalRowsBadge" class="badge bg-primary-subtle text-primary border">0 Komponen</span>
                                 </div>
                                 <?php if ($canManage): ?>
-                                    <div class="d-flex flex-wrap align-items-center gap-3">
-                                        <button type="button" class="rnt-header-action" id="btnLoadDefaultPreset" title="Preset Standar LIZ">
-                                            <i class="bi bi-arrow-repeat me-1"></i>Preset LIZ
-                                        </button>
-                                        <button type="button" class="rnt-header-action" id="btnAddRegRow">
-                                            <i class="bi bi-plus-lg me-1"></i>Tambah Baris Komisi
-                                        </button>
-                                    </div>
+                                    <button type="button" class="rnt-header-action" id="btnAddRegRow">
+                                        <i class="bi bi-plus-lg me-1"></i>Tambah Baris Komisi
+                                    </button>
                                 <?php endif; ?>
                             </div>
                             <div class="table-responsive">
@@ -336,7 +318,7 @@ require __DIR__ . '/../../../includes/header.php';
                                     <thead>
                                         <tr>
                                             <th style="width: 45px;" class="text-center">#</th>
-                                            <th style="width: 220px;">Penerima / Pos Komisi</th>
+                                            <th style="width: 220px;">Penerima</th>
                                             <th style="width: 170px;">Tipe Perhitungan</th>
                                             <th style="width: 240px;" class="text-end">Nilai / Jumlah</th>
                                             <th class="ps-3">Keterangan / Preview</th>
@@ -693,26 +675,6 @@ document.addEventListener('DOMContentLoaded', () => {
     const btnAdd = document.getElementById('btnAddRegRow');
     if (btnAdd) {
         btnAdd.addEventListener('click', () => addRegRow('Agen', 'Tetap', 0));
-    }
-
-    const btnPreset = document.getElementById('btnLoadDefaultPreset');
-    if (btnPreset && tbody) {
-        btnPreset.addEventListener('click', () => {
-            if (confirm('Muat ulang baris dengan template preset standar LIZ (Sopir 13.5%, Kernet 150k, Montir 145k, BBM 26.5%, Agen 20k, 25k, 5k)?')) {
-                tbody.innerHTML = '';
-                addRegRow('Sopir', 'Persentase', 13.50);
-                addRegRow('Kernet', 'Tetap', 150000);
-                addRegRow('Montir', 'Tetap', 145000);
-                addRegRow('BBM', 'Persentase', 26.50);
-                addRegRow('Agen', 'Tetap', 20000);
-                addRegRow('Agen', 'Tetap', 25000);
-                addRegRow('Agen', 'Tetap', 5000);
-                if (noteInput && !noteInput.value.trim()) {
-                    noteInput.value = 'Sopir 13.5%, Kernet 150k, Montir 145k, BBM 26.5%';
-                }
-                recalcRegTotals();
-            }
-        });
     }
 
     const btnAutoNote = document.getElementById('btnAutoSummaryNote');

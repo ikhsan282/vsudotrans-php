@@ -72,9 +72,7 @@ require __DIR__ . '/../../includes/header.php';
                         <?php endforeach; ?>
                     </select>
                 </div>
-                <div class="col-12 col-lg-3">
-                    <button type="submit" class="btn btn-sm btn-primary w-100">Terapkan</button>
-                </div>
+                <?= ui_filter_actions(APP_URL . '/pages/reports/finance.php', ($f['from'] !== date('Y-m-01') || $f['to'] !== date('Y-m-t') || $f['booking_type'] !== 'all')) ?>
             </form>
         </div>
     </div>

@@ -20,8 +20,8 @@ $c->query("DELETE FROM payroll_periods WHERE company_id = $CID");
 $c->query("DELETE FROM employee_attendances WHERE company_id = $CID");
 $c->query("DELETE FROM employees WHERE company_id = $CID");
 $c->query("DELETE FROM companies WHERE id = $CID");
-$c->query("INSERT INTO companies (id, group_id, code, name, country_code, is_active)
-           VALUES ($CID, 1, 'PAY-A', 'Perusahaan Payroll Absensi', '+62', 1)");
+$c->query("INSERT INTO companies (id, group_id, code, name, is_active)
+           VALUES ($CID, 1, 'PAY-A', 'Perusahaan Payroll Absensi', 1)");
 $c->query("INSERT INTO job_grades (id, company_id, code, name, basic_salary, daily_allowance) VALUES
            (9521, $CID, 'PAY-G1', 'Grade Payroll', 3000000.00, 50000.00)");
 $c->query("INSERT INTO employees (company_id, code, name, job_grade, join_date, status) VALUES

@@ -569,3 +569,74 @@ window.updateSeatCapacityWarning = function (vehEl, primPaxEl, extraPaxEl, warnE
 if (window.TomSelect) {
   document.querySelectorAll('select.ts-select').forEach(el => window.initTsSelect(el));
 }
+
+/** Normalisasi nomor telepon Indonesia -> format kanonis `62...` (string kosong bila kosong / hanya `62`). */
+window.normalizePhone62 = function (raw) {
+  const s = String(raw || '').replace(/@.*$/, '').trim();
+  let d = s.replace(/\D+/g, '');
+  if (!d) return '';
+  if (d.startsWith('00')) d = d.slice(2);
+  if (d.startsWith('620') && d.length > 3) {
+    d = '62' + d.slice(2).replace(/^0+/, '');
+  } else if (d.startsWith('62')) {
+    // sudah diawali 62
+  } else if (d.startsWith('0')) {
+    const rest = d.slice(1).replace(/^0+/, '');
+    d = rest ? '62' + rest : '';
+  } else {
+    d = '62' + d;
+  }
+  return d && d !== '62' ? d : '';
+};
+
+/** Inisialisasi Flatpickr standar ERP (tampilan dd-MMM-yyyy, nilai submit Y-m-d). */
+window.initFlatpickrDate = function (target, opts) {
+  if (typeof window.flatpickr !== 'function') return [];
+  const list = typeof target === 'string'
+    ? document.querySelectorAll(target)
+    : (target && typeof target.forEach === 'function' ? target : (target ? [target] : []));
+  const instances = [];
+  list.forEach(function (el) {
+    if (!el || el.disabled || el._flatpickr) return;
+    const baseCls = el.className.replace(/\bflatpickr-date\b/g, '').trim() || 'form-control form-control-sm bg-white';
+    const cfg = Object.assign({
+      altInput: true,
+      altFormat: 'd-M-Y',
+      dateFormat: 'Y-m-d',
+      altInputClass: baseCls,
+      allowInput: true
+    }, opts || {});
+    const fp = window.flatpickr(el, cfg);
+    if (fp && fp.altInput) {
+      fp.altInput.addEventListener('blur', function () {
+        if (!el.required && String(fp.altInput.value || '').trim() === '' && fp.selectedDates.length > 0) {
+          fp.clear();
+        }
+      });
+    }
+    instances.push(fp);
+  });
+  return instances;
+};
+
+document.addEventListener('DOMContentLoaded', function () {
+  window.initFlatpickrDate('.flatpickr-date[data-flatpickr-auto]');
+  const sel = 'input[name="phone_number"], input[name="bot_phone"], #qpPhone, #qp_phone, input[data-phone-62]';
+  const applyNorm = function (el) {
+    if (!el || el.readOnly || el.disabled) return;
+    const norm = window.normalizePhone62(el.value);
+    if (el.value !== norm) {
+      el.value = norm;
+    }
+  };
+  document.addEventListener('blur', function (e) {
+    if (e.target && e.target.matches && e.target.matches(sel)) {
+      applyNorm(e.target);
+    }
+  }, true);
+  document.addEventListener('submit', function (e) {
+    const f = e.target;
+    if (!f || !f.querySelectorAll) return;
+    f.querySelectorAll(sel).forEach(applyNorm);
+  }, true);
+});

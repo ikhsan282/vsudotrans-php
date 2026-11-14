@@ -31,8 +31,8 @@ $c->query("DELETE FROM cash_transactions WHERE company_id IN (1, 990) AND create
 $c->query("DELETE FROM cash_accounts WHERE created_user IN ('cash-check', 'cash-probe')");
 $c->query("DELETE FROM companies WHERE id = 990 OR code = 'CHK-KAS'");
 $c->query("INSERT IGNORE INTO countries (id, code, name) VALUES (1, 'ID', 'Indonesia')");
-$c->query("INSERT INTO companies (id, group_id, code, name, country_code, is_active)
-           VALUES (990, 1, 'CHK-KAS', 'Perusahaan Cek Kas', '+62', 1)");
+$c->query("INSERT INTO companies (id, group_id, code, name, is_active)
+           VALUES (990, 1, 'CHK-KAS', 'Perusahaan Cek Kas', 1)");
 $c->query("INSERT INTO cash_accounts (id, company_id, code, name, type, opening_balance, is_active, created_user)
            VALUES ($ACC, 1, 'CHK-KAS', 'Kas Cek', 'kas', 1000000, 1, 'cash-check')");
 $c->query("INSERT INTO cash_accounts (id, company_id, code, name, type, opening_balance, is_active, created_user)

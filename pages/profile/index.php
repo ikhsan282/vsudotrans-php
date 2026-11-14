@@ -46,61 +46,76 @@ $active = 'profile';
 $title  = 'Profil Saya';
 require __DIR__ . '/../../includes/header.php';
 ?>
-<main class="col-12 col-md-9 col-lg-10 p-4">
-    <h4 class="fw-bold mb-3">Profil Saya</h4>
+<main class="p-2 p-md-3">
+    <?= ui_erp_toolbar(
+        'Akun',
+        'person-circle',
+        'Profil Saya',
+        [$me['role_name'] ?? ($_SESSION['role_name'] ?? '-')],
+        [
+            ['label' => 'Simpan Password', 'icon' => 'shield-lock', 'type' => 'submit', 'form' => 'formProfilePassword', 'class' => 'btn-primary'],
+        ]
+    ) ?>
     <?php if ($errors): ?>
-        <div class="alert alert-danger"><ul class="mb-0">
+        <div class="alert alert-danger py-2 mb-2"><ul class="mb-0">
             <?php foreach ($errors as $err): ?><li><?= e($err) ?></li><?php endforeach; ?>
         </ul></div>
     <?php endif; ?>
 
-    <div class="row g-3">
-        <div class="col-lg-6">
-            <div class="card shadow-sm border-0 h-100">
-                <div class="card-header bg-white fw-semibold">Data Akun</div>
-                <div class="card-body">
-                    <dl class="row mb-0">
-                        <dt class="col-sm-4 text-muted fw-normal">Nama</dt>
-                        <dd class="col-sm-8"><?= e($me['full_name'] ?? '—') ?></dd>
-                        <dt class="col-sm-4 text-muted fw-normal">Username</dt>
-                        <dd class="col-sm-8"><?= e($me['username'] ?? '—') ?></dd>
-                        <dt class="col-sm-4 text-muted fw-normal">Email</dt>
-                        <dd class="col-sm-8"><?= e($me['email'] ?? '—') ?></dd>
-                        <dt class="col-sm-4 text-muted fw-normal">No. Telepon</dt>
-                        <dd class="col-sm-8"><?= e(($me['phone_number'] ?? '') !== '' ? $me['phone_number'] : '—') ?></dd>
-                        <dt class="col-sm-4 text-muted fw-normal">Role</dt>
-                        <dd class="col-sm-8"><span class="badge bg-secondary"><?= e($me['role_name'] ?? ($_SESSION['role_name'] ?? '—')) ?></span></dd>
-                        <dt class="col-sm-4 text-muted fw-normal">Perusahaan Aktif</dt>
-                        <dd class="col-sm-8"><?= e($me['company_name'] ?? 'Lintas perusahaan') ?></dd>
-                        <dt class="col-sm-4 text-muted fw-normal">Login Terakhir</dt>
-                        <dd class="col-sm-8"><?= e($me['last_login'] ?? '—') ?></dd>
-                    </dl>
-                    <p class="text-muted small mb-0 mt-3">Data akun hanya dapat diubah oleh administrator.</p>
-                </div>
-            </div>
-        </div>
+    <div class="erp-window-card">
+        <ul class="nav nav-tabs erp-sub-tabs" role="tablist">
+            <li class="nav-item" role="presentation">
+                <button class="nav-link active" id="tab-profile-detail" data-bs-toggle="tab" data-bs-target="#pane-profile-detail" type="button" role="tab">Profil &amp; Keamanan</button>
+            </li>
+        </ul>
+        <div class="erp-content-body tab-content">
+            <div class="tab-pane fade show active" id="pane-profile-detail" role="tabpanel">
+                <div class="row g-3">
+                    <div class="col-lg-6">
+                        <div class="rnt-panel h-100 mb-0">
+                            <div class="rnt-panel-header"><i class="bi bi-person-vcard"></i> Data Akun</div>
+                            <div class="rnt-panel-body">
+                                <?= ui_erp_ro_row('Nama', $me['full_name'] ?? null) ?>
+                                <?= ui_erp_ro_row('Username', $me['username'] ?? null, false, true) ?>
+                                <?= ui_erp_ro_row('Email', $me['email'] ?? null) ?>
+                                <?= ui_erp_ro_row('No. Telepon', ($me['phone_number'] ?? '') !== '' ? $me['phone_number'] : null) ?>
+                                <?= ui_erp_ro_html_row('Role', '<span class="badge bg-secondary">' . e($me['role_name'] ?? ($_SESSION['role_name'] ?? '-')) . '</span>') ?>
+                                <?= ui_erp_ro_row('Perusahaan Aktif', $me['company_name'] ?? 'Lintas perusahaan') ?>
+                                <?= ui_erp_ro_row('Login Terakhir', $me['last_login'] ?? null) ?>
+                                <div class="px-3 py-2 text-muted small border-top">Data akun hanya dapat diubah oleh administrator.</div>
+                            </div>
+                        </div>
+                    </div>
 
-        <div class="col-lg-6">
-            <div class="card shadow-sm border-0 h-100">
-                <div class="card-header bg-white fw-semibold">Ganti Password</div>
-                <div class="card-body">
-                    <form method="post" autocomplete="off">
-                        <?= csrf_field() ?>
-                        <div class="mb-3">
-                            <label class="form-label">Password Lama</label>
-                            <input type="password" name="password_lama" class="form-control" autocomplete="current-password" required>
-                        </div>
-                        <div class="mb-3">
-                            <label class="form-label">Password Baru</label>
-                            <input type="password" name="password_baru" class="form-control" autocomplete="new-password" minlength="8" required>
-                            <div class="form-text">Minimal 8 karakter.</div>
-                        </div>
-                        <div class="mb-3">
-                            <label class="form-label">Konfirmasi Password Baru</label>
-                            <input type="password" name="konfirmasi" class="form-control" autocomplete="new-password" minlength="8" required>
-                        </div>
-                        <button type="submit" class="btn btn-primary">Simpan Password</button>
-                    </form>
+                    <div class="col-lg-6">
+                        <form method="post" autocomplete="off" id="formProfilePassword">
+                            <?= csrf_field() ?>
+                            <div class="rnt-panel h-100 mb-0">
+                                <div class="rnt-panel-header"><i class="bi bi-key"></i> Ganti Password</div>
+                                <div class="rnt-panel-body">
+                                    <div class="rnt-row">
+                                        <div class="rnt-label">Password Lama <span class="text-danger">*</span></div>
+                                        <div class="rnt-field">
+                                            <input type="password" name="password_lama" class="form-control form-control-sm" autocomplete="current-password" required>
+                                        </div>
+                                    </div>
+                                    <div class="rnt-row">
+                                        <div class="rnt-label">Password Baru <span class="text-danger">*</span></div>
+                                        <div class="rnt-field">
+                                            <input type="password" name="password_baru" class="form-control form-control-sm" autocomplete="new-password" minlength="8" required>
+                                            <div class="form-text small">Minimal 8 karakter.</div>
+                                        </div>
+                                    </div>
+                                    <div class="rnt-row">
+                                        <div class="rnt-label">Konfirmasi Password <span class="text-danger">*</span></div>
+                                        <div class="rnt-field">
+                                            <input type="password" name="konfirmasi" class="form-control form-control-sm" autocomplete="new-password" minlength="8" required>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </form>
+                    </div>
                 </div>
             </div>
         </div>

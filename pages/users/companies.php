@@ -88,33 +88,53 @@ $active = 'users';
 $title  = 'Akses Perusahaan: ' . $u['username'];
 require __DIR__ . '/../../includes/header.php';
 ?>
-<main class="col-12 col-md-9 col-lg-10 p-4">
-    <div class="d-flex justify-content-between align-items-center mb-3">
-        <h4 class="fw-bold mb-0">Akses Perusahaan: <?= e($u['full_name']) ?> <span class="text-muted small">(<?= e($u['username']) ?>)</span></h4>
-        <a class="btn btn-sm btn-outline-secondary" href="<?= e(APP_URL) ?>/pages/users/index.php">Kembali</a>
-    </div>
-    <div class="card shadow-sm border-0" style="max-width: 640px;">
-        <div class="card-body">
-            <form method="post" action="<?= e(APP_URL) ?>/pages/users/companies.php?id=<?= $id ?>">
-                <?= csrf_field() ?>
-                <input type="hidden" name="id" value="<?= $id ?>">
-                <?php if (!$companies): ?>
-                    <p class="text-muted mb-3">Belum ada perusahaan.</p>
-                <?php endif; ?>
-                <?php foreach ($companies as $c): ?>
-                    <div class="form-check mb-2">
-                        <input class="form-check-input" type="checkbox" name="company_ids[]" id="c<?= (int) $c['id'] ?>"
-                               value="<?= (int) $c['id'] ?>"<?= in_array((int) $c['id'], $granted, true) ? ' checked' : '' ?>>
-                        <label class="form-check-label" for="c<?= (int) $c['id'] ?>">
-                            <?= e($c['name']) ?> <span class="text-muted small">(<?= e($c['code']) ?>)</span>
-                        </label>
+<main class="p-2 p-md-3">
+    <?= ui_erp_toolbar(
+        'Pengguna',
+        'building-check',
+        'Akses Perusahaan: ' . $u['full_name'],
+        [(string) $u['username']],
+        [
+            ['label' => 'Kembali', 'icon' => 'arrow-left', 'href' => APP_URL . '/pages/users/index.php', 'class' => 'btn-outline-secondary'],
+            ['label' => 'Simpan', 'icon' => 'check2', 'type' => 'submit', 'form' => 'formUserCompanies', 'class' => 'btn-primary'],
+        ]
+    ) ?>
+    <form method="post" action="<?= e(APP_URL) ?>/pages/users/companies.php?id=<?= $id ?>" id="formUserCompanies">
+        <?= csrf_field() ?>
+        <input type="hidden" name="id" value="<?= $id ?>">
+        <div class="erp-window-card">
+            <ul class="nav nav-tabs erp-sub-tabs" role="tablist">
+                <li class="nav-item" role="presentation">
+                    <button class="nav-link active" id="tab-uc-detail" data-bs-toggle="tab" data-bs-target="#pane-uc-detail" type="button" role="tab">Akses Perusahaan</button>
+                </li>
+            </ul>
+            <div class="erp-content-body tab-content">
+                <div class="tab-pane fade show active" id="pane-uc-detail" role="tabpanel">
+                    <div class="rnt-panel mb-0">
+                        <div class="rnt-panel-header"><i class="bi bi-buildings"></i> Daftar Perusahaan Diizinkan</div>
+                        <div class="rnt-panel-body p-3">
+                            <?php if (!$companies): ?>
+                                <p class="text-muted small mb-0">Belum ada perusahaan.</p>
+                            <?php else: ?>
+                                <div class="row g-2">
+                                    <?php foreach ($companies as $c): ?>
+                                        <div class="col-md-6 col-lg-4">
+                                            <div class="form-check mb-0">
+                                                <input class="form-check-input" type="checkbox" name="company_ids[]" id="c<?= (int) $c['id'] ?>"
+                                                       value="<?= (int) $c['id'] ?>"<?= in_array((int) $c['id'], $granted, true) ? ' checked' : '' ?>>
+                                                <label class="form-check-label small" for="c<?= (int) $c['id'] ?>">
+                                                    <?= e($c['name']) ?> <span class="text-muted">(<?= e($c['code']) ?>)</span>
+                                                </label>
+                                            </div>
+                                        </div>
+                                    <?php endforeach; ?>
+                                </div>
+                            <?php endif; ?>
+                        </div>
                     </div>
-                <?php endforeach; ?>
-                <div class="mt-4">
-                    <button type="submit" class="btn btn-primary">Simpan</button>
                 </div>
-            </form>
+            </div>
         </div>
-    </div>
+    </form>
 </main>
 <?php require __DIR__ . '/../../includes/footer.php'; ?>

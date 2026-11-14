@@ -69,8 +69,10 @@ $menu = [
         ['label' => 'Tugaskan Driver',      'href' => 'pages/dispatch/assign.php',   'perms' => 'dispatch.manage'],
     ]],
     ['key' => 'vehicles',   'section' => 'Operasional & Armada', 'label' => 'Kendaraan',    'icon' => 'truck', 'perm' => 'vehicles.view', 'sub' => [
-        ['label' => 'Daftar Kendaraan', 'href' => 'pages/vehicles/index.php',  'perms' => 'vehicles.view'],
-        ['label' => 'Master Kategori',  'href' => 'pages/vehicles/master.php', 'perms' => 'vehicles.view'],
+        ['label' => 'Daftar Kendaraan',   'href' => 'pages/vehicles/index.php',            'perms' => 'vehicles.view'],
+        ['label' => 'Merek Kendaraan',    'href' => 'pages/vehicles/brands/index.php',     'perms' => 'vehicles.view'],
+        ['label' => 'Kategori Kendaraan', 'href' => 'pages/vehicles/categories/index.php', 'perms' => 'vehicles.view'],
+        ['label' => 'Model Unit',         'href' => 'pages/vehicles/models/index.php',     'perms' => 'vehicles.view'],
     ]],
 
     // ── KEUANGAN & AKUNTANSI ────────────────────────────────────────────────
@@ -198,10 +200,11 @@ if (!empty($activeLogo) && !preg_match('#/logo_[a-z]+\.png$#i', (string) $active
                     $s_dir = dirname($s_href_clean);
                     $is_index_entry = basename($s_href_clean) === 'index.php';
                     $req_base = basename($req_path);
+                    $req_dir  = str_replace('\\', '/', dirname($req_path));
                     $sub_active = (!empty($s['key']) && $s['key'] === $active)
                         || ($req_path !== '' && (
                             str_ends_with($req_path, '/' . $s_href_clean)
-                            || ($is_index_entry && $s_dir !== '.' && str_contains($req_path, '/' . $s_dir . '/') && in_array($req_base, ['index.php', 'form.php', 'detail.php', 'view.php'], true))
+                            || ($is_index_entry && $s_dir !== '.' && str_ends_with($req_dir, '/' . $s_dir) && in_array($req_base, ['index.php', 'form.php', 'detail.php', 'view.php'], true))
                         ));
                 ?>
                   <li class="nav-item">

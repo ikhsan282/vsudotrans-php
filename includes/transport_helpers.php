@@ -544,6 +544,90 @@ function booking_extra_passengers_export_sql(string $booking_type): string
 }
 
 /**
+ * Ekspresi SQL subquery jumlah penumpang tambahan untuk export PDF ringkas (sesuai badge grid UI).
+ */
+function booking_extra_passenger_count_sql(string $booking_type): string
+{
+    if (!in_array($booking_type, ['rental', 'travel'], true)) {
+        return '0';
+    }
+    $bt = $booking_type === 'rental' ? 'rental' : 'travel';
+    return "(SELECT COUNT(*) FROM booking_passengers bp WHERE bp.booking_type = '{$bt}' AND bp.booking_id = b.id AND bp.is_primary = 0)";
+}
+
+/**
+ * Daftar kolom header export booking Travel/Rental (PDF = 1:1 grid UI, XLSX = flat Penumpang Tambahan).
+ */
+function booking_export_headers(bool $isPdf, string $originLabel, string $destLabel): array
+{
+    if ($isPdf) {
+        return ['Resi', 'Penumpang', 'Kendaraan', 'Jam', 'Tanggal', $originLabel, $destLabel, 'Total Harga', 'Total Pembayaran', 'Status'];
+    }
+    return ['Resi', 'Penumpang (Nama & HP)', 'Penumpang Tambahan', 'Kendaraan', 'Jam', 'Tanggal', $originLabel, $destLabel, 'Total Harga', 'Total Pembayaran', 'Status'];
+}
+
+/**
+ * Format 1 baris export booking Travel/Rental untuk PDF (ringkas 1:1 UI) atau XLSX (kolom datar).
+ */
+function booking_export_row(array $r, bool $isPdf, string $dateLabel): array
+{
+    $plate      = trim((string) ($r['vehicle_number'] ?? ''));
+    $brandModel = trim(implode(' - ', array_filter([$r['brand_name'] ?? '', $r['model_name'] ?? ''])));
+    $catName    = trim((string) ($r['category_name'] ?? ''));
+
+    if ($isPdf) {
+        $vehSub = $brandModel !== '' ? $brandModel : $catName;
+        if ($plate !== '') {
+            $veh = $plate . ($vehSub !== '' ? "\n" . $vehSub : '');
+        } elseif ($brandModel !== '') {
+            $veh = $brandModel . ($catName !== '' ? "\n" . $catName : '');
+        } else {
+            $veh = $catName !== '' ? $catName : '-';
+        }
+    } else {
+        $veh = $plate !== '' ? ($plate . ($brandModel !== '' ? ' (' . $brandModel . ')' : '')) : ($brandModel ?: ($catName ?: '-'));
+    }
+
+    $jam    = !empty($r['time']) ? substr((string) $r['time'], 0, 5) : '-';
+    $pickup = ($r['pickup_city_name'] ?? '') ?: '-';
+    $deliv  = ($r['delivery_city_name'] ?? '') ?: '-';
+    $status = ucfirst((string) ($r['status'] ?? ''));
+
+    if ($isPdf) {
+        $exCnt   = (int) ($r['extra_cnt'] ?? 0);
+        $paxHead = (string) ($r['passenger_name'] ?? '') . ($exCnt > 0 ? " (+{$exCnt} tambahan)" : '');
+        $paxCell = $paxHead . "\n" . (($r['passenger_phone'] ?? '') ?: '-');
+        return [
+            $r['document_number'],
+            $paxCell,
+            $veh,
+            $jam,
+            $dateLabel,
+            $pickup,
+            $deliv,
+            rupiah((float) ($r['total_price'] ?? 0)),
+            rupiah((float) ($r['total_payment'] ?? 0)),
+            $status,
+        ];
+    }
+
+    $extraPax = trim((string) ($r['extra_passengers'] ?? ''));
+    return [
+        $r['document_number'],
+        trim((string) ($r['passenger_name'] ?? '') . (!empty($r['passenger_phone']) ? ' (' . $r['passenger_phone'] . ')' : '')),
+        $extraPax !== '' ? $extraPax : '-',
+        $veh,
+        $jam,
+        $dateLabel,
+        $pickup,
+        $deliv,
+        (float) ($r['total_price'] ?? 0),
+        (float) ($r['total_payment'] ?? 0),
+        $status,
+    ];
+}
+
+/**
  * Resolusi filter CompanyId seragam untuk halaman daftar Travel & Rental.
  * Default mengikuti perusahaan aktif dari switcher header; hanya Super Admin yang memilih
  * company_id=0 secara eksplisit dapat melihat lintas perusahaan.
@@ -772,6 +856,8 @@ const RUTE_SCHEDULE_SLOTS = [
     '12:00', '13:00', '14:00', '15:00', '16:00', '17:00',
     '18:00', '19:00', '20:00', '21:00', '22:00', '23:00',
 ];
+
+const RUTE_GRID_MAX_VISIBLE_SLOTS = 7;
 
 /** Pastikan kolom radius penjemputan/pengantaran pada `rutes` serta tabel `rute_schedules` tersedia di DB. */
 function rute_ensure_schema(): void
@@ -1084,8 +1170,33 @@ function rute_tariffs_sync(int $rute_id, int $company_id, array $tariffs, ?strin
     $stUp->close();
 }
 
+/** Format pasangan Provinsi (atas/utama) & Kota untuk grid maupun export PDF/Excel rute. */
+function rute_format_loc_cell(string $city, string $province, bool $multiline = true): string
+{
+    $prov = trim($province);
+    $cty  = trim($city);
+    if ($prov === '') {
+        return $cty !== '' ? $cty : '-';
+    }
+    return $multiline ? "{$prov}\n{$cty}" : "{$prov} - {$cty}";
+}
+
+/** Format daftar jam keberangkatan ENUM (bisa dibatasi maxVisible + (+N) agar seragam dengan grid UI). */
+function rute_format_schedules_text(string $csv, int $maxVisible = 0): string
+{
+    $slots = array_values(array_filter(array_map('trim', explode(',', $csv)), static fn ($v) => $v !== ''));
+    if (!$slots) {
+        return '-';
+    }
+    if ($maxVisible > 0 && count($slots) > $maxVisible) {
+        $extra = count($slots) - $maxVisible;
+        return implode(', ', array_slice($slots, 0, $maxVisible)) . " (+{$extra})";
+    }
+    return implode(', ', $slots);
+}
+
 /** Ringkasan daftar tarif kategori kendaraan untuk ekspor Excel/PDF daftar rute. */
-function rute_format_tariffs_summary(array $tariffs): string
+function rute_format_tariffs_summary(array $tariffs, string $delimiter = '; '): string
 {
     if (!$tariffs) {
         return '-';
@@ -1096,34 +1207,63 @@ function rute_format_tariffs_summary(array $tariffs): string
         if ($cat === '') {
             $cat = 'Kategori #' . (int) ($t['category_vehicle_id'] ?? 0);
         }
-        $line = $cat . ': ' . rupiah((float) ($t['price'] ?? 0));
         $seat = (int) (($t['seat_capacity'] ?? 0) > 0 ? $t['seat_capacity'] : ($t['end_capacity_seat'] ?? 0));
-        if ($seat > 0) {
-            $line .= ' (' . $seat . ' kursi)';
-        }
-        $parts[] = $line;
+        $seatTag = $seat > 0 ? " ({$seat} seat)" : '';
+        $parts[] = $cat . $seatTag . ': ' . format_nominal((float) ($t['price'] ?? 0));
     }
-    return implode('; ', $parts);
+    return implode($delimiter, $parts);
+}
+
+/** Format daftar tarif dari hasil GROUP_CONCAT SQL (separator record ~;~ dan field ~|~) atau fallback kolom rutes. */
+function rute_format_tariffs_export_cell(array $r, string $delimiter = '; '): string
+{
+    $raw = trim((string) ($r['tariffs_raw'] ?? ''));
+    if ($raw !== '') {
+        $items = [];
+        foreach (explode('~;~', $raw) as $rec) {
+            if ($rec === '') {
+                continue;
+            }
+            $cols = explode('~|~', $rec);
+            $items[] = [
+                'category_name' => $cols[0] ?? '',
+                'price'         => (float) ($cols[1] ?? 0),
+                'seat_capacity' => (int) ($cols[2] ?? 0),
+            ];
+        }
+        if ($items) {
+            return rute_format_tariffs_summary($items, $delimiter);
+        }
+    }
+    $sc    = (int) ($r['seat_capacity'] ?? 0);
+    $price = (float) ($r['price'] ?? 0);
+    if ($price <= 0 && empty($r['def_cat_name'])) {
+        return '-';
+    }
+    $cat = trim((string) ($r['def_cat_name'] ?? ''));
+    return ($cat !== '' ? $cat : 'Standar') . ($sc > 0 ? " ({$sc} seat)" : '') . ': ' . format_nominal($price);
 }
 
 /** Ringkasan singkat teks radius jemput/antar untuk tabel daftar dan export rute. */
-function rute_format_radius_summary(float $freeKm, float $maxKm, float $extraPerKm): string
+function rute_format_radius_summary(float $freeKm, float $maxKm, float $extraPerKm, bool $includeFees = true): string
 {
-    if ($freeKm <= 0 && $maxKm <= 0 && $extraPerKm <= 0) {
+    if ($freeKm <= 0 && $maxKm <= 0 && (!$includeFees || $extraPerKm <= 0)) {
         return '-';
     }
     $fmtKm = static fn (float $v): string => rtrim(rtrim(number_format($v, 2, '.', ''), '0'), '.');
     $parts = [];
-    if ($freeKm > 0) {
+    if ($includeFees && $freeKm > 0) {
         $parts[] = 'Gratis ' . $fmtKm($freeKm) . ' km';
     }
     if ($maxKm > 0) {
         $parts[] = 'Maks ' . $fmtKm($maxKm) . ' km';
+    } elseif (!$includeFees && $freeKm > 0) {
+        $parts[] = 'Jangkauan ' . $fmtKm($freeKm) . ' km';
     }
-    if ($extraPerKm > 0) {
+    if ($includeFees && $extraPerKm > 0) {
         $parts[] = '+' . rupiah($extraPerKm) . '/km';
     }
-    return implode(' · ', $parts);
+    return $parts ? implode(' · ', $parts) : '-';
 }
 
 /** Pastikan tabel `rute_radius_districts` (cakupan kecamatan & biaya tambahan per rute) tersedia di DB. */
@@ -1342,18 +1482,24 @@ function rute_format_district_radius_summary(
     float $legacyFreeKm = 0,
     float $legacyMaxKm = 0,
     float $legacyExtraPerKm = 0,
-    bool $detailed = false
+    bool $detailed = false,
+    bool $includeFees = true,
+    bool $includeCount = true
 ): string {
     if (!$districts) {
-        return rute_format_radius_summary($legacyFreeKm, $legacyMaxKm, $legacyExtraPerKm);
+        return rute_format_radius_summary($legacyFreeKm, $legacyMaxKm, $legacyExtraPerKm, $includeFees);
     }
     if ($detailed) {
         $lines = [];
         foreach ($districts as $d) {
             $name  = trim((string) ($d['district_name'] ?? ''));
-            $extra = (float) ($d['extra_price'] ?? 0);
-            $tag   = $extra > 0 ? '+' . rupiah($extra) : 'Gratis';
-            $lines[] = ($name !== '' ? $name : ('Kec #' . (int) ($d['district_id'] ?? 0))) . ' (' . $tag . ')';
+            $label = $name !== '' ? $name : ('Kec #' . (int) ($d['district_id'] ?? 0));
+            if ($includeFees) {
+                $extra = (float) ($d['extra_price'] ?? 0);
+                $tag   = $extra > 0 ? '+' . rupiah($extra) : 'Gratis';
+                $label .= ' (' . $tag . ')';
+            }
+            $lines[] = $label;
         }
         return implode('; ', $lines);
     }
@@ -1373,6 +1519,14 @@ function rute_format_district_radius_summary(
             $names[] = $n;
         }
     }
+    $namesText = $names ? (implode(', ', $names) . ($count > 2 ? ', …' : '')) : '';
+    if (!$includeFees) {
+        if (!$includeCount) {
+            return $namesText !== '' ? $namesText : '-';
+        }
+        return $namesText !== '' ? "{$count} kec. · {$namesText}" : "{$count} kec.";
+    }
+    $sample = $namesText !== '' ? " · {$namesText}" : '';
     $feeText = 'Gratis';
     if ($paidExtras) {
         $minE = min($paidExtras);
@@ -1380,8 +1534,28 @@ function rute_format_district_radius_summary(
         $range = ($minE == $maxE) ? ('+' . rupiah($minE)) : ('+' . rupiah($minE) . '–' . rupiah($maxE));
         $feeText = ($freeCount > 0) ? ("{$freeCount} gratis, {$range}") : $range;
     }
-    $sample = $names ? (' · ' . implode(', ', $names) . ($count > 2 ? ', …' : '')) : '';
-    return "{$count} kec. ({$feeText}){$sample}";
+    return ($includeCount ? "{$count} kec. " : '') . "({$feeText}){$sample}";
+}
+
+/**
+ * Format daftar kecamatan radius dari hasil GROUP_CONCAT SQL (separator ~;~) tanpa label biaya/jumlah kec.
+ * $compact = true memotong maksimal 2 kecamatan + ', …' persis tampilan sel grid UI (untuk PDF).
+ */
+function rute_format_district_names_export(
+    string $rawNames,
+    float $legacyFreeKm = 0,
+    float $legacyMaxKm = 0,
+    float $legacyExtraPerKm = 0,
+    bool $compact = true
+): string {
+    $names = array_values(array_filter(array_map('trim', explode('~;~', $rawNames)), static fn ($v) => $v !== ''));
+    if (!$names) {
+        return rute_format_radius_summary($legacyFreeKm, $legacyMaxKm, $legacyExtraPerKm, false);
+    }
+    if ($compact && count($names) > 2) {
+        return implode(', ', array_slice($names, 0, 2)) . ', …';
+    }
+    return implode(', ', $names);
 }
 
 /** Cari kecocokan biaya tambahan kecamatan pada daftar radius rute. */

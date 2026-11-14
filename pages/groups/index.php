@@ -49,7 +49,7 @@ if (in_array($export_format, ['xlsx', 'pdf'], true)) {
     $sub = $q !== '' ? 'Pencarian: "' . $q . '"' : 'Semua Data';
     grid_export_send(
         'Daftar Grup Perusahaan',
-        ['Kode', 'Nama Grup', 'Status'],
+        ['Kode', 'Nama', 'Status'],
         $row_stream,
         $export_format,
         'portrait',
@@ -89,7 +89,7 @@ require __DIR__ . '/../../includes/header.php';
     ) ?>
     <div class="card shadow-sm border-0 mb-3">
         <div class="card-body py-2 px-3">
-            <form method="get" class="row g-2 align-items-center">
+            <form method="get" class="row g-2 align-items-center erp-filter-bar">
                 <div class="col-12 col-md-4">
                     <div class="input-group input-group-sm">
                         <span class="input-group-text bg-white text-muted"><i class="bi bi-search"></i></span>
@@ -103,19 +103,14 @@ require __DIR__ . '/../../includes/header.php';
                         <option value="0" <?= $status === '0' ? 'selected' : '' ?>>Nonaktif</option>
                     </select>
                 </div>
-                <div class="col-auto d-flex gap-1">
-                    <button type="submit" class="btn btn-sm btn-secondary">Filter</button>
-                    <?php if ($q !== '' || $status !== ''): ?>
-                        <a href="<?= e(APP_URL) ?>/pages/groups/index.php" class="btn btn-sm btn-outline-danger" title="Reset"><i class="bi bi-x-lg"></i> Reset</a>
-                    <?php endif; ?>
-                </div>
+                <?= ui_filter_actions(APP_URL . '/pages/groups/index.php', ($q !== '' || $status !== '')) ?>
             </form>
         </div>
     </div>
     <div class="card shadow-sm border-0">
         <div class="table-responsive">
             <table class="table table-hover mb-0 align-middle">
-                <thead class="table-light"><tr><th class="text-center" style="width: 52px;">No</th><th>Kode</th><th>Nama</th><th>Status</th><th class="text-end">Aksi</th></tr></thead>
+                <thead class="table-light"><tr><th class="text-center" style="width: 52px;">#</th><th>Kode</th><th>Nama</th><th>Status</th><th class="text-end">Aksi</th></tr></thead>
                 <tbody>
                 <?php foreach ($rows as $idx => $r): ?>
                     <tr>

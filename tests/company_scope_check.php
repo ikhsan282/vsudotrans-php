@@ -134,10 +134,9 @@ try {
     $cat1  = 2; // Bus Besar (MTM)
     $cat5  = 5; // INNOVA (LIZ)
 
-    $refVeh = $db->query("SELECT brand_id, model_unit_id, type_engine_id FROM vehicles WHERE company_id = 1 LIMIT 1")->fetch_assoc();
+    $refVeh = $db->query("SELECT brand_id, model_unit_id FROM vehicles WHERE company_id = 1 LIMIT 1")->fetch_assoc();
     $brandId = (int) ($refVeh['brand_id'] ?? 4);
     $modelId = (int) ($refVeh['model_unit_id'] ?? 3);
-    $engId   = (int) ($refVeh['type_engine_id'] ?? 2);
 
     $dists = $db->query("SELECT id, city_id FROM districts ORDER BY id DESC LIMIT 2")->fetch_all(MYSQLI_ASSOC);
     $distA = (int) $dists[0]['id'];
@@ -150,31 +149,31 @@ try {
 
     // 1. Seed vehicles for MTM (comp 1) & LIZ (comp 5)
     $stV = $db->prepare(
-        "INSERT INTO vehicles (company_id, brand_id, model_unit_id, type_engine_id, category_vehicle_id, frame_number, machine_number, seat, production_year, vehicle_color, vehicle_number, ownership, is_active, created_user)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, 2024, ?, ?, 'Milik Sendiri', 1, ?)"
+        "INSERT INTO vehicles (company_id, brand_id, model_unit_id, category_vehicle_id, frame_number, machine_number, seat, production_year, vehicle_color, vehicle_number, ownership, is_active, created_user)
+         VALUES (?, ?, ?, ?, ?, ?, ?, 2024, ?, ?, 'Milik Sendiri', 1, ?)"
     );
     $v1Frame = "FRM1{$uniq}"; $v1Eng = "ENG1{$uniq}"; $v1Seat = 45; $v1Col = 'Putih'; $v1Plate = "B {$uniq} MTM";
-    $stV->bind_param('iiiiississs', $comp1, $brandId, $modelId, $engId, $cat1, $v1Frame, $v1Eng, $v1Seat, $v1Col, $v1Plate, $uTest);
+    $stV->bind_param('iiiississs', $comp1, $brandId, $modelId, $cat1, $v1Frame, $v1Eng, $v1Seat, $v1Col, $v1Plate, $uTest);
     $stV->execute();
     $veh1Id = (int) $db->insert_id;
     $tempVehIds[] = $veh1Id;
 
     $v5Frame = "FRM5{$uniq}"; $v5Eng = "ENG5{$uniq}"; $v5Seat = 7; $v5Col = 'Hitam'; $v5Plate = "B {$uniq} LIZ";
-    $stV->bind_param('iiiiississs', $comp5, $brandId, $modelId, $engId, $cat5, $v5Frame, $v5Eng, $v5Seat, $v5Col, $v5Plate, $uTest);
+    $stV->bind_param('iiiississs', $comp5, $brandId, $modelId, $cat5, $v5Frame, $v5Eng, $v5Seat, $v5Col, $v5Plate, $uTest);
     $stV->execute();
     $veh5Id = (int) $db->insert_id;
     $tempVehIds[] = $veh5Id;
     $stV->close();
 
     // 2. Seed passengers for MTM (comp 1) & LIZ (comp 5)
-    $stP = $db->prepare("INSERT INTO passengers (company_id, code, name, country_code, phone_number, created_user) VALUES (?, ?, ?, '+62', ?, ?)");
-    $p1Code = "CSM1{$uniq}"; $p1Name = "CSCOPE Pax MTM {$uniq}"; $p1Tel = "81111{$uniq}";
+    $stP = $db->prepare("INSERT INTO passengers (company_id, code, name, phone_number, created_user) VALUES (?, ?, ?, ?, ?)");
+    $p1Code = "CSM1{$uniq}"; $p1Name = "CSCOPE Pax MTM {$uniq}"; $p1Tel = "6281111{$uniq}";
     $stP->bind_param('issss', $comp1, $p1Code, $p1Name, $p1Tel, $uTest);
     $stP->execute();
     $pax1Id = (int) $db->insert_id;
     $tempPaxIds[] = $pax1Id;
 
-    $p5Code = "CSL5{$uniq}"; $p5Name = "CSCOPE Pax LIZ {$uniq}"; $p5Tel = "85555{$uniq}";
+    $p5Code = "CSL5{$uniq}"; $p5Name = "CSCOPE Pax LIZ {$uniq}"; $p5Tel = "6285555{$uniq}";
     $stP->bind_param('issss', $comp5, $p5Code, $p5Name, $p5Tel, $uTest);
     $stP->execute();
     $pax5Id = (int) $db->insert_id;
@@ -415,9 +414,11 @@ try {
         $regIdx5['code'] === 200
         && !str_contains($regIdx5['body'], 'Undefined array key')
         && str_contains($regIdx5['body'], 'INNOVA - Toyota Innova Reborn')
-        && str_contains($regIdx5['body'], "CSCOPE Reg LIZ {$uniq}")
+        && str_contains($regIdx5['body'], 'Rp 555.000')
+        && !str_contains($regIdx5['body'], 'Rp 111.000')
+        && !str_contains($regIdx5['body'], "CSCOPE Reg LIZ {$uniq}")
         && !str_contains($regIdx5['body'], "CSCOPE Reg MTM {$uniq}"),
-        'transport/regulations/index.php defaults to Company 5 with valid category labels & zero PHP warnings'
+        'transport/regulations/index.php defaults to Company 5 with valid category labels, commission amounts without notes & zero PHP warnings'
     );
 
     $regForm5 = $httpGet($jarAdmin, '/pages/transport/regulations/form.php');
@@ -432,7 +433,7 @@ try {
         str_contains($regForm5['body'], 'class="rnt-panel')
         && str_contains($regForm5['body'], 'class="rnt-panel-header"')
         && preg_match('/<button\b(?=[^>]*\bid="btnAutoSummaryNote")(?=[^>]*\bclass="[^"]*\brnt-header-action\b)[^>]*>/i', $regForm5['body']) === 1
-        && preg_match('/<button\b(?=[^>]*\bid="btnLoadDefaultPreset")(?=[^>]*\bclass="[^"]*\brnt-header-action\b)[^>]*>/i', $regForm5['body']) === 1
+        && !str_contains($regForm5['body'], 'btnLoadDefaultPreset')
         && preg_match('/<button\b(?=[^>]*\bid="btnAddRegRow")(?=[^>]*\bclass="[^"]*\brnt-header-action\b)[^>]*>/i', $regForm5['body']) === 1
         && !str_contains($regForm5['body'], '.rnt-panel {'),
         'transport/regulations/form.php harmonizes panels (.rnt-panel) & inline actions (.rnt-header-action) without duplicating .rnt-panel CSS'
@@ -864,17 +865,23 @@ try {
     $rtIdxDist = $distAName !== '' ? $httpGet($jarAdmin, '/pages/travel/rutes/index.php?q=' . urlencode($distAName)) : ['code' => 200, 'body' => $enumCode];
     cs_check(
         $rtIdx1['code'] === 200
+        && str_contains($rtIdx1['body'], '>#</th>')
+        && !str_contains($rtIdx1['body'], '>No</th>')
+        && !str_contains($rtIdx1['body'], '<th>Nama</th>')
         && str_contains($rtIdx1['body'], 'Radius Jemput / Antar')
         && str_contains($rtIdx1['body'], '<th>Daftar Harga</th>')
         && !str_contains($rtIdx1['body'], 'Tarif per Kategori Kendaraan')
         && (str_contains($rtIdx1['body'], 'bi-check-circle-fill') || str_contains($rtIdx1['body'], 'bi-x-circle-fill'))
         && !str_contains($rtIdx1['body'], '<span class="badge bg-success">Aktif</span>')
-        && str_contains($rtIdx1['body'], 'Rp 180.000')
-        && str_contains($rtIdx1['body'], '(50 kursi)')
-        && ($cat1b <= 0 || (str_contains($rtIdx1['body'], 'Rp 145.000') && str_contains($rtIdx1['body'], '(30 kursi)')))
-        && str_contains($rtIdx1['body'], '1 kec.')
-        && str_contains($rtIdx1['body'], '+Rp 30.000')
-        && str_contains($rtIdx1['body'], '+Rp 50.000')
+        && str_contains($rtIdx1['body'], '>180.000<')
+        && !str_contains($rtIdx1['body'], 'Rp 180.000')
+        && str_contains($rtIdx1['body'], '(50 seat)')
+        && ($cat1b <= 0 || (str_contains($rtIdx1['body'], '>145.000<') && !str_contains($rtIdx1['body'], 'Rp 145.000') && str_contains($rtIdx1['body'], '(30 seat)')))
+        && ($distAName === '' || str_contains($rtIdx1['body'], htmlspecialchars($distAName, ENT_QUOTES, 'UTF-8')))
+        && !str_contains($rtIdx1['body'], ' kec.')
+        && !str_contains($rtIdx1['body'], '(Gratis)')
+        && !str_contains($rtIdx1['body'], '+Rp 30.000')
+        && !str_contains($rtIdx1['body'], '+Rp 50.000')
         && str_contains($rtIdxDist['body'], $enumCode),
         'travel/rutes/index.php renders Daftar Harga, icon-only Status, Kecamatan Radius summary, and searches covered district names'
     );

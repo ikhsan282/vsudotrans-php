@@ -75,13 +75,16 @@ if ($code === '') {
     $code = 'P-' . time();
 }
 
-$country_code = '+62';
-$val_phone = $phone !== '' ? $phone : null;
+$val_phone = normalize_phone_62($phone);
+if ($val_phone !== null && strlen($val_phone) > 20) {
+    echo json_encode(['ok' => false, 'error' => 'Nomor telepon terlalu panjang (maks 20 digit).']);
+    exit;
+}
 $val_email = $email !== '' ? $email : null;
 $note = 'Ditambahkan via Quick-Add Modal Booking';
 
-$st = $db->prepare('INSERT INTO passengers (company_id, code, name, country_code, phone_number, email, note, created_user) VALUES (?, ?, ?, ?, ?, ?, ?, ?)');
-$st->bind_param('isssssss', $cid, $code, $name, $country_code, $val_phone, $val_email, $note, $user);
+$st = $db->prepare('INSERT INTO passengers (company_id, code, name, phone_number, email, note, created_user) VALUES (?, ?, ?, ?, ?, ?, ?)');
+$st->bind_param('issssss', $cid, $code, $name, $val_phone, $val_email, $note, $user);
 if (!$st->execute()) {
     $err = $st->error;
     $st->close();
@@ -99,7 +102,8 @@ echo json_encode([
         'id'    => $new_id,
         'code'  => $code,
         'name'  => $name,
-        'label' => $name . ($phone ? ' (' . $phone . ')' : '') . ' [' . $code . ']',
+        'phone' => $val_phone ?? '',
+        'label' => $name . ($val_phone ? ' (' . $val_phone . ')' : '') . ' [' . $code . ']',
     ]
 ]);
 

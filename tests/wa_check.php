@@ -54,7 +54,7 @@ $c->query("INSERT IGNORE INTO countries (id, code, name) VALUES (1, 'ID', 'Indon
 $c->query("INSERT IGNORE INTO provinces (id, country_id, code, name) VALUES (1, 1, 'BANTEN', 'Banten')");
 $c->query("INSERT IGNORE INTO cities (id, country_id, province_id, code, name) VALUES (1, 1, 1, 'TNG', 'Tangerang')");
 $c->query("INSERT IGNORE INTO districts (id, country_id, province_id, city_id, code, name) VALUES (1, 1, 1, 1, 'CBT', 'Cibodas')");
-$c->query("INSERT IGNORE INTO companies (id, group_id, code, name, country_code, is_active) VALUES (991, 1, 'WA-B', 'Perusahaan WA B', '+62', 1)");
+$c->query("INSERT IGNORE INTO companies (id, group_id, code, name, is_active) VALUES (991, 1, 'WA-B', 'Perusahaan WA B', 1)");
 $c->query("INSERT IGNORE INTO branches (id, company_id, code, name) VALUES (9001, 1, 'WA-BR', 'Cabang WA')");
 $c->query("INSERT IGNORE INTO branches (id, company_id, code, name) VALUES (9002, 991, 'WA-BRB', 'Cabang WA B')");
 $c->query("INSERT IGNORE INTO passengers (id, company_id, code, name, phone_number) VALUES (9001, 1, 'WA-PAX', 'Budi WA', '081200000001')");

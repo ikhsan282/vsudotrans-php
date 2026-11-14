@@ -8,6 +8,51 @@ function e(?string $s): string
     return htmlspecialchars((string) $s, ENT_QUOTES, 'UTF-8');
 }
 
+/**
+ * Normalisasi nomor telepon Indonesia menjadi format kanonis diawali `62` (hanya digit, tanpa `+`/spasi/`-`).
+ * Contoh: `0812-3456-789` -> `628123456789`, `+62 812...` -> `62812...`, `812...` -> `62812...`,
+ * `021-0000000` -> `62210000000`. Mengembalikan `null` bila kosong, tidak valid, atau hanya `'62'`.
+ */
+function normalize_phone_62(?string $raw): ?string
+{
+    $s = preg_replace('/@.*$/', '', trim((string) $raw));
+    $d = preg_replace('/\D+/', '', (string) $s);
+    if ($d === '' || $d === null) {
+        return null;
+    }
+    if (str_starts_with($d, '00')) {
+        $d = substr($d, 2);
+    }
+    if (str_starts_with($d, '620') && strlen($d) > 3) {
+        $d = '62' . ltrim(substr($d, 2), '0');
+    } elseif (str_starts_with($d, '62')) {
+        // sudah diawali 62
+    } elseif (str_starts_with($d, '0')) {
+        $rest = ltrim(substr($d, 1), '0');
+        $d = $rest !== '' ? '62' . $rest : '';
+    } else {
+        $d = '62' . $d;
+    }
+    if ($d === '' || $d === '62') {
+        return null;
+    }
+    return $d;
+}
+
+/**
+ * Prefix pencarian nomor telepon untuk query index `LIKE '62...'`:
+ * mengubah awalan `0812` / `+62812` / `812` menjadi `62812`. Mengembalikan null bila kosong.
+ */
+function phone_search_prefix(string $q): ?string
+{
+    $norm = normalize_phone_62($q);
+    if ($norm !== null) {
+        return $norm;
+    }
+    $d = preg_replace('/\D+/', '', $q) ?? '';
+    return $d === '0' ? '62' : null;
+}
+
 function redirect(string $path): void
 {
     header('Location: ' . (str_starts_with($path, 'http') ? $path : APP_URL . '/' . ltrim($path, '/')));
@@ -413,6 +458,125 @@ function ui_page_header(string $title, array $breadcrumb = [], array $badges = [
 }
 
 /**
+ * Render Top Action Toolbar standar ERP detail/form (mengikuti Travel Detail).
+ * $badges: list of strings, ['html' => '...'], or ['text' => '...', 'class' => '...']
+ * $actions: list of ['label', 'icon', 'href', 'class', 'target', 'type' => 'submit', 'form', 'html']
+ */
+function ui_erp_toolbar(string $moduleLabel, string $moduleIcon, string $titleText = '', array $badges = [], array $actions = [], string $meta = ''): string
+{
+    $html = '<div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-2">';
+    $html .= '<div class="d-flex flex-wrap align-items-center gap-2">';
+    $iconHtml = $moduleIcon !== '' ? '<i class="bi bi-' . e($moduleIcon) . ' me-1"></i>' : '';
+    $html .= '<span class="badge bg-primary text-white">' . $iconHtml . e($moduleLabel) . '</span>';
+    if ($titleText !== '') {
+        $html .= '<strong class="fs-6">' . e($titleText) . '</strong>';
+    }
+    foreach ($badges as $b) {
+        if (is_array($b) && isset($b['html'])) {
+            $html .= (string) $b['html'];
+        } elseif (is_string($b) && $b !== '') {
+            $html .= '<span class="badge bg-light text-secondary border">' . e($b) . '</span>';
+        } elseif (is_array($b) && !empty($b['text'])) {
+            $cls = $b['class'] ?? 'bg-light text-secondary border';
+            $idAttr = !empty($b['id']) ? ' id="' . e((string) $b['id']) . '"' : '';
+            $html .= '<span class="badge ' . e($cls) . '"' . $idAttr . '>' . e($b['text']) . '</span>';
+        }
+    }
+    if ($meta !== '') {
+        $html .= '<span class="small text-muted d-none d-md-inline">' . $meta . '</span>';
+    }
+    $html .= '</div>';
+
+    if (!empty($actions)) {
+        $html .= '<div class="d-flex flex-wrap align-items-center gap-2 ms-auto">';
+        foreach ($actions as $act) {
+            if (!empty($act['html'])) {
+                $html .= (string) $act['html'];
+                continue;
+            }
+            $cls = $act['class'] ?? 'btn btn-outline-secondary btn-sm';
+            $icon = !empty($act['icon']) ? '<i class="bi bi-' . e($act['icon']) . ' me-1"></i>' : '';
+            if (($act['type'] ?? '') === 'submit') {
+                $formAttr = !empty($act['form']) ? ' form="' . e((string) $act['form']) . '"' : '';
+                $html .= '<button type="submit"' . $formAttr . ' class="' . e($cls) . '">' . $icon . e((string) ($act['label'] ?? 'Simpan')) . '</button>';
+            } else {
+                $rawHref = (string) ($act['href'] ?? '#');
+                $href = (str_starts_with($rawHref, 'http') || str_starts_with($rawHref, '?') || str_starts_with($rawHref, '#'))
+                    ? $rawHref
+                    : APP_URL . '/' . ltrim($rawHref, '/');
+                $targetAttr = !empty($act['target']) ? ' target="' . e((string) $act['target']) . '"' : '';
+                $html .= '<a class="' . e($cls) . '" href="' . e($href) . '"' . $targetAttr . '>' . $icon . e((string) ($act['label'] ?? '')) . '</a>';
+            }
+        }
+        $html .= '</div>';
+    }
+    $html .= '</div>';
+
+    return $html;
+}
+
+/**
+ * Render satu baris read-only (.rnt-row) dengan input/textarea .form-control-sm.bg-light.
+ */
+function ui_erp_ro_row(string $label, string|int|float|null $value, bool $multiline = false, bool $mono = false, string $empty = '-'): string
+{
+    $str = ($value === null || (string) $value === '') ? $empty : (string) $value;
+    $monoCls = $mono ? ' font-monospace' : '';
+    if ($multiline) {
+        return '<div class="rnt-row align-items-start">'
+            . '<label class="rnt-label pt-1">' . e($label) . '</label>'
+            . '<div class="rnt-field">'
+            . '<textarea class="form-control form-control-sm bg-light rnt-ta-compact' . $monoCls . '" rows="2" readonly>' . e($str) . '</textarea>'
+            . '</div></div>';
+    }
+    return '<div class="rnt-row">'
+        . '<label class="rnt-label">' . e($label) . '</label>'
+        . '<div class="rnt-field">'
+        . '<input type="text" class="form-control form-control-sm bg-light' . $monoCls . '" value="' . e($str) . '" readonly>'
+        . '</div></div>';
+}
+
+/**
+ * Render satu baris read-only (.rnt-row) berisi HTML (badge, link, gambar/tombol berkas).
+ */
+function ui_erp_ro_html_row(string $label, string $innerHtml, bool $alignTop = false, bool $asBox = true): string
+{
+    $rowCls = $alignTop ? 'rnt-row align-items-start' : 'rnt-row';
+    $lblCls = $alignTop ? 'rnt-label pt-1' : 'rnt-label';
+    $content = $asBox ? '<div class="rnt-ro-value">' . $innerHtml . '</div>' : $innerHtml;
+    return '<div class="' . $rowCls . '"><label class="' . $lblCls . '">' . e($label) . '</label><div class="rnt-field">' . $content . '</div></div>';
+}
+
+/**
+ * Render panel Audit Trail Dokumen standar ERP (.rnt-panel).
+ */
+function ui_erp_audit_panel(?array $row, string $panelClass = 'mb-0', string $extraRowsHtml = ''): string
+{
+    $fmtDate = static function ($raw): string {
+        if ($raw === null || (string) $raw === '') {
+            return '-';
+        }
+        $ts = strtotime((string) $raw);
+        return $ts !== false ? date('d-M-Y H:i', $ts) : (string) $raw;
+    };
+    $createdUser  = ($row !== null && !empty($row['created_user'])) ? (string) $row['created_user'] : '-';
+    $createdDate  = $fmtDate($row['created_date'] ?? null);
+    $modifiedUser = ($row !== null && !empty($row['modified_user'])) ? (string) $row['modified_user'] : '-';
+    $modifiedDate = $fmtDate($row['modified_date'] ?? null);
+    $cls = trim('rnt-panel ' . $panelClass);
+
+    return '<div class="' . e($cls) . '">'
+        . '<div class="rnt-panel-header"><span>Audit Trail Dokumen</span></div>'
+        . '<div class="rnt-panel-body">'
+        . ui_erp_ro_row('Dibuat Oleh', $createdUser)
+        . ui_erp_ro_row('Dibuat Tanggal', $createdDate)
+        . ui_erp_ro_row('Diubah Oleh', $modifiedUser)
+        . ui_erp_ro_row('Diubah Tanggal', $modifiedDate)
+        . $extraRowsHtml
+        . '</div></div>';
+}
+
+/**
  * Daftar bank aktif dari tabel master banks: [['code' => '...', 'name' => '...'], ...]
  */
 function master_bank_options(): array
@@ -431,6 +595,25 @@ function master_bank_options(): array
         $banks = [];
     }
     return $banks;
+}
+
+/**
+ * Render uniform Filter (primary + funnel icon) and conditional Reset (outline-danger icon-only) actions.
+ */
+function ui_filter_actions(
+    string $reset_href = '',
+    bool $has_active_filter = false,
+    string $wrapper_class = 'col-auto d-flex gap-1 ms-auto erp-filter-actions'
+): string {
+    $html = '<div class="' . e($wrapper_class) . '">';
+    $html .= '<button type="submit" class="btn btn-sm btn-primary text-nowrap" title="Terapkan Filter">';
+    $html .= '<i class="bi bi-funnel-fill me-1"></i>Filter</button>';
+    if ($has_active_filter && $reset_href !== '') {
+        $html .= '<a href="' . e($reset_href) . '" class="btn btn-sm btn-outline-danger text-nowrap" title="Reset filter" aria-label="Reset filter">';
+        $html .= '<i class="bi bi-x-lg"></i></a>';
+    }
+    $html .= '</div>';
+    return $html;
 }
 
 require_once __DIR__ . '/grid_export.php';

@@ -86,8 +86,8 @@ try {
 foreach ($ids as $id) { $c->query("DELETE FROM payment_methods WHERE id = $id"); }
 $c->query("DELETE FROM payment_methods WHERE code LIKE 'CHK-R%'");
 $c->query("INSERT IGNORE INTO `groups` (id, code, name) VALUES (1, 'CHK-GRP', 'Grup Cek Urut')");
-$c->query("INSERT IGNORE INTO companies (id, group_id, code, name, country_code, is_active)
-           VALUES (990, 1, 'CHK-URUT', 'Perusahaan Cek Urut', '+62', 1)");
+$c->query("INSERT IGNORE INTO companies (id, group_id, code, name, is_active)
+           VALUES (990, 1, 'CHK-URUT', 'Perusahaan Cek Urut', 1)");
 
 $mk = static function (int $id, int $cid, string $code, string $name, int $sort) use ($c): void {
     $st = $c->prepare('INSERT INTO payment_methods (id, company_id, code, name, sort_order, created_user) VALUES (?, ?, ?, ?, ?, ?)');

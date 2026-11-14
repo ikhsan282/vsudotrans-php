@@ -94,9 +94,7 @@ require __DIR__ . '/../../includes/header.php';
                     <label class="form-label small mb-1">Sampai Tanggal</label>
                     <input type="date" class="form-control form-control-sm" name="to" value="<?= e($to) ?>">
                 </div>
-                <div class="col-12 col-lg-4">
-                    <button type="submit" class="btn btn-sm btn-primary w-100">Terapkan</button>
-                </div>
+                <?= ui_filter_actions(APP_URL . '/pages/attendance/summary.php', ($from !== date('Y-m-01') || $to !== date('Y-m-t'))) ?>
             </form>
         </div>
     </div>

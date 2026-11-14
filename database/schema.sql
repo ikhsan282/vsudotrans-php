@@ -11,7 +11,7 @@ CREATE DATABASE IF NOT EXISTS `vsudotrans` CHARACTER SET utf8mb4 COLLATE utf8mb4
 USE `vsudotrans`;
 
 SET FOREIGN_KEY_CHECKS = 0;
-DROP TABLE IF EXISTS `audit_trails`, `login_attempts`, `user_permissions`, `user_companies`, `employees`, `users`, `roles`, `permissions`, `branches`, `companies`, `groups`, `role_permissions`, `banks`, `countries`, `provinces`, `cities`, `districts`, `villages`, `unit_measures`, `brand_vehicles`, `category_vehicles`, `model_units`, `type_engines`, `vehicles`, `rute_radius_districts`, `rute_schedules`, `rute_tariffs`, `rutes`, `schedules`, `passengers`, `trip_schedules`, `travel_ticket_bookings`, `rental_car_bookings`, `rental_car_regulation_employees`, `booking_passengers`, `booking_status_history`, `trip_assignments`, `premi_configs`, `booking_cost_lines`, `document_sequences`, `payment_methods`, `payment_channels`, `payment_gateway_orders`, `bot_request_logs`, `invoices`, `invoice_revisions`, `job_grades`, `job_grade_amounts`, `job_titles`, `job_positions`, `organization_structures`, `employee_recognitions`, `employee_attendances`, `payroll_periods`, `payroll_items`, `cash_accounts`, `cash_transactions`, `wa_settings`, `wa_outbox`;
+DROP TABLE IF EXISTS `audit_trails`, `login_attempts`, `user_permissions`, `user_companies`, `employees`, `users`, `roles`, `permissions`, `branches`, `companies`, `groups`, `role_permissions`, `banks`, `countries`, `provinces`, `cities`, `districts`, `villages`, `unit_measures`, `brand_vehicles`, `category_vehicles`, `model_units`, `vehicles`, `rute_radius_districts`, `rute_schedules`, `rute_tariffs`, `rutes`, `schedules`, `passengers`, `trip_schedules`, `travel_ticket_bookings`, `rental_car_bookings`, `rental_car_regulation_employees`, `booking_passengers`, `booking_status_history`, `trip_assignments`, `premi_configs`, `booking_cost_lines`, `document_sequences`, `payment_methods`, `payment_channels`, `payment_gateway_orders`, `bot_request_logs`, `invoices`, `invoice_revisions`, `job_grades`, `job_grade_amounts`, `job_titles`, `job_positions`, `organization_structures`, `employee_recognitions`, `employee_attendances`, `payroll_periods`, `payroll_items`, `cash_accounts`, `cash_transactions`, `wa_settings`, `wa_outbox`;
 SET FOREIGN_KEY_CHECKS = 1;
 SET NAMES utf8mb4;
 
@@ -43,7 +43,6 @@ CREATE TABLE `companies` (
   `code` VARCHAR(15) NOT NULL,
   `name` VARCHAR(255) NOT NULL,
   `note` VARCHAR(2000) DEFAULT NULL,
-  `country_code` VARCHAR(10) NOT NULL DEFAULT '+62',
   `phone_number` VARCHAR(20) DEFAULT NULL,
   `website` VARCHAR(300) DEFAULT NULL,
   `email` VARCHAR(200) DEFAULT NULL,
@@ -74,7 +73,6 @@ CREATE TABLE `branches` (
   `code` VARCHAR(15) NOT NULL,
   `name` VARCHAR(255) NOT NULL,
   `note` VARCHAR(2000) DEFAULT NULL,
-  `country_code` VARCHAR(10) NOT NULL DEFAULT '+62',
   `phone_number` VARCHAR(20) DEFAULT NULL,
   `is_active` TINYINT(1) NOT NULL DEFAULT 1,
   `created_user` VARCHAR(255) DEFAULT NULL,
@@ -301,32 +299,32 @@ INSERT INTO `groups` (`id`, `code`, `name`, `note`) VALUES
 (2, 'LIZ', 'LIZ', 'LIZ Wisata Alam Indah');
 
 -- logo & stamp = path Azure Blob (container `vsudotrans`, prefix {company_code}/company/...)
-INSERT INTO `companies` (`id`, `group_id`, `code`, `name`, `country_code`, `phone_number`, `website`, `email`, `address`, `city`, `logo`, `stamp`, `bot_secret`, `bot_phone`) VALUES
-(1, 1, 'MTM', 'Maura Trans Mandiri', '+62', '021-0000000', 'https://mauratransmandiri.com', 'info@mauratransmandiri.com', 'Jl. Contoh No. 1', 'Tangerang', 'mtm/company/logo_mtm.png', 'mtm/company/stamp_mtm.png', 'mtm_hermes_secret_key_9f8e7d6c5b4a321098765432', '6281398461650'),
-(2, 1, 'NTM', 'Nugi Trans Mandiri', '+62', '021-0000000', 'https://nugitransmandiri.com', 'info@nugitransmandiri.com', 'Jl. Contoh No. 2', 'Tangerang', 'ntm/company/logo_ntm.png', NULL, 'ntm_hermes_secret_key_2b3c4d5e6f7a890123456789', NULL),
-(3, 1, 'GTM', 'Gibran Trans Mandiri', '+62', '021-0000000', 'https://gibrantransmandiri.com', 'info@gibrantransmandiri.com', 'Jl. Contoh No. 3', 'Tangerang', 'gtm/company/logo_gtm.png', NULL, 'gtm_hermes_secret_key_1a2b3c4d5e6f789012345678', NULL),
-(4, 1, 'TTM', 'Trisula Trans Mandiri', '+62', '021-0000000', 'https://trisulatransmandiri.com', 'info@trisulatransmandiri.com', 'Jl. Contoh No. 4', 'Tangerang', 'ttm/company/logo_ttm.png', NULL, 'ttm_hermes_secret_key_3c4d5e6f7a8b901234567890', NULL),
-(5, 2, 'LIZ', 'LIZ Wisata Alam Indah', '+62', '021-0000000', 'https://lizwisataalamindah.com', 'info@lizwisata.com', 'Jl. Contoh No. 5', 'Tangerang', 'liz/company/logo_liz.png', NULL, 'liz_hermes_secret_key_4d5e6f7a8b9c012345678901', '6281299990001');
+INSERT INTO `companies` (`id`, `group_id`, `code`, `name`, `phone_number`, `website`, `email`, `address`, `city`, `logo`, `stamp`, `bot_secret`, `bot_phone`) VALUES
+(1, 1, 'MTM', 'Maura Trans Mandiri', '62210000000', 'https://mauratransmandiri.com', 'info@mauratransmandiri.com', 'Jl. Contoh No. 1', 'Tangerang', 'mtm/company/logo_mtm.png', 'mtm/company/stamp_mtm.png', 'mtm_hermes_secret_key_9f8e7d6c5b4a321098765432', '6281398461650'),
+(2, 1, 'NTM', 'Nugi Trans Mandiri', '62210000000', 'https://nugitransmandiri.com', 'info@nugitransmandiri.com', 'Jl. Contoh No. 2', 'Tangerang', 'ntm/company/logo_ntm.png', NULL, 'ntm_hermes_secret_key_2b3c4d5e6f7a890123456789', NULL),
+(3, 1, 'GTM', 'Gibran Trans Mandiri', '62210000000', 'https://gibrantransmandiri.com', 'info@gibrantransmandiri.com', 'Jl. Contoh No. 3', 'Tangerang', 'gtm/company/logo_gtm.png', NULL, 'gtm_hermes_secret_key_1a2b3c4d5e6f789012345678', NULL),
+(4, 1, 'TTM', 'Trisula Trans Mandiri', '62210000000', 'https://trisulatransmandiri.com', 'info@trisulatransmandiri.com', 'Jl. Contoh No. 4', 'Tangerang', 'ttm/company/logo_ttm.png', NULL, 'ttm_hermes_secret_key_3c4d5e6f7a8b901234567890', NULL),
+(5, 2, 'LIZ', 'LIZ Wisata Alam Indah', '62210000000', 'https://lizwisataalamindah.com', 'info@lizwisata.com', 'Jl. Contoh No. 5', 'Tangerang', 'liz/company/logo_liz.png', NULL, 'liz_hermes_secret_key_4d5e6f7a8b9c012345678901', '6281299990001');
 
-INSERT INTO `branches` (`id`, `company_id`, `code`, `name`, `country_code`, `phone_number`) VALUES
-(1, 1, 'PST', 'Kantor Pusat', '+62', '021-0000001'),
-(2, 2, 'PST', 'Kantor Pusat', '+62', '021-0000002'),
-(3, 3, 'PST', 'Kantor Pusat', '+62', '021-0000003'),
-(4, 4, 'PST', 'Kantor Pusat', '+62', '021-0000004'),
-(5, 5, 'PST', 'Kantor Pusat', '+62', '021-0000005');
+INSERT INTO `branches` (`id`, `company_id`, `code`, `name`, `phone_number`) VALUES
+(1, 1, 'PST', 'Kantor Pusat', '62210000001'),
+(2, 2, 'PST', 'Kantor Pusat', '62210000002'),
+(3, 3, 'PST', 'Kantor Pusat', '62210000003'),
+(4, 4, 'PST', 'Kantor Pusat', '62210000004'),
+(5, 5, 'PST', 'Kantor Pusat', '62210000005');
 
 -- Semua password default: P@ssw0rd  (hash bcrypt, password_verify() true)
 INSERT INTO `users` (`id`, `username`, `email`, `password`, `full_name`, `phone_number`, `role_id`, `company_id`) VALUES
-(1, 'superadmin', 'superadmin@vsudotrans.test', '$2y$12$ScOvxQDzeZH0EKULI1EQWOFjSG0M4VFNNtWOy0/KtdG2qWSCUosiK', 'Super Administrator', '081200000001', 1, NULL),
-(2, 'admin',      'admin@vsudotrans.test',      '$2y$12$ScOvxQDzeZH0EKULI1EQWOFjSG0M4VFNNtWOy0/KtdG2qWSCUosiK', 'Administrator Perusahaan', '081200000002', 2, 1),
-(3, 'hrd',        'hrd@vsudotrans.test',        '$2y$12$ScOvxQDzeZH0EKULI1EQWOFjSG0M4VFNNtWOy0/KtdG2qWSCUosiK', 'HRD', '081200000003', 3, 1),
-(4, 'staff',      'staff@vsudotrans.test',      '$2y$12$ScOvxQDzeZH0EKULI1EQWOFjSG0M4VFNNtWOy0/KtdG2qWSCUosiK', 'Staff', '081200000004', 4, 1),
-(5, 'viewer',     'viewer@vsudotrans.test',     '$2y$12$ScOvxQDzeZH0EKULI1EQWOFjSG0M4VFNNtWOy0/KtdG2qWSCUosiK', 'Viewer', '081200000005', 5, 1);
+(1, 'superadmin', 'superadmin@vsudotrans.test', '$2y$12$ScOvxQDzeZH0EKULI1EQWOFjSG0M4VFNNtWOy0/KtdG2qWSCUosiK', 'Super Administrator', '6281200000001', 1, NULL),
+(2, 'admin',      'admin@vsudotrans.test',      '$2y$12$ScOvxQDzeZH0EKULI1EQWOFjSG0M4VFNNtWOy0/KtdG2qWSCUosiK', 'Administrator Perusahaan', '6281200000002', 2, 1),
+(3, 'hrd',        'hrd@vsudotrans.test',        '$2y$12$ScOvxQDzeZH0EKULI1EQWOFjSG0M4VFNNtWOy0/KtdG2qWSCUosiK', 'HRD', '6281200000003', 3, 1),
+(4, 'staff',      'staff@vsudotrans.test',      '$2y$12$ScOvxQDzeZH0EKULI1EQWOFjSG0M4VFNNtWOy0/KtdG2qWSCUosiK', 'Staff', '6281200000004', 4, 1),
+(5, 'viewer',     'viewer@vsudotrans.test',     '$2y$12$ScOvxQDzeZH0EKULI1EQWOFjSG0M4VFNNtWOy0/KtdG2qWSCUosiK', 'Viewer', '6281200000005', 5, 1);
 
 INSERT INTO `user_companies` (`user_id`, `company_id`) VALUES (2, 1), (3, 1), (4, 1), (5, 1);
 
 INSERT INTO `employees` (`company_id`, `branch_id`, `code`, `name`, `email`, `phone_number`, `join_date`, `job_title`, `job_position`, `status`) VALUES
-(1, 1, 'EMP-0001', 'Budi Santoso', 'budi@vsudotrans.test', '081200000011', '2024-01-15', 'Staff Operasional', 'Driver', 'aktif');
+(1, 1, 'EMP-0001', 'Budi Santoso', 'budi@vsudotrans.test', '6281200000011', '2024-01-15', 'Staff Operasional', 'Driver', 'aktif');
 
 
 -- =====================================================================
@@ -547,29 +545,11 @@ CREATE TABLE `model_units` (
   CONSTRAINT `fk_model_units_brand` FOREIGN KEY (`brand_id`) REFERENCES `brand_vehicles` (`id`) ON DELETE RESTRICT
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
-CREATE TABLE `type_engines` (
-  `id` INT(11) NOT NULL AUTO_INCREMENT,
-  `company_id` INT(11) NOT NULL,
-  `code` VARCHAR(15) NOT NULL,
-  `name` VARCHAR(255) NOT NULL,
-  `note` VARCHAR(2000) DEFAULT NULL,
-  `is_active` TINYINT(1) NOT NULL DEFAULT 1,
-  `created_user` VARCHAR(255) DEFAULT NULL,
-  `created_date` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-  `modified_user` VARCHAR(255) DEFAULT NULL,
-  `modified_date` DATETIME DEFAULT NULL,
-  PRIMARY KEY (`id`),
-  UNIQUE KEY `uq_type_engines_code` (`company_id`, `code`),
-  KEY `ix_type_engines_company` (`company_id`),
-  CONSTRAINT `fk_type_engines_company` FOREIGN KEY (`company_id`) REFERENCES `companies` (`id`) ON DELETE RESTRICT
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
-
 CREATE TABLE `vehicles` (
   `id` INT(11) NOT NULL AUTO_INCREMENT,
   `company_id` INT(11) NOT NULL,
   `brand_id` INT(11) NOT NULL,
   `model_unit_id` INT(11) NOT NULL,
-  `type_engine_id` INT(11) NOT NULL,
   `category_vehicle_id` INT(11) NOT NULL,
   `frame_number` VARCHAR(50) NOT NULL,
   `machine_number` VARCHAR(50) NOT NULL,
@@ -602,7 +582,6 @@ CREATE TABLE `vehicles` (
   CONSTRAINT `fk_vehicles_company` FOREIGN KEY (`company_id`) REFERENCES `companies` (`id`) ON DELETE RESTRICT,
   CONSTRAINT `fk_vehicles_brand` FOREIGN KEY (`brand_id`) REFERENCES `brand_vehicles` (`id`) ON DELETE RESTRICT,
   CONSTRAINT `fk_vehicles_model` FOREIGN KEY (`model_unit_id`) REFERENCES `model_units` (`id`) ON DELETE RESTRICT,
-  CONSTRAINT `fk_vehicles_engine` FOREIGN KEY (`type_engine_id`) REFERENCES `type_engines` (`id`) ON DELETE RESTRICT,
   CONSTRAINT `fk_vehicles_category` FOREIGN KEY (`category_vehicle_id`) REFERENCES `category_vehicles` (`id`) ON DELETE RESTRICT
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
@@ -739,7 +718,6 @@ CREATE TABLE `passengers` (
   `company_id` INT(11) NOT NULL,
   `code` VARCHAR(15) NOT NULL,
   `name` VARCHAR(255) NOT NULL,
-  `country_code` VARCHAR(10) NOT NULL DEFAULT '+62',
   `phone_number` VARCHAR(20) DEFAULT NULL,
   `email` VARCHAR(100) DEFAULT NULL,
   `note` VARCHAR(2000) DEFAULT NULL,

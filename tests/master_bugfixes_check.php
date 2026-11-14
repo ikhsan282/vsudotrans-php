@@ -45,7 +45,7 @@ ok(!empty($err_invalid) && str_contains($err_invalid[0], 'Provinsi tidak sesuai 
 
 echo "\n=== 3. Test Blocker & Sinkronisasi Nama job_grades ===\n";
 $db->query("INSERT IGNORE INTO `groups` (id, code, name) VALUES (1, 'CHK-G', 'Grup Uji')");
-$db->query("INSERT IGNORE INTO companies (id, group_id, code, name, country_code, is_active) VALUES (991, 1, 'CHK-COMP', 'Perusahaan Uji', '+62', 1)");
+$db->query("INSERT IGNORE INTO companies (id, group_id, code, name, is_active) VALUES (991, 1, 'CHK-COMP', 'Perusahaan Uji', 1)");
 
 // Bersihkan data uji sebelumnya jika ada
 $db->query("DELETE FROM employees WHERE code = 'EMP-CHK-G'");

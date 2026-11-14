@@ -60,74 +60,122 @@ $title = $id > 0 ? 'Ubah Absensi' : 'Input Absensi';
 $active = 'attendance';
 require __DIR__ . '/../../includes/header.php';
 ?>
-<main class="col-12 col-md-9 col-lg-10 p-4">
-    <div class="d-flex justify-content-between align-items-center mb-3">
-        <h4 class="fw-bold mb-0"><?= e($title) ?></h4>
-        <div class="d-flex gap-2">
-            <a href="index.php" class="btn btn-outline-secondary btn-sm">
-                <i class="bi bi-arrow-left me-1"></i>Batal
-            </a>
-            <button type="submit" form="formAttendance" class="btn btn-primary btn-sm px-3">
-                <i class="bi bi-check2 me-1"></i>Simpan
-            </button>
-        </div>
-    </div>
+<main class="p-2 p-md-3">
+    <?= ui_erp_toolbar(
+        'Absensi',
+        'calendar-check',
+        $title,
+        $id > 0 ? array_values(array_filter([
+            $row['date'] ?? null,
+            attendance_statuses()[$v('status')] ?? ($v('status') ?: null),
+        ])) : [],
+        [
+            ['label' => 'Batal', 'icon' => 'arrow-left', 'href' => 'index.php', 'class' => 'btn-outline-secondary'],
+            ['label' => 'Simpan', 'icon' => 'check2', 'type' => 'submit', 'form' => 'formAttendance', 'class' => 'btn-primary'],
+        ]
+    ) ?>
 
     <?php if (!$employees): ?>
-        <div class="alert alert-warning">Belum ada karyawan aktif di perusahaan ini.</div>
+        <div class="alert alert-warning py-2 mb-2">Belum ada karyawan aktif di perusahaan ini.</div>
     <?php endif; ?>
 
     <?php if ($errors): ?>
-        <div class="alert alert-danger"><ul class="mb-0">
+        <div class="alert alert-danger py-2 mb-2"><ul class="mb-0">
             <?php foreach ($errors as $err): ?><li><?= e($err) ?></li><?php endforeach; ?>
         </ul></div>
     <?php endif; ?>
 
-    <form method="post" id="formAttendance" class="card shadow-sm">
-        <div class="card-body">
-            <?= csrf_field() ?>
-            <input type="hidden" name="id" value="<?= $id ?>">
-            <div class="row g-3">
-                <div class="col-md-4">
-                    <label class="form-label">Karyawan <span class="text-danger">*</span></label>
-                    <select name="employee_id" class="form-select ts-select" required
-                        data-ts-url="<?= e(APP_URL) ?>/pages/employees/options.php"
-                        <?= $cid !== null ? 'data-ts-company="' . (int) $cid . '"' : '' ?>
-                        data-ts-limit="30">
-                        <option value="">— pilih karyawan —</option>
-                        <?php foreach ($employees as $emp): ?>
-                            <option value="<?= (int) $emp['id'] ?>"<?= (int) $v('employee_id') === (int) $emp['id'] ? ' selected' : '' ?>>
-                                <?= e($emp['code'] . ' - ' . $emp['name']) ?></option>
-                        <?php endforeach; ?>
-                    </select>
+    <form method="post" id="formAttendance">
+        <?= csrf_field() ?>
+        <input type="hidden" name="id" value="<?= $id ?>">
+        <div class="erp-window-card">
+            <ul class="nav nav-tabs erp-sub-tabs" role="tablist">
+                <li class="nav-item" role="presentation">
+                    <button class="nav-link active" id="tab-att-detail" data-bs-toggle="tab" data-bs-target="#pane-att-detail" type="button" role="tab">Detail</button>
+                </li>
+                <?php if ($id > 0): ?>
+                    <li class="nav-item" role="presentation">
+                        <button class="nav-link" id="tab-att-audit" data-bs-toggle="tab" data-bs-target="#pane-att-audit" type="button" role="tab">Audit Trail</button>
+                    </li>
+                <?php endif; ?>
+            </ul>
+            <div class="erp-content-body tab-content">
+                <div class="tab-pane fade show active" id="pane-att-detail" role="tabpanel">
+                    <div class="row g-3">
+                        <div class="col-lg-6">
+                            <div class="rnt-panel h-100 mb-0">
+                                <div class="rnt-panel-header"><i class="bi bi-person-check"></i> Data Kehadiran</div>
+                                <div class="rnt-panel-body">
+                                    <div class="rnt-row">
+                                        <div class="rnt-label">Karyawan <span class="text-danger">*</span></div>
+                                        <div class="rnt-field">
+                                            <select name="employee_id" class="form-select form-select-sm ts-select" required
+                                                data-ts-url="<?= e(APP_URL) ?>/pages/employees/options.php"
+                                                <?= $cid !== null ? 'data-ts-company="' . (int) $cid . '"' : '' ?>
+                                                data-ts-limit="30">
+                                                <option value="">— pilih karyawan —</option>
+                                                <?php foreach ($employees as $emp): ?>
+                                                    <option value="<?= (int) $emp['id'] ?>"<?= (int) $v('employee_id') === (int) $emp['id'] ? ' selected' : '' ?>>
+                                                        <?= e($emp['code'] . ' - ' . $emp['name']) ?></option>
+                                                <?php endforeach; ?>
+                                            </select>
+                                        </div>
+                                    </div>
+                                    <div class="rnt-row<?= $id > 0 ? ' rnt-row-top' : '' ?>">
+                                        <div class="rnt-label">Tanggal <span class="text-danger">*</span></div>
+                                        <div class="rnt-field">
+                                            <input type="date" name="date" class="form-control form-control-sm" required value="<?= e($field('date')) ?>"
+                                                   <?= $id > 0 ? 'disabled' : '' ?>>
+                                            <?php if ($id > 0): ?><div class="form-text small">Tanggal tidak diubah saat mengedit baris.</div><?php endif; ?>
+                                        </div>
+                                    </div>
+                                    <div class="rnt-row">
+                                        <div class="rnt-label">Status <span class="text-danger">*</span></div>
+                                        <div class="rnt-field">
+                                            <select name="status" class="form-select form-select-sm" required>
+                                                <?php foreach (attendance_statuses() as $k => $lbl): ?>
+                                                    <option value="<?= e($k) ?>"<?= $v('status') === $k || ($v('status') === '' && $k === 'hadir') ? ' selected' : '' ?>>
+                                                        <?= e($lbl) ?></option>
+                                                <?php endforeach; ?>
+                                            </select>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="col-lg-6">
+                            <div class="rnt-panel h-100 mb-0">
+                                <div class="rnt-panel-header"><i class="bi bi-clock"></i> Jam Kerja &amp; Catatan</div>
+                                <div class="rnt-panel-body">
+                                    <div class="rnt-row">
+                                        <div class="rnt-label">Jam Masuk</div>
+                                        <div class="rnt-field">
+                                            <input type="time" name="check_in" class="form-control form-control-sm" value="<?= e(substr($field('check_in'), 0, 5)) ?>">
+                                        </div>
+                                    </div>
+                                    <div class="rnt-row">
+                                        <div class="rnt-label">Jam Keluar</div>
+                                        <div class="rnt-field">
+                                            <input type="time" name="check_out" class="form-control form-control-sm" value="<?= e(substr($field('check_out'), 0, 5)) ?>">
+                                        </div>
+                                    </div>
+                                    <div class="rnt-row">
+                                        <div class="rnt-label">Catatan</div>
+                                        <div class="rnt-field">
+                                            <input name="note" class="form-control form-control-sm" maxlength="1000" value="<?= e($v('note')) ?>">
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
                 </div>
-                <div class="col-md-3">
-                    <label class="form-label">Tanggal <span class="text-danger">*</span></label>
-                    <input type="date" name="date" class="form-control" required value="<?= e($field('date')) ?>"
-                           <?= $id > 0 ? 'disabled' : '' ?>>
-                    <?php if ($id > 0): ?><div class="form-text">Tanggal tidak diubah saat mengedit baris.</div><?php endif; ?>
-                </div>
-                <div class="col-md-2">
-                    <label class="form-label">Status <span class="text-danger">*</span></label>
-                    <select name="status" class="form-select" required>
-                        <?php foreach (attendance_statuses() as $k => $lbl): ?>
-                            <option value="<?= e($k) ?>"<?= $v('status') === $k || ($v('status') === '' && $k === 'hadir') ? ' selected' : '' ?>>
-                                <?= e($lbl) ?></option>
-                        <?php endforeach; ?>
-                    </select>
-                </div>
-                <div class="col-md-2">
-                    <label class="form-label">Jam Masuk</label>
-                    <input type="time" name="check_in" class="form-control" value="<?= e(substr($field('check_in'), 0, 5)) ?>">
-                </div>
-                <div class="col-md-2">
-                    <label class="form-label">Jam Keluar</label>
-                    <input type="time" name="check_out" class="form-control" value="<?= e(substr($field('check_out'), 0, 5)) ?>">
-                </div>
-                <div class="col-12">
-                    <label class="form-label">Catatan</label>
-                    <input name="note" class="form-control" maxlength="1000" value="<?= e($v('note')) ?>">
-                </div>
+                <?php if ($id > 0): ?>
+                    <div class="tab-pane fade" id="pane-att-audit" role="tabpanel">
+                        <?= ui_erp_audit_panel($row) ?>
+                    </div>
+                <?php endif; ?>
             </div>
         </div>
     </form>

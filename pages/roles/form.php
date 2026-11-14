@@ -22,11 +22,11 @@ if ($id > 0) {
 $errors = [];
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     verify_csrf();
-    $row = [
+    $row = array_merge($row, [
         'name'        => mb_substr(trim((string) ($_POST['name'] ?? '')), 0, 50),
         'description' => mb_substr(trim((string) ($_POST['description'] ?? '')), 0, 255),
         'level'       => (int) ($_POST['level'] ?? 0),
-    ];
+    ]);
 
     // Nama Super Admin tidak boleh diubah: is_super_admin() membandingkan nama role.
     if ($is_super) {
@@ -90,45 +90,76 @@ $active = 'roles';
 $title  = $id > 0 ? 'Ubah Role' : 'Tambah Role';
 require __DIR__ . '/../../includes/header.php';
 ?>
-<main class="col-12 col-md-9 col-lg-10 p-4">
-    <div class="d-flex justify-content-between align-items-center mb-3">
-        <h4 class="fw-bold mb-0"><?= e($title) ?></h4>
-        <div class="d-flex gap-2">
-            <a class="btn btn-outline-secondary btn-sm" href="<?= e(APP_URL) ?>/pages/roles/index.php">
-                <i class="bi bi-arrow-left me-1"></i>Batal
-            </a>
-            <button type="submit" form="formRole" class="btn btn-primary btn-sm px-3">
-                <i class="bi bi-check2 me-1"></i>Simpan
-            </button>
-        </div>
-    </div>
+<main class="p-2 p-md-3">
+    <?= ui_erp_toolbar(
+        'Role & Hak Akses',
+        'shield-lock',
+        $title,
+        $is_super ? [['text' => 'Super Admin', 'class' => 'bg-warning-subtle text-warning']] : ($id > 0 ? ['ID #' . $id] : []),
+        [
+            ['label' => 'Batal', 'icon' => 'arrow-left', 'href' => APP_URL . '/pages/roles/index.php', 'class' => 'btn-outline-secondary'],
+            ['label' => 'Simpan', 'icon' => 'check2', 'type' => 'submit', 'form' => 'formRole', 'class' => 'btn-primary'],
+        ]
+    ) ?>
     <?php if ($errors): ?>
-        <div class="alert alert-danger py-2"><?php foreach ($errors as $err): ?><div><?= e($err) ?></div><?php endforeach; ?></div>
+        <div class="alert alert-danger py-2 mb-2"><?php foreach ($errors as $err): ?><div><?= e($err) ?></div><?php endforeach; ?></div>
     <?php endif; ?>
-    <div class="card shadow-sm border-0" style="max-width: 640px;">
-        <div class="card-body">
-            <form method="post" action="<?= e(APP_URL) ?>/pages/roles/form.php<?= $id > 0 ? '?id=' . $id : '' ?>" id="formRole">
-                <?= csrf_field() ?>
-                <input type="hidden" name="id" value="<?= $id ?>">
-                <div class="mb-3">
-                    <label class="form-label" for="name">Nama Role <span class="text-danger">*</span></label>
-                    <input class="form-control" id="name" name="name" maxlength="50" required
-                           value="<?= e($row['name']) ?>" <?= $is_super ? 'readonly' : '' ?>>
-                    <?php if ($is_super): ?>
-                        <div class="form-text">Nama role Super Admin dikunci.</div>
-                    <?php endif; ?>
+    <form method="post" action="<?= e(APP_URL) ?>/pages/roles/form.php<?= $id > 0 ? '?id=' . $id : '' ?>" id="formRole">
+        <?= csrf_field() ?>
+        <input type="hidden" name="id" value="<?= $id ?>">
+        <div class="erp-window-card">
+            <ul class="nav nav-tabs erp-sub-tabs" role="tablist">
+                <li class="nav-item" role="presentation">
+                    <button class="nav-link active" id="tab-role-detail" data-bs-toggle="tab" data-bs-target="#pane-role-detail" type="button" role="tab">Detail</button>
+                </li>
+                <?php if ($id > 0): ?>
+                    <li class="nav-item" role="presentation">
+                        <button class="nav-link" id="tab-role-audit" data-bs-toggle="tab" data-bs-target="#pane-role-audit" type="button" role="tab">Audit Trail</button>
+                    </li>
+                <?php endif; ?>
+            </ul>
+            <div class="erp-content-body tab-content">
+                <div class="tab-pane fade show active" id="pane-role-detail" role="tabpanel">
+                    <div class="row g-3">
+                        <div class="col-lg-8">
+                            <div class="rnt-panel mb-0">
+                                <div class="rnt-panel-header"><i class="bi bi-shield"></i> Informasi Role</div>
+                                <div class="rnt-panel-body">
+                                    <div class="rnt-row<?= $is_super ? ' rnt-row-top' : '' ?>">
+                                        <div class="rnt-label">Nama Role <span class="text-danger">*</span></div>
+                                        <div class="rnt-field">
+                                            <input class="form-control form-control-sm" id="name" name="name" maxlength="50" required
+                                                   value="<?= e($row['name']) ?>" <?= $is_super ? 'readonly' : '' ?>>
+                                            <?php if ($is_super): ?>
+                                                <div class="form-text small">Nama role Super Admin dikunci.</div>
+                                            <?php endif; ?>
+                                        </div>
+                                    </div>
+                                    <div class="rnt-row rnt-row-top">
+                                        <div class="rnt-label">Level <span class="text-danger">*</span></div>
+                                        <div class="rnt-field">
+                                            <input class="form-control form-control-sm" type="number" id="level" name="level" min="0" max="999" required value="<?= (int) $row['level'] ?>">
+                                            <div class="form-text small">Semakin kecil angkanya, semakin tinggi posisinya.</div>
+                                        </div>
+                                    </div>
+                                    <div class="rnt-row">
+                                        <div class="rnt-label">Deskripsi</div>
+                                        <div class="rnt-field">
+                                            <input class="form-control form-control-sm" id="description" name="description" maxlength="255" value="<?= e($row['description'] ?? '') ?>">
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
                 </div>
-                <div class="mb-3">
-                    <label class="form-label" for="level">Level <span class="text-danger">*</span></label>
-                    <input class="form-control" type="number" id="level" name="level" min="0" max="999" required value="<?= (int) $row['level'] ?>">
-                    <div class="form-text">Semakin kecil angkanya, semakin tinggi posisinya.</div>
-                </div>
-                <div class="mb-4">
-                    <label class="form-label" for="description">Deskripsi</label>
-                    <input class="form-control" id="description" name="description" maxlength="255" value="<?= e($row['description'] ?? '') ?>">
-                </div>
-            </form>
+                <?php if ($id > 0): ?>
+                    <div class="tab-pane fade" id="pane-role-audit" role="tabpanel">
+                        <?= ui_erp_audit_panel($row) ?>
+                    </div>
+                <?php endif; ?>
+            </div>
         </div>
-    </div>
+    </form>
 </main>
 <?php require __DIR__ . '/../../includes/footer.php'; ?>

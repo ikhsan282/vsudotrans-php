@@ -245,7 +245,7 @@ check_bot(
     if ($bkId > 0) {
         $db->query("DELETE FROM travel_ticket_bookings WHERE id = {$bkId}");
     }
-    $db->query("DELETE FROM passengers WHERE phone_number = '081377778888'");
+    $db->query("DELETE FROM passengers WHERE phone_number IN ('6281377778888', '081377778888')");
     $db->query("DELETE FROM bot_request_logs WHERE phone IN ('6281377778888', '6281399990000', '6281200000002')");
     if ($origCh1 !== null) {
         $stRestore = $db->prepare("UPDATE payment_channels SET merchant_id = ?, api_key = ?, is_active = ? WHERE company_id = 1 AND provider = 'gopay'");

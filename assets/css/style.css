@@ -252,6 +252,12 @@ body {
   background: var(--surface-muted);
 }
 
+/* Nilai kolom No pada grid: lebih ringkas dari teks sel agar kolom penomoran hemat ruang */
+.table > tbody > tr > td:first-child.text-center.text-muted.small:not([colspan]) {
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+}
+
 /* ── Badges ───────────────────────────────────── */
 .badge {
   font-size: .75rem;
@@ -528,6 +534,8 @@ body {
 }
 
 .erp-sub-tabs .nav-link {
+  display: inline-flex;
+  align-items: center;
   color: #495057;
   background: #e9ecef;
   border: 1px solid #ced4da;
@@ -540,6 +548,14 @@ body {
   margin-bottom: -1px;
   text-decoration: none;
   transition: all 0.15s ease-in-out;
+}
+
+.erp-sub-tabs .nav-link .badge {
+  font-size: 10px;
+  font-weight: 600;
+  padding: 2px 5px;
+  line-height: 1;
+  border-radius: 3px;
 }
 
 .erp-sub-tabs .nav-link:hover {
@@ -817,4 +833,235 @@ body {
   align-items: center;
   gap: 16px;
   width: 100%;
+}
+
+/* Rutes Index compact typography */
+.rute-code-cell,
+.rute-province-name {
+  font-size: calc(1em - 1px);
+}
+
+.rute-city-name {
+  font-size: 0.75rem;
+}
+
+.erp-filter-bar .form-select-sm,
+.erp-filter-bar .input-group-sm > .form-control,
+.erp-filter-bar .input-group-sm > .input-group-text,
+.erp-filter-bar .btn-sm,
+.rutes-filter-bar .form-select-sm,
+.rutes-filter-bar .input-group-sm > .form-control,
+.rutes-filter-bar .input-group-sm > .input-group-text,
+.rutes-filter-bar .btn-sm {
+  height: 31px;
+}
+
+.erp-filter-bar .ts-wrapper.form-select-sm,
+.rutes-filter-bar .ts-wrapper.form-select-sm {
+  padding: 0;
+  border: 0;
+  background: transparent;
+  box-shadow: none;
+  min-height: 31px;
+}
+
+.erp-filter-bar .ts-wrapper.form-select-sm .ts-control,
+.rutes-filter-bar .ts-wrapper.form-select-sm .ts-control {
+  height: 31px;
+  min-height: 31px;
+  padding: 0.2rem 2rem 0.2rem 0.5rem;
+  flex-wrap: nowrap;
+  overflow: hidden;
+  align-items: center;
+}
+
+.erp-filter-bar .ts-wrapper.form-select-sm .ts-control > .item,
+.rutes-filter-bar .ts-wrapper.form-select-sm .ts-control > .item {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+@media (min-width: 768px) {
+  .erp-filter-bar:not(.erp-filter-bar-wide) {
+    flex-wrap: nowrap;
+  }
+
+  .erp-filter-bar:not(.erp-filter-bar-wide) > .erp-filter-q {
+    flex: 1.45 1 0;
+    min-width: 145px;
+    width: auto;
+    max-width: 100%;
+  }
+
+  .erp-filter-bar:not(.erp-filter-bar-wide) > .erp-filter-item {
+    flex: 1 1 0;
+    min-width: 112px;
+    width: auto;
+    max-width: 100%;
+  }
+
+  .erp-filter-bar:not(.erp-filter-bar-wide) > .erp-filter-status {
+    flex: 0.75 1 0;
+    min-width: 90px;
+    width: auto;
+    max-width: 100%;
+  }
+
+  .erp-filter-bar:not(.erp-filter-bar-wide) > .erp-filter-actions {
+    flex: 0 0 auto;
+    width: auto;
+    max-width: none;
+  }
+}
+
+@media (min-width: 1200px) {
+  .erp-filter-bar.erp-filter-bar-wide,
+  .rutes-filter-bar {
+    flex-wrap: nowrap;
+  }
+
+  .erp-filter-bar.erp-filter-bar-wide > .erp-filter-q,
+  .rutes-filter-bar .rutes-filter-q {
+    flex: 1.35 1 0;
+    min-width: 135px;
+    width: auto;
+    max-width: 100%;
+  }
+
+  .erp-filter-bar.erp-filter-bar-wide > .erp-filter-item,
+  .rutes-filter-bar .rutes-filter-item {
+    flex: 1 1 0;
+    min-width: 110px;
+    width: auto;
+    max-width: 100%;
+  }
+
+  .erp-filter-bar.erp-filter-bar-wide > .erp-filter-status,
+  .rutes-filter-bar .rutes-filter-status {
+    flex: 0.72 1 0;
+    min-width: 88px;
+    width: auto;
+    max-width: 100%;
+  }
+
+  .erp-filter-bar.erp-filter-bar-wide > .erp-filter-actions,
+  .rutes-filter-bar .rutes-filter-actions {
+    flex: 0 0 auto;
+    width: auto;
+    max-width: none;
+  }
+}
+
+.rute-slots-wrap {
+  max-width: 196px;
+}
+
+.badge.rute-slot-badge {
+  font-size: 0.68rem;
+  padding: 0.2em 0.42em;
+  line-height: 1.15;
+}
+
+/* ERP Detail & Form supplementary helpers */
+.rnt-field .rnt-ro-value {
+  min-height: calc(1.5em + 0.5rem + 2px);
+  padding: 0.25rem 0.5rem;
+  font-size: 0.82rem;
+  line-height: 1.5;
+  border: 1px solid #ced4da;
+  border-radius: 2px;
+  background-color: #f8f9fa;
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.rnt-field textarea.form-control-sm.rnt-ta-compact {
+  min-height: 54px;
+}
+
+.rnt-field .rnt-check-wrap {
+  min-height: calc(1.5em + 0.5rem + 2px);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.rnt-subpill-bar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  padding: 6px 10px;
+  background: #f8f9fa;
+  border-bottom: 1px solid #ced4da;
+}
+
+.rnt-subpill-bar .nav-link {
+  font-size: 0.78rem;
+  font-weight: 500;
+  padding: 4px 10px;
+  border-radius: 2px;
+  border: 1px solid #ced4da;
+  background: #ffffff;
+  color: #495057;
+}
+
+.rnt-subpill-bar .nav-link.active {
+  background: #0d6efd;
+  border-color: #0d6efd;
+  color: #ffffff;
+  font-weight: 600;
+}
+
+/* Regulations grid commission chips: 1px smaller than default .badge (.75rem) */
+.badge.reg-detail-badge {
+  font-size: calc(.75rem - 1px);
+}
+
+/* Uniform Filter & Reset button group across all ERP modules */
+.erp-filter-actions .btn {
+  height: 31px;
+  min-height: 31px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.erp-filter-bar .erp-filter-compact {
+  flex: 0 0 auto;
+  width: auto;
+  max-width: 100%;
+}
+
+@media (min-width: 1200px) {
+  .erp-filter-bar.erp-filter-bar-wide {
+    flex-wrap: nowrap;
+  }
+  .erp-filter-bar.erp-filter-bar-wide > .erp-filter-q,
+  .erp-filter-bar.erp-filter-bar-wide > .col-md-3:not(.erp-filter-item) {
+    flex: 1.25 1 0;
+    width: auto;
+    min-width: 0;
+  }
+  .erp-filter-bar.erp-filter-bar-wide > .erp-filter-item,
+  .erp-filter-bar.erp-filter-bar-wide > .col-md-2,
+  .erp-filter-bar.erp-filter-bar-wide > .col-md-3.erp-filter-item {
+    flex: 1 1 0;
+    width: auto;
+    min-width: 0;
+  }
+  .erp-filter-bar.erp-filter-bar-wide > .erp-filter-date,
+  .erp-filter-bar.erp-filter-bar-wide > div.col-md-2:has(> input[type="date"]),
+  .erp-filter-bar.erp-filter-bar-wide > div.col-md-2:has(> input[name="start_date"]),
+  .erp-filter-bar.erp-filter-bar-wide > div.col-md-2:has(> input[name="end_date"]) {
+    flex: 0 0 auto;
+    width: 128px;
+  }
+  .erp-filter-bar.erp-filter-bar-wide > .erp-filter-actions {
+    flex: 0 0 auto;
+    width: auto;
+    margin-left: auto;
+  }
 }

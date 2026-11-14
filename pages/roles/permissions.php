@@ -86,57 +86,77 @@ $active = 'roles';
 $title  = 'Hak Akses — ' . $role['name'];
 require __DIR__ . '/../../includes/header.php';
 ?>
-<main class="col-12 col-md-9 col-lg-10 p-4">
-    <div class="d-flex justify-content-between align-items-center mb-3">
-        <h4 class="fw-bold mb-0">Hak Akses — <?= e($role['name']) ?></h4>
-        <div class="d-flex gap-2">
-            <a class="btn btn-outline-secondary btn-sm" href="<?= e(APP_URL) ?>/pages/roles/index.php">
-                <i class="bi bi-arrow-left me-1"></i>Batal
-            </a>
-            <button type="submit" form="formPermissions" class="btn btn-primary btn-sm px-3">
-                <i class="bi bi-check2 me-1"></i>Simpan Hak Akses
-            </button>
-        </div>
-    </div>
+<main class="p-2 p-md-3">
+    <?= ui_erp_toolbar(
+        'Role & Hak Akses',
+        'shield-check',
+        'Hak Akses — ' . $role['name'],
+        ['Level ' . (int) ($role['level'] ?? 0)],
+        [
+            ['label' => 'Batal', 'icon' => 'arrow-left', 'href' => APP_URL . '/pages/roles/index.php', 'class' => 'btn-outline-secondary'],
+            ['label' => 'Simpan Hak Akses', 'icon' => 'check2', 'type' => 'submit', 'form' => 'formPermissions', 'class' => 'btn-primary'],
+        ]
+    ) ?>
     <?php if ($errors): ?>
-        <div class="alert alert-danger py-2"><?php foreach ($errors as $err): ?><div><?= e($err) ?></div><?php endforeach; ?></div>
+        <div class="alert alert-danger py-2 mb-2"><?php foreach ($errors as $err): ?><div><?= e($err) ?></div><?php endforeach; ?></div>
     <?php endif; ?>
     <form method="post" action="<?= e(APP_URL) ?>/pages/roles/permissions.php?id=<?= $id ?>" id="formPermissions">
         <?= csrf_field() ?>
         <input type="hidden" name="id" value="<?= $id ?>">
-        <?php foreach ($grouped as $module => $items): ?>
-            <div class="card shadow-sm border-0 mb-3">
-                <div class="card-header bg-white d-flex justify-content-between align-items-center">
-                    <span class="fw-semibold text-capitalize"><?= e($module) ?></span>
-                    <div class="form-check form-switch mb-0">
-                        <input class="form-check-input" type="checkbox" id="all-<?= e($module) ?>"
-                               onclick="document.querySelectorAll('.perm-<?= e($module) ?>').forEach(c => c.checked = this.checked)">
-                        <label class="form-check-label small" for="all-<?= e($module) ?>">Pilih semua</label>
+        <div class="erp-window-card">
+            <ul class="nav nav-tabs erp-sub-tabs" role="tablist">
+                <li class="nav-item" role="presentation">
+                    <button class="nav-link active" id="tab-perm-list" data-bs-toggle="tab" data-bs-target="#pane-perm-list" type="button" role="tab">Hak Akses Modul</button>
+                </li>
+                <li class="nav-item" role="presentation">
+                    <button class="nav-link" id="tab-perm-audit" data-bs-toggle="tab" data-bs-target="#pane-perm-audit" type="button" role="tab">Audit Trail</button>
+                </li>
+            </ul>
+            <div class="erp-content-body tab-content">
+                <div class="tab-pane fade show active" id="pane-perm-list" role="tabpanel">
+                    <div class="row g-3">
+                        <?php foreach ($grouped as $module => $items): ?>
+                            <div class="col-lg-6">
+                                <div class="rnt-panel h-100 mb-0">
+                                    <div class="rnt-panel-header justify-content-between">
+                                        <span class="d-inline-flex align-items-center gap-1 text-capitalize"><i class="bi bi-grid"></i> <?= e($module) ?></span>
+                                        <div class="form-check form-switch mb-0">
+                                            <input class="form-check-input" type="checkbox" id="all-<?= e($module) ?>"
+                                                   onclick="document.querySelectorAll('.perm-<?= e($module) ?>').forEach(c => c.checked = this.checked)">
+                                            <label class="form-check-label small fw-normal text-transform-none" for="all-<?= e($module) ?>">Pilih semua</label>
+                                        </div>
+                                    </div>
+                                    <div class="rnt-panel-body p-3">
+                                        <div class="row g-2">
+                                            <?php foreach ($items as $p): ?>
+                                                <div class="col-md-6">
+                                                    <div class="form-check mb-0">
+                                                        <input class="form-check-input perm-<?= e($p['module']) ?>" type="checkbox"
+                                                               name="permissions[]" value="<?= (int) $p['id'] ?>"
+                                                               id="perm-<?= (int) $p['id'] ?>" <?= in_array((int) $p['id'], $checked, true) ? 'checked' : '' ?>
+                                                               <?= (!$can_edit_restricted && in_array($p['name'], $restricted, true)) ? 'disabled' : '' ?>>
+                                                        <label class="form-check-label small" for="perm-<?= (int) $p['id'] ?>">
+                                                            <span class="fw-medium"><?= e($p['name']) ?></span>
+                                                            <?php if (in_array($p['name'], $restricted, true)): ?>
+                                                                <span class="badge bg-warning text-dark">khusus Super Admin</span>
+                                                            <?php endif; ?>
+                                                            <?php if ($p['description']): ?><div class="text-muted"><?= e($p['description']) ?></div><?php endif; ?>
+                                                        </label>
+                                                    </div>
+                                                </div>
+                                            <?php endforeach; ?>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        <?php endforeach; ?>
                     </div>
                 </div>
-                <div class="card-body">
-                    <div class="row g-2">
-                    <?php foreach ($items as $p): ?>
-                        <div class="col-md-6">
-                            <div class="form-check">
-                                <input class="form-check-input perm-<?= e($p['module']) ?>" type="checkbox"
-                                       name="permissions[]" value="<?= (int) $p['id'] ?>"
-                                       id="perm-<?= (int) $p['id'] ?>" <?= in_array((int) $p['id'], $checked, true) ? 'checked' : '' ?>
-                                       <?= (!$can_edit_restricted && in_array($p['name'], $restricted, true)) ? 'disabled' : '' ?>>
-                                <label class="form-check-label" for="perm-<?= (int) $p['id'] ?>">
-                                    <?= e($p['name']) ?>
-                                    <?php if (in_array($p['name'], $restricted, true)): ?>
-                                        <span class="badge bg-warning text-dark">khusus Super Admin</span>
-                                    <?php endif; ?>
-                                    <?php if ($p['description']): ?><div class="small text-muted"><?= e($p['description']) ?></div><?php endif; ?>
-                                </label>
-                            </div>
-                        </div>
-                    <?php endforeach; ?>
-                    </div>
+                <div class="tab-pane fade" id="pane-perm-audit" role="tabpanel">
+                    <?= ui_erp_audit_panel($role) ?>
                 </div>
             </div>
-        <?php endforeach; ?>
+        </div>
     </form>
 </main>
 <?php require __DIR__ . '/../../includes/footer.php'; ?>

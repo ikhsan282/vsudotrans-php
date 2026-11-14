@@ -12,7 +12,7 @@ assert(vehicle_due_soon('2026-09-01', $today) === true);   // sudah lewat tetap 
 assert(vehicle_due_soon('bukan-tanggal', $today) === false);
 
 $ok = [
-    'brand_id' => 1, 'model_unit_id' => 2, 'type_engine_id' => 3, 'category_vehicle_id' => 4,
+    'brand_id' => 1, 'model_unit_id' => 2, 'category_vehicle_id' => 4,
     'vehicle_number' => 'B 1234 ABC', 'frame_number' => 'MHX1', 'machine_number' => 'M1',
     'production_year' => 2020, 'vehicle_color' => 'Putih', 'seat' => 7, 'ownership' => 'Internal',
     'tax_due' => null, 'stnk_due' => null, 'kir_due' => null,

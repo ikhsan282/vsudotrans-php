@@ -32,7 +32,7 @@ function vehicle_due_soon(?string $date, DateTimeImmutable $today): bool
 function vehicle_validate(array $d): array
 {
     $errors = [];
-    foreach (['brand_id' => 'Merek', 'model_unit_id' => 'Model', 'type_engine_id' => 'Tipe mesin', 'category_vehicle_id' => 'Kategori'] as $k => $label) {
+    foreach (['brand_id' => 'Merek', 'model_unit_id' => 'Model', 'category_vehicle_id' => 'Kategori'] as $k => $label) {
         if ((int) $d[$k] <= 0) {
             $errors[] = "{$label} wajib dipilih.";
         }
@@ -103,7 +103,6 @@ function vehicle_check_refs(mysqli $db, int $cid, array $d): array
     $checks = [
         ['brand_vehicles', 'brand_id', 'Merek'],
         ['model_units', 'model_unit_id', 'Model'],
-        ['type_engines', 'type_engine_id', 'Tipe mesin'],
         ['category_vehicles', 'category_vehicle_id', 'Kategori'],
     ];
     foreach ($checks as [$table, $col, $label]) {
@@ -133,4 +132,34 @@ function vehicle_options(mysqli $db, string $table, int $cid, int $current): arr
     $rows = $st->get_result()->fetch_all(MYSQLI_ASSOC);
     $st->close();
     return $rows;
+}
+
+/** Opsi filter dropdown master (Merek/Kategori) sesuai scope perusahaan yang sedang dilihat. */
+function vehicle_filter_options(mysqli $db, string $table, int $selectedId, bool $withCompanyCode): array
+{
+    if (!in_array($table, ['brand_vehicles', 'category_vehicles'], true)) {
+        return [];
+    }
+    require_once __DIR__ . '/../../includes/transport_helpers.php';
+    $scope = company_filter_scope('ref.company_id');
+    $st = $db->prepare("SELECT ref.id, ref.name, co.code AS company_code
+                        FROM {$table} ref
+                        LEFT JOIN companies co ON co.id = ref.company_id
+                        WHERE {$scope['where']} AND (ref.is_active = 1 OR ref.id = ?)
+                        ORDER BY ref.name, co.code");
+    $st->bind_param($scope['types'] . 'i', ...[...$scope['params'], $selectedId]);
+    $st->execute();
+    $rows = $st->get_result()->fetch_all(MYSQLI_ASSOC);
+    $st->close();
+
+    $opts = [];
+    foreach ($rows as $row) {
+        $opts[] = [
+            'id'    => (int) $row['id'],
+            'label' => ($withCompanyCode && !empty($row['company_code']))
+                ? ($row['company_code'] . ' — ' . $row['name'])
+                : $row['name'],
+        ];
+    }
+    return $opts;
 }

@@ -552,7 +552,7 @@ require __DIR__ . '/../../../includes/header.php';
                                 </div>
                                 <div class="d-flex flex-wrap align-items-center gap-3">
                                     <?php if (can('vehicles.manage')): ?>
-                                        <a href="<?= e(APP_URL) ?>/pages/vehicles/master.php?t=category" target="_blank" class="rnt-header-action">
+                                        <a href="<?= e(APP_URL) ?>/pages/vehicles/categories/index.php" target="_blank" class="rnt-header-action">
                                             <i class="bi bi-tags me-1"></i>Kelola Kategori
                                         </a>
                                     <?php endif; ?>
@@ -640,7 +640,7 @@ require __DIR__ . '/../../../includes/header.php';
                         <div class="rnt-panel mb-0">
                             <div class="rnt-panel-header">
                                 <div class="d-flex flex-wrap align-items-center gap-2">
-                                    <span>Jadwal Keberangkatan Rute (ENUM Jam)</span>
+                                    <span>Daftar Jam Keberangkatan</span>
                                     <span id="ruteScheduleCountBadge" class="badge bg-primary-subtle text-primary border"><?= count($selectedSlots) ?> Jam Dipilih</span>
                                 </div>
                                 <div class="d-flex flex-wrap align-items-center gap-3">
@@ -662,7 +662,6 @@ require __DIR__ . '/../../../includes/header.php';
                                 </div>
                             </div>
                             <div class="rnt-panel-body">
-                                <div class="form-text small mb-3">Opsional — pilih jam keberangkatan yang tersedia untuk rute ini (contoh: pagi jam 07:00, 08:00, 09:00). Tersimpan terpisah di tabel <code>rute_schedules</code>.</div>
                                 <?php foreach (rute_schedule_periods() as $grp): ?>
                                     <div class="d-flex flex-wrap align-items-center gap-2 mb-2">
                                         <span class="small text-muted fw-semibold" style="min-width: 78px;"><?= e($grp['label']) ?></span>

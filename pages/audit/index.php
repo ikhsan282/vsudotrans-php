@@ -126,7 +126,7 @@ if (in_array($export_format, ['xlsx', 'pdf'], true)) {
 
     grid_export_send(
         'Daftar Log Audit Aktivitas',
-        ['Waktu', 'Pengguna', 'Perusahaan', 'Aksi', 'Deskripsi / Detail', 'Alamat IP'],
+        ['Waktu', 'User', 'Perusahaan', 'Aksi', 'Deskripsi', 'IP'],
         $row_stream,
         $export_format,
         'landscape',
@@ -176,9 +176,9 @@ require __DIR__ . '/../../includes/header.php';
     ) ?>
     <div class="card shadow-sm border-0 mb-3">
         <div class="card-body py-2 px-3">
-            <form method="get" class="row g-2 align-items-center">
+            <form method="get" class="row g-2 align-items-center erp-filter-bar erp-filter-bar-wide">
                 <?php if (is_super_admin()): ?>
-                <div class="col-12 col-md-3">
+                <div class="col-12 col-md-3 erp-filter-item">
                     <select name="company_id" class="form-select form-select-sm">
                         <option value="0" <?= $f_company === 0 ? 'selected' : '' ?>>— Semua Perusahaan —</option>
                         <?php foreach ($companies as $comp): ?>
@@ -189,31 +189,26 @@ require __DIR__ . '/../../includes/header.php';
                     </select>
                 </div>
                 <?php endif; ?>
-                <div class="col-6 col-md-2">
+                <div class="col-6 col-md-2 erp-filter-date">
                     <input type="date" name="from" class="form-control form-control-sm" value="<?= e($from) ?>" title="Dari Tanggal">
                 </div>
-                <div class="col-6 col-md-2">
+                <div class="col-6 col-md-2 erp-filter-date">
                     <input type="date" name="to" class="form-control form-control-sm" value="<?= e($to) ?>" title="Sampai Tanggal">
                 </div>
-                <div class="col-6 col-md-2">
+                <div class="col-6 col-md-2 erp-filter-item">
                     <input type="text" name="user" class="form-control form-control-sm" placeholder="Username..." value="<?= e($f_user) ?>">
                 </div>
-                <div class="col-6 col-md-2">
+                <div class="col-6 col-md-2 erp-filter-item">
                     <input type="text" name="action" class="form-control form-control-sm" placeholder="Aksi (login, create)..." value="<?= e($action) ?>">
                 </div>
-                <div class="col-auto d-flex gap-1">
-                    <button type="submit" class="btn btn-sm btn-secondary">Filter</button>
-                    <?php if ($from !== '' || $to !== '' || $f_user !== '' || $action !== '' || isset($_GET['company_id'])): ?>
-                        <a href="<?= e(APP_URL) ?>/pages/audit/index.php" class="btn btn-sm btn-outline-danger" title="Reset"><i class="bi bi-x-lg"></i> Reset</a>
-                    <?php endif; ?>
-                </div>
+                <?= ui_filter_actions(APP_URL . '/pages/audit/index.php', ($from !== '' || $to !== '' || $f_user !== '' || $action !== '' || isset($_GET['company_id']))) ?>
             </form>
         </div>
     </div>
     <div class="card shadow-sm border-0">
         <div class="table-responsive">
             <table class="table table-hover mb-0 align-middle">
-                <thead class="table-light"><tr><th class="text-center" style="width: 52px;">No</th><th>Waktu</th><th>User</th><th>Perusahaan</th><th>Aksi</th><th>Deskripsi</th><th>IP</th></tr></thead>
+                <thead class="table-light"><tr><th class="text-center" style="width: 52px;">#</th><th>Waktu</th><th>User</th><th>Perusahaan</th><th>Aksi</th><th>Deskripsi</th><th>IP</th></tr></thead>
                 <tbody>
                 <?php foreach ($rows as $idx => $r): ?>
                     <tr>

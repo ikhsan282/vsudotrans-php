@@ -40,15 +40,14 @@ $c->query("INSERT IGNORE INTO districts (id, country_id, province_id, city_id, c
 $c->query("INSERT IGNORE INTO brand_vehicles (id, company_id, code, name) VALUES (1, 1, 'FCHK-BRAND', 'Merek Fchk')");
 $c->query("INSERT IGNORE INTO category_vehicles (id, company_id, code, name) VALUES (1, 1, 'FCHK-CAT', 'Kategori Fchk')");
 $c->query("INSERT IGNORE INTO model_units (id, company_id, brand_id, code, name) VALUES (1, 1, 1, 'FCHK-MDL', 'Model Fchk')");
-$c->query("INSERT IGNORE INTO type_engines (id, company_id, code, name) VALUES (1, 1, 'FCHK-ENG', 'Mesin Fchk')");
 
 // Perusahaan sendiri (1) + perusahaan lain (991) — keduanya punya booking & biaya di rentang uji.
-$c->query("INSERT INTO companies (id, group_id, code, name, country_code, is_active)
-           VALUES (991, 1, 'FCHK-B', 'Perusahaan Fchk B', '+62', 1)");
+$c->query("INSERT INTO companies (id, group_id, code, name, is_active)
+           VALUES (991, 1, 'FCHK-B', 'Perusahaan Fchk B', 1)");
 $c->query("INSERT INTO branches (id, company_id, code, name) VALUES (990001, 991, 'FCHK-BR', 'Cabang Fchk')");
-$c->query("INSERT INTO passengers (id, company_id, code, name, phone_number) VALUES (990001, 991, 'FCHK-PAX', 'Pax Fchk', '0800')");
+$c->query("INSERT INTO passengers (id, company_id, code, name, phone_number) VALUES (990001, 991, 'FCHK-PAX', 'Pax Fchk', '62800')");
 // Penumpang milik perusahaan 1 (target FK passenger_id pada booking di bawah).
-$c->query("INSERT INTO passengers (id, company_id, code, name, phone_number) VALUES (991, 1, 'FCHK-PAX1', 'Pax Fchk 1', '0801')");
+$c->query("INSERT INTO passengers (id, company_id, code, name, phone_number) VALUES (991, 1, 'FCHK-PAX1', 'Pax Fchk 1', '62801')");
 
 // Booking MILIK perusahaan 1 (dibuat lewat id tinggi agar ikut bersih-bersih).
 $c->query("INSERT INTO travel_ticket_bookings
@@ -77,9 +76,9 @@ $c->query("INSERT INTO booking_cost_lines (id, company_id, booking_type, booking
     VALUES (990034, 1, 'travel', 990010, 'bbm', 'BBM luar rentang', 5000000, 'fin-check', '2026-11-30 23:59:59')");
 
 // Assignment + kendaraan + karyawan milik perusahaan 1 untuk uji operasional.
-$c->query("INSERT INTO vehicles (id, company_id, brand_id, model_unit_id, type_engine_id, category_vehicle_id,
+$c->query("INSERT INTO vehicles (id, company_id, brand_id, model_unit_id, category_vehicle_id,
     frame_number, machine_number, seat, production_year, vehicle_color, vehicle_number, ownership, is_active)
-    VALUES (990010, 1, 1, 1, 1, 1, 'FCHK-FRAME', 'FCHK-MACH', 12, 2020, 'Putih', 'F 9999 FCHK', 'milik', 1)");
+    VALUES (990010, 1, 1, 1, 1, 'FCHK-FRAME', 'FCHK-MACH', 12, 2020, 'Putih', 'F 9999 FCHK', 'milik', 1)");
 $c->query("INSERT INTO employees (id, company_id, code, name, job_position, status, join_date)
     VALUES (990010, 1, 'FCHK-EMP', 'Driver Fchk', 'Driver', 'aktif', '2026-01-01')");
 $c->query("INSERT INTO trip_assignments (id, company_id, booking_type, booking_id, employee_id, vehicle_id, started_at, ended_at, reason, created_user)

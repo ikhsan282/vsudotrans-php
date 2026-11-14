@@ -60,33 +60,42 @@ if (in_array($export_format, ['xlsx', 'pdf'], true)) {
     }
     $subtitle = $filter_notes ? implode(' | ', $filter_notes) : 'Semua Data';
 
-    $sql_export = "SELECT c.code, c.name, g.name AS group_name, c.country_code, c.phone_number, c.email, c.city, c.is_active
+    $sql_export = "SELECT c.code, c.name, g.name AS group_name, c.phone_number, c.email, c.city, c.is_active
                    FROM companies c JOIN groups g ON g.id = c.group_id
                    WHERE {$where} ORDER BY c.name";
 
-    $max_export_rows = $export_format === 'pdf' ? GRID_PDF_MAX_ROWS : null;
+    $isPdf = $export_format === 'pdf';
+    $max_export_rows = $isPdf ? GRID_PDF_MAX_ROWS : null;
     $row_stream = grid_query_stream(
         $sql_export,
         $types,
         $params,
-        static function (array $r): array {
-            $phone = trim(($r['country_code'] ?? '') . ' ' . ($r['phone_number'] ?? ''));
+        static function (array $r) use ($isPdf): array {
+            $city   = ($r['city'] ?? '') !== '' ? $r['city'] : '-';
+            $status = $r['is_active'] ? 'Aktif' : 'Nonaktif';
+            if ($isPdf) {
+                return [$r['code'], $r['name'], $r['group_name'], $city, $status];
+            }
+            $phone = trim((string) ($r['phone_number'] ?? ''));
             return [
                 $r['code'],
                 $r['name'],
                 $r['group_name'],
                 $phone !== '' ? $phone : '-',
                 ($r['email'] ?? '') !== '' ? $r['email'] : '-',
-                ($r['city'] ?? '') !== '' ? $r['city'] : '-',
-                $r['is_active'] ? 'Aktif' : 'Nonaktif',
+                $city,
+                $status,
             ];
         },
         $max_export_rows
     );
 
+    $headers = $isPdf
+        ? ['Kode', 'Nama', 'Grup', 'Kota', 'Status']
+        : ['Kode', 'Nama', 'Grup', 'Telepon', 'Email', 'Kota', 'Status'];
     grid_export_send(
         'Daftar Perusahaan',
-        ['Kode', 'Nama Perusahaan', 'Grup', 'Telepon', 'Email', 'Kota', 'Status'],
+        $headers,
         $row_stream,
         $export_format,
         'landscape',
@@ -136,14 +145,14 @@ require __DIR__ . '/../../includes/header.php';
     <!-- Filter & Pencarian Server-Side -->
     <div class="card shadow-sm border-0 mb-3">
         <div class="card-body py-2 px-3">
-            <form method="get" class="row g-2 align-items-center">
-                <div class="col-12 col-md-4 col-lg-3">
+            <form method="get" class="row g-2 align-items-center erp-filter-bar erp-filter-bar-wide">
+                <div class="col-12 col-md-4 col-lg-3 erp-filter-q">
                     <div class="input-group input-group-sm">
                         <span class="input-group-text bg-white text-muted"><i class="bi bi-search"></i></span>
                         <input type="text" name="q" class="form-control" placeholder="Cari kode, nama, kota, email..." value="<?= e($q) ?>">
                     </div>
                 </div>
-                <div class="col-6 col-md-3 col-lg-2">
+                <div class="col-6 col-md-3 col-lg-2 erp-filter-item">
                     <select name="group_id" class="form-select form-select-sm" onchange="this.form.submit()">
                         <option value="0">Semua Grup</option>
                         <?php foreach ($groups as $g): ?>
@@ -151,26 +160,21 @@ require __DIR__ . '/../../includes/header.php';
                         <?php endforeach; ?>
                     </select>
                 </div>
-                <div class="col-6 col-md-2 col-lg-2">
+                <div class="col-6 col-md-2 col-lg-2 erp-filter-item">
                     <select name="status" class="form-select form-select-sm" onchange="this.form.submit()">
                         <option value="">Semua Status</option>
                         <option value="1" <?= $status === '1' ? 'selected' : '' ?>>Aktif</option>
                         <option value="0" <?= $status === '0' ? 'selected' : '' ?>>Nonaktif</option>
                     </select>
                 </div>
-                <div class="col-auto">
+                <div class="col-auto erp-filter-compact">
                     <select name="per_page" class="form-select form-select-sm" onchange="this.form.submit()" title="Baris per halaman">
                         <?php foreach ([20, 50, 100] as $pp): ?>
                             <option value="<?= $pp ?>" <?= $per_page === $pp ? 'selected' : '' ?>><?= $pp ?> / hal</option>
                         <?php endforeach; ?>
                     </select>
                 </div>
-                <div class="col-auto d-flex gap-1">
-                    <button type="submit" class="btn btn-sm btn-secondary">Filter</button>
-                    <?php if ($has_filter): ?>
-                        <a href="<?= e(APP_URL) ?>/pages/companies/index.php" class="btn btn-sm btn-outline-danger" title="Reset Filter"><i class="bi bi-x-lg"></i> Reset</a>
-                    <?php endif; ?>
-                </div>
+                <?= ui_filter_actions(APP_URL . '/pages/companies/index.php', (bool) $has_filter) ?>
             </form>
         </div>
     </div>
@@ -180,7 +184,7 @@ require __DIR__ . '/../../includes/header.php';
             <table class="table table-hover mb-0 align-middle">
                 <thead class="table-light">
                     <tr>
-                        <th class="text-center" style="width: 52px;">No</th>
+                        <th class="text-center" style="width: 52px;">#</th>
                         <th>Kode</th>
                         <th>Nama</th>
                         <th>Grup</th>

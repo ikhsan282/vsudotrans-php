@@ -19,9 +19,9 @@ $c->query("DELETE a FROM employee_attendances a JOIN employees e ON e.id = a.emp
 $c->query("DELETE FROM employee_attendances WHERE company_id IN ($CID, $OTHER)");
 $c->query("DELETE FROM employees WHERE company_id IN ($CID, $OTHER)");
 $c->query("DELETE FROM companies WHERE id IN ($CID, $OTHER)");
-$c->query("INSERT INTO companies (id, group_id, code, name, country_code, is_active)
-           VALUES ($CID, 1, 'ATT-A', 'Perusahaan Absensi A', '+62', 1),
-                  ($OTHER, 1, 'ATT-B', 'Perusahaan Absensi B', '+62', 1)");
+$c->query("INSERT INTO companies (id, group_id, code, name, is_active)
+           VALUES ($CID, 1, 'ATT-A', 'Perusahaan Absensi A', 1),
+                  ($OTHER, 1, 'ATT-B', 'Perusahaan Absensi B', 1)");
 $c->query("INSERT INTO employees (id, company_id, code, name, join_date, status)
            VALUES (9501, $CID, 'ATT-E1', 'Karyawan Absensi', '2026-01-01', 'aktif'),
                   (9502, $CID, 'ATT-E2', 'Karyawan Kedua',   '2026-01-01', 'aktif'),

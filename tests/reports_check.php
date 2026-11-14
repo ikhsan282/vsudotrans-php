@@ -21,11 +21,11 @@ $c->query("INSERT IGNORE INTO countries (id, code, name) VALUES (1, 'ID', 'Indon
 $c->query("INSERT IGNORE INTO provinces (id, country_id, code, name) VALUES (1, 1, 'BANTEN', 'Banten')");
 $c->query("INSERT IGNORE INTO cities (id, country_id, province_id, code, name) VALUES (1, 1, 1, 'TNG', 'Tangerang')");
 $c->query("INSERT IGNORE INTO districts (id, country_id, province_id, city_id, code, name) VALUES (1, 1, 1, 1, 'CBT', 'Cibodas')");
-$c->query("INSERT INTO companies (id, group_id, code, name, country_code, is_active)
-           VALUES (990, 1, 'CHK-B', 'Perusahaan Cek B', '+62', 1)");
+$c->query("INSERT INTO companies (id, group_id, code, name, is_active)
+           VALUES (990, 1, 'CHK-B', 'Perusahaan Cek B', 1)");
 $c->query("INSERT INTO branches (id, company_id, code, name) VALUES (9901, 990, 'CHK-BR', 'Cabang Cek')");
 $c->query("INSERT INTO passengers (id, company_id, code, name, phone_number)
-           VALUES (990, 990, 'CHK-PAX', 'Penumpang Cek', '0800')");
+           VALUES (990, 990, 'CHK-PAX', 'Penumpang Cek', '62800')");
 $bid = 99001;
 $c->query("INSERT INTO travel_ticket_bookings
     (id, company_id, branch_id, document_number, date, time, pickup_point_district_id, delivery_point_district_id,
