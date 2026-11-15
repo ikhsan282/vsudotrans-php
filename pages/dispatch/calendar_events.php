@@ -387,7 +387,6 @@ foreach ($rows as $row) {
             'note'               => trim((string) ($row['note'] ?? '')),
             'detail_url'         => $detailUrl,
             'manifest_url'       => $manifestUrl,
-            'dispatch_url'       => APP_URL . '/pages/dispatch/index.php',
             'details'            => implode(' · ', $details),
         ],
     ];

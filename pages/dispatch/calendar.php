@@ -11,7 +11,6 @@ $canCreateRental = $activeCid !== null && can('rental.manage');
 $canCreateAny = $canCreateTravel || $canCreateRental;
 $canTravelView = can('travel.view');
 $canRentalView = can('rental.view');
-$canDispatchManage = can('dispatch.manage');
 
 // Preload opsi sopir (LIMIT 50 + dukung Driver/Sopir; remote search via Tom Select menampung jutaan baris)
 $driverOptions = [];
@@ -38,9 +37,7 @@ $vehicleLimit = $activeCid !== null ? 50 : 100;
 $vehicleOptions = $companyIds ? opts_vehicles_detailed($cidInt, $companyIds, null, null, $vehicleLimit) : [];
 $statusOptions = booking_status_options();
 
-$headerActions = [
-    ['label' => 'Penjadwalan', 'href' => 'pages/dispatch/index.php', 'icon' => 'kanban', 'class' => 'btn btn-sm btn-outline-secondary'],
-];
+$headerActions = [];
 if ($canCreateTravel) {
     $headerActions[] = ['label' => 'Pemesanan Tiket Perjalanan', 'href' => 'pages/travel/bookings/form.php', 'icon' => 'plus-lg', 'class' => 'btn btn-sm btn-primary'];
 }
@@ -61,7 +58,7 @@ $eventsUrl = APP_URL . '/pages/dispatch/calendar_events.php';
 <main class="p-2 px-lg-2 py-lg-3 w-100 flex-grow-1 ops-calendar-page">
     <?= ui_page_header(
         'Kalender Operasional',
-        ['Dashboard' => 'pages/dashboard/index.php', 'Penjadwalan' => 'pages/dispatch/index.php', 'Kalender Operasional' => null],
+        ['Dashboard' => 'pages/dashboard/index.php', 'Kalender Operasional' => null],
         $headerBadges,
         $headerActions,
         $activeCid === null ? 'Pilih perusahaan aktif untuk membuat pemesanan baru langsung dari kalender' : 'Klik jadwal untuk detail cepat atau klik tanggal untuk buat pemesanan'
@@ -263,11 +260,6 @@ $eventsUrl = APP_URL . '/pages/dispatch/calendar_events.php';
             </div>
             <div class="modal-footer ops-cal-modal-footer py-2 px-3 d-flex flex-wrap justify-content-between gap-2 border-top">
                 <div class="d-flex flex-wrap gap-2">
-                    <?php if ($canDispatchManage): ?>
-                        <a href="#" id="calModalDispatchBtn" class="btn btn-sm btn-outline-warning d-none">
-                            <i class="bi bi-person-plus me-1"></i>Tugaskan Driver
-                        </a>
-                    <?php endif; ?>
                     <a href="#" id="calModalManifestBtn" target="_blank" rel="noopener" class="btn btn-sm btn-outline-secondary d-none">
                         <i class="bi bi-printer me-1"></i>Cetak Surat Jalan
                     </a>
@@ -522,16 +514,6 @@ document.addEventListener('DOMContentLoaded', function () {
             manifestBtn.classList.remove('d-none');
         } else {
             manifestBtn.classList.add('d-none');
-        }
-
-        const dispatchBtn = document.getElementById('calModalDispatchBtn');
-        if (dispatchBtn) {
-            if (!p.has_driver && p.status !== 'cancelled' && p.status !== 'done' && p.dispatch_url) {
-                dispatchBtn.href = p.dispatch_url;
-                dispatchBtn.classList.remove('d-none');
-            } else {
-                dispatchBtn.classList.add('d-none');
-            }
         }
 
         bootstrap.Modal.getOrCreateInstance(modalEl).show();

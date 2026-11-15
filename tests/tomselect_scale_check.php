@@ -308,12 +308,7 @@ try {
         ts_check(false, 'travel/rutes/form.php renders pickup_point_city_id select');
     }
 
-    // 7. Dispatch assign: booking dropdown menggunakan Tom Select
-    $dispForm = $httpGet('/pages/dispatch/assign.php');
-    ts_check($dispForm['code'] === 200, 'dispatch/assign.php returns HTTP 200');
-    ts_check((bool) preg_match('/<select[^>]*class="[^"]*ts-select[^"]*"[^>]*name="booking"/', $dispForm['body']), 'dispatch/assign.php booking dropdown uses ts-select');
-
-    // 8. Masters engine (villages/form.php): Tom Select bertingkat & tidak memuat 7.200+ district sekaligus
+    // 7. Masters engine (villages/form.php): Tom Select bertingkat & tidak memuat 7.200+ district sekaligus
     $vilForm = $httpGet('/pages/masters/villages/form.php');
     ts_check($vilForm['code'] === 200, 'masters/villages/form.php returns HTTP 200');
     ts_check((bool) preg_match('/<select[^>]*class="[^"]*ts-select[^"]*"[^>]*id="district_id"/', $vilForm['body']), 'masters/villages/form.php #district_id uses ts-select + remote search');
@@ -661,31 +656,9 @@ try {
     }
     ts_check($drvSearch['code'] === 200 && $onlyDrivers, 'employees/options.php job_position=Driver filters strictly to 15 seeded drivers');
 
-    $dispDocSearch = $httpGet('/pages/dispatch/booking_options.php?company_id=1&q=' . urlencode((string) $tbk['document_number']));
-    $foundTravelKey = false;
-    foreach ((array) ($dispDocSearch['json'] ?? []) as $di) {
-        if (($di['value'] ?? '') === 'travel:' . $tempTravelId) {
-            $foundTravelKey = true;
-            break;
-        }
-    }
-    ts_check($dispDocSearch['code'] === 200 && $foundTravelKey, 'dispatch/booking_options.php finds unassigned travel booking by doc prefix');
-
-    $dispPaxSearch = $httpGet('/pages/dispatch/booking_options.php?company_id=1&q=ZZZScale');
-    $foundDispPax = false;
-    foreach ((array) ($dispPaxSearch['json'] ?? []) as $di) {
-        if (in_array((string) ($di['value'] ?? ''), ['rental:' . $tempBookingId, 'travel:' . $tempTravelId], true)) {
-            $foundDispPax = true;
-            break;
-        }
-    }
-    ts_check($dispPaxSearch['code'] === 200 && $foundDispPax, 'dispatch/booking_options.php finds unassigned bookings via passenger name prefix');
-
     foreach ([
         ['/pages/attendance/form.php', 'pages/employees/options.php', 'attendance/form.php'],
         ['/pages/attendance/index.php', 'pages/employees/options.php', 'attendance/index.php'],
-        ['/pages/dispatch/assign.php', 'pages/dispatch/booking_options.php', 'dispatch/assign.php (booking)'],
-        ['/pages/dispatch/assign.php', 'pages/employees/options.php?job_position=Driver', 'dispatch/assign.php (driver)'],
         ['/pages/hr/employee_recognitions/form.php', 'pages/employees/options.php?status=all', 'hr/employee_recognitions/form.php'],
         ['/pages/travel/bookings/detail.php?id=' . $tempTravelId, 'pages/employees/options.php', 'travel/detail.php #tab-crew'],
         ['/pages/travel/bookings/form.php', 'crew-emp-select', 'travel/form.php crew'],
@@ -1063,11 +1036,9 @@ try {
         '/pages/vehicles/index.php?company_id=1',
         '/pages/vehicles/brands/index.php?company_id=1',
         '/pages/transport/categories/index.php?company_id=1',
-        '/pages/vehicles/categories/index.php?company_id=1',
         '/pages/vehicles/models/index.php?company_id=1',
         '/pages/transport/passengers/index.php?company_id=1',
         '/pages/transport/regulations/index.php?company_id=1',
-        '/pages/dispatch/index.php?company_id=1',
         '/pages/attendance/index.php?company_id=1',
         '/pages/payroll/periods/index.php?company_id=1',
         '/pages/finance/cash/index.php?company_id=1',

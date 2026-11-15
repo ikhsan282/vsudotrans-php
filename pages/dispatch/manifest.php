@@ -50,7 +50,7 @@ if ($id > 0) {
     if (!$assign) {
         if ($pdf) ob_end_clean();
         flash('error', 'Penugasan tidak ditemukan.');
-        redirect('pages/dispatch/index.php');
+        redirect('pages/dispatch/calendar.php');
     }
 
     $type    = (string) $assign['booking_type'];
@@ -60,7 +60,7 @@ if ($id > 0) {
     if (!$booking) {
         if ($pdf) ob_end_clean();
         flash('error', 'Data booking perjalanan tidak ditemukan.');
-        redirect('pages/dispatch/index.php');
+        redirect('pages/dispatch/calendar.php');
     }
 } elseif (in_array($reqType, ['travel', 'rental'], true) && $reqBid > 0) {
     $booking = booking_find($reqType, $reqBid);
