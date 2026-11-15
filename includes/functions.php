@@ -143,6 +143,21 @@ function tanggal_indo(?string $date): string
     return $d ? date('j', $d) . ' ' . $bulan[(int) date('n', $d)] . ' ' . date('Y', $d) : $date;
 }
 
+/** Validasi tanggal ketat format Y-m-d; kembalikan null bila kosong atau tidak valid. */
+function parse_valid_ymd(?string $raw): ?string
+{
+    $v = trim((string) $raw);
+    if (!preg_match('/^\d{4}-\d{2}-\d{2}$/D', $v)) {
+        return null;
+    }
+    $dt = DateTimeImmutable::createFromFormat('!Y-m-d', $v);
+    $errors = DateTimeImmutable::getLastErrors();
+    if ($dt === false || ($errors !== false && ($errors['warning_count'] > 0 || $errors['error_count'] > 0))) {
+        return null;
+    }
+    return $dt->format('Y-m-d');
+}
+
 function csrf_token(): string
 {
     if (empty($_SESSION['csrf_token'])) {

@@ -15,11 +15,13 @@ if ($is_edit) {
     redirect('pages/rental/bookings/detail.php?id=' . $id);
 }
 
+$prefillDate = ($_SERVER['REQUEST_METHOD'] !== 'POST' ? parse_valid_ymd($_GET['date'] ?? null) : null) ?? date('Y-m-d');
+
 $in  = [
     'date'                       => date('Y-m-d'),
     'time'                       => '05:00',
-    'start_date'                 => date('Y-m-d'),
-    'end_date'                   => date('Y-m-d'),
+    'start_date'                 => $prefillDate,
+    'end_date'                   => $prefillDate,
     'duration_days'              => '1',
     'trip'                       => '0',
     'bbm'                        => '0',

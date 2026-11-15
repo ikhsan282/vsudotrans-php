@@ -21,10 +21,11 @@ if ($id > 0) {
 
 $cid = require_active_company();
 $canManage = can('travel.manage');
+$prefillDate = ($_SERVER['REQUEST_METHOD'] !== 'POST' ? parse_valid_ymd($_GET['date'] ?? null) : null) ?? date('Y-m-d');
 
 $in = [
     'branch_id'                  => '',
-    'date'                       => date('Y-m-d'),
+    'date'                       => $prefillDate,
     'time'                       => date('H:i'),
     'passenger_id'               => '',
     'category_vehicle_id'        => '',
