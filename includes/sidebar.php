@@ -63,11 +63,7 @@ $menu = [
         ['key' => 'passengers',  'label' => 'Penumpang',        'href' => 'pages/transport/passengers/index.php',  'perms' => ['travel.view', 'rental.view']],
         ['key' => 'regulations', 'label' => 'Peraturan Komisi', 'href' => 'pages/transport/regulations/index.php', 'perms' => ['travel.view', 'rental.view']],
     ]],
-    ['key' => 'dispatch',   'section' => 'Operasional & Armada', 'label' => 'Penjadwalan',  'icon' => 'calendar2-check', 'perm' => null, 'sub' => [
-        ['label' => 'Kalender Operasional', 'href' => 'pages/dispatch/calendar.php', 'perms' => 'dispatch.view'],
-        ['label' => 'Papan & Riwayat',      'href' => 'pages/dispatch/index.php',    'perms' => 'dispatch.view'],
-        ['label' => 'Tugaskan Driver',      'href' => 'pages/dispatch/assign.php',   'perms' => 'dispatch.manage'],
-    ]],
+    ['key' => 'dispatch',   'section' => 'Operasional & Armada', 'label' => 'Kalender Operasional', 'icon' => 'calendar2-check', 'href' => 'pages/dispatch/calendar.php', 'perm' => 'dispatch.view'],
     ['key' => 'vehicles',   'section' => 'Operasional & Armada', 'label' => 'Kendaraan',    'icon' => 'truck', 'perm' => 'vehicles.view', 'sub' => [
         ['label' => 'Daftar Kendaraan',   'href' => 'pages/vehicles/index.php',            'perms' => 'vehicles.view'],
         ['label' => 'Merek Kendaraan',    'href' => 'pages/vehicles/brands/index.php',     'perms' => 'vehicles.view'],

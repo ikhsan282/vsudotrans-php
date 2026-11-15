@@ -166,6 +166,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 booking_upload_payment_proofs($parsedPayments, $cid, $invId);
                 booking_payments_sync('travel', $newId, $invId, $cid, $parsedPayments, $_SESSION['username'] ?? null);
             }
+            if ($newId > 0) {
+                booking_auto_advance_status('travel', $newId, $cid, $_SESSION['username'] ?? null);
+            }
 
             audit('booking.travel.create', "Pemesanan #{$newId} {$res['document_number']}");
             require_once __DIR__ . '/../../../includes/wa.php';
@@ -375,7 +378,7 @@ require __DIR__ . '/../../../includes/header.php';
                         <div class="rnt-panel-header">
                             <span>Kendaraan</span>
                             <?php if (can('vehicles.manage')): ?>
-                                <a href="<?= e(APP_URL) ?>/pages/vehicles/form.php" target="_blank" class="rnt-header-action">
+                                <a href="<?= e(APP_URL) ?>/pages/vehicles/detail.php" target="_blank" class="rnt-header-action">
                                     <i class="bi bi-plus-lg me-1"></i>Tambah Kendaraan Baru
                                 </a>
                             <?php endif; ?>

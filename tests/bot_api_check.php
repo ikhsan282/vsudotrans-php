@@ -173,7 +173,7 @@ $qStat = call_bot_endpoint('qris_status.php', 'GET', [
     'company'         => 'MTM',
     'document_number' => $docNo,
 ]);
-check_bot(($qStat['ok'] ?? false) === true && ($qStat['data']['status'] ?? '') === 'PAID' && ($qStat['data']['booking_status'] ?? '') === 'confirmed', 'GET /api/bot/qris_status.php returns PAID & confirmed booking status');
+check_bot(($qStat['ok'] ?? false) === true && ($qStat['data']['status'] ?? '') === 'PAID' && ($qStat['data']['payment_status'] ?? '') === 'paid' && ($qStat['data']['booking_status'] ?? '') === 'draft', 'GET /api/bot/qris_status.php returns PAID & keeps draft booking status');
 
 // 8. Test GET & POST /api/bot/outbox.php
 $outGet = call_bot_endpoint('outbox.php', 'GET', ['secret' => $secret, 'phone' => $adminPhone, 'company' => 'MTM']);

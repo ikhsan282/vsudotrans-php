@@ -79,10 +79,10 @@ if ($end_date !== '') {
 }
 
 if ($q !== '') {
-    $where .= ' AND ' . booking_passenger_search_sql('travel');
-    $types .= 'sssss';
-    $q_like = '%' . $q . '%';
-    array_push($params, $q_like, $q_like, $q_like, $q_like, $q_like);
+    [$searchSql, $searchTypes, $searchParams] = booking_grid_search_sql('travel', '%' . $q . '%');
+    $where .= ' AND ' . $searchSql;
+    $types .= $searchTypes;
+    array_push($params, ...$searchParams);
 }
 if ($status !== '') {
     $where .= " AND COALESCE({$status_sql}, 'draft') = ?";
@@ -106,11 +106,13 @@ if (in_array($export_format, ['xlsx', 'pdf'], true)) {
     $isPdf     = $export_format === 'pdf';
     $pax_subq  = $isPdf ? booking_extra_passenger_count_sql('travel') : booking_extra_passengers_export_sql('travel');
     $pax_alias = $isPdf ? 'extra_cnt' : 'extra_passengers';
+    $drv_subq  = booking_driver_export_sql('travel', $isPdf);
     $sql_export = "SELECT b.document_number, b.date, b.time,
                           p.name AS passenger_name, p.phone_number AS passenger_phone,
                           {$pax_subq} AS {$pax_alias},
                           bv.name AS brand_name, mu.name AS model_name,
                           v.vehicle_number, cv.name AS category_name,
+                          {$drv_subq} AS driver_info,
                           pc.name AS pickup_city_name, dc.name AS delivery_city_name,
                           b.total_price, COALESCE(b.total_payment, 0) AS total_payment,
                           COALESCE({$status_sql}, 'draft') AS status
@@ -178,7 +180,9 @@ $st->execute();
 $rows = $st->get_result()->fetch_all(MYSQLI_ASSOC);
 $st->close();
 
-$extraCounts = booking_extra_passenger_counts('travel', array_column($rows, 'id'));
+$bookingIds  = array_column($rows, 'id');
+$extraCounts = booking_extra_passenger_counts('travel', $bookingIds);
+$driversMap  = booking_driver_summaries('travel', $bookingIds);
 
 $header_actions = ui_export_actions();
 if (can('travel.manage') && active_company_id() !== null) {
@@ -212,7 +216,7 @@ require __DIR__ . '/../../../includes/header.php';
                 <div class="col-12 col-md-3">
                     <div class="input-group input-group-sm">
                         <span class="input-group-text bg-white text-muted"><i class="bi bi-search"></i></span>
-                        <input type="text" name="q" class="form-control" placeholder="Cari resi / penumpang / no. hp..." value="<?= e($q) ?>">
+                        <input type="text" name="q" class="form-control" placeholder="Cari resi / penumpang / sopir / no. wa..." value="<?= e($q) ?>">
                     </div>
                 </div>
                 <div class="col-6 col-md-2">
@@ -236,8 +240,8 @@ require __DIR__ . '/../../../includes/header.php';
                 <div class="col-6 col-md-2">
                     <select name="status" class="form-select form-select-sm" onchange="this.form.submit()" title="Pilih Status">
                         <option value="">Semua Status</option>
-                        <?php foreach (['draft' => 'Draft', 'confirmed' => 'Confirmed', 'paid' => 'Paid', 'assigned' => 'Assigned', 'on_the_way' => 'On The Way', 'completed' => 'Completed', 'cancelled' => 'Cancelled'] as $sk => $sl): ?>
-                            <option value="<?= $sk ?>" <?= $status === $sk ? 'selected' : '' ?>><?= $sl ?></option>
+                        <?php foreach (booking_status_options() as $sk => $sl): ?>
+                            <option value="<?= e($sk) ?>" <?= $status === $sk ? 'selected' : '' ?>><?= e($sl) ?></option>
                         <?php endforeach; ?>
                     </select>
                 </div>
@@ -254,6 +258,7 @@ require __DIR__ . '/../../../includes/header.php';
                         <th>Resi</th>
                         <th>Penumpang</th>
                         <th class="text-center">Kendaraan</th>
+                        <th>Sopir</th>
                         <th class="text-center">Jam</th>
                         <th>Tanggal</th>
                         <th>Asal</th>
@@ -307,12 +312,13 @@ require __DIR__ . '/../../../includes/header.php';
                                 <span class="text-muted small">-</span>
                             <?php endif; ?>
                         </td>
+                        <td><?= booking_driver_cell_html($driversMap[(int) $r['id']] ?? null) ?></td>
                         <td class="text-center text-nowrap"><?= e($jam) ?></td>
                         <td class="text-nowrap small"><?= e($tgl) ?></td>
                         <td class="small"><?= e($r['pickup_city_name'] ?: '-') ?></td>
                         <td class="small"><?= e($r['delivery_city_name'] ?: '-') ?></td>
-                        <td class="text-end fw-semibold text-nowrap"><?= e(rupiah((float) $r['total_price'])) ?></td>
-                        <td class="text-end fw-semibold text-nowrap text-success"><?= e(rupiah((float) $r['total_payment'])) ?></td>
+                        <td class="text-end fw-semibold text-nowrap booking-amount-cell"><?= e(format_nominal((float) $r['total_price'])) ?></td>
+                        <td class="text-end fw-semibold text-nowrap text-success booking-amount-cell"><?= e(format_nominal((float) $r['total_payment'])) ?></td>
                         <td class="text-center"><?= status_badge($r['status']) ?></td>
                         <td class="text-center text-nowrap">
                             <a class="btn btn-sm btn-outline-secondary" href="<?= e(APP_URL) ?>/pages/travel/bookings/detail.php?id=<?= (int) $r['id'] ?>" title="Lihat Detail">
@@ -335,7 +341,7 @@ require __DIR__ . '/../../../includes/header.php';
                     </tr>
                 <?php endforeach; ?>
                 <?php if (!$rows): ?>
-                    <tr><td colspan="12" class="text-center text-muted py-4">Belum ada pemesanan tiket perjalanan yang cocok dengan filter yang dipilih.</td></tr>
+                    <tr><td colspan="13" class="text-center text-muted py-4">Belum ada pemesanan tiket perjalanan yang cocok dengan filter yang dipilih.</td></tr>
                 <?php endif; ?>
                 </tbody>
             </table>

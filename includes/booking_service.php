@@ -330,29 +330,123 @@ function booking_create(string $type, array $data): array
     return ['id' => $booking_id, 'document_number' => $doc, 'invoice_id' => $invoice_id];
 }
 
-/** Ubah status booking dengan validasi transisi; catat history. Cancel -> invoice cancelled. */
+/** Ubah status booking secara fleksibel (Opsi 2); catat history & sinkronkan invoice/penugasan. */
 function booking_change_status(string $type, int $booking_id, int $company_id, string $to, ?string $reason, ?string $user): void
 {
-    $from = booking_current_status($type, $booking_id);
-    if (!booking_transition_ok($from, $to)) {
-        throw new RuntimeException("Transisi tidak sah: {$from} -> {$to}.");
+    if (!booking_status_valid($to)) {
+        throw new RuntimeException("Status pemesanan tidak valid: {$to}.");
     }
+    $from = booking_current_status($type, $booking_id);
+    if ($from === $to) {
+        return;
+    }
+
     $db = db();
     $db->begin_transaction();
     try {
         booking_insert_history($type, $booking_id, $company_id, $from, $to, $reason, $user);
+
         if ($to === 'cancelled') {
             $st = $db->prepare("UPDATE invoices SET status = 'cancelled', modified_user = ?, modified_date = NOW()
-                WHERE booking_type = ? AND booking_id = ? AND company_id = ?");
+                WHERE booking_type = ? AND booking_id = ? AND company_id = ? AND status <> 'paid'");
             $st->bind_param('ssii', $user, $type, $booking_id, $company_id);
             $st->execute();
             $st->close();
+
+            $stT = $db->prepare('UPDATE trip_assignments SET ended_at = NOW(), modified_user = ?, modified_date = NOW()
+                WHERE booking_type = ? AND booking_id = ? AND company_id = ? AND ended_at IS NULL');
+            $stT->bind_param('ssii', $user, $type, $booking_id, $company_id);
+            $stT->execute();
+            $stT->close();
+        } elseif ($to === 'done') {
+            $stT = $db->prepare('UPDATE trip_assignments SET ended_at = NOW(), modified_user = ?, modified_date = NOW()
+                WHERE booking_type = ? AND booking_id = ? AND company_id = ? AND ended_at IS NULL');
+            $stT->bind_param('ssii', $user, $type, $booking_id, $company_id);
+            $stT->execute();
+            $stT->close();
         }
+
+        if ($from === 'cancelled' && $to !== 'cancelled') {
+            $stInv = $db->prepare('SELECT id, total, status FROM invoices WHERE booking_type = ? AND booking_id = ? AND company_id = ? LIMIT 1');
+            $stInv->bind_param('sii', $type, $booking_id, $company_id);
+            $stInv->execute();
+            $inv = $stInv->get_result()->fetch_assoc();
+            $stInv->close();
+
+            if ($inv && ($inv['status'] ?? '') === 'cancelled') {
+                require_once __DIR__ . '/invoice_service.php';
+                $invId = (int) $inv['id'];
+                $paid  = invoice_paid_total($invId);
+                $tot   = (float) ($inv['total'] ?? 0);
+                $newSt = ($paid > 0.001 && $paid + 0.001 >= $tot) ? 'paid' : ($paid > 0.001 ? 'partial' : 'issued');
+                $uInv  = $db->prepare('UPDATE invoices SET status = ?, modified_user = ?, modified_date = NOW() WHERE id = ?');
+                $uInv->bind_param('ssi', $newSt, $user, $invId);
+                $uInv->execute();
+                $uInv->close();
+            }
+        }
+
         $db->commit();
     } catch (Throwable $ex) {
         $db->rollback();
         throw $ex;
     }
+}
+
+/**
+ * Kemajuan status semi-otomatis (5 status, murni operasional — pembayaran tidak mengubah status booking):
+ * - Bila masih 'draft' dan kendaraan + minimal 1 sopir/kru sudah terisi -> 'scheduled' (Terjadwal).
+ * - Status pembayaran dipantau terpisah pada Invoice (Belum Bayar / Sebagian / Lunas).
+ * - Tidak pernah menimpa status 'scheduled', 'on_trip', 'done', atau 'cancelled'.
+ */
+function booking_auto_advance_status(string $type, int $booking_id, int $company_id, ?string $user = null): string
+{
+    $cur = booking_current_status($type, $booking_id);
+    if ($cur !== 'draft') {
+        return $cur;
+    }
+
+    $db    = db();
+    $table = booking_table($type);
+    $st    = $db->prepare("SELECT vehicle_id FROM {$table} WHERE id = ? AND company_id = ? LIMIT 1");
+    $st->bind_param('ii', $booking_id, $company_id);
+    $st->execute();
+    $bk = $st->get_result()->fetch_assoc();
+    $st->close();
+    if (!$bk) {
+        return $cur;
+    }
+
+    $hasVehicle = ((int) ($bk['vehicle_id'] ?? 0)) > 0;
+    if (!$hasVehicle) {
+        return $cur;
+    }
+
+    $hasDriver = false;
+    $stTa = $db->prepare('SELECT 1 FROM trip_assignments WHERE booking_type = ? AND booking_id = ? AND company_id = ? AND ended_at IS NULL AND employee_id > 0 LIMIT 1');
+    $stTa->bind_param('sii', $type, $booking_id, $company_id);
+    $stTa->execute();
+    if ($stTa->get_result()->num_rows > 0) {
+        $hasDriver = true;
+    }
+    $stTa->close();
+
+    if (!$hasDriver) {
+        $stCr = $db->prepare("SELECT 1 FROM booking_cost_lines WHERE booking_type = ? AND booking_id = ? AND company_id = ? AND cost_type <> 'payment' AND employee_id IS NOT NULL AND employee_id > 0 LIMIT 1");
+        $stCr->bind_param('sii', $type, $booking_id, $company_id);
+        $stCr->execute();
+        if ($stCr->get_result()->num_rows > 0) {
+            $hasDriver = true;
+        }
+        $stCr->close();
+    }
+
+    if ($hasVehicle && $hasDriver) {
+        booking_insert_history($type, $booking_id, $company_id, $cur, 'scheduled', 'Otomatis terjadwal (kendaraan & sopir lengkap)', $user);
+        return 'scheduled';
+    }
+
+    return $cur;
 }
 
 /** Snapshot invoice terbaru ke invoice_revisions (sebelum invoice diubah). */

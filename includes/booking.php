@@ -4,12 +4,24 @@
  * Skema tidak punya kolom status; status diturunkan dari booking_status_history.
  */
 
+const BOOKING_STATUSES = [
+    'draft'     => 'Draft',
+    'scheduled' => 'Terjadwal',
+    'on_trip'   => 'Sedang Jalan',
+    'done'      => 'Selesai',
+    'cancelled' => 'Dibatalkan',
+];
+
+function booking_status_valid(string $s): bool
+{
+    return isset(BOOKING_STATUSES[$s]) || $s === 'rescheduled';
+}
+
 const BOOKING_TRANSITIONS = [
-    'draft'       => ['confirmed', 'cancelled', 'rescheduled'],
-    'confirmed'   => ['scheduled', 'cancelled', 'rescheduled'],
+    'draft'       => ['scheduled', 'cancelled', 'rescheduled'],
     'scheduled'   => ['on_trip', 'cancelled', 'rescheduled'],
     'on_trip'     => ['done', 'cancelled', 'rescheduled'],
-    'rescheduled' => ['confirmed', 'scheduled', 'cancelled'],
+    'rescheduled' => ['scheduled', 'cancelled'],
 ];
 
 /** Transisi sah? Status 'done' & 'cancelled' tidak punya tujuan (terminal). */

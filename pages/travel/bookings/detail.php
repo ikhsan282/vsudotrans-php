@@ -143,10 +143,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             flash('success', 'Pembayaran manual sebesar ' . rupiah($payAmt) . ' berhasil dicatat.');
             $hash = '#tab-payment';
         } elseif ($act === 'update_detail') {
-            if (booking_current_status('travel', $id) === 'cancelled') {
-                throw new RuntimeException('Pemesanan yang sudah dibatalkan tidak dapat diubah detailnya.');
-            }
-            $branch_id           = (int) ($_POST['branch_id'] ?? 0);
+            $reqStatus    = trim((string) ($_POST['booking_status'] ?? ''));
+            $statusBefore = booking_current_status('travel', $id);
+            $branch_id    = (int) ($_POST['branch_id'] ?? 0);
             $date                = trim((string) ($_POST['date'] ?? ''));
             $time                = substr(trim((string) ($_POST['time'] ?? '')), 0, 5);
             $total_price         = parse_rupiah_input($_POST['total_price'] ?? 0);
@@ -264,7 +263,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $invUp = $stInvUp->get_result()->fetch_assoc();
                 $stInvUp->close();
 
-                if ($invUp && ($invUp['status'] ?? '') !== 'cancelled') {
+                if ($invUp && (($invUp['status'] ?? '') !== 'cancelled' || ($reqStatus !== '' && $reqStatus !== 'cancelled'))) {
                     $invIdUp = (int) $invUp['id'];
                     $taxPct  = (float) ($invUp['tax_percent'] ?? 0);
                     $taxAmt  = round($total_price * ($taxPct / 100), 2);
@@ -331,6 +330,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 }
 
                 $db->commit();
+                if ($reqStatus !== '' && booking_status_valid($reqStatus) && $reqStatus !== $statusBefore) {
+                    booking_change_status('travel', $id, $booking_cid, $reqStatus, 'Diubah melalui detail pemesanan', $user);
+                } else {
+                    booking_auto_advance_status('travel', $id, $booking_cid, $user);
+                }
                 audit('booking.travel.update_detail', "Pemesanan #{$id} {$b['document_number']}");
                 flash('success', 'Perubahan pemesanan tiket perjalanan berhasil disimpan.');
             } catch (Throwable $txEx) {
@@ -494,11 +498,14 @@ require __DIR__ . '/../../../includes/header.php';
             <a class="btn btn-outline-secondary btn-sm" href="<?= e(APP_URL) ?>/pages/travel/bookings/index.php">
                 <i class="bi bi-arrow-left me-1"></i>Kembali
             </a>
-            <?php if ($canManage && $status !== 'cancelled'): ?>
+            <?php if ($canManage): ?>
                 <button type="submit" form="travelDetailForm" class="btn btn-primary btn-sm px-3">
                     <i class="bi bi-check2-circle me-1"></i>Simpan Perubahan
                 </button>
             <?php endif; ?>
+            <a class="btn btn-outline-dark btn-sm" target="_blank" href="<?= e(APP_URL) ?>/pages/dispatch/manifest.php?type=travel&booking_id=<?= (int) $id ?>&print=1">
+                <i class="bi bi-file-earmark-text me-1"></i>Cetak Surat Jalan
+            </a>
             <a class="btn btn-dark btn-sm" target="_blank" href="<?= e(APP_URL) ?>/tiket.php?no=<?= urlencode((string) $b['document_number']) ?>&print=1">
                 <i class="bi bi-printer me-1"></i>Cetak E-Tiket
             </a>
@@ -507,7 +514,7 @@ require __DIR__ . '/../../../includes/header.php';
 
     <?php if ($status === 'cancelled'): ?>
         <div class="alert alert-secondary py-2 px-3 small mb-2">
-            <i class="bi bi-info-circle me-1"></i>Pemesanan ini berstatus <strong>Dibatalkan</strong> (mode baca-saja).
+            <i class="bi bi-info-circle me-1"></i>Pemesanan ini berstatus <strong>Dibatalkan</strong>. Ubah <strong>Status Pemesanan</strong> di bawah dan klik <strong>Simpan Perubahan</strong> jika ingin mengaktifkan kembali.
         </div>
     <?php endif; ?>
 
@@ -554,6 +561,19 @@ require __DIR__ . '/../../../includes/header.php';
                                 </div>
                             </div>
                             <div class="rnt-row">
+                                <label class="rnt-label">Status Pemesanan</label>
+                                <div class="rnt-field">
+                                    <select class="form-select form-select-sm fw-semibold" name="booking_status" id="bookingStatusSelect" form="travelDetailForm" <?= $canManage ? '' : 'disabled' ?>>
+                                        <?php foreach (booking_status_options() as $stKey => $stLabel): ?>
+                                            <option value="<?= e($stKey) ?>" <?= $status === $stKey ? 'selected' : '' ?>><?= e($stLabel) ?></option>
+                                        <?php endforeach; ?>
+                                        <?php if ($status === 'rescheduled'): ?>
+                                            <option value="rescheduled" selected>Jadwal Ulang</option>
+                                        <?php endif; ?>
+                                    </select>
+                                </div>
+                            </div>
+                            <div class="rnt-row">
                                 <label class="rnt-label">Perusahaan</label>
                                 <div class="rnt-field">
                                     <select class="form-select form-select-sm bg-light" disabled>
@@ -564,7 +584,7 @@ require __DIR__ . '/../../../includes/header.php';
                             <div class="rnt-row">
                                 <label class="rnt-label">Cabang <span class="text-danger">*</span></label>
                                 <div class="rnt-field">
-                                    <select class="form-select form-select-sm" name="branch_id" form="travelDetailForm" <?= ($canManage && $status !== 'cancelled') ? 'required' : 'disabled' ?>>
+                                    <select class="form-select form-select-sm" name="branch_id" form="travelDetailForm" <?= $canManage ? 'required' : 'disabled' ?>>
                                         <option value="">-- Pilih Cabang --</option>
                                         <?= select_options($branches, $b['branch_id']) ?>
                                     </select>
@@ -573,14 +593,14 @@ require __DIR__ . '/../../../includes/header.php';
                             <div class="rnt-row">
                                 <label class="rnt-label">Tanggal Keberangkatan <span class="text-danger">*</span></label>
                                 <div class="rnt-field">
-                                    <input type="text" class="form-control form-control-sm bg-white flatpickr-date" name="date" id="travelDateInput" form="travelDetailForm" required value="<?= e($b['date']) ?>" placeholder="dd-MMM-yyyy" <?= ($canManage && $status !== 'cancelled') ? '' : 'disabled' ?>>
+                                    <input type="text" class="form-control form-control-sm bg-white flatpickr-date" name="date" id="travelDateInput" form="travelDetailForm" required value="<?= e($b['date']) ?>" placeholder="dd-MMM-yyyy" <?= $canManage ? '' : 'disabled' ?>>
                                 </div>
                             </div>
                             <div class="rnt-row align-items-start">
                                 <label class="rnt-label pt-1">Jam <span class="text-danger">*</span></label>
                                 <div class="rnt-field">
                                     <div class="d-flex align-items-center gap-2">
-                                        <input type="time" class="form-control form-control-sm" name="time" id="travelTimeInput" form="travelDetailForm" required value="<?= e(substr((string) $b['time'], 0, 5)) ?>" style="max-width:180px;" <?= ($canManage && $status !== 'cancelled') ? '' : 'readonly' ?>>
+                                        <input type="time" class="form-control form-control-sm" name="time" id="travelTimeInput" form="travelDetailForm" required value="<?= e(substr((string) $b['time'], 0, 5)) ?>" style="max-width:180px;" <?= $canManage ? '' : 'readonly' ?>>
                                         <span id="travelTimePeriodBadge" class="badge bg-light text-dark border">--</span>
                                     </div>
                                     <div id="travelRouteSchedulesBar" class="d-none flex-wrap align-items-center gap-1 mt-1"></div>
@@ -592,10 +612,10 @@ require __DIR__ . '/../../../includes/header.php';
                                     <div class="d-flex flex-wrap flex-sm-nowrap align-items-center gap-2">
                                         <div class="input-group input-group-sm flex-grow-1" style="min-width:0;">
                                             <span class="input-group-text">Rp</span>
-                                            <input type="text" inputmode="numeric" class="form-control form-control-sm fw-semibold" id="totalPriceDisplay" value="<?= e(format_nominal((float) $b['total_price'])) ?>" placeholder="0" <?= ($canManage && $status !== 'cancelled') ? 'required' : 'readonly' ?>>
+                                            <input type="text" inputmode="numeric" class="form-control form-control-sm fw-semibold" id="totalPriceDisplay" value="<?= e(format_nominal((float) $b['total_price'])) ?>" placeholder="0" <?= $canManage ? 'required' : 'readonly' ?>>
                                         </div>
                                         <input type="hidden" name="total_price" id="totalPriceValue" form="travelDetailForm" value="<?= (int) round((float) $b['total_price']) ?>">
-                                        <?php if ($canManage && $status !== 'cancelled'): ?>
+                                        <?php if ($canManage): ?>
                                             <button type="button" id="btn_apply_route_price" class="btn btn-sm btn-outline-primary flex-shrink-0 text-nowrap" style="display:none;">
                                                 <i class="bi bi-magic me-1"></i>Terapkan Tarif Rute
                                             </button>
@@ -612,7 +632,7 @@ require __DIR__ . '/../../../includes/header.php';
                         <div class="rnt-panel-header">
                             <span>Kendaraan</span>
                             <?php if (can('vehicles.manage')): ?>
-                                <a href="<?= e(APP_URL) ?>/pages/vehicles/form.php" target="_blank" class="rnt-header-action">
+                                <a href="<?= e(APP_URL) ?>/pages/vehicles/detail.php" target="_blank" class="rnt-header-action">
                                     <i class="bi bi-plus-lg me-1"></i>Tambah Kendaraan Baru
                                 </a>
                             <?php endif; ?>
@@ -621,7 +641,7 @@ require __DIR__ . '/../../../includes/header.php';
                             <div class="rnt-row">
                                 <label class="rnt-label">Kategori</label>
                                 <div class="rnt-field">
-                                    <select class="form-select form-select-sm ts-select" name="category_vehicle_id" id="categoryVehicleSelect" form="travelDetailForm" data-ts-placeholder="-- Semua Kategori --" <?= ($canManage && $status !== 'cancelled') ? '' : 'disabled' ?>>
+                                    <select class="form-select form-select-sm ts-select" name="category_vehicle_id" id="categoryVehicleSelect" form="travelDetailForm" data-ts-placeholder="-- Semua Kategori --" <?= $canManage ? '' : 'disabled' ?>>
                                         <option value="">-- Semua Kategori --</option>
                                         <?= select_options($cats, $cur_category_id) ?>
                                     </select>
@@ -637,7 +657,7 @@ require __DIR__ . '/../../../includes/header.php';
                                         data-ts-param="category_id"
                                         data-ts-limit="30"
                                         data-ts-placeholder="-- Pilih Kendaraan --"
-                                        <?= ($canManage && $status !== 'cancelled') ? '' : 'disabled' ?>>
+                                        <?= $canManage ? '' : 'disabled' ?>>
                                         <option value="">-- Pilih Kendaraan --</option>
                                         <?php foreach ($vehicles as $v):
                                             $sel = ((int) $v['id'] === $displayVehId) ? ' selected' : '';
@@ -686,7 +706,7 @@ require __DIR__ . '/../../../includes/header.php';
                                 <span>Pelanggan &amp; Penumpang</span>
                                 <span class="badge bg-primary-subtle text-primary border" id="passengerCountPanelBadge"><?= 1 + count($extra_passengers) ?> Penumpang</span>
                             </div>
-                            <?php if ($canManage && $status !== 'cancelled'): ?>
+                            <?php if ($canManage): ?>
                                 <a href="#" class="rnt-header-action" data-bs-toggle="modal" data-bs-target="#quickPassengerModal">
                                     <i class="bi bi-person-plus me-1"></i>Tambah Pelanggan Baru
                                 </a>
@@ -701,7 +721,7 @@ require __DIR__ . '/../../../includes/header.php';
                                         data-ts-company="<?= (int) $booking_cid ?>"
                                         data-ts-limit="30"
                                         data-ts-placeholder="-- Pilih Pelanggan Utama --"
-                                        <?= ($canManage && $status !== 'cancelled') ? 'required' : 'disabled' ?>>
+                                        <?= $canManage ? 'required' : 'disabled' ?>>
                                         <option value="">-- Pilih Pelanggan Utama --</option>
                                         <?= select_options($passengers, $b['passenger_id']) ?>
                                     </select>
@@ -714,7 +734,7 @@ require __DIR__ . '/../../../includes/header.php';
                                         data-ts-url="<?= e(APP_URL) ?>/pages/transport/passengers/options.php"
                                         data-ts-company="<?= (int) $booking_cid ?>"
                                         data-ts-limit="30"
-                                        placeholder="Pilih penumpang tambahan (opsional)..." <?= ($canManage && $status !== 'cancelled') ? '' : 'disabled' ?>>
+                                        placeholder="Pilih penumpang tambahan (opsional)..." <?= $canManage ? '' : 'disabled' ?>>
                                         <?= select_options($passengers, $extra_p_ids) ?>
                                     </select>
                                     <div class="form-text small">Penumpang tambahan ditampilkan pada E-Tiket &amp; diperhitungkan ke kapasitas kursi.</div>
@@ -738,7 +758,7 @@ require __DIR__ . '/../../../includes/header.php';
                                                 data-ts-with-code="1"
                                                 data-ts-limit="50"
                                                 data-ts-placeholder="-- Pilih Provinsi --"
-                                                <?= ($canManage && $status !== 'cancelled') ? '' : 'disabled' ?>>
+                                                <?= $canManage ? '' : 'disabled' ?>>
                                                 <option value="">-- Pilih Provinsi --</option>
                                                 <?= select_options($provinces, $p_prov_id) ?>
                                             </select>
@@ -753,7 +773,7 @@ require __DIR__ . '/../../../includes/header.php';
                                                 data-ts-param="province_id"
                                                 data-ts-limit="50"
                                                 data-ts-placeholder="-- Pilih Kota/Kab --"
-                                                <?= ($canManage && $status !== 'cancelled') ? '' : 'disabled' ?>>
+                                                <?= $canManage ? '' : 'disabled' ?>>
                                                 <option value="">-- Pilih Kota/Kab --</option>
                                                 <?php foreach ($pickup_cities as $c):
                                                     $sel = ((int) $c['id'] === $p_city_id) ? ' selected' : '';
@@ -773,7 +793,7 @@ require __DIR__ . '/../../../includes/header.php';
                                                 data-ts-require-parent="1"
                                                 data-ts-limit="100"
                                                 data-ts-placeholder="-- Pilih Kecamatan --"
-                                                <?= ($canManage && $status !== 'cancelled') ? 'required' : 'disabled' ?>>
+                                                <?= $canManage ? 'required' : 'disabled' ?>>
                                                 <option value="">-- Pilih Kecamatan --</option>
                                                 <?php foreach ($pickup_districts as $d):
                                                     $sel = ((int) $d['id'] === $p_dist_id) ? ' selected' : '';
@@ -786,7 +806,7 @@ require __DIR__ . '/../../../includes/header.php';
                                     <div class="rnt-row align-items-start">
                                         <label class="rnt-label pt-1">Detail Alamat</label>
                                         <div class="rnt-field">
-                                            <textarea class="form-control form-control-sm" name="pickup_address" form="travelDetailForm" rows="4" maxlength="2000" <?= ($canManage && $status !== 'cancelled') ? '' : 'readonly' ?>><?= e($b['pickup_address'] ?? '') ?></textarea>
+                                            <textarea class="form-control form-control-sm" name="pickup_address" form="travelDetailForm" rows="4" maxlength="2000" <?= $canManage ? '' : 'readonly' ?>><?= e($b['pickup_address'] ?? '') ?></textarea>
                                         </div>
                                     </div>
                                 </div>
@@ -805,7 +825,7 @@ require __DIR__ . '/../../../includes/header.php';
                                                 data-ts-with-code="1"
                                                 data-ts-limit="50"
                                                 data-ts-placeholder="-- Pilih Provinsi --"
-                                                <?= ($canManage && $status !== 'cancelled') ? '' : 'disabled' ?>>
+                                                <?= $canManage ? '' : 'disabled' ?>>
                                                 <option value="">-- Pilih Provinsi --</option>
                                                 <?= select_options($provinces, $d_prov_id) ?>
                                             </select>
@@ -820,7 +840,7 @@ require __DIR__ . '/../../../includes/header.php';
                                                 data-ts-param="province_id"
                                                 data-ts-limit="50"
                                                 data-ts-placeholder="-- Pilih Kota/Kab --"
-                                                <?= ($canManage && $status !== 'cancelled') ? '' : 'disabled' ?>>
+                                                <?= $canManage ? '' : 'disabled' ?>>
                                                 <option value="">-- Pilih Kota/Kab --</option>
                                                 <?php foreach ($delivery_cities as $c):
                                                     $sel = ((int) $c['id'] === $d_city_id) ? ' selected' : '';
@@ -840,7 +860,7 @@ require __DIR__ . '/../../../includes/header.php';
                                                 data-ts-require-parent="1"
                                                 data-ts-limit="100"
                                                 data-ts-placeholder="-- Pilih Kecamatan --"
-                                                <?= ($canManage && $status !== 'cancelled') ? 'required' : 'disabled' ?>>
+                                                <?= $canManage ? 'required' : 'disabled' ?>>
                                                 <option value="">-- Pilih Kecamatan --</option>
                                                 <?php foreach ($delivery_districts as $d):
                                                     $sel = ((int) $d['id'] === $d_dist_id) ? ' selected' : '';
@@ -853,7 +873,7 @@ require __DIR__ . '/../../../includes/header.php';
                                     <div class="rnt-row align-items-start">
                                         <label class="rnt-label pt-1">Detail Alamat</label>
                                         <div class="rnt-field">
-                                            <textarea class="form-control form-control-sm" name="delivery_address" form="travelDetailForm" rows="4" maxlength="2000" <?= ($canManage && $status !== 'cancelled') ? '' : 'readonly' ?>><?= e($b['delivery_address'] ?? '') ?></textarea>
+                                            <textarea class="form-control form-control-sm" name="delivery_address" form="travelDetailForm" rows="4" maxlength="2000" <?= $canManage ? '' : 'readonly' ?>><?= e($b['delivery_address'] ?? '') ?></textarea>
                                         </div>
                                     </div>
                                 </div>
@@ -866,14 +886,14 @@ require __DIR__ . '/../../../includes/header.php';
                 <?php
                 $formId      = 'travelDetailForm';
                 $companyId   = $booking_cid;
-                $canManageTab = $canManage && $status !== 'cancelled';
+                $canManageTab = $canManage;
                 $origCanManage = $canManage;
                 $canManage   = $canManageTab;
                 $showBbm     = false;
                 $bbm         = 0.0;
                 $isDetailMode = true;
                 $regulations = $company_regulations;
-                $dispatchUrl = APP_URL . '/pages/dispatch/index.php?booking_type=travel&booking_id=' . $id;
+                $dispatchUrl = '';
                 require __DIR__ . '/../../../includes/booking_crew_tab.php';
                 $canManage   = $origCanManage;
                 ?>
@@ -900,7 +920,7 @@ require __DIR__ . '/../../../includes/header.php';
                             <div class="rnt-row align-items-start">
                                 <label class="rnt-label pt-1">Catatan</label>
                                 <div class="rnt-field">
-                                    <textarea class="form-control form-control-sm" name="note" id="noteInput" form="travelDetailForm" rows="6" maxlength="2000" <?= ($canManage && $status !== 'cancelled') ? '' : 'readonly' ?>><?= e($b['note'] ?? '') ?></textarea>
+                                    <textarea class="form-control form-control-sm" name="note" id="noteInput" form="travelDetailForm" rows="6" maxlength="2000" <?= $canManage ? '' : 'readonly' ?>><?= e($b['note'] ?? '') ?></textarea>
                                 </div>
                             </div>
                         </div>
@@ -1020,7 +1040,7 @@ document.addEventListener('DOMContentLoaded', function () {
     const appUrl     = <?= json_encode(APP_URL) ?>;
     const bookingCid = <?= (int) $booking_cid ?>;
     const csrfToken  = <?= json_encode(csrf_token()) ?>;
-    const canEdit    = <?= json_encode($canManage && $status !== 'cancelled') ?>;
+    const canEdit    = <?= json_encode($canManage) ?>;
 
     const travelDateEl  = document.getElementById('travelDateInput');
     const travelTimeEl  = document.getElementById('travelTimeInput');

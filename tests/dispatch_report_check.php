@@ -47,7 +47,7 @@ $c->query("INSERT INTO passengers (id, company_id, code, name, phone_number) VAL
 $veh = static function (int $id, int $cid, string $no) use ($c): void {
     $c->query("INSERT INTO vehicles (id, company_id, brand_id, model_unit_id, category_vehicle_id,
         frame_number, machine_number, seat, production_year, vehicle_color, vehicle_number, ownership, is_active)
-        VALUES ($id, $cid, 2, 2, 2, 'DRCHK-F$id', 'DRCHK-M$id', 12, 2021, 'Putih', '$no', 'milik', 1)");
+        VALUES ($id, $cid, 2, 2, 2, 'DRCHK-F$id', 'DRCHK-M$id', 12, 2021, 'Putih', '$no', 'Internal', 1)");
 };
 $veh(990000, 1, 'D 1 DRCHK');
 $veh(990001, 990, 'D 2 DRCHK');

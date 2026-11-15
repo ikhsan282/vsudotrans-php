@@ -109,7 +109,7 @@ $query_base = http_build_query(array_filter(['q' => $q, 'status' => $status]));
 
 $header_actions = ui_export_actions();
 if ($can_manage) {
-    $header_actions[] = ['label' => 'Tambah', 'icon' => 'plus-lg', 'href' => 'pages/employees/form.php', 'class' => 'btn btn-primary btn-sm'];
+    $header_actions[] = ['label' => 'Tambah', 'icon' => 'plus-lg', 'href' => 'pages/employees/detail.php', 'class' => 'btn btn-primary btn-sm'];
 }
 
 $active = 'employees';
@@ -181,7 +181,7 @@ require __DIR__ . '/../../includes/header.php';
                     <td class="text-end text-nowrap">
                         <a href="detail.php?id=<?= (int) $r['id'] ?>" class="btn btn-sm btn-outline-secondary" title="Detail" aria-label="Detail"><i class="bi bi-eye"></i></a>
                         <?php if ($can_manage): ?>
-                            <a href="form.php?id=<?= (int) $r['id'] ?>" class="btn btn-sm btn-outline-primary" title="Ubah" aria-label="Ubah"><i class="bi bi-pencil-square"></i></a>
+                            <a href="detail.php?id=<?= (int) $r['id'] ?>" class="btn btn-sm btn-outline-primary" title="Ubah" aria-label="Ubah"><i class="bi bi-pencil-square"></i></a>
                             <form method="post" action="delete.php" class="d-inline"
                                   onsubmit="return confirm('Hapus karyawan <?= e($r['name']) ?>? Tindakan ini tidak dapat dibatalkan.');">
                                 <?= csrf_field() ?>

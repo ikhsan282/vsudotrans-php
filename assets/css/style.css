@@ -1065,3 +1065,18 @@ body {
     margin-left: auto;
   }
 }
+
+/* Travel & Rental Bookings index: Total Harga & Total Pembayaran compact nominal typography */
+.booking-amount-cell {
+  font-size: calc(1em - 1px);
+  font-variant-numeric: tabular-nums;
+}
+
+.booking-driver-phone {
+  font-variant-numeric: tabular-nums;
+}
+
+.booking-driver-name {
+  font-size: 0.72rem;
+  line-height: 1.25;
+}

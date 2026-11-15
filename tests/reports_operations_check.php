@@ -49,7 +49,7 @@ $c->query("INSERT INTO passengers (id, company_id, code, name, phone_number) VAL
 $veh = static function (int $id, string $no) use ($c): void {
     $c->query("INSERT INTO vehicles (id, company_id, brand_id, model_unit_id, category_vehicle_id,
         frame_number, machine_number, seat, production_year, vehicle_color, vehicle_number, ownership, is_active)
-        VALUES ($id, 1, 1, 1, 1, 'OCHK-F$id', 'OCHK-M$id', 12, 2020, 'Putih', '$no', 'milik', 1)");
+        VALUES ($id, 1, 1, 1, 1, 'OCHK-F$id', 'OCHK-M$id', 12, 2020, 'Putih', '$no', 'Internal', 1)");
 };
 $veh(990010, 'B 1 OCHK');
 $veh(990011, 'B 2 OCHK');
@@ -69,9 +69,9 @@ $c->query("INSERT INTO rental_car_bookings
      pickup_point_district_id, delivery_point_district_id, total_price, total_payment, passenger_id, created_user)
     VALUES (990021, 1, 1, 'RNT-OCHK01', '2026-12-11', '2026-12-11', '2026-12-12', '09:00:00', 1, 1, 700000, 0, 991, 'ops-check')");
 
-// Riwayat status: travel -> confirmed, rental -> on_trip (uji booking per status).
+// Riwayat status: travel -> scheduled, rental -> on_trip (uji booking per status).
 $c->query("INSERT INTO booking_status_history (company_id, booking_type, booking_id, from_status, to_status, changed_by)
-    VALUES (1, 'travel', 990020, 'draft', 'confirmed', 'ops-check'),
+    VALUES (1, 'travel', 990020, 'draft', 'scheduled', 'ops-check'),
            (1, 'rental', 990021, 'draft', 'on_trip', 'ops-check')");
 
 // Penugasan: 2 tugas kendaraan 1 (driver 1) — 1 selesai pada 10 Des, 1 berjalan 11 Des.
@@ -127,7 +127,7 @@ try {
     // Booking per status.
     $st = [];
     foreach ($d['status'] as $r) { $st[$r['status']] = $r; }
-    ok(isset($st['confirmed']) && (int) $st['confirmed']['travel'] === 1, 'status: 1 travel confirmed');
+    ok(isset($st['scheduled']) && (int) $st['scheduled']['travel'] === 1, 'status: 1 travel scheduled');
     ok(isset($st['on_trip']) && (int) $st['on_trip']['rental'] === 1, 'status: 1 rental on_trip');
     $sum_st = array_sum(array_map(static fn($r) => (int) $r['total'], $d['status']));
     $db_bookings = (int) $q("SELECT (SELECT COUNT(*) FROM travel_ticket_bookings WHERE date BETWEEN '$FROM' AND '$TO')

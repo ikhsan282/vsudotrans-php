@@ -4,14 +4,35 @@
  * Ditempatkan terpusat di `includes/` agar lintas modul tidak saling meng-include halaman satu sama lain.
  */
 
+/** Daftar 5 status resmi pemesanan (key => label Bahasa Indonesia). */
+function booking_status_options(): array
+{
+    return [
+        'draft'     => 'Draft',
+        'scheduled' => 'Terjadwal',
+        'on_trip'   => 'Sedang Jalan',
+        'done'      => 'Selesai',
+        'cancelled' => 'Dibatalkan',
+    ];
+}
+
+/** Label Bahasa Indonesia untuk kode status pemesanan. */
+function booking_status_label(string $s): string
+{
+    $labels = booking_status_options() + [
+        'rescheduled' => 'Jadwal Ulang',
+    ];
+    return $labels[$s] ?? $s;
+}
+
 function status_badge(string $s): string
 {
     $map = [
-        'draft' => 'secondary', 'confirmed' => 'info', 'scheduled' => 'primary',
-        'on_trip' => 'warning', 'done' => 'success', 'cancelled' => 'danger',
+        'draft' => 'secondary', 'scheduled' => 'primary',
+        'on_trip' => 'warning text-dark', 'done' => 'success', 'cancelled' => 'danger',
         'rescheduled' => 'dark',
     ];
-    return '<span class="badge bg-' . ($map[$s] ?? 'secondary') . '">' . e($s) . '</span>';
+    return '<span class="badge bg-' . ($map[$s] ?? 'secondary') . '">' . e(booking_status_label($s)) . '</span>';
 }
 
 /** Keterangan waktu AM/PM versi Bahasa Indonesia (Pagi, Siang, Sore, Malam, Dini Hari). */
@@ -556,14 +577,201 @@ function booking_extra_passenger_count_sql(string $booking_type): string
 }
 
 /**
+ * Kondisi WHERE pencarian resi, penumpang utama, penumpang tambahan, maupun sopir booking.
+ *
+ * @return array{0:string,1:string,2:array<int,string>} [sql, types, params]
+ */
+function booking_grid_search_sql(string $booking_type, string $q_like): array
+{
+    $bt = $booking_type === 'travel' ? 'travel' : 'rental';
+    $sql = '(' . booking_passenger_search_sql($bt) . "
+        OR EXISTS (
+            SELECT 1 FROM trip_assignments ta
+            JOIN employees ex ON ex.id = ta.employee_id
+            WHERE ta.booking_type = '{$bt}' AND ta.booking_id = b.id
+              AND ta.ended_at IS NULL AND ta.employee_id > 0
+              AND (ex.name LIKE ? OR ex.phone_number LIKE ?)
+        )
+        OR (
+            NOT EXISTS (
+                SELECT 1 FROM trip_assignments ta2
+                WHERE ta2.booking_type = '{$bt}' AND ta2.booking_id = b.id AND ta2.ended_at IS NULL AND ta2.employee_id > 0
+            )
+            AND EXISTS (
+                SELECT 1 FROM booking_cost_lines bcl
+                JOIN employees ex ON ex.id = bcl.employee_id
+                WHERE bcl.booking_type = '{$bt}' AND bcl.booking_id = b.id
+                  AND bcl.cost_type <> 'payment' AND bcl.employee_id > 0
+                  AND (LOWER(bcl.cost_type) LIKE 'sopir%' OR LOWER(bcl.cost_type) LIKE 'driver%')
+                  AND (ex.name LIKE ? OR ex.phone_number LIKE ?)
+            )
+        ))";
+    return [$sql, str_repeat('s', 9), array_fill(0, 9, $q_like)];
+}
+
+/**
+ * Ambil ringkasan sopir per booking secara batch (maks 2 query IN untuk seluruh baris halaman):
+ * prioritas penugasan aktif di trip_assignments, fallback ke kru Sopir/Driver pada booking_cost_lines.
+ *
+ * @param int[] $booking_ids
+ * @return array<int, array{primary:?array{id:int,name:string,phone:string},extra_count:int,all:array<int,array{id:int,name:string,phone:string}>}>
+ */
+function booking_driver_summaries(string $booking_type, array $booking_ids): array
+{
+    if (!in_array($booking_type, ['rental', 'travel'], true)) {
+        return [];
+    }
+    $ids = array_values(array_unique(array_filter(array_map('intval', $booking_ids), static fn($x) => $x > 0)));
+    if (!$ids) {
+        return [];
+    }
+
+    $append = static function (array &$grouped, array $rows): void {
+        foreach ($rows as $row) {
+            $bid = (int) $row['booking_id'];
+            $eid = (int) $row['employee_id'];
+            if ($bid <= 0 || $eid <= 0) {
+                continue;
+            }
+            if (!isset($grouped[$bid])) {
+                $grouped[$bid] = [];
+            }
+            if (isset($grouped[$bid][$eid])) {
+                continue;
+            }
+            $grouped[$bid][$eid] = [
+                'id'    => $eid,
+                'name'  => trim((string) ($row['driver_name'] ?? '')),
+                'phone' => trim((string) ($row['driver_phone'] ?? '')),
+            ];
+        }
+    };
+
+    $grouped = [];
+    $ph      = implode(',', array_fill(0, count($ids), '?'));
+    $st      = db()->prepare(
+        "SELECT ta.booking_id, e.id AS employee_id, e.name AS driver_name, COALESCE(e.phone_number, '') AS driver_phone
+           FROM trip_assignments ta
+           JOIN employees e ON e.id = ta.employee_id
+          WHERE ta.booking_type = ? AND ta.ended_at IS NULL AND ta.employee_id > 0 AND ta.booking_id IN ({$ph})
+          ORDER BY ta.id ASC"
+    );
+    $st->bind_param('s' . str_repeat('i', count($ids)), $booking_type, ...$ids);
+    $st->execute();
+    $append($grouped, $st->get_result()->fetch_all(MYSQLI_ASSOC));
+    $st->close();
+
+    $fallbackIds = array_values(array_diff($ids, array_keys($grouped)));
+    if ($fallbackIds) {
+        $ph2 = implode(',', array_fill(0, count($fallbackIds), '?'));
+        $st2 = db()->prepare(
+            "SELECT bcl.booking_id, e.id AS employee_id, e.name AS driver_name, COALESCE(e.phone_number, '') AS driver_phone
+               FROM booking_cost_lines bcl
+               JOIN employees e ON e.id = bcl.employee_id
+              WHERE bcl.booking_type = ?
+                AND bcl.cost_type <> 'payment'
+                AND bcl.employee_id > 0
+                AND (LOWER(bcl.cost_type) LIKE 'sopir%' OR LOWER(bcl.cost_type) LIKE 'driver%')
+                AND bcl.booking_id IN ({$ph2})
+              ORDER BY (CASE WHEN LOWER(bcl.cost_type) = 'sopir' THEN 0 WHEN LOWER(bcl.cost_type) = 'sopir 1' THEN 1 ELSE 2 END), bcl.id ASC"
+        );
+        $st2->bind_param('s' . str_repeat('i', count($fallbackIds)), $booking_type, ...$fallbackIds);
+        $st2->execute();
+        $append($grouped, $st2->get_result()->fetch_all(MYSQLI_ASSOC));
+        $st2->close();
+    }
+
+    $out = [];
+    foreach ($grouped as $bid => $mapByEmp) {
+        $all = array_values($mapByEmp);
+        $out[$bid] = [
+            'primary'     => $all[0] ?? null,
+            'extra_count' => max(0, count($all) - 1),
+            'all'         => $all,
+        ];
+    }
+    return $out;
+}
+
+/**
+ * Render isi sel kolom Sopir grid booking: nomor WA di atas dan nama diperkecil di bawah.
+ *
+ * @param ?array{primary:?array{id:int,name:string,phone:string},extra_count:int,all:array<int,array{id:int,name:string,phone:string}>} $driverSummary
+ */
+function booking_driver_cell_html(?array $driverSummary): string
+{
+    $primary = $driverSummary['primary'] ?? null;
+    if (!$primary) {
+        return '<span class="text-muted small">-</span>';
+    }
+
+    $phone = trim((string) ($primary['phone'] ?? ''));
+    $name  = trim((string) ($primary['name'] ?? ''));
+    $extra = (int) ($driverSummary['extra_count'] ?? 0);
+    $all   = $driverSummary['all'] ?? [];
+
+    $titleParts = [];
+    if (count($all) > 1) {
+        foreach ($all as $drv) {
+            $n = trim((string) ($drv['name'] ?? ''));
+            $p = trim((string) ($drv['phone'] ?? ''));
+            if ($n !== '' || $p !== '') {
+                $titleParts[] = $n . ($p !== '' ? ' (' . $p . ')' : '');
+            }
+        }
+    }
+    $titleText = implode(', ', $titleParts);
+    $titleAttr = $titleText !== '' ? ' title="' . e($titleText) . '"' : '';
+
+    $html  = '<div class="small fw-semibold text-dark d-flex flex-wrap align-items-center gap-1 text-nowrap booking-driver-phone"' . $titleAttr . '>';
+    $html .= '<span>' . e($phone !== '' ? $phone : '-') . '</span>';
+    if ($extra > 0) {
+        $html .= '<span class="badge bg-info-subtle text-info-emphasis border"' . $titleAttr . '>+' . $extra . ' sopir</span>';
+    }
+    $html .= '</div>';
+    $html .= '<div class="text-muted text-nowrap booking-driver-name"' . $titleAttr . '>' . e($name !== '' ? $name : '-') . '</div>';
+    return $html;
+}
+
+/**
+ * Ekspresi SQL subquery berkorelasi untuk mengekspor informasi sopir (prioritas trip_assignments aktif,
+ * fallback booking_cost_lines Sopir/Driver). PDF meletakkan no. WA di atas nama agar konsisten dengan grid.
+ */
+function booking_driver_export_sql(string $booking_type, bool $isPdf): string
+{
+    if (!in_array($booking_type, ['rental', 'travel'], true)) {
+        return 'NULL';
+    }
+    $bt  = $booking_type === 'rental' ? 'rental' : 'travel';
+    $sep = $isPdf ? "\n" : ', ';
+    $fmt = $isPdf
+        ? "CASE WHEN ex.phone_number IS NOT NULL AND ex.phone_number <> '' THEN CONCAT(ex.phone_number, '\\n', ex.name) ELSE ex.name END"
+        : "CASE WHEN ex.phone_number IS NOT NULL AND ex.phone_number <> '' THEN CONCAT(ex.phone_number, ' - ', ex.name) ELSE ex.name END";
+    $sepSql = $isPdf ? "'\\n'" : "', '";
+
+    return "COALESCE(
+        (SELECT GROUP_CONCAT({$fmt} ORDER BY ta.id ASC SEPARATOR {$sepSql})
+           FROM trip_assignments ta
+           JOIN employees ex ON ex.id = ta.employee_id
+          WHERE ta.booking_type = '{$bt}' AND ta.booking_id = b.id AND ta.ended_at IS NULL AND ta.employee_id > 0),
+        (SELECT GROUP_CONCAT({$fmt} ORDER BY (CASE WHEN LOWER(bcl.cost_type) = 'sopir' THEN 0 WHEN LOWER(bcl.cost_type) = 'sopir 1' THEN 1 ELSE 2 END), bcl.id ASC SEPARATOR {$sepSql})
+           FROM booking_cost_lines bcl
+           JOIN employees ex ON ex.id = bcl.employee_id
+          WHERE bcl.booking_type = '{$bt}' AND bcl.booking_id = b.id
+            AND bcl.cost_type <> 'payment' AND bcl.employee_id > 0
+            AND (LOWER(bcl.cost_type) LIKE 'sopir%' OR LOWER(bcl.cost_type) LIKE 'driver%'))
+    )";
+}
+
+/**
  * Daftar kolom header export booking Travel/Rental (PDF = 1:1 grid UI, XLSX = flat Penumpang Tambahan).
  */
 function booking_export_headers(bool $isPdf, string $originLabel, string $destLabel): array
 {
     if ($isPdf) {
-        return ['Resi', 'Penumpang', 'Kendaraan', 'Jam', 'Tanggal', $originLabel, $destLabel, 'Total Harga', 'Total Pembayaran', 'Status'];
+        return ['Resi', 'Penumpang', 'Kendaraan', 'Sopir', 'Jam', 'Tanggal', $originLabel, $destLabel, 'Total Harga', 'Total Pembayaran', 'Status'];
     }
-    return ['Resi', 'Penumpang (Nama & HP)', 'Penumpang Tambahan', 'Kendaraan', 'Jam', 'Tanggal', $originLabel, $destLabel, 'Total Harga', 'Total Pembayaran', 'Status'];
+    return ['Resi', 'Penumpang (Nama & HP)', 'Penumpang Tambahan', 'Kendaraan', 'Sopir (WA & Nama)', 'Jam', 'Tanggal', $originLabel, $destLabel, 'Total Harga', 'Total Pembayaran', 'Status'];
 }
 
 /**
@@ -588,6 +796,8 @@ function booking_export_row(array $r, bool $isPdf, string $dateLabel): array
         $veh = $plate !== '' ? ($plate . ($brandModel !== '' ? ' (' . $brandModel . ')' : '')) : ($brandModel ?: ($catName ?: '-'));
     }
 
+    $drv    = trim((string) ($r['driver_info'] ?? ''));
+    $drvVal = $drv !== '' ? $drv : '-';
     $jam    = !empty($r['time']) ? substr((string) $r['time'], 0, 5) : '-';
     $pickup = ($r['pickup_city_name'] ?? '') ?: '-';
     $deliv  = ($r['delivery_city_name'] ?? '') ?: '-';
@@ -601,6 +811,7 @@ function booking_export_row(array $r, bool $isPdf, string $dateLabel): array
             $r['document_number'],
             $paxCell,
             $veh,
+            $drvVal,
             $jam,
             $dateLabel,
             $pickup,
@@ -617,6 +828,7 @@ function booking_export_row(array $r, bool $isPdf, string $dateLabel): array
         trim((string) ($r['passenger_name'] ?? '') . (!empty($r['passenger_phone']) ? ' (' . $r['passenger_phone'] . ')' : '')),
         $extraPax !== '' ? $extraPax : '-',
         $veh,
+        $drvVal,
         $jam,
         $dateLabel,
         $pickup,

@@ -561,7 +561,7 @@ CREATE TABLE `vehicles` (
   `tax_due` DATE DEFAULT NULL,
   `stnk_due` DATE DEFAULT NULL,
   `kir_due` DATE DEFAULT NULL,
-  `ownership` VARCHAR(30) NOT NULL,
+  `ownership` VARCHAR(30) NOT NULL DEFAULT 'Internal',
   `note` VARCHAR(2000) DEFAULT NULL,
   `photo_path` VARCHAR(255) DEFAULT NULL,
   `stnk_doc_path` VARCHAR(255) DEFAULT NULL,

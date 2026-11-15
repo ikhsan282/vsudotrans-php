@@ -101,7 +101,7 @@ try {
         $plate = sprintf('ZZ %04d SC', $i);
         $frame = sprintf('FRMZZSC%05d%d', $i, random_int(10, 99));
         $mach  = sprintf('MCHZZSC%05d%d', $i, random_int(10, 99));
-        $st = $db->prepare("INSERT INTO vehicles (company_id, brand_id, model_unit_id, category_vehicle_id, frame_number, machine_number, seat, production_year, vehicle_color, vehicle_number, ownership, is_active) VALUES (1, ?, ?, ?, ?, ?, 7, 2024, 'Hitam', ?, 'Milik Sendiri', 1)");
+        $st = $db->prepare("INSERT INTO vehicles (company_id, brand_id, model_unit_id, category_vehicle_id, frame_number, machine_number, seat, production_year, vehicle_color, vehicle_number, ownership, is_active) VALUES (1, ?, ?, ?, ?, ?, 7, 2024, 'Hitam', ?, 'Internal', 1)");
         $st->bind_param('iiisss', $brandId, $modelId, $catId, $frame, $mach, $plate);
         $st->execute();
         $createdVehIds[] = (int) $db->insert_id;

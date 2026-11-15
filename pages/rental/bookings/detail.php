@@ -32,6 +32,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $note = trim((string) ($_POST['reason'] ?? ''));
     try {
         if ($act === 'update_detail') {
+            $reqStatus    = trim((string) ($_POST['booking_status'] ?? ''));
+            $statusBefore = booking_current_status('rental', $id);
             $start_date   = trim((string) ($_POST['start_date'] ?? $b['start_date']));
             $end_date     = trim((string) ($_POST['end_date'] ?? $b['end_date']));
             $time         = trim((string) ($_POST['time'] ?? substr((string) $b['time'], 0, 5)));
@@ -225,6 +227,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             } catch (Throwable $e) {
                 $db->rollback();
                 throw $e;
+            }
+            if ($reqStatus !== '' && booking_status_valid($reqStatus) && $reqStatus !== $statusBefore) {
+                booking_change_status('rental', $id, $booking_cid, $reqStatus, 'Diubah melalui detail pemesanan', $user);
+            } else {
+                booking_auto_advance_status('rental', $id, $booking_cid, $user);
             }
             audit('booking.rental.update', "Booking #{$id} {$b['document_number']} diperbarui");
             flash('success', 'Data pemesanan sewa kendaraan berhasil disimpan.');
@@ -445,6 +452,9 @@ require __DIR__ . '/../../../includes/header.php';
                     <i class="bi bi-check2-circle me-1"></i>Simpan Perubahan
                 </button>
             <?php endif; ?>
+            <a class="btn btn-outline-dark btn-sm" target="_blank" href="<?= e(APP_URL) ?>/pages/dispatch/manifest.php?type=rental&booking_id=<?= (int) $id ?>&print=1">
+                <i class="bi bi-file-earmark-text me-1"></i>Cetak Surat Jalan
+            </a>
             <a class="btn btn-dark btn-sm" target="_blank" href="<?= e(APP_URL) ?>/tiket.php?no=<?= urlencode((string) $b['document_number']) ?>&print=1">
                 <i class="bi bi-printer me-1"></i>Cetak E-Tiket
             </a>
@@ -506,6 +516,19 @@ require __DIR__ . '/../../../includes/header.php';
                                 </div>
                             </div>
                             <div class="rnt-row">
+                                <div class="rnt-label">Status Pemesanan</div>
+                                <div class="rnt-field">
+                                    <select class="form-select form-select-sm fw-semibold" name="booking_status" id="bookingStatusSelect" form="rentalDetailForm" <?= $canManage ? '' : 'disabled' ?>>
+                                        <?php foreach (booking_status_options() as $stKey => $stLabel): ?>
+                                            <option value="<?= e($stKey) ?>" <?= $status === $stKey ? 'selected' : '' ?>><?= e($stLabel) ?></option>
+                                        <?php endforeach; ?>
+                                        <?php if ($status === 'rescheduled'): ?>
+                                            <option value="rescheduled" selected>Jadwal Ulang</option>
+                                        <?php endif; ?>
+                                    </select>
+                                </div>
+                            </div>
+                            <div class="rnt-row">
                                 <div class="rnt-label">Perusahaan</div>
                                 <div class="rnt-field">
                                     <select class="form-select form-select-sm bg-light" disabled>
@@ -559,7 +582,7 @@ require __DIR__ . '/../../../includes/header.php';
                         <div class="rnt-panel-header">
                             <span>Kendaraan</span>
                             <?php if (can('vehicles.manage')): ?>
-                                <a href="<?= e(APP_URL) ?>/pages/vehicles/form.php" target="_blank" class="rnt-header-action">
+                                <a href="<?= e(APP_URL) ?>/pages/vehicles/detail.php" target="_blank" class="rnt-header-action">
                                     <i class="bi bi-plus-lg me-1"></i>Tambah Kendaraan Baru
                                 </a>
                             <?php endif; ?>

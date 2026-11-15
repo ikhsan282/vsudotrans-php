@@ -127,7 +127,7 @@ $has_filter = !empty($query_params);
 
 $header_actions = ui_export_actions();
 if (is_super_admin() && can('companies.manage')) {
-    $header_actions[] = ['label' => 'Tambah', 'icon' => 'plus-lg', 'href' => 'pages/companies/form.php', 'class' => 'btn btn-primary btn-sm'];
+    $header_actions[] = ['label' => 'Tambah', 'icon' => 'plus-lg', 'href' => 'pages/companies/detail.php', 'class' => 'btn btn-primary btn-sm'];
 }
 
 $active = 'companies';
@@ -203,8 +203,9 @@ require __DIR__ . '/../../includes/header.php';
                         <td><?= e($r['city'] ?: '-') ?></td>
                         <td><span class="badge bg-<?= $r['is_active'] ? 'success' : 'secondary' ?>"><?= $r['is_active'] ? 'Aktif' : 'Nonaktif' ?></span></td>
                         <td class="text-end text-nowrap">
+                            <a class="btn btn-sm btn-outline-secondary" href="<?= e(APP_URL) ?>/pages/companies/detail.php?id=<?= (int) $r['id'] ?>" title="Detail" aria-label="Detail"><i class="bi bi-eye"></i></a>
                             <?php if (can('companies.manage')): ?>
-                                <a class="btn btn-sm btn-outline-primary" href="<?= e(APP_URL) ?>/pages/companies/form.php?id=<?= (int) $r['id'] ?>" title="Ubah" aria-label="Ubah"><i class="bi bi-pencil-square"></i></a>
+                                <a class="btn btn-sm btn-outline-primary" href="<?= e(APP_URL) ?>/pages/companies/detail.php?id=<?= (int) $r['id'] ?>" title="Ubah" aria-label="Ubah"><i class="bi bi-pencil-square"></i></a>
                                 <?php if (is_super_admin()): ?>
                                     <form method="post" action="<?= e(APP_URL) ?>/pages/companies/delete.php" class="d-inline" onsubmit="return confirm('Hapus perusahaan ini?')">
                                         <?= csrf_field() ?>

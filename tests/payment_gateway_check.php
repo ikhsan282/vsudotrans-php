@@ -6,7 +6,7 @@
  * 2. Isolasi channel per tenant (company_id) & pencegahan tabrakan kode unik 3 digit (`gq_unique_touch`).
  * 3. Klaim signature mutasi (`gq_claim`) agar 1 mutasi merchant tidak melunasi 2 order berbeda.
  * 4. Finalisasi atomik (`gateway_finalize`): mencatat `booking_cost_lines`, menyinkronkan `total_payment`,
- *    mengubah status booking dari `draft` ke `confirmed` saat lunas, dan mengantrekan event `wa_outbox`.
+ *    memastikan status booking tetap tidak diubah oleh pembayaran, dan mengantrekan event `wa_outbox`.
  */
 
 require_once __DIR__ . '/../config/config.php';
@@ -148,7 +148,7 @@ check_pg($fin['ok'] === true && $fin['cost_line_id'] > 0, 'gateway_finalize succ
 
 $invAfter = invoice_find((int) $inv['id']);
 check_pg($invAfter['pay_status'] === 'paid' && (float) $invAfter['paid_total'] === 150000.0, 'Invoice is now marked paid with principal amount 150000');
-check_pg(booking_current_status('travel', (int) $bk['id']) === 'confirmed', 'Booking status automatically transitioned from draft to confirmed upon full QRIS payment');
+check_pg(booking_current_status('travel', (int) $bk['id']) === 'draft', 'Booking status stays draft upon QRIS payment (payment does not alter operational status)');
 
 // Cleanup test rows
 $db->query("DELETE FROM wa_outbox WHERE event_id = 'pay-{$ordId1}'");

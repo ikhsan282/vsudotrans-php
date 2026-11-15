@@ -8,37 +8,141 @@
  * dan daftar urutan penumpang beserta titik jemput/antar dan status pembayaran.
  */
 require_once __DIR__ . '/../../config/config.php';
-require_permission('dispatch.view');
+if (!can('dispatch.view') && !can('travel.view') && !can('rental.view')) {
+    require_permission('dispatch.view');
+}
+require_once __DIR__ . '/../../includes/transport_helpers.php';
 require_once __DIR__ . '/../../includes/booking_service.php';
 require_once __DIR__ . '/../../includes/pdf.php';
 
-$id    = (int) ($_GET['id'] ?? 0);
-$print = isset($_GET['print']);
-$pdf   = ($_GET['format'] ?? '') === 'pdf';
-$cid   = require_active_company();
+$id      = (int) ($_GET['id'] ?? 0);
+$reqType = trim((string) ($_GET['type'] ?? ''));
+$reqBid  = (int) ($_GET['booking_id'] ?? 0);
+$print   = isset($_GET['print']);
+$pdf     = ($_GET['format'] ?? '') === 'pdf';
 
 if ($pdf) {
     ob_start();
 }
 
-$st = db()->prepare("SELECT a.*, e.code AS employee_code, e.name AS employee_name, e.phone_number AS employee_phone,
-                            v.vehicle_number, v.vehicle_color,
-                            b.name AS brand_name, m.name AS model_name
-                     FROM trip_assignments a
-                     JOIN employees e ON e.id = a.employee_id
-                     LEFT JOIN vehicles v ON v.id = a.vehicle_id
-                     LEFT JOIN brand_vehicles b ON b.id = v.brand_id
-                     LEFT JOIN model_units m ON m.id = v.model_unit_id
-                     WHERE a.id = ? AND a.company_id = ? LIMIT 1");
-$st->bind_param('ii', $id, $cid);
-$st->execute();
-$assign = $st->get_result()->fetch_assoc();
-$st->close();
+$assign  = null;
+$booking = null;
+$type    = '';
+$bid     = 0;
+$cid     = 0;
 
-if (!$assign) {
+if ($id > 0) {
+    $cid = require_active_company();
+    $st = db()->prepare("SELECT a.*, e.code AS employee_code, e.name AS employee_name, e.phone_number AS employee_phone,
+                                v.vehicle_number, v.vehicle_color,
+                                b.name AS brand_name, m.name AS model_name
+                         FROM trip_assignments a
+                         JOIN employees e ON e.id = a.employee_id
+                         LEFT JOIN vehicles v ON v.id = a.vehicle_id
+                         LEFT JOIN brand_vehicles b ON b.id = v.brand_id
+                         LEFT JOIN model_units m ON m.id = v.model_unit_id
+                         WHERE a.id = ? AND a.company_id = ? LIMIT 1");
+    $st->bind_param('ii', $id, $cid);
+    $st->execute();
+    $assign = $st->get_result()->fetch_assoc() ?: null;
+    $st->close();
+
+    if (!$assign) {
+        if ($pdf) ob_end_clean();
+        flash('error', 'Penugasan tidak ditemukan.');
+        redirect('pages/dispatch/index.php');
+    }
+
+    $type    = (string) $assign['booking_type'];
+    $bid     = (int) $assign['booking_id'];
+    $booking = booking_find($type, $bid);
+
+    if (!$booking) {
+        if ($pdf) ob_end_clean();
+        flash('error', 'Data booking perjalanan tidak ditemukan.');
+        redirect('pages/dispatch/index.php');
+    }
+} elseif (in_array($reqType, ['travel', 'rental'], true) && $reqBid > 0) {
+    $booking = booking_find($reqType, $reqBid);
+    if (!$booking) {
+        if ($pdf) ob_end_clean();
+        flash('error', 'Data booking perjalanan tidak ditemukan.');
+        redirect('pages/' . $reqType . '/bookings/index.php');
+    }
+
+    $type = $reqType;
+    $bid  = $reqBid;
+    $cid  = (int) $booking['company_id'];
+
+    $st = db()->prepare("SELECT a.*, e.code AS employee_code, e.name AS employee_name, e.phone_number AS employee_phone,
+                                v.vehicle_number, v.vehicle_color,
+                                b.name AS brand_name, m.name AS model_name
+                         FROM trip_assignments a
+                         JOIN employees e ON e.id = a.employee_id
+                         LEFT JOIN vehicles v ON v.id = a.vehicle_id
+                         LEFT JOIN brand_vehicles b ON b.id = v.brand_id
+                         LEFT JOIN model_units m ON m.id = v.model_unit_id
+                         WHERE a.booking_type = ? AND a.booking_id = ? AND a.company_id = ?
+                         ORDER BY (a.ended_at IS NULL) DESC, a.id DESC
+                         LIMIT 1");
+    $st->bind_param('sii', $type, $bid, $cid);
+    $st->execute();
+    $assign = $st->get_result()->fetch_assoc() ?: null;
+    $st->close();
+
+    if ($assign) {
+        $id = (int) $assign['id'];
+    } else {
+        $empRow = null;
+        $stCr = db()->prepare("SELECT e.code AS employee_code, e.name AS employee_name, e.phone_number AS employee_phone
+                               FROM booking_cost_lines bcl
+                               JOIN employees e ON e.id = bcl.employee_id
+                               WHERE bcl.booking_type = ? AND bcl.booking_id = ? AND bcl.company_id = ?
+                                 AND bcl.cost_type <> 'payment' AND bcl.employee_id > 0
+                               ORDER BY (bcl.cost_type LIKE 'Sopir%') DESC, bcl.id ASC
+                               LIMIT 1");
+        $stCr->bind_param('sii', $type, $bid, $cid);
+        $stCr->execute();
+        $empRow = $stCr->get_result()->fetch_assoc() ?: null;
+        $stCr->close();
+
+        $assign = [
+            'employee_code'  => $empRow['employee_code'] ?? '-',
+            'employee_name'  => $empRow['employee_name'] ?? 'Belum Ditugaskan',
+            'employee_phone' => $empRow['employee_phone'] ?? '-',
+            'vehicle_number' => '',
+            'vehicle_color'  => '',
+            'brand_name'     => '',
+            'model_name'     => '',
+            'started_at'     => trim((string) ($booking['date'] ?? date('Y-m-d')) . ' ' . ($booking['time'] ?? '00:00:00')),
+            'reason'         => '',
+            'created_user'   => $booking['modified_user'] ?: ($booking['created_user'] ?: ($_SESSION['username'] ?? 'Petugas Operasional')),
+        ];
+    }
+} else {
     if ($pdf) ob_end_clean();
-    flash('error', 'Penugasan tidak ditemukan.');
-    redirect('pages/dispatch/index.php');
+    flash('error', 'Parameter Surat Jalan tidak lengkap.');
+    redirect('pages/dispatch/calendar.php');
+}
+
+// Lengkapi info kendaraan dari booking jika trip_assignments belum mencantumkan vehicle_id
+if (empty($assign['vehicle_number']) && !empty($booking['vehicle_id'])) {
+    $bVehId = (int) $booking['vehicle_id'];
+    $stV = db()->prepare("SELECT v.vehicle_number, v.vehicle_color, b.name AS brand_name, m.name AS model_name
+                          FROM vehicles v
+                          LEFT JOIN brand_vehicles b ON b.id = v.brand_id
+                          LEFT JOIN model_units m ON m.id = v.model_unit_id
+                          WHERE v.id = ? LIMIT 1");
+    $stV->bind_param('i', $bVehId);
+    $stV->execute();
+    $vehRow = $stV->get_result()->fetch_assoc();
+    $stV->close();
+    if ($vehRow) {
+        $assign['vehicle_number'] = $vehRow['vehicle_number'] ?? '';
+        $assign['vehicle_color']  = $vehRow['vehicle_color'] ?? '';
+        $assign['brand_name']     = $vehRow['brand_name'] ?? '';
+        $assign['model_name']     = $vehRow['model_name'] ?? '';
+    }
 }
 
 // Data Perusahaan
@@ -47,16 +151,6 @@ $st->bind_param('i', $cid);
 $st->execute();
 $company = $st->get_result()->fetch_assoc();
 $st->close();
-
-$type = $assign['booking_type'];
-$bid  = (int) $assign['booking_id'];
-$booking = booking_find($type, $bid);
-
-if (!$booking) {
-    if ($pdf) ob_end_clean();
-    flash('error', 'Data booking perjalanan tidak ditemukan.');
-    redirect('pages/dispatch/index.php');
-}
 
 // Penumpang lengkap
 $passengers = [];
@@ -83,7 +177,9 @@ if (!$passengers && !empty($booking['passenger_id'])) {
     }
 }
 
-$sjNumber = 'SJ/' . strtoupper($type) . '/' . date('Ymd', strtotime($assign['started_at'])) . '/' . str_pad((string) $id, 5, '0', STR_PAD_LEFT);
+$sjNumber = $id > 0
+    ? ('SJ/' . strtoupper($type) . '/' . date('Ymd', strtotime((string) $assign['started_at'])) . '/' . str_pad((string) $id, 5, '0', STR_PAD_LEFT))
+    : ('SJ/' . strtoupper($type) . '/' . date('Ymd', strtotime((string) ($booking['date'] ?? 'now'))) . '/B' . str_pad((string) $bid, 4, '0', STR_PAD_LEFT));
 $total = (float) ($booking['total_price'] ?? 0);
 $paid  = (float) ($booking['total_payment'] ?? 0);
 $sisa  = max(0, $total - $paid);
@@ -97,7 +193,10 @@ if (!empty($assign['vehicle_color'])) {
     $vehicleDesc .= ' (' . $assign['vehicle_color'] . ')';
 }
 
-$backUrl = APP_URL . '/pages/dispatch/detail.php?type=' . urlencode($type) . '&id=' . $bid;
+$backUrl = APP_URL . '/pages/' . $type . '/bookings/detail.php?id=' . $bid;
+$pdfHref = $reqBid > 0
+    ? ('?type=' . urlencode($type) . '&booking_id=' . $bid . '&format=pdf')
+    : ('?id=' . $id . '&format=pdf');
 ?>
 <!DOCTYPE html>
 <html lang="id">
@@ -254,7 +353,7 @@ $backUrl = APP_URL . '/pages/dispatch/detail.php?type=' . urlencode($type) . '&i
 <body>
     <div class="actions-bar">
         <a href="<?= e($backUrl) ?>" class="btn btn-secondary">&larr; Kembali</a>
-        <a href="?id=<?= $id ?>&format=pdf" class="btn btn-danger">&#128196; Unduh PDF</a>
+        <a href="<?= e($pdfHref) ?>" class="btn btn-danger">&#128196; Unduh PDF</a>
         <button onclick="window.print()" class="btn btn-primary">&#128438; Cetak Surat Jalan</button>
     </div>
 
@@ -285,7 +384,7 @@ $backUrl = APP_URL . '/pages/dispatch/detail.php?type=' . urlencode($type) . '&i
                 <div class="info-row"><span class="info-label">Jam Keberangkatan:</span><span class="info-val"><?= e(substr((string) $booking['time'], 0, 5)) ?> WIB</span></div>
             </div>
             <div>
-                <div class="info-row"><span class="info-label">Nama Driver:</span><span class="info-val"><?= e($assign['employee_name']) ?> (<?= e($assign['employee_code']) ?>)</span></div>
+                <div class="info-row"><span class="info-label">Nama Driver:</span><span class="info-val"><?= e($assign['employee_name']) ?><?= ($assign['employee_code'] ?? '-') !== '-' ? ' (' . e($assign['employee_code']) . ')' : '' ?></span></div>
                 <div class="info-row"><span class="info-label">No. HP Driver:</span><span class="info-val"><?= e((string) $assign['employee_phone'] ?: '-') ?></span></div>
                 <div class="info-row"><span class="info-label">Armada Unit:</span><span class="info-val"><?= e($vehicleDesc ?: '-') ?></span></div>
                 <div class="info-row"><span class="info-label">Waktu Mulai Tugas:</span><span class="info-val"><?= e(date('d/m/Y H:i', strtotime($assign['started_at']))) ?></span></div>
@@ -362,7 +461,7 @@ $backUrl = APP_URL . '/pages/dispatch/detail.php?type=' . urlencode($type) . '&i
     <?php if ($pdf): ?>
     <?php
     $html = ob_get_clean();
-    pdf_send_or_html(pdf_prepare_screen_html($html, '.actions-bar'), 'Surat-Jalan-' . $id);
+    pdf_send_or_html(pdf_prepare_screen_html($html, '.actions-bar'), 'Surat-Jalan-' . ($id > 0 ? $id : ($type . '-' . $bid)));
     ?>
     <?php endif; ?>
 </body>

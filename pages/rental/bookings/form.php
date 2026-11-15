@@ -319,6 +319,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 unset($pr);
                 booking_rental_payments_sync((int) $res['id'], (int) $res['invoice_id'], $cid, $in_payments, $_SESSION['username'] ?? null);
             }
+            booking_auto_advance_status('rental', (int) $res['id'], $cid, $_SESSION['username'] ?? null);
             audit('booking.rental.create', "Booking #{$res['id']} {$res['document_number']}");
             require_once __DIR__ . '/../../../includes/wa.php';
             wa_notify_booking('rental', (int) $res['id']);
@@ -521,7 +522,7 @@ require __DIR__ . '/../../../includes/header.php';
                             <div class="rnt-panel-header">
                                 <span>Kendaraan</span>
                                 <?php if (can('vehicles.manage')): ?>
-                                    <a href="<?= e(APP_URL) ?>/pages/vehicles/form.php" target="_blank" class="rnt-header-action">
+                                    <a href="<?= e(APP_URL) ?>/pages/vehicles/detail.php" target="_blank" class="rnt-header-action">
                                         <i class="bi bi-plus-lg me-1"></i>Tambah Kendaraan Baru
                                     </a>
                                 <?php endif; ?>

@@ -78,7 +78,7 @@ $c->query("INSERT INTO booking_cost_lines (id, company_id, booking_type, booking
 // Assignment + kendaraan + karyawan milik perusahaan 1 untuk uji operasional.
 $c->query("INSERT INTO vehicles (id, company_id, brand_id, model_unit_id, category_vehicle_id,
     frame_number, machine_number, seat, production_year, vehicle_color, vehicle_number, ownership, is_active)
-    VALUES (990010, 1, 1, 1, 1, 'FCHK-FRAME', 'FCHK-MACH', 12, 2020, 'Putih', 'F 9999 FCHK', 'milik', 1)");
+    VALUES (990010, 1, 1, 1, 1, 'FCHK-FRAME', 'FCHK-MACH', 12, 2020, 'Putih', 'F 9999 FCHK', 'Internal', 1)");
 $c->query("INSERT INTO employees (id, company_id, code, name, job_position, status, join_date)
     VALUES (990010, 1, 'FCHK-EMP', 'Driver Fchk', 'Driver', 'aktif', '2026-01-01')");
 $c->query("INSERT INTO trip_assignments (id, company_id, booking_type, booking_id, employee_id, vehicle_id, started_at, ended_at, reason, created_user)

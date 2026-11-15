@@ -347,7 +347,7 @@ function gateway_ensure_payment_method(int $companyId, string $channelName = 'QR
  * 1. Kunci `payment_gateway_orders` FOR UPDATE (idempoten).
  * 2. Catat pembayaran pada `booking_cost_lines` (nominal sisa tagihan invoice, ditambah catatan kode unik).
  * 3. Sinkron `total_payment` pada tabel booking (`travel_ticket_bookings` / `rental_car_bookings`).
- * 4. Jika status booking masih `'draft'` dan invoice menjadi lunas, ubah status booking menjadi `'confirmed'`.
+ * 4. Status pembayaran diperbarui pada Invoice terkait (status operasional booking tidak diubah oleh pembayaran).
  * 5. Catat event `payment.verified` ke `wa_outbox` untuk ditarik/dikirim Hermes.
  */
 function gateway_finalize(string $orderId, ?float $paidAmount = null): array
@@ -445,12 +445,6 @@ function gateway_finalize(string $orderId, ?float $paidAmount = null): array
             $uBk->bind_param('dsii', $newPaid, $user, $bId, $companyId);
             $uBk->execute();
             $uBk->close();
-
-            // Bila booking masih draft dan sekarang lunas, otomatis konfirmasi booking!
-            $curStatus = booking_current_status($bType, $bId);
-            if ($curStatus === 'draft' && ($newPaid + 0.001 >= $invTotal)) {
-                booking_insert_history($bType, $bId, $companyId, 'draft', 'confirmed', 'Otomatis dikonfirmasi setelah lunas QRIS #' . $orderId, $user);
-            }
         }
 
         $uOrd = $db->prepare(

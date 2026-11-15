@@ -178,7 +178,7 @@ $header_actions = ui_export_actions([
     'status'              => $status !== '' ? $status : null,
 ]);
 if (can('vehicles.manage') && $cid !== null) {
-    $header_actions[] = ['label' => 'Tambah Unit', 'icon' => 'plus-lg', 'href' => 'pages/vehicles/form.php', 'class' => 'btn btn-primary btn-sm'];
+    $header_actions[] = ['label' => 'Tambah Unit', 'icon' => 'plus-lg', 'href' => 'pages/vehicles/detail.php', 'class' => 'btn btn-primary btn-sm'];
 }
 
 $dueLabels         = ['tax_due' => 'Pajak', 'stnk_due' => 'STNK', 'kir_due' => 'KIR'];
@@ -294,7 +294,7 @@ require __DIR__ . '/../../includes/header.php';
                         <td class="text-end text-nowrap">
                             <a class="btn btn-sm btn-outline-secondary" href="<?= e(APP_URL) ?>/pages/vehicles/detail.php?id=<?= (int) $r['id'] ?>" title="Detail" aria-label="Detail"><i class="bi bi-eye"></i></a>
                             <?php if (can('vehicles.manage')): ?>
-                                <a class="btn btn-sm btn-outline-primary" href="<?= e(APP_URL) ?>/pages/vehicles/form.php?id=<?= (int) $r['id'] ?>" title="Ubah" aria-label="Ubah"><i class="bi bi-pencil-square"></i></a>
+                                <a class="btn btn-sm btn-outline-primary" href="<?= e(APP_URL) ?>/pages/vehicles/detail.php?id=<?= (int) $r['id'] ?>" title="Ubah" aria-label="Ubah"><i class="bi bi-pencil-square"></i></a>
                                 <form method="post" action="<?= e(APP_URL) ?>/pages/vehicles/delete.php" class="d-inline" onsubmit="return confirm('Hapus kendaraan ini?')">
                                     <?= csrf_field() ?>
                                     <input type="hidden" name="id" value="<?= (int) $r['id'] ?>">

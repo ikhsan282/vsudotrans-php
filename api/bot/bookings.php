@@ -129,7 +129,7 @@ foreach ($allRows as $r) {
         'pay_web_url'     => $rem > 0 ? ($baseUrl . '/pages/finance/invoices/gateway_pay.php?no=' . rawurlencode($docNo)) : null,
     ];
 
-    $isActive = $payStatus !== 'cancelled' && ($rem > 0.01 || ($r['date'] >= $today && in_array($bStatus, ['draft', 'confirmed', 'rescheduled'], true)));
+    $isActive = $payStatus !== 'cancelled' && ($rem > 0.01 || ($r['date'] >= $today && in_array($bStatus, ['draft', 'scheduled', 'on_trip', 'rescheduled'], true)));
     if ($isActive) {
         $active[] = $item;
         $unpaidSum += $rem;

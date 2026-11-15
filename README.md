@@ -1,12 +1,12 @@
 # VSudoTrans
 
 Platform manajemen transportasi: **satu aplikasi untuk banyak Agen Travel & PO Bus** (multi-tenant).
-Mencakup travel door-to-door, rental kendaraan, penjadwalan driver, keuangan, hingga payroll.
+Mencakup travel door-to-door, sewa kendaraan (rental), transportasi & komisi, kalender operasional & penugasan driver, keuangan & QRIS dinamis, WhatsApp Bot API, hingga payroll.
 PHP Native + MySQLi + Bootstrap 5. Konversi dari VSudoTrans.API (ASP.NET Core).
 
 - PHP 8.x Native, tanpa framework
 - MySQLi prepared statements di semua query
-- Bootstrap 5 (CDN), vanilla JavaScript
+- Bootstrap 5 (CDN), vanilla JavaScript + Tom Select v2.3.1 (remote search & bounded queries)
 - Multi-tenant: semua data operasional di-scope `company_id` (isolasi data antar agen)
 - Ekspor laporan: CSV, Excel (XLSX), PDF — semuanya tanpa Composer
 
@@ -18,9 +18,12 @@ PHP Native + MySQLi + Bootstrap 5. Konversi dari VSudoTrans.API (ASP.NET Core).
 mysql -u root -p < database/schema.sql
 ```
 
-> Schema lengkap di 1 file: 53 tabel, 5 role (Super Admin/Admin Perusahaan/HRD/Staff/Viewer), 5 user default dengan password `P@ssw0rd`. Terverifikasi fresh install: 53 tabel + 5 user.
+> Schema lengkap di 1 file: **59 tabel**, **5 role** (`Super Admin`, `Admin Perusahaan`, `HRD`, `Staff`, `Viewer`), dan **5 user default** dengan password `P@ssw0rd`.
 >
-> **Hak akses (`.view`)**: Staff & Viewer hanya melihat modul **operasional** (travel, rental, kendaraan, absensi, referensi, laporan booking/operasional). Direktori pengguna (`users.view`), Payroll (`payroll.view` — memuat nominal gaji), dan Keuangan (`finance.view` + Laporan Keuangan) hanya untuk Super Admin, Admin Perusahaan, dan HRD (payroll).
+> **Hak akses berbasis RBAC (`role_permissions`)**:
+> - `Super Admin` & `Admin Perusahaan`: akses penuh modul operasional, keuangan, SDM/payroll, master data, pengguna & audit (`roles.manage` khusus `Super Admin`).
+> - `HRD`: akses kelola SDM, absensi, payroll, organisasi/cabang, serta akses lihat (`*.view`) ke travel, rental & kendaraan — tanpa akses ke `invoices.view`, `finance.view`, `reports.view`, maupun `dispatch.view`.
+> - `Staff` & `Viewer`: akses lihat (`*.view`) modul operasional (travel, rental, kalender operasional, kendaraan, karyawan, absensi, invoice, referensi, grup/perusahaan/cabang, laporan operasional/booking/driver); tidak memiliki akses ke Buku Kas/Akun Kas/Metode Pembayaran (`finance.view`), Payroll (`payroll.view`), Pengguna (`users.view`), maupun Audit (`audit.view`).
 >
 > **Penting:** file ini sudah memuat `CREATE DATABASE IF NOT EXISTS \`vsudotrans\`` dan `USE \`vsudotrans\``. Jadi:
 > - Tidak perlu membuat database dulu; cukup import.
@@ -44,7 +47,7 @@ BLOB_STORAGE_CONTAINER="vsudotrans"
 
 Dan `config/config.php` untuk database & URL:
 ```php
-define('APP_URL', 'http://localhost:8080/vsudotrans'); // tanpa trailing slash
+define('APP_URL', 'http://localhost:8080/vsudotrans-php'); // tanpa trailing slash
 define('DB_HOST', 'localhost');
 define('DB_NAME', 'vsudotrans');
 define('DB_USER', 'root');
@@ -57,7 +60,7 @@ define('DB_PASS', '');
 php -S 127.0.0.1:8080 -t /path/ke/parent-folder   # docroot = folder induk proyek
 ```
 
-Buka `http://localhost:8080/vsudotrans/pages/auth/login.php`.
+Buka `http://localhost:8080/vsudotrans-php/pages/auth/login.php`.
 
 ### 4. Login Default
 
@@ -66,19 +69,19 @@ Buka `http://localhost:8080/vsudotrans/pages/auth/login.php`.
 | `superadmin` | Super Admin (lintas perusahaan) |
 | `admin` | Admin Perusahaan |
 | `hrd` | HRD |
-| `staff` | Staff (view + entry terbatas) |
+| `staff` | Staff (view operasional) |
 | `viewer` | Viewer (hanya lihat) |
 
 Password semua user: `P@ssw0rd`. **Wajib diganti sebelum production.**
 
 ### 5. cPanel
 
-- Upload semua file ke `public_html/vsudotrans/` (**sertakan `.htaccess`** — lihat catatan keamanan di bawah)
+- Upload semua file ke `public_html/vsudotrans-php/` (**sertakan `.htaccess`** — lihat catatan keamanan di bawah)
 - Import `database/schema.sql` via phpMyAdmin
 - Sesuaikan `APP_URL` dan kredensial DB di `config/config.php`
 - Permission: folder `755`, file `644`
 - **Azure Blob Storage**: Berkas unggahan (logo, stempel, QRIS, foto armada, STNK, KIR, foto karyawan, KTP, SIM, dan bukti bayar) tersimpan langsung di Azure Blob Storage private container dengan Service SAS Token URL. Pastikan kredensial Azure diisi di file `.env`.
-- **Ekstensi PHP**: pastikan `mysqli`, `curl`, `dom`, `mbstring`, dan `zip` aktif (cPanel → *Select PHP Version* → *Extensions*). `curl` untuk Azure Storage REST API; `dom`+`mbstring` untuk PDF; bila tidak aktif, tombol ekspor otomatis beralih ke HTML siap-cetak (tidak error).
+- **Ekstensi PHP**: pastikan `mysqli`, `curl`, `dom`, `mbstring`, dan `zip` aktif (cPanel → *Select PHP Version* → *Extensions*). `curl` untuk Azure Storage REST API & integrasi QRIS/Midtrans/WA; `dom`+`mbstring` untuk PDF; bila tidak aktif, tombol ekspor otomatis beralih ke HTML siap-cetak (tidak error).
 
 `.htaccess` memblokir akses web ke `config/`, `includes/`, `tests/`, `database/` dan file `.sql`/`.md`, plus menambah security headers. Tanpa file ini, `database/schema.sql` dan source dapat diunduh siapa saja.
 
@@ -87,127 +90,121 @@ Password semua user: `P@ssw0rd`. **Wajib diganti sebelum production.**
 | Modul | Skema | Halaman PHP | Catatan |
 |-------|-------|-------------|---------|
 | Auth, RBAC, tenant scoping | ✅ | ✅ | CSRF + rate limit login |
-| Dashboard | ✅ | ✅ | |
-| Perusahaan, Grup, Cabang | ✅ | ✅ | |
-| Karyawan | ✅ | ✅ | |
-| Pengguna, Role & Hak Akses | ✅ | ✅ | Batas level role (H1/H2/M1) |
+| **Dashboard** | ✅ | ✅ | Query grafik & ringkasan hari/minggu ini dalam 1x `UNION ALL`, bar 5 status operasional, driver aktif + link booking, piutang jatuh tempo (`issued` + `partial`), tabel pemesanan aktif/terjadwal + kolom Sopir, peringatan dokumen STNK/KIR/Pajak/SIM H-30, ringkasan master aktif, & proteksi RBAC per seksi |
+| Perusahaan, Grup, Cabang | ✅ | ✅ | Pengaturan WhatsApp per perusahaan (`pages/companies/wa.php`), logo & stempel Azure SAS |
+| Karyawan | ✅ | ✅ | Berkas KTP/SIM & monitoring jatuh tempo SIM |
+| Pengguna, Role & Hak Akses | ✅ | ✅ | Batas level role (`H1`/`H2`/`M1`) |
 | Audit Trail | ✅ | ✅ | Read-only |
-| Referensi umum (bank, wilayah, satuan) | ✅ | ✅ | Wilayah: negara→provinsi→kota→kecamatan→desa; Bank: 22 bank seeded + TomSelect |
-| Kendaraan (merek, kategori, model, kendaraan) | ✅ | ✅ | Foto unit, STNK, KIR terintegrasi Azure Blob |
+| Referensi umum (bank, wilayah, satuan) | ✅ | ✅ | Wilayah berjenjang + remote Tom Select (`opts_*`) |
+| Kendaraan (`brands`, `categories`, `models`, unit) | ✅ | ✅ | Master merek/kategori/model dipisah ke halaman terdedikasi; foto, STNK, KIR terintegrasi Azure Blob |
 | Master HR (grade, jabatan, posisi, struktur, penghargaan) | ✅ | ✅ | |
-| Travel: rute, jadwal, booking | ✅ | ✅ | |
-| Penumpang | ✅ | ✅ | Shared master data untuk Travel & Rental |
-| Rental: booking + aturan premi/biaya karyawan | ✅ | ✅ | |
-| Booking service: status, reschedule, assign driver, cancel | ✅ | ✅ | Invoice otomatis ikut status |
+| **Travel** (rute & pemesanan tiket) | ✅ | ✅ | Rute bertarif bertingkat + radius kecamatan; pemesanan tiket + resi + penumpang tambahan + kolom **Sopir** (no. WA di atas, nama diperkecil) |
+| **Rental** (sewa kendaraan) | ✅ | ✅ | Booking rental multi-hari + penumpang tambahan + komisi kru/sopir + kolom **Sopir** + inline payment & QRIS dinamis |
+| **Transportasi** (penumpang & peraturan komisi) | ✅ | ✅ | Master bersama Penumpang & Peraturan Komisi untuk Travel & Rental |
+| **Booking service** (5 status operasional) | ✅ | ✅ | Alur 5 status: `draft` → `scheduled` → `on_trip` → `done` / `cancelled` (status `confirmed` dihapus; pembayaran tidak mengunci status operasional); reschedule, assign driver, cancel otomatis sinkron ke invoice |
 | Tiket publik `tiket.php?no=...` | ✅ | ✅ | Tanpa login, logo & stempel dari Azure SAS |
-| Metode Pembayaran (bank/QR) | ✅ | ✅ | Master `payment_methods`: CRUD + QRIS Azure Blob SAS |
-| **Invoice** | ✅ | ✅ | Otomatis saat booking; list + filter status; detail + catat pembayaran (bukti transfer di Azure Blob); cetak + **unduh PDF** |
-| **Pembayaran** | ✅ | ✅ | Bayar sebagian/lunas, tolak overpay; `booking_cost_lines` cost_type `payment`; sinkron `total_payment` |
-| **Penjadwalan Driver** | ✅ | ✅ | Papan aktif + riwayat, tugaskan/selesaikan tugas, riwayat per booking; `trip_assignments` |
-| **Laporan Booking** | ✅ | ✅ | Rekap per periode, wilayah asal→tujuan, kendaraan, driver; export CSV & XLSX, PDF, cetak |
-| **Laporan Keuangan** | ✅ | ✅ | Arus uang per periode: pendapatan (travel/rental), terbayar, piutang, rincian tagihan belum lunas, biaya operasional per jenis, laba kotor; export CSV & XLSX, PDF, cetak |
-| **Laporan Operasional** | ✅ | ✅ | Utilisasi kendaraan (tugas + hari), aktivitas driver (selesai/berjalan), tingkat penyelesaian tugas, booking per status; export CSV & XLSX, PDF, cetak |
-| **Laporan Driver** | ✅ | ✅ | Beban kerja driver (tugas/booking), detail penugasan; export CSV & XLSX, PDF, cetak |
-| **Payroll** | ✅ | ✅ | Periode bulanan (draft→final→dibayar), generate per karyawan aktif, gaji dari grade, cetak + unduh PDF |
-| **Absensi** | ✅ | ✅ | Absensi harian + rekap; sumber hari hadir untuk Payroll |
-| **Buku Kas & Bank** | ✅ | ✅ | Akun kas/bank + buku besar transaksi; export CSV & XLSX, PDF, cetak |
+| Metode Pembayaran & **Saluran QRIS/Gopay** | ✅ | ✅ | Master `payment_methods` + konfigurasi gateway QRIS/Midtrans dinamis (`payment_channels`) |
+| **Invoice & Pembayaran** | ✅ | ✅ | Otomatis saat booking; status `issued` / `partial` / `paid` / `cancelled`; tolak overpay; cetak + **unduh PDF** |
+| **Kalender Operasional & Driver** | ✅ | ✅ | Kalender operasional (`pages/dispatch/calendar.php`), papan/penugasan aktif, detail & cetak surat jalan (`manifest.php`) dari Detail Booking |
+| **WhatsApp Bot API** (`api/bot/*`) | ✅ | ✅ | Endpoint internal bot untuk booking, rute, penugasan driver, QRIS dinamis, & ringkasan staf |
+| **Laporan** (Booking, Keuangan, Operasional, Driver) | ✅ | ✅ | Rekap lintas dimensi + export CSV, XLSX, PDF, & Cetak |
+| **Payroll & Absensi** | ✅ | ✅ | Absensi harian/rekap → sumber hari hadir generate payroll (`draft` → `final` → `dibayar`), cetak & PDF |
+| **Buku Kas & Bank** | ✅ | ✅ | Akun kas/bank + buku besar transaksi; export CSV, XLSX, PDF, cetak |
 | **Backup & Restore** | ✅ | ✅ | Dump/unduh `.sql` + restore dari file; khusus Super Admin |
-| **Import CSV master data** | ✅ | ✅ | 12 master (referensi umum + HR): unduh template, all-or-nothing, mode upsert |
+| **Import CSV master data** | ✅ | ✅ | Template CSV, all-or-nothing, mode upsert |
 
 ✅ selesai · ⏳ belum
 
 ## Menu & Fitur (Struktur Sidebar ERP)
 
-Menu sidebar dikelompokkan dalam 7 kategori terstruktur:
+Menu sidebar (`includes/sidebar.php`) dikelompokkan dalam 7 kategori dan difilter dengan `can()` serta flag `admin_only`:
 
 | Kategori | Menu | Fitur |
 |----------|------|-------|
-| **1. UTAMA** | **Dashboard** | **Operasional:** booking hari ini & minggu ini (jumlah + nilai), driver sedang bertugas (nama, kendaraan, nomor booking, jam mulai), piutang jatuh tempo (invoice belum lunas lewat tanggal booking, urut sisa terbesar). **Grafik:** booking & pendapatan 6 bulan terakhir. **Statistik:** jumlah karyawan, cabang, perusahaan (sesuai hak akses) |
-| **2. OPERASIONAL & ARMADA** | **Travel** ▾ | **Booking**: buat booking travel, resi acak, invoice otomatis, detail + riwayat status, transisi status (draft→confirmed→scheduled→on_trip→done), reschedule, assign driver, cancel · **Jadwal**: jadwal per rute + armada · **Rute**: rute + harga (min/max/kapasitas) |
-| | **Rental Mobil** | Booking rental: periode (start/end date), lama trip, BBM, premi & biaya per karyawan, invoice otomatis, status/reschedule/driver/cancel |
-| | **Penumpang** | Master data pelanggan/penumpang bersama untuk Travel & Rental: pencarian cepat, riwayat, CRUD |
-| | **Penjadwalan** ▾ | **Kalender Operasional**: agenda bulanan/mingguan/harian armada & driver · **Papan & Riwayat**: assignment aktif ("sedang jalan") + tombol Selesaikan Tugas, tab Riwayat dengan filter rentang tanggal · **Tugaskan Driver**: pilih booking travel/rental yang belum punya penugasan aktif (50 terbaru per tipe), driver (`job_position` = "Driver"), kendaraan opsional, catatan |
-| | **Kendaraan** | CRUD armada unit kendaraan, foto unit, dokumen STNK & KIR (Azure Blob), serta master merek, kategori, model, tipe mesin |
-| **3. KEUANGAN & AKUNTANSI** | **Keuangan** ▾ | **Invoice**: daftar + filter status, detail, catat pembayaran (bukti bayar ke Azure Blob), cetak + **unduh PDF** · **Buku Kas & Bank**: buku besar transaksi + saldo, export CSV/XLSX/PDF/cetak · **Akun Kas/Bank**: CRUD akun kas & bank (terintegrasi master Bank) · **Metode Pembayaran**: CRUD bank/QRIS/e-wallet per perusahaan (atau global), upload gambar QRIS ke Azure Blob, aktif/nonaktif, urutan tampil (naik/turun) |
-| **4. SDM & PAYROLL** | **Karyawan** | CRUD karyawan + detail, rekening payroll (terintegrasi master Bank), foto profil, berkas KTP & SIM (Azure Blob), filter per cabang/jabatan |
-| | **Absensi** ▾ | **Absensi Harian**: input/daftar kehadiran per tanggal · **Rekap Absensi**: rekap hari hadir/izin/sakit/cuti/alpa per karyawan pada rentang tanggal (default bulan berjalan), sumber data Payroll, **export CSV, Excel (XLSX), PDF, cetak** |
-| | **Payroll** | Daftar periode per tahun + generate periode bulanan (satu item per karyawan aktif, nilai dari grade jabatan); detail: ubah hari hadir/potongan per baris lalu gaji bersih dihitung ulang; alur status draft→final→dibayar (tidak bisa mundur, edit diblokir setelah dibayar); halaman cetak daftar gaji; **export CSV, Excel (XLSX), PDF** per periode |
-| | **Master HR** ▾ | Grade jabatan, Jabatan, Posisi (bertingkat), Struktur Organisasi, Penghargaan karyawan — semua punya **Import CSV** |
-| **5. LAPORAN** | **Laporan** ▾ | **Laporan Booking**: filter rentang tanggal + jenis (travel/rental/semua), kartu ringkasan, 4 tabel dimensi (periode, wilayah asal→tujuan, kendaraan, driver) · **Laporan Keuangan**: kartu laba kotor/pendapatan/biaya/piutang, 3 grafik visual, rincian biaya operasional · **Laporan Operasional**: utilisasi armada, aktivitas driver, tingkat penyelesaian tugas (%) · **Laporan Driver**: beban kerja driver + detail penugasan. Semua laporan export **CSV, Excel (XLSX), PDF**, dan **Cetak** (HTML siap cetak) |
-| **6. MASTER DATA & ORGANISASI** | **Organisasi** ▾ | **Grup Perusahaan**, **Perusahaan** (logo & stempel di Azure Blob, kode terkunci permanen setelah dibuat), **Cabang** |
-| | **Referensi Umum** ▾ | **Bank** (22 bank resmi di Indonesia), **Satuan**, dan **Wilayah** berjenjang (Negara → Provinsi → Kota/Kab. → Kecamatan → Desa). Setiap master data dilengkapi **Streaming Grid Export** ($O(1)$ RAM) dan **Import CSV** |
-| **7. ADMINISTRASI SISTEM** | **Pengguna & Akses** ▾ | **Pengguna**: CRUD user, mapping user↔perusahaan, reset password · **Role & Hak Akses**: CRUD role, editor permission per role, batas level role · **Audit Trail**: Read-only log aktivitas sistem |
-| | **Sistem** ▾ | **Backup & Restore** (khusus Super Admin): unduh dump `.sql` seluruh database, restore dari file unggahan (aman: DDL/`USE`/`CREATE DATABASE` dari dump diabaikan, transaksional) |
+| **1. UTAMA** | **Dashboard** | **Operasional:** booking hari ini & minggu ini (1x query gabungan grafik + KPI), ringkasan **5 status operasional** (`Draft`, `Terjadwal`, `Sedang Jalan`, `Selesai`, `Dibatalkan`), **Driver Sedang Bertugas** (no. WA/kode + link detail booking + status + shortcut ke Kalender), **Piutang Jatuh Tempo** (`issued` & `partial`, link detail invoice, total/jumlah dihitung dari seluruh piutang bukan hanya 8 baris teratas), **Pemesanan Aktif & Terjadwal** lengkap dengan kolom **Sopir**, **Peringatan Dokumen & Legalitas H-30** (STNK, KIR, Pajak, SIM). **Grafik & Statistik:** booking & pendapatan 6 bulan terakhir (disembunyikan bagi role tanpa izin keuangan/laporan) serta ringkasan **Karyawan Aktif**, **Armada Aktif**, **Cabang**, dan **Perusahaan** |
+| **2. OPERASIONAL & ARMADA** | **Travel** ▾ | **Pemesanan Tiket Perjalanan**: CRUD booking, resi acak, invoice otomatis, 5 status operasional, penumpang utama & tambahan, kolom **Sopir** (no. WA di atas + nama di bawah), nominal ringkas tanpa prefix `Rp`, ekspor PDF/XLSX · **Rute**: rute + harga bertingkat + radius kecamatan |
+| | **Rental** ▾ | **Pemesanan Sewa Kendaraan**: periode `start_date`–`end_date`, lama trip, BBM, premi/komisi kru, penumpang tambahan, kolom **Sopir** (WA di atas + nama di bawah), nominal ringkas tanpa `Rp`, invoice otomatis & pembayaran QRIS dinamis |
+| | **Transportasi** ▾ | **Penumpang** (master pelanggan/penumpang bersama Travel & Rental) · **Peraturan Komisi** (aturan biaya/komisi kru & sopir) |
+| | **Kalender Operasional** | Agenda bulanan/mingguan/harian armada & driver (`pages/dispatch/calendar.php`), papan/penugasan driver aktif, dan cetak surat jalan (`manifest.php`) dari halaman detail booking |
+| | **Kendaraan** ▾ | **Daftar Kendaraan**, **Merek Kendaraan**, **Kategori Kendaraan**, **Model Unit**; lengkap foto unit, STNK, KIR (Azure Blob) |
+| **3. KEUANGAN & AKUNTANSI** | **Keuangan** ▾ | **Invoice** (`issued`/`partial`/`paid`/`cancelled`, bukti bayar Azure Blob, cetak + **unduh PDF**) · **Buku Kas & Bank** · **Akun Kas/Bank** · **Metode Pembayaran** · **Saluran QRIS/Gopay** (`pages/finance/payment_channels`, izin `companies.manage`) |
+| **4. SDM & PAYROLL** | **Karyawan** | CRUD karyawan + detail, rekening payroll, foto profil, KTP & SIM (Azure Blob) |
+| | **Absensi** ▾ | **Absensi Harian** · **Rekap Absensi** (sumber hari hadir Payroll, export CSV/XLSX/PDF/Cetak) |
+| | **Payroll** | Periode bulanan (`draft` → `final` → `dibayar`), generate per karyawan aktif, hitung ulang potongan & hari hadir, cetak + export CSV/XLSX/PDF |
+| | **Master HR** ▾ | Grade Jabatan, Jabatan, Posisi, Struktur Org., Penghargaan + Import CSV |
+| **5. LAPORAN** | **Laporan** ▾ | **Laporan Booking** · **Laporan Keuangan** · **Laporan Operasional** · **Laporan Driver** (semua export CSV, XLSX, PDF, dan Cetak) |
+| **6. MASTER DATA & ORGANISASI** | **Organisasi** ▾ | **Grup Perusahaan** · **Perusahaan** (termasuk pengaturan WA & logo/stempel Azure Blob) · **Cabang** |
+| | **Referensi Umum** ▾ | **Bank**, **Wilayah** (`Negara` → `Provinsi` → `Kota/Kab.` → `Kecamatan` → `Desa`), **Satuan** — Streaming Grid Export & Import CSV |
+| **7. ADMINISTRASI SISTEM** | **Pengguna & Akses** ▾ | **Pengguna** · **Role & Hak Akses** · **Audit Trail** |
+| | **Sistem** ▾ | **Backup & Restore** (khusus Super Admin) |
 
 **Tanpa halaman (logika saja):** rate limit login, tenant scoping, CSRF, level rule role.
 
-**Belum ada / tidak dipakai:** jurnal/neraca double-entry, portal pelanggan/driver, lembur otomatis, antrean/retry WhatsApp (butuh cron). **Pajak invoice sengaja tidak dipakai** — tarif tetap 0 (`booking_tax_percent()`), kolom `tax_percent`/`tax_amount` dipertahankan hanya agar invoice lama tetap terbaca bila nanti diperlukan.
+**Belum ada / tidak dipakai:** jurnal/neraca double-entry, portal pelanggan/driver, lembur otomatis, antrean/retry otomatis WhatsApp tanpa cron. **Pajak invoice sengaja tidak dipakai** — tarif tetap 0 (`booking_tax_percent()`).
 
 ## Pengujian
 
-Self-check tanpa framework (butuh DB lokal sesuai `config/config.php`). Total 28 file `tests/*_check.php`:
+Self-check tanpa framework (butuh DB lokal sesuai `config/config.php`). Tersedia **36 file `tests/*_check.php`** dan **1 skrip browser E2E CDP** (`tests/browser_ui_e2e.mjs`):
 
 ```bash
-php tests/booking_check.php          # premi, transisi status, reschedule, cancel
-php tests/masters_engine_check.php   # engine master: save/scope referensi & HR
-php tests/master_import_check.php    # import CSV master (all-or-nothing, upsert, RBAC, CSRF)
-php tests/masters_reorder_check.php  # ubah urutan item master (naik/turun)
+php tests/dashboard_chart_check.php   # grafik 6 bulan dashboard, scoping tenant & format rupiah_singkat
+php tests/booking_check.php           # premi/komisi, transisi 5 status, reschedule, cancel
+php tests/payment_gateway_check.php   # QRIS dinamis, webhook/polling, saluran pembayaran
+php tests/tomselect_scale_check.php   # remote Tom Select, index DB, ekspor, Sopir & UI parity
+php tests/masters_engine_check.php    # engine master: save/scope referensi & HR
+php tests/master_import_check.php     # import CSV master (all-or-nothing, upsert, RBAC, CSRF)
+php tests/masters_reorder_check.php   # ubah urutan item master (naik/turun)
 php tests/vehicles_check.php
-php tests/level_rule_check.php       # batas level role
-php tests/payment_methods_check.php  # metode pembayaran + blob QR
-php tests/invoice_check.php          # invoice + pembayaran (partial/lunas/overpay)
-
-php tests/dispatch_check.php         # penjadwalan driver: assign/end, validasi tenant, RBAC
-php tests/payroll_check.php          # payroll: generate, hitung gaji bersih, transisi status, RBAC
-php tests/reports_check.php          # laporan booking (ringkasan, 4 dimensi, scoping, XLSX)
-php tests/reports_finance_check.php  # laporan keuangan (pendapatan/biaya/laba, piutang, scoping)
-php tests/reports_operations_check.php # laporan operasional (utilisasi, driver, status, scoping)
-php tests/pdf_reports_check.php      # PDF/Cetak 5 laporan + invoice + slip payroll, RBAC, audit
-
-php tests/backup_check.php           # dump/restore: parsing SQL, tolak DDL & USE berbahaya
+php tests/level_rule_check.php        # batas level role
+php tests/payment_methods_check.php   # metode pembayaran + blob QR
+php tests/invoice_check.php           # invoice + pembayaran (partial/lunas/overpay)
+php tests/dispatch_check.php          # penjadwalan driver: assign/end, validasi tenant, RBAC
+php tests/dispatch_report_check.php   # laporan driver & surat jalan
+php tests/payroll_check.php           # payroll: generate, hitung gaji bersih, transisi status, RBAC
+php tests/reports_check.php           # laporan booking
+php tests/reports_finance_check.php   # laporan keuangan
+php tests/reports_operations_check.php # laporan operasional
+php tests/pdf_reports_check.php       # PDF/Cetak laporan + invoice + slip payroll, RBAC, audit
+php tests/backup_check.php            # dump/restore: parsing SQL, tolak DDL & USE berbahaya
 ```
 
-> Beberapa test menguji lewat HTTP, jadi server harus hidup:
-> `php -d mysqli.default_socket=... -S 127.0.0.1:8090 -t <folder-induk-proyek>` lalu set
-> `PDF_BASE=http://127.0.0.1:8090/<nama-folder> php tests/pdf_reports_check.php`
-> (`IV_BASE` untuk `invoice_pdf_check.php`).
+> Beberapa test menguji lewat HTTP (`http://127.0.0.1:8080/vsudotrans-php` atau `PDF_BASE`/`IV_BASE`), jadi Apache/PHP dev server dan MariaDB lokal harus aktif.
 >
-> `tests/backup_restore_http_check.php` bersifat **destruktif** dan otomatis SKIP kecuali
-> env `VSUDO_ALLOW_DESTRUCTIVE=1` diset — jangan dijalankan di database produksi.
+> `tests/backup_restore_http_check.php` bersifat **destruktif** dan otomatis SKIP kecuali env `VSUDO_ALLOW_DESTRUCTIVE=1` diset — jangan dijalankan di database produksi.
 
-Export XLSX ditulis native tanpa Composer (`includes/xlsx.php`) — ZIP metode STORED + CRC32 manual,
-satu sheet, tanpa dependensi eksternal.
+Export XLSX ditulis native tanpa Composer (`includes/xlsx.php`) — ZIP metode STORED + CRC32 manual, satu sheet, tanpa dependensi eksternal.
 
-PDF server-side memakai Dompdf 3.1.6 yang di-vendor ke `includes/vendor/dompdf` (PHP murni, tanpa
-Composer, tanpa `exec`/shell — aman untuk shared hosting). Butuh ekstensi PHP `dom` + `mbstring`;
-bila tidak tersedia, halaman otomatis turun ke mode HTML siap-cetak, bukan error.
+PDF server-side memakai Dompdf 3.1.6 yang di-vendor ke `includes/vendor/dompdf` (PHP murni, tanpa Composer). Butuh ekstensi PHP `dom` + `mbstring`; bila tidak tersedia, halaman otomatis turun ke mode HTML siap-cetak, bukan error.
 
 ## Struktur
 
 ```
-vsudotrans/
+vsudotrans-php/
+├── api/
+│   └── bot/           # endpoint WhatsApp Bot API (bookings, qris, dispatch, routes, summary)
 ├── config/            # APP_URL + DB + session
-├── database/schema.sql# 53 tabel + seed, satu file
-├── includes/          # auth.php (RBAC, company scope), booking_service.php, invoice_service.php,
-│                      # payroll_service.php, dispatch_service.php, backup.php, wa.php, ai.php,
+├── database/schema.sql# 59 tabel + seed role/user, satu file
+├── includes/          # auth.php (RBAC, company scope), booking.php, booking_service.php,
+│                      # invoice_service.php, payroll_service.php, dispatch_service.php,
+│                      # payment_gateway.php, transport_helpers.php, backup.php, wa.php, ai.php,
 │                      # xlsx.php (XLSX native), pdf.php (Dompdf), header/sidebar/footer
 │   └── vendor/dompdf/ # Dompdf 3.1.6 (vendored, tanpa Composer)
 ├── pages/
 │   ├── auth/ dashboard/ profile/
 │   ├── companies/ groups/ branches/ employees/ users/ roles/ audit/
 │   ├── masters/       # referensi umum, engine: _engine.php + _import.php + subfolder per tabel
-│   ├── vehicles/ hr/  # master kendaraan + master HR (CRUD + import CSV per folder)
+│   ├── vehicles/      # daftar unit + subfolder brands, categories, models
+│   ├── hr/            # master HR (CRUD + import CSV per folder)
 │   ├── attendance/    # absensi harian + rekap
-│   ├── finance/       # cash (buku kas/bank), cash_accounts, payment_methods (+QR, reorder), invoices
-│   ├── dispatch/      # penjadwalan driver: papan aktif/riwayat, tugaskan, detail booking+riwayat
+│   ├── finance/       # cash, cash_accounts, payment_methods, payment_channels, invoices
+│   ├── dispatch/      # kalender operasional, penugasan driver, surat jalan (manifest.php)
+│   ├── transport/     # passengers, regulations (master bersama Travel & Rental)
 │   ├── reports/       # 4 laporan: bookings, finance, operations, dispatch
-│   │                  #   _query.php / _finance_query.php / _operations_query.php / _dispatch_query.php
-│   │                  #   _print.php (presenter PDF/HTML) + *_export.php (CSV/XLSX/PDF/HTML)
 │   ├── payroll/       # periods (list + generate, detail item gaji, cetak + PDF)
 │   ├── settings/      # backup.php (Backup & Restore, khusus Super Admin)
-│   ├── travel/        # rutes, schedules, passengers, bookings
+│   ├── travel/        # rutes, bookings
 │   └── rental/        # bookings
-├── tests/             # self-check assert-style (28 file)
+├── tests/             # 36 file *_check.php + browser_ui_e2e.mjs (+ helper scripts)
 ├── index.php          # landing publik platform multi-agen
 └── tiket.php          # halaman tiket publik
 ```

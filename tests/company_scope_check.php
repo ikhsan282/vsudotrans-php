@@ -150,7 +150,7 @@ try {
     // 1. Seed vehicles for MTM (comp 1) & LIZ (comp 5)
     $stV = $db->prepare(
         "INSERT INTO vehicles (company_id, brand_id, model_unit_id, category_vehicle_id, frame_number, machine_number, seat, production_year, vehicle_color, vehicle_number, ownership, is_active, created_user)
-         VALUES (?, ?, ?, ?, ?, ?, ?, 2024, ?, ?, 'Milik Sendiri', 1, ?)"
+         VALUES (?, ?, ?, ?, ?, ?, ?, 2024, ?, ?, 'Internal', 1, ?)"
     );
     $v1Frame = "FRM1{$uniq}"; $v1Eng = "ENG1{$uniq}"; $v1Seat = 45; $v1Col = 'Putih'; $v1Plate = "B {$uniq} MTM";
     $stV->bind_param('iiiississs', $comp1, $brandId, $modelId, $cat1, $v1Frame, $v1Eng, $v1Seat, $v1Col, $v1Plate, $uTest);
