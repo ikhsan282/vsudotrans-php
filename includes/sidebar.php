@@ -52,9 +52,10 @@ $menu = [
     ['key' => 'dashboard', 'section' => 'Utama', 'label' => 'Dashboard', 'icon' => 'speedometer2', 'href' => 'pages/dashboard/index.php', 'perm' => null],
 
     // ── OPERASIONAL & ARMADA ────────────────────────────────────────────────
+    ['key' => 'dispatch',   'section' => 'Operasional & Armada', 'label' => 'Kalender Operasional', 'icon' => 'calendar2-check', 'href' => 'pages/dispatch/calendar.php', 'perm' => 'dispatch.view'],
     ['key' => 'travel', 'section' => 'Operasional & Armada', 'label' => 'Travel', 'icon' => 'bus-front', 'perm' => 'travel.view', 'sub' => [
         ['label' => 'Pemesanan Tiket Perjalanan', 'href' => 'pages/travel/bookings/index.php',  'perms' => 'travel.view'],
-        ['label' => 'Rute',                       'href' => 'pages/travel/rutes/index.php',     'perms' => 'travel.view'],
+        ['label' => 'Rute & Tarif',               'href' => 'pages/travel/rutes/index.php',     'perms' => 'travel.view'],
     ]],
     ['key' => 'rental', 'section' => 'Operasional & Armada', 'label' => 'Rental', 'icon' => 'car-front', 'perm' => 'rental.view', 'sub' => [
         ['label' => 'Pemesanan Sewa Kendaraan', 'href' => 'pages/rental/bookings/index.php',    'perms' => 'rental.view'],
@@ -64,7 +65,6 @@ $menu = [
         ['key' => 'categories',  'label' => 'Kategori Layanan', 'href' => 'pages/transport/categories/index.php',  'perms' => ['travel.view', 'rental.view', 'vehicles.view']],
         ['key' => 'regulations', 'label' => 'Peraturan Komisi', 'href' => 'pages/transport/regulations/index.php', 'perms' => ['travel.view', 'rental.view']],
     ]],
-    ['key' => 'dispatch',   'section' => 'Operasional & Armada', 'label' => 'Kalender Operasional', 'icon' => 'calendar2-check', 'href' => 'pages/dispatch/calendar.php', 'perm' => 'dispatch.view'],
     ['key' => 'vehicles',   'section' => 'Operasional & Armada', 'label' => 'Kendaraan',    'icon' => 'truck', 'perm' => 'vehicles.view', 'sub' => [
         ['label' => 'Daftar Kendaraan',   'href' => 'pages/vehicles/index.php',            'perms' => 'vehicles.view'],
         ['label' => 'Merek Kendaraan',    'href' => 'pages/vehicles/brands/index.php',     'perms' => 'vehicles.view'],
@@ -77,7 +77,6 @@ $menu = [
         ['label' => 'Buku Kas & Bank',    'href' => 'pages/finance/cash/index.php',             'perms' => 'finance.view'],
         ['label' => 'Akun Kas/Bank',      'href' => 'pages/finance/cash_accounts/index.php',    'perms' => 'finance.view'],
         ['label' => 'Metode Pembayaran',  'href' => 'pages/finance/payment_methods/index.php',  'perms' => 'finance.view'],
-        ['label' => 'Saluran QRIS/Gopay', 'href' => 'pages/finance/payment_channels/index.php', 'perms' => 'companies.manage'],
     ]],
 
     // ── SDM & PAYROLL ───────────────────────────────────────────────────────
@@ -111,7 +110,7 @@ $menu = [
     ]],
     ['key' => 'masters', 'section' => 'Master Data & Organisasi', 'label' => 'Referensi Umum', 'icon' => 'list-ul', 'perm' => 'masters.view', 'sub' => [
         ['label' => 'Bank',            'href' => 'pages/masters/banks/index.php',         'perms' => 'masters.view'],
-        ['label' => 'Wilayah: Negara', 'href' => 'pages/masters/countries/index.php',     'perms' => 'masters.view'],
+        ['label' => 'Negara',          'href' => 'pages/masters/countries/index.php',     'perms' => 'masters.view'],
         ['label' => 'Provinsi',        'href' => 'pages/masters/provinces/index.php',     'perms' => 'masters.view'],
         ['label' => 'Kota/Kab.',       'href' => 'pages/masters/cities/index.php',        'perms' => 'masters.view'],
         ['label' => 'Kecamatan',       'href' => 'pages/masters/districts/index.php',     'perms' => 'masters.view'],
@@ -224,8 +223,8 @@ if (!empty($activeLogo) && !preg_match('#/logo_[a-z]+\.png$#i', (string) $active
   </div>
 
   <hr class="text-white m-0">
-  <div class="p-3 sidebar-footer">
-    <div class="d-flex align-items-center mb-2">
+  <div class="px-3 py-2 sidebar-footer">
+    <div class="d-flex align-items-center gap-1">
       <a href="<?= e(APP_URL) ?>/pages/profile/index.php"
          class="d-flex align-items-center text-white text-decoration-none flex-grow-1 overflow-hidden sidebar-user-link"
          title="Buka Profil Saya">
@@ -237,14 +236,17 @@ if (!empty($activeLogo) && !preg_match('#/logo_[a-z]+\.png$#i', (string) $active
           <small class="text-white-50 text-truncate d-block mt-1"><?= e($_SESSION['role_name'] ?? '') ?></small>
         </div>
       </a>
-      <button type="button" class="dark-toggle sidebar-theme-toggle text-white ms-2 flex-shrink-0" aria-label="Ganti tema" title="Ganti tema">
+      <button type="button" class="dark-toggle sidebar-theme-toggle text-white flex-shrink-0" aria-label="Ganti tema" title="Ganti tema">
         <i class="bi bi-moon-stars"></i>
       </button>
+      <a href="<?= e(APP_URL) ?>/pages/auth/logout.php"
+         class="btn btn-sm sidebar-theme-toggle text-white flex-shrink-0"
+         style="border-radius:8px;padding:4px 8px;font-size:.8rem;line-height:1.2;"
+         aria-label="Keluar"
+         title="Keluar"
+         onclick="return confirm('Yakin ingin keluar?')">
+        <i class="bi bi-box-arrow-right"></i>
+      </a>
     </div>
-    <a href="<?= e(APP_URL) ?>/pages/auth/logout.php"
-       class="btn btn-sm btn-outline-light w-100"
-       onclick="return confirm('Yakin ingin keluar?')">
-      <i class="bi bi-box-arrow-right me-1"></i> Keluar
-    </a>
   </div>
 </nav>

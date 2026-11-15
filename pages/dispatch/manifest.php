@@ -238,7 +238,6 @@ foreach ($passengers as $idx => $pax) {
 if ($primaryPaxIdx === null && $passengers) {
     $primaryPaxIdx = 0;
 }
-$primaryPaxName = $passengers ? trim((string) ($passengers[$primaryPaxIdx]['name'] ?? '')) : '';
 
 // Data Invoice & Status Pembayaran
 $stInv = db()->prepare('SELECT id, invoice_no, total, status FROM invoices WHERE booking_type = ? AND booking_id = ? AND company_id = ? ORDER BY id DESC LIMIT 1');
@@ -811,17 +810,13 @@ $pdfHref = $reqBid > 0
 
         <table class="sj-sig">
             <tr>
-                <td>
+                <td style="width: 35%;">
                     <div class="sig-role">Pengemudi / Driver,</div>
                     <div class="sig-space">&nbsp;</div>
                     <div class="sig-line"><?= e($driverName) ?></div>
                 </td>
-                <td>
-                    <div class="sig-role">Penumpang / Penyewa,</div>
-                    <div class="sig-space">&nbsp;</div>
-                    <div class="sig-line"><?= e($primaryPaxName !== '' ? $primaryPaxName : '( .......................... )') ?></div>
-                </td>
-                <td>
+                <td style="width: 30%;"></td>
+                <td style="width: 35%;">
                     <div class="sig-role">Petugas Operasional,</div>
                     <div class="sig-space">
                         <?php if ($stampSrc !== ''): ?>
