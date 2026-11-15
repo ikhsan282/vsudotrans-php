@@ -500,7 +500,7 @@
     const origBookingPrice = Number(cfg.origBookingPrice || 0);
     const origInvoiceTotal = Number(cfg.invoiceTotal || 0);
 
-    const payTypeOpts = ['Down Payment (DP)', 'Pelunasan', 'Pembayaran Penuh (Full)', 'Tambahan'];
+    const payTypeOpts = ['Down Payment (DP)', 'Pelunasan', 'Pembayaran Penuh (Full)'];
     const payMethodOpts = ['Transfer', 'Tunai', 'QRIS', 'EDC / Kartu'];
 
     function getExpectedBillTotal() {

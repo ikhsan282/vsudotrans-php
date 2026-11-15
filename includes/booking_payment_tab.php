@@ -47,7 +47,7 @@ foreach ($payRowsIn as $pr) {
 $topPaidValue  = ($isDetailMode && isset($paidTotal)) ? $paidTotalVal : $paySubtotal;
 $remainingVal  = max(0.0, $invoiceTotal - $paidTotalVal);
 
-$payTypeOpts   = ['Down Payment (DP)', 'Pelunasan', 'Pembayaran Penuh (Full)', 'Tambahan'];
+$payTypeOpts   = ['Down Payment (DP)', 'Pelunasan', 'Pembayaran Penuh (Full)'];
 $payMethodOpts = ['Transfer', 'Tunai', 'QRIS', 'EDC / Kartu'];
 $isPayActive   = ($activeTab === 'payment');
 ?>
