@@ -4,12 +4,15 @@ require_once __DIR__ . '/_helpers.php';
 require_once __DIR__ . '/../../includes/transport_helpers.php';
 require_permission('vehicles.view');
 
-$today              = new DateTimeImmutable('today');
-$q                  = mb_substr(trim((string) ($_GET['q'] ?? '')), 0, 50);
-$statusRaw          = trim((string) ($_GET['status'] ?? ''));
-$status             = ($statusRaw === '1' || $statusRaw === '0') ? $statusRaw : '';
-$filter_category_id = (int) ($_GET['category_vehicle_id'] ?? 0);
-$filter_brand_id    = (int) ($_GET['brand_id'] ?? 0);
+$today           = new DateTimeImmutable('today');
+$q               = mb_substr(trim((string) ($_GET['q'] ?? '')), 0, 50);
+$statusRaw       = trim((string) ($_GET['status'] ?? ''));
+$status          = ($statusRaw === '1' || $statusRaw === '0') ? $statusRaw : '';
+$filter_category = trim((string) ($_GET['vehicle_category'] ?? ''));
+if (!isset(VEHICLE_CATEGORIES[$filter_category])) {
+    $filter_category = '';
+}
+$filter_brand_id = (int) ($_GET['brand_id'] ?? 0);
 
 $cscope               = company_filter_scope('v.company_id');
 $filter_company_id    = $cscope['filter_company_id'];
@@ -23,21 +26,17 @@ $where  = $cscope['where'];
 $types  = $cscope['types'];
 $params = $cscope['params'];
 
-// Opsi filter Kategori & Merek mengikuti perusahaan yang sedang dipilih.
+// Opsi filter Merek mengikuti perusahaan yang sedang dipilih.
 $db              = db();
-$catFilterOpts   = vehicle_filter_options($db, 'category_vehicles', $filter_category_id, $show_company_col);
 $brandFilterOpts = vehicle_filter_options($db, 'brand_vehicles', $filter_brand_id, $show_company_col);
-if ($filter_category_id > 0 && !in_array($filter_category_id, array_column($catFilterOpts, 'id'), true)) {
-    $filter_category_id = 0;
-}
 if ($filter_brand_id > 0 && !in_array($filter_brand_id, array_column($brandFilterOpts, 'id'), true)) {
     $filter_brand_id = 0;
 }
 
-if ($filter_category_id > 0) {
-    $where .= ' AND v.category_vehicle_id = ?';
-    $types .= 'i';
-    $params[] = $filter_category_id;
+if ($filter_category !== '') {
+    $where .= ' AND v.vehicle_category = ?';
+    $types .= 's';
+    $params[] = $filter_category;
 }
 if ($filter_brand_id > 0) {
     $where .= ' AND v.brand_id = ?';
@@ -69,13 +68,12 @@ $st->close();
 
 $export_format = strtolower(trim((string) ($_GET['export'] ?? '')));
 if (in_array($export_format, ['xlsx', 'pdf'], true)) {
-    $sql_export = "SELECT v.vehicle_number, b.name AS brand_name, m.name AS model_name, c.name AS category_name,
+    $sql_export = "SELECT v.vehicle_number, b.name AS brand_name, m.name AS model_name, v.vehicle_category AS category_name,
                           v.production_year, v.vehicle_color, v.ownership, v.is_active,
                           v.tax_due, v.stnk_due, v.kir_due
                    FROM vehicles v
                    JOIN brand_vehicles b ON b.id = v.brand_id
                    JOIN model_units m ON m.id = v.model_unit_id
-                   JOIN category_vehicles c ON c.id = v.category_vehicle_id
                    WHERE {$where} ORDER BY v.vehicle_number";
     $isPdf = $export_format === 'pdf';
     $max_export_rows = $isPdf ? GRID_PDF_MAX_ROWS : null;
@@ -120,13 +118,8 @@ if (in_array($export_format, ['xlsx', 'pdf'], true)) {
     );
 
     $subParts = [];
-    if ($filter_category_id > 0) {
-        foreach ($catFilterOpts as $cf) {
-            if ($cf['id'] === $filter_category_id) {
-                $subParts[] = 'Kategori: ' . $cf['label'];
-                break;
-            }
-        }
+    if ($filter_category !== '') {
+        $subParts[] = 'Kategori: ' . $filter_category;
     }
     if ($filter_brand_id > 0) {
         foreach ($brandFilterOpts as $bf) {
@@ -160,11 +153,10 @@ if (in_array($export_format, ['xlsx', 'pdf'], true)) {
 $p = paginate($total, (int) ($_GET['page'] ?? 1));
 $st = db()->prepare("SELECT v.id, v.vehicle_number, v.vehicle_color, v.production_year, v.ownership, v.is_active,
                             v.tax_due, v.stnk_due, v.kir_due,
-                            b.name AS brand_name, m.name AS model_name, c.name AS category_name, co.code AS company_code
+                            b.name AS brand_name, m.name AS model_name, v.vehicle_category AS category_name, co.code AS company_code
                      FROM vehicles v
                      JOIN brand_vehicles b ON b.id = v.brand_id
                      JOIN model_units m ON m.id = v.model_unit_id
-                     JOIN category_vehicles c ON c.id = v.category_vehicle_id
                      LEFT JOIN companies co ON co.id = v.company_id
                      WHERE {$where} ORDER BY v.vehicle_number LIMIT ? OFFSET ?");
 $st->bind_param($types . 'ii', ...[...$params, $p['per_page'], $p['offset']]);
@@ -173,22 +165,22 @@ $rows = $st->get_result()->fetch_all(MYSQLI_ASSOC);
 $st->close();
 
 $header_actions = ui_export_actions([
-    'category_vehicle_id' => $filter_category_id > 0 ? (string) $filter_category_id : null,
-    'brand_id'            => $filter_brand_id > 0 ? (string) $filter_brand_id : null,
-    'status'              => $status !== '' ? $status : null,
+    'vehicle_category' => $filter_category !== '' ? $filter_category : null,
+    'brand_id'         => $filter_brand_id > 0 ? (string) $filter_brand_id : null,
+    'status'           => $status !== '' ? $status : null,
 ]);
 if (can('vehicles.manage') && $cid !== null) {
     $header_actions[] = ['label' => 'Tambah Unit', 'icon' => 'plus-lg', 'href' => 'pages/vehicles/detail.php', 'class' => 'btn btn-primary btn-sm'];
 }
 
 $dueLabels         = ['tax_due' => 'Pajak', 'stnk_due' => 'STNK', 'kir_due' => 'KIR'];
-$has_active_filter = ($q !== '' || $status !== '' || $filter_category_id > 0 || $filter_brand_id > 0 || ($show_company_filter && $filter_company_id !== ($cid ?? 0)));
+$has_active_filter = ($q !== '' || $status !== '' || $filter_category !== '' || $filter_brand_id > 0 || ($show_company_filter && $filter_company_id !== ($cid ?? 0)));
 $query_base        = http_build_query(array_filter([
-    'company_id'          => $has_explicit_company ? (string) $filter_company_id : '',
-    'category_vehicle_id' => $filter_category_id > 0 ? (string) $filter_category_id : '',
-    'brand_id'            => $filter_brand_id > 0 ? (string) $filter_brand_id : '',
-    'status'              => $status,
-    'q'                   => $q,
+    'company_id'       => $has_explicit_company ? (string) $filter_company_id : '',
+    'vehicle_category' => $filter_category,
+    'brand_id'         => $filter_brand_id > 0 ? (string) $filter_brand_id : '',
+    'status'           => $status,
+    'q'                => $q,
 ], static fn (string $v): bool => $v !== ''));
 
 $active = 'vehicles';
@@ -213,16 +205,16 @@ require __DIR__ . '/../../includes/header.php';
                 </div>
                 <?php if ($show_company_filter): ?>
                     <div class="col-6 col-sm-4 col-md-4 erp-filter-item">
-                        <select name="company_id" class="form-select form-select-sm" onchange="var f=this.form;['category_vehicle_id','brand_id'].forEach(function(n){var el=f.querySelector('[name='+n+']');if(el)el.value='';});f.submit()" title="Pilih Perusahaan">
+                        <select name="company_id" class="form-select form-select-sm" onchange="var f=this.form;var el=f.querySelector('[name=brand_id]');if(el)el.value='';f.submit()" title="Pilih Perusahaan">
                             <?= ui_company_filter_options($companies, $filter_company_id, $has_explicit_company) ?>
                         </select>
                     </div>
                 <?php endif; ?>
                 <div class="col-6 col-sm-4 col-md-4 erp-filter-item">
-                    <select name="category_vehicle_id" class="form-select form-select-sm" onchange="this.form.submit()" title="Filter Kategori">
-                        <option value="">Semua Kategori</option>
-                        <?php foreach ($catFilterOpts as $cf): ?>
-                            <option value="<?= (int) $cf['id'] ?>" <?= ((int) $cf['id'] === $filter_category_id) ? 'selected' : '' ?>><?= e($cf['label']) ?></option>
+                    <select name="vehicle_category" class="form-select form-select-sm" onchange="this.form.submit()" title="Filter Kategori Kendaraan">
+                        <option value="">Semua Kategori Kendaraan</option>
+                        <?php foreach (VEHICLE_CATEGORIES as $vcVal => $vcLabel): ?>
+                            <option value="<?= e($vcVal) ?>" <?= $filter_category === $vcVal ? 'selected' : '' ?>><?= e($vcLabel) ?></option>
                         <?php endforeach; ?>
                     </select>
                 </div>

@@ -19,13 +19,14 @@ function vehicle_masters_map(): array
             ],
         ],
         'category' => [
-            'table' => 'category_vehicles',
-            'dir'   => 'categories',
-            'label' => 'Kategori Kendaraan',
-            'short' => 'Kategori',
-            'icon'  => 'grid',
-            'refs'  => [
-                ['vehicles', 'category_vehicle_id', 'Armada Kendaraan'],
+            'table'  => 'category_vehicles',
+            'dir'    => 'categories',
+            'base'   => 'pages/transport/categories',
+            'active' => 'categories',
+            'label'  => 'Kategori Layanan',
+            'short'  => 'Kategori',
+            'icon'   => 'grid',
+            'refs'   => [
                 ['rutes', 'category_vehicle_id', 'Rute Travel'],
                 ['rute_tariffs', 'category_vehicle_id', 'Tarif Rute'],
                 ['rental_car_regulation_employees', 'category_vehicle_id', 'Regulasi Kru Rental'],
@@ -61,7 +62,39 @@ function vehicle_master_route(array $vm, string $file = 'index.php', array $quer
 {
     $filtered = array_filter($query, static fn ($v): bool => $v !== null && $v !== '');
     $qs = $filtered ? ('?' . http_build_query($filtered)) : '';
-    return 'pages/vehicles/' . $vm['dir'] . '/' . $file . $qs;
+    $base = $vm['base'] ?? ('pages/vehicles/' . $vm['dir']);
+    return $base . '/' . $file . $qs;
+}
+
+function vehicle_master_can_view(string $key): bool
+{
+    if ($key === 'category') {
+        return can('vehicles.view') || can('travel.view') || can('rental.view')
+            || can('vehicles.manage') || can('travel.manage') || can('rental.manage');
+    }
+    return can('vehicles.view') || can('vehicles.manage');
+}
+
+function vehicle_master_can_manage(string $key): bool
+{
+    if ($key === 'category') {
+        return can('vehicles.manage') || can('travel.manage') || can('rental.manage');
+    }
+    return can('vehicles.manage');
+}
+
+function vehicle_master_require_view(string $key): void
+{
+    if (!vehicle_master_can_view($key)) {
+        require_permission('vehicles.view');
+    }
+}
+
+function vehicle_master_require_manage(string $key): void
+{
+    if (!vehicle_master_can_manage($key)) {
+        require_permission('vehicles.manage');
+    }
 }
 
 /** Susun query string whitelist agar filter/halaman aktif tetap terjaga setelah aksi. */
@@ -99,11 +132,12 @@ function vehicle_master_scalar(mysqli $db, string $sql, string $types = '', arra
 /** Tampilkan daftar master kendaraan terpisah (filter, paginasi, export XLSX/PDF). */
 function vehicle_master_list(string $key): void
 {
-    require_permission('vehicles.view');
-    $vm      = vehicle_master_def($key);
-    $t       = $vm['table'];
-    $isModel = ($key === 'model');
-    $db      = db();
+    vehicle_master_require_view($key);
+    $vm        = vehicle_master_def($key);
+    $t         = $vm['table'];
+    $isModel   = ($key === 'model');
+    $canManage = vehicle_master_can_manage($key);
+    $db        = db();
 
     $cscope               = company_filter_scope('x.company_id');
     $filter_company_id    = $cscope['filter_company_id'];
@@ -260,7 +294,7 @@ function vehicle_master_list(string $key): void
         'status'   => $status !== '' ? $status : null,
     ];
     $header_actions = ui_export_actions($export_params);
-    if (can('vehicles.manage') && $cid !== null) {
+    if ($canManage && $cid !== null) {
         $header_actions[] = [
             'label' => 'Tambah ' . $vm['short'],
             'icon'  => 'plus-lg',
@@ -269,14 +303,18 @@ function vehicle_master_list(string $key): void
         ];
     }
 
-    $active = 'vehicles';
+    $breadcrumb = ($key === 'category')
+        ? ['Dashboard' => 'pages/dashboard/index.php', 'Transportasi' => null, $vm['label'] => null]
+        : ['Dashboard' => 'pages/dashboard/index.php', 'Kendaraan' => 'pages/vehicles/index.php', $vm['label'] => null];
+
+    $active = $vm['active'] ?? 'vehicles';
     $title  = $vm['label'];
     require __DIR__ . '/../../includes/header.php';
     ?>
     <main class="col-12 col-md-9 col-lg-10 p-3 p-lg-4">
         <?= ui_page_header(
             $vm['label'],
-            ['Dashboard' => 'pages/dashboard/index.php', 'Kendaraan' => 'pages/vehicles/index.php', $vm['label'] => null],
+            $breadcrumb,
             [['text' => number_format($total, 0, ',', '.') . ' ' . $vm['short'], 'class' => 'bg-light text-secondary border']],
             $header_actions
         ) ?>
@@ -319,7 +357,7 @@ function vehicle_master_list(string $key): void
             </div>
         </div>
 
-        <?php if (can('vehicles.manage') && $cid === null): ?>
+        <?php if ($canManage && $cid === null): ?>
             <div class="alert alert-warning py-2 px-3 small d-flex align-items-center gap-2">
                 <i class="bi bi-building-exclamation"></i>
                 <span>Pilih perusahaan aktif di pojok kanan atas terlebih dahulu untuk menambah <?= e(mb_strtolower($vm['label'])) ?> baru.</span>
@@ -365,7 +403,7 @@ function vehicle_master_list(string $key): void
                             </td>
                             <td><span class="badge bg-<?= $r['is_active'] ? 'success' : 'secondary' ?>"><?= $r['is_active'] ? 'Aktif' : 'Nonaktif' ?></span></td>
                             <td class="text-end text-nowrap">
-                                <?php if (can('vehicles.manage')): ?>
+                                <?php if ($canManage): ?>
                                     <a class="btn btn-sm btn-outline-primary" href="<?= e($rowEditHref) ?>" title="Ubah" aria-label="Ubah"><i class="bi bi-pencil-square"></i></a>
                                     <form method="post" action="<?= e($delete_action) ?>" class="d-inline" onsubmit="return confirm('Hapus <?= e(mb_strtolower($vm['short'])) ?> <?= e($r['code']) ?>?')">
                                         <?= csrf_field() ?>
@@ -403,7 +441,7 @@ function vehicle_master_list(string $key): void
 /** Form tambah / ubah master kendaraan dengan layout ERP (Detail + Audit Trail). */
 function vehicle_master_form(string $key): void
 {
-    require_permission('vehicles.manage');
+    vehicle_master_require_manage($key);
     $vm      = vehicle_master_def($key);
     $t       = $vm['table'];
     $isModel = ($key === 'model');
@@ -575,7 +613,7 @@ function vehicle_master_form(string $key): void
             $companyLabel !== '' ? ['text' => $companyLabel, 'class' => 'bg-light text-secondary border'] : null,
         ]));
 
-    $active = 'vehicles';
+    $active = $vm['active'] ?? 'vehicles';
     $title  = ($id > 0 ? 'Ubah ' : 'Tambah ') . $vm['label'];
     require __DIR__ . '/../../includes/header.php';
     ?>
@@ -620,7 +658,7 @@ function vehicle_master_form(string $key): void
                                     <div class="rnt-row">
                                         <label class="rnt-label" for="code">Kode <span class="text-danger">*</span></label>
                                         <div class="rnt-field">
-                                            <input class="form-control form-control-sm text-uppercase font-monospace" id="code" name="code" maxlength="15" required placeholder="Mis. <?= e($key === 'brand' ? 'TYT' : ($key === 'category' ? 'BUS-BIG' : 'HIACE')) ?>" value="<?= e($row['code']) ?>">
+                                            <input class="form-control form-control-sm text-uppercase font-monospace" id="code" name="code" maxlength="15" required placeholder="Mis. <?= e($key === 'brand' ? 'TYT' : ($key === 'category' ? 'REG' : 'HIACE')) ?>" value="<?= e($row['code']) ?>">
                                         </div>
                                     </div>
                                     <div class="rnt-row">
@@ -678,7 +716,7 @@ function vehicle_master_form(string $key): void
 /** Hapus baris master kendaraan (POST + CSRF + validasi relasi FK). */
 function vehicle_master_delete(string $key): void
 {
-    require_permission('vehicles.manage');
+    vehicle_master_require_manage($key);
     $vm = vehicle_master_def($key);
     $t  = $vm['table'];
 

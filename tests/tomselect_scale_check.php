@@ -1062,6 +1062,7 @@ try {
         '/pages/employees/index.php?company_id=1',
         '/pages/vehicles/index.php?company_id=1',
         '/pages/vehicles/brands/index.php?company_id=1',
+        '/pages/transport/categories/index.php?company_id=1',
         '/pages/vehicles/categories/index.php?company_id=1',
         '/pages/vehicles/models/index.php?company_id=1',
         '/pages/transport/passengers/index.php?company_id=1',

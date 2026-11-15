@@ -287,7 +287,7 @@ function regulation_save(int $id, array $header, array $details, ?string $user):
     $note       = trim((string) ($header['note'] ?? ''));
 
     if ($companyId <= 0 || $categoryId <= 0) {
-        throw new InvalidArgumentException('Perusahaan dan Kategori Kendaraan wajib dipilih.');
+        throw new InvalidArgumentException('Perusahaan dan Kategori Layanan wajib dipilih.');
     }
     if (!preg_match('/^\d{4}-\d{2}-\d{2}$/', $startDate) || !preg_match('/^\d{4}-\d{2}-\d{2}$/', $endDate)) {
         throw new InvalidArgumentException('Format Tanggal Mulai dan Tanggal Selesai tidak valid.');

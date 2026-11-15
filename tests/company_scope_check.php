@@ -131,8 +131,8 @@ try {
     $comp5 = 5; // LIZ
     $br1   = 1;
     $br5   = 5;
-    $cat1  = 2; // Bus Besar (MTM)
-    $cat5  = 5; // INNOVA (LIZ)
+    $cat1  = 2; // Sewa Big Bus (MTM)
+    $cat5  = 5; // Carter Mini Bus (LIZ)
 
     $refVeh = $db->query("SELECT brand_id, model_unit_id FROM vehicles WHERE company_id = 1 LIMIT 1")->fetch_assoc();
     $brandId = (int) ($refVeh['brand_id'] ?? 4);
@@ -376,8 +376,8 @@ try {
     $tf5 = $httpGet($jarAdmin, '/pages/travel/bookings/form.php');
     cs_check(
         $tf5['code'] === 200
-        && str_contains($tf5['body'], 'Toyota Innova Reborn')
-        && !str_contains($tf5['body'], 'Bus Besar')
+        && str_contains($tf5['body'], 'Carter Mini Bus')
+        && !str_contains($tf5['body'], 'Sewa Big Bus')
         && !str_contains($tf5['body'], 'Head Office Cipondoh')
         && str_contains($tf5['body'], 'Kantor Pusat')
         && str_contains($tf5['body'], $v5Plate)
@@ -388,8 +388,8 @@ try {
     $rf5 = $httpGet($jarAdmin, '/pages/rental/bookings/form.php');
     cs_check(
         $rf5['code'] === 200
-        && str_contains($rf5['body'], 'Toyota Innova Reborn')
-        && !str_contains($rf5['body'], 'Bus Besar')
+        && str_contains($rf5['body'], 'Carter Mini Bus')
+        && !str_contains($rf5['body'], 'Sewa Big Bus')
         && !str_contains($rf5['body'], 'Head Office Cipondoh')
         && str_contains($rf5['body'], $v5Plate)
         && !str_contains($rf5['body'], $v1Plate)
@@ -413,7 +413,7 @@ try {
     cs_check(
         $regIdx5['code'] === 200
         && !str_contains($regIdx5['body'], 'Undefined array key')
-        && str_contains($regIdx5['body'], 'INNOVA - Toyota Innova Reborn')
+        && str_contains($regIdx5['body'], 'CMB - Carter Mini Bus')
         && str_contains($regIdx5['body'], 'Rp 555.000')
         && !str_contains($regIdx5['body'], 'Rp 111.000')
         && !str_contains($regIdx5['body'], "CSCOPE Reg LIZ {$uniq}")
@@ -425,8 +425,8 @@ try {
     cs_check(
         $regForm5['code'] === 200
         && (bool) preg_match('/<select[^>]*id="regCategorySelect"[^>]*>([\s\S]*?)<\/select>/', $regForm5['body'], $mRegCat)
-        && str_contains($mRegCat[1], 'INNOVA - Toyota Innova Reborn')
-        && !str_contains($mRegCat[1], 'Bus Besar'),
+        && str_contains($mRegCat[1], 'CMB - Carter Mini Bus')
+        && !str_contains($mRegCat[1], 'Sewa Big Bus'),
         'transport/regulations/form.php (active=5) renders ONLY Company 5 category options'
     );
     cs_check(

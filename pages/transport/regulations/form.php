@@ -237,10 +237,10 @@ require __DIR__ . '/../../../includes/header.php';
                                             </div>
                                         </div>
                                         <div class="rnt-row">
-                                            <label class="rnt-label">Kategori Kendaraan <span class="text-danger">*</span></label>
+                                            <label class="rnt-label">Kategori Layanan <span class="text-danger">*</span></label>
                                             <div class="rnt-field">
                                                 <select class="form-select form-select-sm" name="category_vehicle_id" id="regCategorySelect" <?= $canManage ? 'required' : 'disabled' ?>>
-                                                    <option value="">-- Pilih Kategori Kendaraan --</option>
+                                                    <option value="">-- Pilih Kategori Layanan --</option>
                                                     <?php foreach ($allCategories as $cv): ?>
                                                         <?php if ((int) $cv['company_id'] === $curCompanyId || (int) $cv['id'] === $curCategoryId): ?>
                                                             <option value="<?= (int) $cv['id'] ?>" <?= (int) $cv['id'] === $curCategoryId ? 'selected' : '' ?>>
@@ -459,7 +459,7 @@ document.addEventListener('DOMContentLoaded', () => {
         compSel.addEventListener('change', () => {
             const cid = parseInt(compSel.value || '0', 10);
             const curVal = parseInt(catSel.value || '0', 10);
-            catSel.innerHTML = '<option value="">-- Pilih Kategori Kendaraan --</option>';
+            catSel.innerHTML = '<option value="">-- Pilih Kategori Layanan --</option>';
             allCategories.filter(c => parseInt(c.company_id, 10) === cid).forEach(c => {
                 const opt = document.createElement('option');
                 opt.value = c.id;

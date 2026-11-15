@@ -7,6 +7,17 @@
 /** Nilai ownership, sama dengan EnumOwnership di VSudoTrans.API (Internal=0, Eksternal=1). */
 const VEHICLE_OWNERSHIP = ['Internal' => 'Internal', 'Eksternal' => 'Eksternal'];
 
+/** Pilihan tetap Kategori Kendaraan pada Master Kendaraan. */
+const VEHICLE_CATEGORIES = [
+    'Mini Bus'       => 'Mini Bus',
+    'Hiace Commuter' => 'Hiace Commuter',
+    'Hiace Premio'   => 'Hiace Premio',
+    'Elf Short'      => 'Elf Short',
+    'Elf Long'       => 'Elf Long',
+    'Medium Bus'     => 'Medium Bus',
+    'Big Bus'        => 'Big Bus',
+];
+
 /** Tanggal Y-m-d dari POST: null = kosong, false = tidak valid. */
 function vehicle_date(array $post, string $key): string|null|false
 {
@@ -32,10 +43,14 @@ function vehicle_due_soon(?string $date, DateTimeImmutable $today): bool
 function vehicle_validate(array $d): array
 {
     $errors = [];
-    foreach (['brand_id' => 'Merek', 'model_unit_id' => 'Model', 'category_vehicle_id' => 'Kategori'] as $k => $label) {
+    foreach (['brand_id' => 'Merek', 'model_unit_id' => 'Model'] as $k => $label) {
         if ((int) $d[$k] <= 0) {
             $errors[] = "{$label} wajib dipilih.";
         }
+    }
+    $vCat = (string) ($d['vehicle_category'] ?? '');
+    if ($vCat === '' || !isset(VEHICLE_CATEGORIES[$vCat])) {
+        $errors[] = 'Kategori kendaraan wajib dipilih.';
     }
     if ($d['vehicle_number'] === '' || !preg_match('/^[A-Z0-9 ]{1,15}$/', $d['vehicle_number'])) {
         $errors[] = 'Nomor polisi wajib diisi (huruf, angka, spasi; maks 15 karakter).';
@@ -103,7 +118,6 @@ function vehicle_check_refs(mysqli $db, int $cid, array $d): array
     $checks = [
         ['brand_vehicles', 'brand_id', 'Merek'],
         ['model_units', 'model_unit_id', 'Model'],
-        ['category_vehicles', 'category_vehicle_id', 'Kategori'],
     ];
     foreach ($checks as [$table, $col, $label]) {
         if ((int) $d[$col] > 0 && !vehicle_owned($db, $table, (int) $d[$col], $cid)) {

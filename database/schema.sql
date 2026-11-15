@@ -552,7 +552,8 @@ CREATE TABLE `vehicles` (
   `company_id` INT(11) NOT NULL,
   `brand_id` INT(11) NOT NULL,
   `model_unit_id` INT(11) NOT NULL,
-  `category_vehicle_id` INT(11) NOT NULL,
+  `vehicle_category` ENUM('Mini Bus','Hiace Commuter','Hiace Premio','Elf Short','Elf Long','Medium Bus','Big Bus') NOT NULL DEFAULT 'Mini Bus',
+  `category_vehicle_id` INT(11) DEFAULT NULL,
   `frame_number` VARCHAR(50) NOT NULL,
   `machine_number` VARCHAR(50) NOT NULL,
   `seat` INT(11) NOT NULL DEFAULT 0,
@@ -579,12 +580,14 @@ CREATE TABLE `vehicles` (
   UNIQUE KEY `uq_vehicles_machine` (`company_id`, `machine_number`),
   KEY `ix_vehicles_company` (`company_id`),
   KEY `ix_vehicles_category` (`category_vehicle_id`),
+  KEY `ix_vehicles_veh_category` (`company_id`, `vehicle_category`, `is_active`),
+  KEY `fk_vehicles_brand` (`brand_id`),
+  KEY `fk_vehicles_model` (`model_unit_id`),
   KEY `ix_vehicles_comp_active_num` (`company_id`, `is_active`, `vehicle_number`),
   KEY `ix_vehicles_comp_active_cat_num` (`company_id`, `is_active`, `category_vehicle_id`, `vehicle_number`),
   CONSTRAINT `fk_vehicles_company` FOREIGN KEY (`company_id`) REFERENCES `companies` (`id`) ON DELETE RESTRICT,
   CONSTRAINT `fk_vehicles_brand` FOREIGN KEY (`brand_id`) REFERENCES `brand_vehicles` (`id`) ON DELETE RESTRICT,
-  CONSTRAINT `fk_vehicles_model` FOREIGN KEY (`model_unit_id`) REFERENCES `model_units` (`id`) ON DELETE RESTRICT,
-  CONSTRAINT `fk_vehicles_category` FOREIGN KEY (`category_vehicle_id`) REFERENCES `category_vehicles` (`id`) ON DELETE RESTRICT
+  CONSTRAINT `fk_vehicles_model` FOREIGN KEY (`model_unit_id`) REFERENCES `model_units` (`id`) ON DELETE RESTRICT
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- ---------- TRAVEL (dengan company_id) ----------

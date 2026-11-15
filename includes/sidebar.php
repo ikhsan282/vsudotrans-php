@@ -59,15 +59,15 @@ $menu = [
     ['key' => 'rental', 'section' => 'Operasional & Armada', 'label' => 'Rental', 'icon' => 'car-front', 'perm' => 'rental.view', 'sub' => [
         ['label' => 'Pemesanan Sewa Kendaraan', 'href' => 'pages/rental/bookings/index.php',    'perms' => 'rental.view'],
     ]],
-    ['key' => 'transport', 'keys' => ['transport', 'passengers', 'regulations'], 'section' => 'Operasional & Armada', 'label' => 'Transportasi', 'icon' => 'signpost-split', 'perm' => ['travel.view', 'rental.view'], 'sub' => [
+    ['key' => 'transport', 'keys' => ['transport', 'passengers', 'categories', 'regulations'], 'section' => 'Operasional & Armada', 'label' => 'Transportasi', 'icon' => 'signpost-split', 'perm' => ['travel.view', 'rental.view', 'vehicles.view'], 'sub' => [
         ['key' => 'passengers',  'label' => 'Penumpang',        'href' => 'pages/transport/passengers/index.php',  'perms' => ['travel.view', 'rental.view']],
+        ['key' => 'categories',  'label' => 'Kategori Layanan', 'href' => 'pages/transport/categories/index.php',  'perms' => ['travel.view', 'rental.view', 'vehicles.view']],
         ['key' => 'regulations', 'label' => 'Peraturan Komisi', 'href' => 'pages/transport/regulations/index.php', 'perms' => ['travel.view', 'rental.view']],
     ]],
     ['key' => 'dispatch',   'section' => 'Operasional & Armada', 'label' => 'Kalender Operasional', 'icon' => 'calendar2-check', 'href' => 'pages/dispatch/calendar.php', 'perm' => 'dispatch.view'],
     ['key' => 'vehicles',   'section' => 'Operasional & Armada', 'label' => 'Kendaraan',    'icon' => 'truck', 'perm' => 'vehicles.view', 'sub' => [
         ['label' => 'Daftar Kendaraan',   'href' => 'pages/vehicles/index.php',            'perms' => 'vehicles.view'],
         ['label' => 'Merek Kendaraan',    'href' => 'pages/vehicles/brands/index.php',     'perms' => 'vehicles.view'],
-        ['label' => 'Kategori Kendaraan', 'href' => 'pages/vehicles/categories/index.php', 'perms' => 'vehicles.view'],
         ['label' => 'Model Unit',         'href' => 'pages/vehicles/models/index.php',     'perms' => 'vehicles.view'],
     ]],
 

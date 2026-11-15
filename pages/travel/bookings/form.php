@@ -386,10 +386,10 @@ require __DIR__ . '/../../../includes/header.php';
                         </div>
                         <div class="rnt-panel-body">
                             <div class="rnt-row">
-                                <label class="rnt-label">Kategori</label>
+                                <label class="rnt-label">Kategori Layanan</label>
                                 <div class="rnt-field">
-                                    <select class="form-select form-select-sm ts-select" name="category_vehicle_id" id="travel_category_select" data-ts-placeholder="-- Semua Kategori --">
-                                        <option value="">-- Semua Kategori --</option>
+                                    <select class="form-select form-select-sm ts-select" name="category_vehicle_id" id="travel_category_select" data-ts-placeholder="-- Semua Kategori Layanan --">
+                                        <option value="">-- Semua Kategori Layanan --</option>
                                         <?= select_options($cats, $in['category_vehicle_id']) ?>
                                     </select>
                                 </div>
@@ -400,8 +400,6 @@ require __DIR__ . '/../../../includes/header.php';
                                     <select class="form-select form-select-sm ts-select" name="vehicle_id" id="travel_vehicle_select"
                                         data-ts-url="<?= e(APP_URL) ?>/pages/vehicles/options.php"
                                         data-ts-company="<?= (int) $cid ?>"
-                                        data-ts-parent="#travel_category_select"
-                                        data-ts-param="category_id"
                                         data-ts-limit="30"
                                         data-ts-placeholder="-- Pilih Kendaraan (opsional) --">
                                         <option value="">-- Pilih Kendaraan (opsional) --</option>

@@ -376,7 +376,7 @@ if ($cur_veh_id > 0) {
         }
     }
 }
-$cur_category_id = (int) ($b['category_vehicle_id'] ?: ($cur_veh['category_vehicle_id'] ?? 0));
+$cur_category_id = (int) ($b['category_vehicle_id'] ?? 0);
 
 $crewEmpIds = array_values(array_unique(array_filter(array_map(static fn($cr) => (int) ($cr['employee_id'] ?? 0), $crew_rows))));
 $employees  = opts_employees((int) $b['company_id'], $crewEmpIds, 50);
@@ -589,10 +589,10 @@ require __DIR__ . '/../../../includes/header.php';
                         </div>
                         <div class="rnt-panel-body">
                             <div class="rnt-row">
-                                <div class="rnt-label">Kategori</div>
+                                <div class="rnt-label">Kategori Layanan</div>
                                 <div class="rnt-field">
-                                    <select class="form-select form-select-sm ts-select" name="category_vehicle_id" id="categoryVehicleSelect" form="rentalDetailForm" data-ts-placeholder="-- Semua Kategori --" <?= $canManage ? '' : 'disabled' ?>>
-                                        <option value="">-- Semua Kategori --</option>
+                                    <select class="form-select form-select-sm ts-select" name="category_vehicle_id" id="categoryVehicleSelect" form="rentalDetailForm" data-ts-placeholder="-- Semua Kategori Layanan --" <?= $canManage ? '' : 'disabled' ?>>
+                                        <option value="">-- Semua Kategori Layanan --</option>
                                         <?= select_options($cats, $cur_category_id) ?>
                                     </select>
                                 </div>
@@ -603,8 +603,6 @@ require __DIR__ . '/../../../includes/header.php';
                                     <select class="form-select form-select-sm ts-select" name="vehicle_id" id="vehicleSelect" form="rentalDetailForm"
                                         data-ts-url="<?= e(APP_URL) ?>/pages/vehicles/options.php"
                                         data-ts-company="<?= (int) $b['company_id'] ?>"
-                                        data-ts-parent="#categoryVehicleSelect"
-                                        data-ts-param="category_id"
                                         data-ts-limit="30"
                                         data-ts-placeholder="-- Pilih Kendaraan --"
                                         <?= $canManage ? '' : 'disabled' ?>>
@@ -1710,36 +1708,10 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     if (vehSelect) {
-        bindTsChange(vehSelect, (vId) => {
+        bindTsChange(vehSelect, () => {
             refreshVehiclePreview();
-            const vData = getVehicleMeta(String(vId || ''));
-            const curCat = catSelect ? (catSelect.tomselect ? String(catSelect.tomselect.getValue() || '') : String(catSelect.value || '')) : '';
-            if (vData && vData.category && catSelect && !curCat) {
-                setTsValueSilent(catSelect, String(vData.category));
-            }
         });
         refreshVehiclePreview();
-    }
-
-    if (catSelect && vehSelect) {
-        bindTsChange(catSelect, async (catId) => {
-            const curVal = vehSelect.tomselect ? String(vehSelect.tomselect.getValue() || '') : String(vehSelect.value || '');
-            const curOpt = getVehicleMeta(curVal);
-            const keepVal = (curVal && curOpt && (!catId || String(curOpt.category || '') === catId)) ? curVal : '';
-            try {
-                const u = `${appUrl}/pages/vehicles/options.php?company_id=<?= (int) $b['company_id'] ?>&limit=50`
-                        + (catId ? `&category_id=${encodeURIComponent(catId)}` : '');
-                const res = await fetch(u);
-                const data = await res.json();
-                if (keepVal && curOpt && !data.some(x => String(x.id) === keepVal)) {
-                    data.unshift(curOpt);
-                }
-                setTsOptions(vehSelect, data, keepVal, '-- Pilih Kendaraan --');
-            } catch (e) {
-                console.error('Gagal memuat kendaraan:', e);
-            }
-            refreshVehiclePreview();
-        });
     }
 
     // Cascading Provinsi -> Kota/Kab -> Kecamatan (Tom Select + Remote Search)

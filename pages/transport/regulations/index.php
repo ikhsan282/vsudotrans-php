@@ -184,7 +184,7 @@ require __DIR__ . '/../../../includes/header.php';
                 <div class="col-12 col-md-4">
                     <div class="input-group input-group-sm">
                         <span class="input-group-text bg-white text-muted"><i class="bi bi-search"></i></span>
-                        <input type="text" name="q" class="form-control" placeholder="Cari kategori kendaraan / catatan komisi..." value="<?= e($q) ?>">
+                        <input type="text" name="q" class="form-control" placeholder="Cari kategori layanan / catatan komisi..." value="<?= e($q) ?>">
                     </div>
                 </div>
                 <div class="col-6 col-md-3">
@@ -193,8 +193,8 @@ require __DIR__ . '/../../../includes/header.php';
                     </select>
                 </div>
                 <div class="col-6 col-md-3">
-                    <select name="category_vehicle_id" class="form-select form-select-sm" onchange="this.form.submit()" title="Pilih Kategori Kendaraan">
-                        <option value="0">Semua Kategori Kendaraan</option>
+                    <select name="category_vehicle_id" class="form-select form-select-sm" onchange="this.form.submit()" title="Pilih Kategori Layanan">
+                        <option value="0">Semua Kategori Layanan</option>
                         <?php foreach ($categories as $cv): ?>
                             <option value="<?= (int) $cv['id'] ?>" <?= ((int) $cv['id'] === $filter_category_id) ? 'selected' : '' ?>>
                                 <?= e($cv['label']) ?>
@@ -215,7 +215,7 @@ require __DIR__ . '/../../../includes/header.php';
                     <tr>
                         <th class="text-center" style="width: 52px;">#</th>
                         <th>Perusahaan</th>
-                        <th>Kategori Kendaraan</th>
+                        <th>Kategori Layanan</th>
                         <th class="text-center">Trip</th>
                         <th>Masa Berlaku</th>
                         <th>Rincian Komisi &amp; Premi</th>

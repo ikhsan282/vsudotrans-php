@@ -192,7 +192,7 @@ function opts_categories(int $company_id, array $include_ids = [], int $limit = 
 function opts_vehicles(int $company_id, array $include_ids = [], int $limit = 50): array
 {
     $limit = max(1, min(200, $limit));
-    $st = db()->prepare("SELECT v.id, v.category_vehicle_id,
+    $st = db()->prepare("SELECT v.id, v.vehicle_category,
             CONCAT_WS(' - ', bv.name, mu.name, v.vehicle_number, v.vehicle_color, v.seat) AS name
         FROM vehicles v
         LEFT JOIN brand_vehicles bv ON bv.id = v.brand_id
@@ -207,7 +207,7 @@ function opts_vehicles(int $company_id, array $include_ids = [], int $limit = 50
 
     return _merge_included_rows($rows, $include_ids, static function (array $ids) use ($company_id): array {
         $ph = implode(',', array_fill(0, count($ids), '?'));
-        $st2 = db()->prepare("SELECT v.id, v.category_vehicle_id,
+        $st2 = db()->prepare("SELECT v.id, v.vehicle_category,
                 CONCAT_WS(' - ', bv.name, mu.name, v.vehicle_number, v.vehicle_color, v.seat) AS name
             FROM vehicles v
             LEFT JOIN brand_vehicles bv ON bv.id = v.brand_id
@@ -235,15 +235,10 @@ function opts_vehicles_detailed(int $active_cid, array $company_ids, ?int $selec
     }
     $compIn = implode(',', $cids);
     $where = "v.is_active = 1 AND v.company_id IN ({$compIn})";
-    $types = '';
-    $params = [];
-    if ($category_id !== null && $category_id > 0) {
-        $where .= ' AND v.category_vehicle_id = ?';
-        $types .= 'i';
-        $params[] = $category_id;
-    }
-    $sql = "SELECT v.id, v.company_id, v.category_vehicle_id, v.vehicle_number, v.vehicle_color, v.seat,
-                   bv.name AS brand_name, mu.name AS model_name, cv.name AS category_name, c.code AS company_code,
+    $sql = "SELECT v.id, v.company_id, v.vehicle_category, v.category_vehicle_id, v.vehicle_number, v.vehicle_color, v.seat,
+                   bv.name AS brand_name, mu.name AS model_name,
+                   COALESCE(NULLIF(v.vehicle_category, ''), cv.name, '') AS category_name,
+                   c.code AS company_code,
                    CONCAT(v.vehicle_number, ' - ', COALESCE(bv.name, ''), ' ', COALESCE(mu.name, ''),
                           IF(v.vehicle_color != '' OR v.seat > 0, CONCAT(' (', CONCAT_WS(', ', NULLIF(v.vehicle_color, ''), IF(v.seat > 0, CONCAT(v.seat, ' Kursi'), NULL)), ')'), ''),
                           IF(v.company_id != ?, CONCAT(' [', c.code, ']'), '')) AS name
@@ -256,7 +251,7 @@ function opts_vehicles_detailed(int $active_cid, array $company_ids, ?int $selec
              ORDER BY v.vehicle_number ASC
              LIMIT ?";
     $st = db()->prepare($sql);
-    $st->bind_param('i' . $types . 'i', $active_cid, ...[...$params, $limit]);
+    $st->bind_param('ii', $active_cid, $limit);
     $st->execute();
     $rows = $st->get_result()->fetch_all(MYSQLI_ASSOC);
     $st->close();
@@ -265,8 +260,10 @@ function opts_vehicles_detailed(int $active_cid, array $company_ids, ?int $selec
     return _merge_included_rows($rows, $inc, static function (array $ids) use ($active_cid, $compIn): array {
         $ph = implode(',', array_fill(0, count($ids), '?'));
         $st2 = db()->prepare(
-            "SELECT v.id, v.company_id, v.category_vehicle_id, v.vehicle_number, v.vehicle_color, v.seat,
-                    bv.name AS brand_name, mu.name AS model_name, cv.name AS category_name, c.code AS company_code,
+            "SELECT v.id, v.company_id, v.vehicle_category, v.category_vehicle_id, v.vehicle_number, v.vehicle_color, v.seat,
+                    bv.name AS brand_name, mu.name AS model_name,
+                    COALESCE(NULLIF(v.vehicle_category, ''), cv.name, '') AS category_name,
+                    c.code AS company_code,
                     CONCAT(v.vehicle_number, ' - ', COALESCE(bv.name, ''), ' ', COALESCE(mu.name, ''),
                            IF(v.vehicle_color != '' OR v.seat > 0, CONCAT(' (', CONCAT_WS(', ', NULLIF(v.vehicle_color, ''), IF(v.seat > 0, CONCAT(v.seat, ' Kursi'), NULL)), ')'), ''),
                            IF(v.company_id != ?, CONCAT(' [', c.code, ']'), '')) AS name
@@ -966,15 +963,12 @@ function validate_booking_company_scope(
         throw new InvalidArgumentException('Penumpang tambahan tidak valid untuk perusahaan ini.');
     }
     if ($category_vehicle_id !== null && $category_vehicle_id > 0 && !fetch_company_ref_row('category_vehicles', $category_vehicle_id, $company_id)) {
-        throw new InvalidArgumentException('Kategori kendaraan tidak valid untuk perusahaan ini.');
+        throw new InvalidArgumentException('Kategori layanan tidak valid untuk perusahaan ini.');
     }
     if ($vehicle_id !== null && $vehicle_id > 0) {
         $vehRow = fetch_company_ref_row('vehicles', $vehicle_id, $company_id);
         if (!$vehRow) {
             throw new InvalidArgumentException('Kendaraan tidak valid atau bukan milik perusahaan yang dipilih.');
-        }
-        if (($category_vehicle_id === null || $category_vehicle_id <= 0) && !empty($vehRow['category_vehicle_id'])) {
-            $category_vehicle_id = (int) $vehRow['category_vehicle_id'];
         }
     }
     if ($crew_employee_ids && !verify_company_ids_belong('employees', $crew_employee_ids, $company_id)) {
@@ -1269,7 +1263,7 @@ function rute_tariffs_for_rute(int $rute_id, int $company_id = 0): array
     return $map[$rute_id] ?? [];
 }
 
-/** Normalisasi dan validasi list tarif kategori kendaraan dari form rute. */
+/** Normalisasi dan validasi list tarif kategori layanan dari form rute. */
 function rute_tariffs_normalize_and_validate(array $rows, int $company_id): array
 {
     $clean = [];
@@ -1290,13 +1284,13 @@ function rute_tariffs_normalize_and_validate(array $rows, int $company_id): arra
             continue;
         }
         if ($catId <= 0) {
-            throw new InvalidArgumentException('Setiap baris tarif wajib memilih kategori kendaraan.');
+            throw new InvalidArgumentException('Setiap baris tarif wajib memilih kategori layanan.');
         }
         if (!fetch_company_ref_row('category_vehicles', $catId, $company_id)) {
-            throw new InvalidArgumentException('Kategori kendaraan tidak valid atau bukan milik perusahaan yang dipilih.');
+            throw new InvalidArgumentException('Kategori layanan tidak valid atau bukan milik perusahaan yang dipilih.');
         }
         if (isset($seenCats[$catId])) {
-            throw new InvalidArgumentException('Kategori kendaraan tidak boleh duplikat pada rute yang sama.');
+            throw new InvalidArgumentException('Kategori layanan tidak boleh duplikat pada rute yang sama.');
         }
         $seenCats[$catId] = true;
 
@@ -1333,12 +1327,12 @@ function rute_tariffs_normalize_and_validate(array $rows, int $company_id): arra
     }
 
     if (!$clean) {
-        throw new InvalidArgumentException('Tambahkan minimal 1 kategori kendaraan beserta harga tiketnya.');
+        throw new InvalidArgumentException('Tambahkan minimal 1 kategori layanan beserta harga tiketnya.');
     }
     return $clean;
 }
 
-/** Sinkronkan daftar tarif per kategori kendaraan pada `rute_tariffs` untuk rute terkait. */
+/** Sinkronkan daftar tarif per kategori layanan pada `rute_tariffs` untuk rute terkait. */
 function rute_tariffs_sync(int $rute_id, int $company_id, array $tariffs, ?string $user = null): void
 {
     if ($rute_id <= 0 || $company_id <= 0) {
@@ -1937,17 +1931,22 @@ function rute_schedule_sync(int $rute_id, int $company_id, array $slots, ?string
     }
 }
 
-/** Ambil saran kapasitas kursi terbanyak/tertinggi dari master armada (`vehicles.seat`) per kategori kendaraan. */
+/** Ambil saran kapasitas kursi terbanyak/tertinggi dari master armada (`vehicles.seat`) per kategori layanan/legacy. */
 function rute_category_default_seats(int $company_id): array
 {
     if ($company_id <= 0) {
         return [];
     }
     $st = db()->prepare(
-        'SELECT category_vehicle_id, MAX(seat) AS max_seat
-           FROM vehicles
-          WHERE company_id = ? AND is_active = 1 AND seat > 0
-          GROUP BY category_vehicle_id'
+        "SELECT cv.id AS category_vehicle_id, MAX(v.seat) AS max_seat
+           FROM vehicles v
+           JOIN category_vehicles cv
+             ON cv.company_id = v.company_id
+            AND cv.is_active = 1
+            AND (v.category_vehicle_id = cv.id
+                 OR (v.vehicle_category <> '' AND LOWER(cv.name COLLATE utf8mb4_unicode_ci) = LOWER(v.vehicle_category COLLATE utf8mb4_unicode_ci)))
+          WHERE v.company_id = ? AND v.is_active = 1 AND v.seat > 0
+          GROUP BY cv.id"
     );
     $st->bind_param('i', $company_id);
     $st->execute();

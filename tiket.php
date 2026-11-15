@@ -35,7 +35,8 @@ if (booking_doc_valid($no)) {
             pp1.name AS prov_from, pp2.name AS prov_to,
             p.name AS passenger_name, p.phone_number AS passenger_phone,
             v.vehicle_number, bv.name AS brand_name, mu.name AS model_name,
-            CONCAT_WS(' ', bv.name, mu.name) AS vehicle_name, cv.name AS category_name
+            CONCAT_WS(' ', bv.name, mu.name) AS vehicle_name,
+            COALESCE(NULLIF(v.vehicle_category, ''), cv.name, '') AS category_name
         FROM {$table} b
         JOIN companies c ON c.id = b.company_id
         LEFT JOIN invoices i ON i.document_number = b.document_number
@@ -49,7 +50,7 @@ if (booking_doc_valid($no)) {
         LEFT JOIN vehicles v ON v.id = b.vehicle_id
         LEFT JOIN brand_vehicles bv ON bv.id = v.brand_id
         LEFT JOIN model_units mu ON mu.id = v.model_unit_id
-        LEFT JOIN category_vehicles cv ON cv.id = COALESCE(b.category_vehicle_id, v.category_vehicle_id)
+        LEFT JOIN category_vehicles cv ON cv.id = b.category_vehicle_id
         WHERE b.document_number = ?";
     if ($companyCode !== '') {
         $sql .= ' AND c.code = ? LIMIT 1';

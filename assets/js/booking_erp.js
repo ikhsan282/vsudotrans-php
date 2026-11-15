@@ -106,7 +106,7 @@
         if (targetSel && window.history && window.history.replaceState) {
           try {
             window.history.replaceState(null, '', targetSel);
-          } catch (e) {}
+          } catch (e) { }
         }
         if (typeof cfg.onTabShown === 'function') {
           cfg.onTabShown(shortName, targetSel);
@@ -161,12 +161,12 @@
 
       if (vehSel.tomselect && vehSel.tomselect.options && vehSel.tomselect.options[val]) {
         const m = vehSel.tomselect.options[val];
-        plate   = m.plate || '';
-        brand   = m.brand || '';
-        model   = m.model || '';
+        plate = m.plate || '';
+        brand = m.brand || '';
+        model = m.model || '';
         catName = m.category_name || '';
-        color   = m.color || '';
-        seat    = parseInt(m.seat || 0, 10) || 0;
+        color = m.color || '';
+        seat = parseInt(m.seat || 0, 10) || 0;
         if (!plate && m.text) {
           plate = String(m.text).split(' - ')[0] || m.text;
         }
@@ -174,12 +174,12 @@
         const opt = vehSel.options[vehSel.selectedIndex];
         if (opt) {
           const d = opt.dataset || {};
-          plate   = d.plate || (opt.textContent || '').split(' - ')[0] || '';
-          brand   = d.brand || '';
-          model   = d.model || '';
+          plate = d.plate || (opt.textContent || '').split(' - ')[0] || '';
+          brand = d.brand || '';
+          model = d.model || '';
           catName = d.categoryName || '';
-          color   = d.color || '';
-          seat    = parseInt(d.seat || 0, 10) || 0;
+          color = d.color || '';
+          seat = parseInt(d.seat || 0, 10) || 0;
         }
       }
 
@@ -289,7 +289,7 @@
         btnRem.addEventListener('click', function () {
           if (!tbody) return;
           if (empSel && empSel.tomselect) {
-            try { empSel.tomselect.destroy(); } catch (e) {}
+            try { empSel.tomselect.destroy(); } catch (e) { }
           }
           tr.remove();
           recalcCrewTotals();
@@ -348,7 +348,7 @@
       const trip = typeof cfg.getTrip === 'function' ? (parseFloat(cfg.getTrip() || '1') || 1) : 1;
 
       if (!regId && !catId) {
-        setRegMsg('text-warning fw-semibold', 'Pilih Kategori Kendaraan di tab Detail terlebih dahulu.');
+        setRegMsg('text-warning fw-semibold', 'Pilih Kategori Layanan di tab Detail terlebih dahulu.');
         return;
       }
 
@@ -978,10 +978,10 @@
           if (prov) fd.append('provider', prov);
 
           const fetchOpts = { method: 'POST', body: fd };
-        if (typeof AbortSignal !== 'undefined' && typeof AbortSignal.timeout === 'function') {
-          fetchOpts.signal = AbortSignal.timeout(10000);
-        }
-        const res = await fetch(cfg.appUrl + '/pages/rental/bookings/qris_ajax.php', fetchOpts);
+          if (typeof AbortSignal !== 'undefined' && typeof AbortSignal.timeout === 'function') {
+            fetchOpts.signal = AbortSignal.timeout(10000);
+          }
+          const res = await fetch(cfg.appUrl + '/pages/rental/bookings/qris_ajax.php', fetchOpts);
           const data = await res.json();
           if (!res.ok || !data || !data.ok) {
             throw new Error((data && data.error) || 'Gagal membuat transaksi QRIS.');
@@ -1096,9 +1096,9 @@
       }
       setTimeout(function () {
         if (el.tomselect) {
-          try { el.tomselect.focus(); } catch (e) {}
+          try { el.tomselect.focus(); } catch (e) { }
         } else if (typeof el.focus === 'function') {
-          try { el.focus(); } catch (e) {}
+          try { el.focus(); } catch (e) { }
         }
       }, 60);
     }
@@ -1149,23 +1149,10 @@
   function initCategoryVehicleFilter(opts) {
     const cfg = opts || {};
     const catEl = cfg.categorySelectEl;
-    const vehEl = cfg.vehicleSelectEl;
-    if (!catEl || !vehEl) return;
+    if (!catEl) return;
 
-    catEl.addEventListener('change', async function () {
-      const catVal = getFieldVal(catEl);
-      if (typeof window.setTsOptions === 'function') {
-        try {
-          const qs = new URLSearchParams({
-            company_id: String(cfg.companyId || 0),
-            category_id: String(catVal || ''),
-            limit: '50'
-          });
-          const res = await fetch((cfg.appUrl || '') + '/pages/vehicles/options.php?' + qs.toString());
-          const data = await res.json();
-          window.setTsOptions(vehEl, data, '', cfg.placeholder || '-- Pilih Kendaraan --');
-        } catch (e) {}
-      }
+    // Kategori Layanan tidak mengunci pilihan fisik kendaraan; tetap picu onChanged (regulasi/tarif).
+    catEl.addEventListener('change', function () {
       if (typeof cfg.onChanged === 'function') cfg.onChanged();
     });
   }
@@ -1216,7 +1203,7 @@
         const res = await fetch((cfg.appUrl || '') + '/pages/masters/cities/options.php?' + qs);
         const data = await res.json();
         window.setTsOptions(cityEl, data, '', '-- Pilih Kota/Kab --');
-      } catch (e) {}
+      } catch (e) { }
     }
 
     async function reloadDistricts() {
@@ -1230,7 +1217,7 @@
         const res = await fetch((cfg.appUrl || '') + '/pages/masters/districts/options.php?limit=100&city_id=' + encodeURIComponent(cityVal));
         const data = await res.json();
         window.setTsOptions(distEl, data, '', '-- Pilih Kecamatan --');
-      } catch (e) {}
+      } catch (e) { }
     }
 
     if (provEl) {
@@ -1466,7 +1453,7 @@
           if (seq !== routeReqSeq) return;
           renderEstimate(matched, forceApply);
         })
-        .catch(function () {});
+        .catch(function () { });
     }
 
     if (pDistEl) pDistEl.addEventListener('change', function () { lookup(false); });
@@ -1494,7 +1481,7 @@
       e.preventDefault();
       const alertEl = cfg.alertId ? document.getElementById(cfg.alertId) : null;
       const btnSave = cfg.saveBtnId ? document.getElementById(cfg.saveBtnId) : null;
-      const nameEl  = cfg.nameInputId ? document.getElementById(cfg.nameInputId) : null;
+      const nameEl = cfg.nameInputId ? document.getElementById(cfg.nameInputId) : null;
       const phoneEl = cfg.phoneInputId ? document.getElementById(cfg.phoneInputId) : null;
       const emailEl = cfg.emailInputId ? document.getElementById(cfg.emailInputId) : null;
 
@@ -1521,7 +1508,7 @@
         const optObj = { value: String(pd.id), id: pd.id, text: pd.label || pd.name };
 
         const primSel = cfg.primarySelectEl;
-        const extSel  = cfg.extraSelectEl;
+        const extSel = cfg.extraSelectEl;
         [primSel, extSel].forEach(function (sel) {
           if (!sel) return;
           if (sel.tomselect) {

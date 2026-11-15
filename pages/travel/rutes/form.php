@@ -547,17 +547,17 @@ require __DIR__ . '/../../../includes/header.php';
                         <div class="rnt-panel mb-0">
                             <div class="rnt-panel-header">
                                 <div class="d-flex flex-wrap align-items-center gap-2">
-                                    <span>Daftar Tarif &amp; Kapasitas per Kategori Kendaraan</span>
+                                    <span>Daftar Tarif &amp; Kapasitas per Kategori Layanan</span>
                                     <span id="ruteTariffCountBadge" class="badge bg-primary-subtle text-primary border"><?= count($tariffRows) ?> Kategori</span>
                                 </div>
                                 <div class="d-flex flex-wrap align-items-center gap-3">
                                     <?php if (can('vehicles.manage')): ?>
-                                        <a href="<?= e(APP_URL) ?>/pages/vehicles/categories/index.php" target="_blank" class="rnt-header-action">
+                                        <a href="<?= e(APP_URL) ?>/pages/transport/categories/index.php" target="_blank" class="rnt-header-action">
                                             <i class="bi bi-tags me-1"></i>Kelola Kategori
                                         </a>
                                     <?php endif; ?>
                                     <?php if ($cats): ?>
-                                        <button type="button" id="btnFillAllTariffCats" class="rnt-header-action" title="Tambahkan seluruh kategori kendaraan aktif yang belum ada di tabel">
+                                        <button type="button" id="btnFillAllTariffCats" class="rnt-header-action" title="Tambahkan seluruh kategori layanan aktif yang belum ada di tabel">
                                             <i class="bi bi-list-check me-1"></i>Isi Semua Kategori
                                         </button>
                                     <?php endif; ?>
@@ -568,7 +568,7 @@ require __DIR__ . '/../../../includes/header.php';
                             </div>
                             <div class="rnt-panel-body p-0">
                                 <div id="ruteTariffDupWarn" class="alert alert-warning py-1 px-3 small mb-0 rounded-0 border-0 border-bottom d-none" role="alert" data-no-autodismiss="1">
-                                    <i class="bi bi-exclamation-triangle me-1"></i><span id="ruteTariffDupMsg">Terdapat kategori kendaraan ganda. Kategori kendaraan yang sama tidak boleh dipilih lebih dari 1 kali per rute.</span>
+                                    <i class="bi bi-exclamation-triangle me-1"></i><span id="ruteTariffDupMsg">Terdapat kategori layanan ganda. Kategori layanan yang sama tidak boleh dipilih lebih dari 1 kali per rute.</span>
                                 </div>
                                 <div id="ruteTariffPriceWarn" class="alert alert-danger py-1 px-3 small mb-0 rounded-0 border-0 border-bottom d-none" role="alert" data-no-autodismiss="1">
                                     <i class="bi bi-exclamation-octagon me-1"></i><span id="ruteTariffPriceMsg"></span>
@@ -578,7 +578,7 @@ require __DIR__ . '/../../../includes/header.php';
                                         <thead class="table-light small">
                                             <tr>
                                                 <th class="text-center" style="width:38px;">No</th>
-                                                <th style="min-width:210px;">Kategori Kendaraan <span class="text-danger">*</span></th>
+                                                <th style="min-width:210px;">Kategori Layanan <span class="text-danger">*</span></th>
                                                 <th class="text-end" style="min-width:125px;" title="Harga paling mentok, batas bawah tidak boleh ditawar lagi">Harga Min (Rp)</th>
                                                 <th class="text-end" style="min-width:135px;" title="Harga normal ke customer & acuan otomatis form pemesanan">Harga Standar (Rp) <span class="text-danger">*</span></th>
                                                 <th class="text-end" style="min-width:125px;" title="Harga tertinggi di rute & kategori ini">Harga Maks (Rp)</th>
@@ -808,8 +808,8 @@ require __DIR__ . '/../../../includes/header.php';
     <tr class="rute-tariff-row">
         <td class="text-center text-muted small tariff-row-num">1</td>
         <td>
-            <select class="form-select form-select-sm tariff-cat-select" name="tariff_category_vehicle_id[]" required data-ts-dropdown-parent="body" data-ts-placeholder="-- Pilih Kategori --">
-                <option value="">-- Pilih Kategori --</option>
+            <select class="form-select form-select-sm tariff-cat-select" name="tariff_category_vehicle_id[]" required data-ts-dropdown-parent="body" data-ts-placeholder="-- Pilih Kategori Layanan --">
+                <option value="">-- Pilih Kategori Layanan --</option>
                 <?= select_options($cats, '') ?>
             </select>
         </td>
@@ -1190,7 +1190,7 @@ document.addEventListener('DOMContentLoaded', function () {
         if (tariffBadge) tariffBadge.textContent = rows.length + ' Kategori';
         if (dupWarnEl) {
             if (state.hasDup) {
-                const msg = 'Kategori kendaraan tidak boleh ganda (' + state.dupNames.join(', ') + '). Pilih kategori berbeda di setiap baris.';
+                const msg = 'Kategori layanan tidak boleh ganda (' + state.dupNames.join(', ') + '). Pilih kategori berbeda di setiap baris.';
                 if (dupMsgEl) dupMsgEl.textContent = msg;
                 dupWarnEl.classList.remove('d-none');
             } else if (stickyDupMsg) {

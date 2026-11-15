@@ -249,7 +249,7 @@ require __DIR__ . '/../../../includes/header.php';
                 <div class="col-12 col-sm-6 col-md-4 rutes-filter-q">
                     <div class="input-group input-group-sm">
                         <span class="input-group-text bg-white text-muted"><i class="bi bi-search"></i></span>
-                        <input type="text" name="q" class="form-control" placeholder="Cari kode, rute, kota, kec..." value="<?= e($q) ?>">
+                        <input type="text" name="q" class="form-control" placeholder="Cari kode, rute, kota, kecamatan..." value="<?= e($q) ?>">
                     </div>
                 </div>
                 <div class="col-6 col-sm-6 col-md-4 rutes-filter-item">
@@ -258,8 +258,8 @@ require __DIR__ . '/../../../includes/header.php';
                     </select>
                 </div>
                 <div class="col-6 col-sm-6 col-md-4 rutes-filter-item">
-                    <select name="category_vehicle_id" class="form-select form-select-sm" onchange="this.form.submit()" title="Filter Kategori Kendaraan">
-                        <option value="">Semua Kategori Kendaraan</option>
+                    <select name="category_vehicle_id" class="form-select form-select-sm" onchange="this.form.submit()" title="Filter Kategori Layanan">
+                        <option value="">Semua Kategori Layanan</option>
                         <?php foreach ($catFilterOpts as $cv): ?>
                             <option value="<?= (int) $cv['id'] ?>" <?= ((int) $cv['id'] === $filter_category_id) ? 'selected' : '' ?>><?= e($cv['label']) ?></option>
                         <?php endforeach; ?>

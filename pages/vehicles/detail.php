@@ -14,7 +14,7 @@ if ($id === 0 && !$canManage) {
     exit;
 }
 
-$row = ['brand_id' => 0, 'model_unit_id' => 0, 'category_vehicle_id' => 0,
+$row = ['brand_id' => 0, 'model_unit_id' => 0, 'vehicle_category' => 'Mini Bus',
         'frame_number' => '', 'machine_number' => '', 'seat' => 0, 'production_year' => (int) date('Y'),
         'vehicle_color' => '', 'vehicle_number' => '', 'bpkb_number' => '', 'tax_due' => null,
         'stnk_due' => null, 'kir_due' => null, 'ownership' => 'Internal', 'note' => '',
@@ -51,7 +51,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $row = array_merge($row, [
         'brand_id'           => (int) ($_POST['brand_id'] ?? 0),
         'model_unit_id'      => (int) ($_POST['model_unit_id'] ?? 0),
-        'category_vehicle_id'=> (int) ($_POST['category_vehicle_id'] ?? 0),
+        'vehicle_category'   => $in('vehicle_category', 50),
         'frame_number'       => strtoupper($in('frame_number', 50)),
         'machine_number'     => strtoupper($in('machine_number', 50)),
         'vehicle_number'     => strtoupper(preg_replace('/\s+/', ' ', $in('vehicle_number', 15))),
@@ -105,13 +105,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $user = $_SESSION['username'] ?? null;
         try {
             if ($id > 0) {
-                $st = $db->prepare('UPDATE vehicles SET brand_id = ?, model_unit_id = ?, category_vehicle_id = ?,
+                $st = $db->prepare('UPDATE vehicles SET brand_id = ?, model_unit_id = ?, vehicle_category = ?,
                     frame_number = ?, machine_number = ?, seat = ?, production_year = ?, vehicle_color = ?, vehicle_number = ?,
                     bpkb_number = ?, tax_due = ?, stnk_due = ?, kir_due = ?, ownership = ?, note = ?,
                     photo_path = ?, stnk_doc_path = ?, kir_doc_path = ?, is_active = ?,
                     modified_user = ?, modified_date = NOW() WHERE id = ? AND company_id = ?');
-                $st->bind_param('iii' . 'ss' . 'ii' . 'sss' . 'sss' . 'ss' . 'sss' . 'i' . 's' . 'ii',
-                    $row['brand_id'], $row['model_unit_id'], $row['category_vehicle_id'],
+                $st->bind_param('iis' . 'ss' . 'ii' . 'sss' . 'sss' . 'ss' . 'sss' . 'i' . 's' . 'ii',
+                    $row['brand_id'], $row['model_unit_id'], $row['vehicle_category'],
                     $row['frame_number'], $row['machine_number'], $row['seat'], $row['production_year'],
                     $row['vehicle_color'], $row['vehicle_number'], $nul($row['bpkb_number']),
                     $row['tax_due'], $row['stnk_due'], $row['kir_due'], $row['ownership'], $nul($row['note']),
@@ -123,12 +123,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 flash('success', 'Kendaraan berhasil diperbarui.');
                 $savedId = $id;
             } else {
-                $st = $db->prepare('INSERT INTO vehicles (company_id, brand_id, model_unit_id, category_vehicle_id,
+                $st = $db->prepare('INSERT INTO vehicles (company_id, brand_id, model_unit_id, vehicle_category,
                     frame_number, machine_number, seat, production_year, vehicle_color, vehicle_number, bpkb_number,
                     tax_due, stnk_due, kir_due, ownership, note, photo_path, stnk_doc_path, kir_doc_path, is_active, created_user)
                     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)');
-                $st->bind_param('iiii' . 'ss' . 'ii' . 'ss' . 'ssssss' . 'sss' . 'i' . 's',
-                    $cid, $row['brand_id'], $row['model_unit_id'], $row['category_vehicle_id'],
+                $st->bind_param('iiis' . 'ss' . 'ii' . 'ss' . 'ssssss' . 'sss' . 'i' . 's',
+                    $cid, $row['brand_id'], $row['model_unit_id'], $row['vehicle_category'],
                     $row['frame_number'], $row['machine_number'], $row['seat'], $row['production_year'],
                     $row['vehicle_color'], $row['vehicle_number'], $nul($row['bpkb_number']),
                     $row['tax_due'], $row['stnk_due'], $row['kir_due'], $row['ownership'], $nul($row['note']),
@@ -151,7 +151,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 }
 
 $brands = vehicle_options($db, 'brand_vehicles', $cid, 0);
-$categories = vehicle_options($db, 'category_vehicles', $cid, (int) $row['category_vehicle_id']);
 $st = $db->prepare('SELECT m.id, m.name, b.name AS brand_name FROM model_units m JOIN brand_vehicles b ON b.id = m.brand_id
                     WHERE m.company_id = ? AND (m.is_active = 1 OR m.id = ?) ORDER BY b.name, m.name');
 $cur = (int) $row['model_unit_id'];
@@ -247,12 +246,12 @@ if ($canManage) {
                                             </div>
                                         </div>
                                         <div class="rnt-row">
-                                            <label class="rnt-label" for="category_vehicle_id">Kategori <span class="text-danger">*</span></label>
+                                            <label class="rnt-label" for="vehicle_category">Kategori Kendaraan <span class="text-danger">*</span></label>
                                             <div class="rnt-field">
-                                                <select class="form-select form-select-sm<?= $roCls ?>" id="category_vehicle_id" name="category_vehicle_id" required<?= $disAttr ?>>
-                                                    <option value="">— Pilih kategori —</option>
-                                                    <?php foreach ($categories as $c): ?>
-                                                        <option value="<?= (int) $c['id'] ?>" <?= (int) $c['id'] === (int) $row['category_vehicle_id'] ? 'selected' : '' ?>><?= e($c['name']) ?></option>
+                                                <select class="form-select form-select-sm<?= $roCls ?>" id="vehicle_category" name="vehicle_category" required<?= $disAttr ?>>
+                                                    <option value="">— Pilih kategori kendaraan —</option>
+                                                    <?php foreach (VEHICLE_CATEGORIES as $vcVal => $vcLabel): ?>
+                                                        <option value="<?= e($vcVal) ?>" <?= (string) ($row['vehicle_category'] ?? '') === $vcVal ? 'selected' : '' ?>><?= e($vcLabel) ?></option>
                                                     <?php endforeach; ?>
                                                 </select>
                                             </div>

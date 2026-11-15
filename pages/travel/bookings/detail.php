@@ -390,7 +390,8 @@ $displayVehId  = (int) ($b['vehicle_id'] ?? ($activeAssign['vehicle_id'] ?? 0));
 
 $cur_veh = null;
 if ($displayVehId > 0) {
-    $stVeh = $db->prepare("SELECT v.*, bv.name AS brand_name, mu.name AS model_name, cv.name AS category_name
+    $stVeh = $db->prepare("SELECT v.*, bv.name AS brand_name, mu.name AS model_name,
+            COALESCE(NULLIF(v.vehicle_category, ''), cv.name, '') AS category_name
         FROM vehicles v
         LEFT JOIN brand_vehicles bv ON bv.id = v.brand_id
         LEFT JOIN model_units mu ON mu.id = v.model_unit_id
@@ -402,7 +403,7 @@ if ($displayVehId > 0) {
     $stVeh->close();
 }
 
-$cur_category_id = (int) ($b['category_vehicle_id'] ?? ($cur_veh['category_vehicle_id'] ?? 0));
+$cur_category_id = (int) ($b['category_vehicle_id'] ?? 0);
 
 $branches   = opts_branches($booking_cid);
 $passengers = opts_passengers($booking_cid, $selected_p_ids, 50);
@@ -639,10 +640,10 @@ require __DIR__ . '/../../../includes/header.php';
                         </div>
                         <div class="rnt-panel-body">
                             <div class="rnt-row">
-                                <label class="rnt-label">Kategori</label>
+                                <label class="rnt-label">Kategori Layanan</label>
                                 <div class="rnt-field">
-                                    <select class="form-select form-select-sm ts-select" name="category_vehicle_id" id="categoryVehicleSelect" form="travelDetailForm" data-ts-placeholder="-- Semua Kategori --" <?= $canManage ? '' : 'disabled' ?>>
-                                        <option value="">-- Semua Kategori --</option>
+                                    <select class="form-select form-select-sm ts-select" name="category_vehicle_id" id="categoryVehicleSelect" form="travelDetailForm" data-ts-placeholder="-- Semua Kategori Layanan --" <?= $canManage ? '' : 'disabled' ?>>
+                                        <option value="">-- Semua Kategori Layanan --</option>
                                         <?= select_options($cats, $cur_category_id) ?>
                                     </select>
                                 </div>
@@ -653,8 +654,6 @@ require __DIR__ . '/../../../includes/header.php';
                                     <select class="form-select form-select-sm ts-select" name="vehicle_id" id="vehicleSelect" form="travelDetailForm"
                                         data-ts-url="<?= e(APP_URL) ?>/pages/vehicles/options.php"
                                         data-ts-company="<?= (int) $booking_cid ?>"
-                                        data-ts-parent="#categoryVehicleSelect"
-                                        data-ts-param="category_id"
                                         data-ts-limit="30"
                                         data-ts-placeholder="-- Pilih Kendaraan --"
                                         <?= $canManage ? '' : 'disabled' ?>>

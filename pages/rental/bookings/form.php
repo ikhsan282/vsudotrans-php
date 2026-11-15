@@ -531,10 +531,10 @@ require __DIR__ . '/../../../includes/header.php';
                             </div>
                             <div class="rnt-panel-body">
                                 <div class="rnt-row">
-                                    <label class="rnt-label">Kategori</label>
+                                    <label class="rnt-label">Kategori Layanan</label>
                                     <div class="rnt-field">
-                                        <select class="form-select form-select-sm ts-select" id="rental_category_select" name="category_vehicle_id" data-ts-placeholder="-- Semua Kategori Kendaraan --">
-                                            <option value="">-- Semua Kategori Kendaraan --</option>
+                                        <select class="form-select form-select-sm ts-select" id="rental_category_select" name="category_vehicle_id" data-ts-placeholder="-- Semua Kategori Layanan --">
+                                            <option value="">-- Semua Kategori Layanan --</option>
                                             <?= select_options($cats, $in['category_vehicle_id']) ?>
                                         </select>
                                     </div>
@@ -545,8 +545,6 @@ require __DIR__ . '/../../../includes/header.php';
                                         <select class="form-select form-select-sm ts-select" id="rental_vehicle_select" name="vehicle_id"
                                             data-ts-url="<?= e(APP_URL) ?>/pages/vehicles/options.php"
                                             data-ts-company="<?= (int) $cid ?>"
-                                            data-ts-parent="#rental_category_select"
-                                            data-ts-param="category_id"
                                             data-ts-limit="30"
                                             data-ts-placeholder="-- Pilih Unit Kendaraan --">
                                             <option value="">-- Pilih Unit Kendaraan --</option>
@@ -1305,31 +1303,8 @@ document.addEventListener('DOMContentLoaded', function () {
         }
     }
 
-    if (catSelect && vehSelect) {
-        bindTsChange(catSelect, function (cidVal) {
-            var curVal = vehSelect.tomselect ? String(vehSelect.tomselect.getValue() || '') : String(vehSelect.value || '');
-            var curOpt = vehSelect.tomselect ? vehSelect.tomselect.options[curVal] : null;
-            var keepVal = (curVal && curOpt && (!cidVal || String(curOpt.category || '') === cidVal)) ? curVal : '';
-            var u = '<?= e(APP_URL) ?>/pages/vehicles/options.php?company_id=<?= (int) $cid ?>&limit=50'
-                  + (cidVal ? '&category_id=' + encodeURIComponent(cidVal) : '');
-            fetch(u)
-                .then(function (r) { return r.json(); })
-                .then(function (data) {
-                    if (keepVal && curOpt && !data.some(function (x) { return String(x.id) === keepVal; })) {
-                        data.unshift(curOpt);
-                    }
-                    setTsOptions(vehSelect, data, keepVal, '-- Pilih Unit Kendaraan --');
-                    if (keepVal !== curVal) checkVehicleAvailability();
-                    updateRentalSeatWarn();
-                });
-        });
-
-        bindTsChange(vehSelect, function (vId) {
-            var vOpt = vehSelect.tomselect ? vehSelect.tomselect.options[String(vId)] : null;
-            var curCat = catSelect.tomselect ? String(catSelect.tomselect.getValue() || '') : String(catSelect.value || '');
-            if (vOpt && vOpt.category && !curCat) {
-                setTsValueSilent(catSelect, String(vOpt.category));
-            }
+    if (vehSelect) {
+        bindTsChange(vehSelect, function () {
             checkVehicleAvailability();
             updateRentalSeatWarn();
         });
@@ -1662,7 +1637,7 @@ document.addEventListener('DOMContentLoaded', function () {
         if (!catId) {
             if (regMsgEl) {
                 regMsgEl.className = 'small text-warning fw-semibold';
-                regMsgEl.textContent = 'Pilih Kategori Kendaraan terlebih dahulu pada tab Detail!';
+                regMsgEl.textContent = 'Pilih Kategori Layanan terlebih dahulu pada tab Detail!';
             }
             return;
         }

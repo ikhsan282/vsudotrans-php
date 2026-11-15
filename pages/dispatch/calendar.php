@@ -471,9 +471,14 @@ document.addEventListener('DOMContentLoaded', function () {
         if (paxChip) paxPhoneWrap.appendChild(paxChip);
 
         const vehEl = document.getElementById('calModalVehicle');
-        const vehLabel = [p.category_name, p.brand_name, p.vehicle_number].filter(Boolean).join(' · ');
+        const vehParts = [];
+        [p.category_name, p.vehicle_category, p.brand_name, p.vehicle_number].forEach(val => {
+            const s = String(val || '').trim();
+            if (s && !vehParts.some(x => x.toLowerCase() === s.toLowerCase())) vehParts.push(s);
+        });
+        const vehLabel = vehParts.join(' · ');
         vehEl.textContent = vehLabel || 'Armada belum ditentukan';
-        vehEl.className = (p.vehicle_number || p.brand_name || p.category_name)
+        vehEl.className = vehLabel
             ? 'fw-semibold ops-cal-tabular'
             : 'small text-body-secondary fst-italic';
         document.getElementById('calModalDriver').textContent = p.driver ? ('Sopir: ' + p.driver) : 'Sopir belum ditugaskan';
@@ -618,10 +623,14 @@ document.addEventListener('DOMContentLoaded', function () {
                 const stCls = statusBadgeClass[p.status] || 'badge bg-secondary';
                 const pmCls = payBadgeClass[p.payment_status] || 'badge bg-secondary';
                 const kindCls = p.kind === 'rental' ? 'badge bg-success' : 'badge bg-primary';
-                const listVeh = [p.category_name, p.brand_name, p.vehicle_number].filter(Boolean).join(' · ');
+                const listVeh = [p.vehicle_category, p.brand_name, p.vehicle_number]
+                    .map(v => String(v || '').trim())
+                    .filter((v, i, arr) => v && arr.findIndex(x => x.toLowerCase() === v.toLowerCase()) === i)
+                    .join(' · ');
                 const subBits = [
                     p.route_label && p.route_label !== '—' ? '<i class="bi bi-geo-alt me-1"></i>' + escHtml(p.route_label) : null,
-                    listVeh ? '<i class="bi bi-truck me-1"></i>' + escHtml(listVeh) : null,
+                    p.category_name ? '<i class="bi bi-tag me-1"></i>' + escHtml(p.category_name) : null,
+                    (p.vehicle_number || listVeh) ? '<i class="bi bi-truck me-1"></i>' + escHtml(listVeh) : '<span class="text-warning-emphasis"><i class="bi bi-exclamation-circle me-1"></i>Tanpa Mobil</span>',
                     p.driver ? '<i class="bi bi-person-badge me-1"></i>' + escHtml(p.driver) : '<span class="text-warning-emphasis"><i class="bi bi-exclamation-circle me-1"></i>Tanpa Sopir</span>',
                     p.period_label ? '<i class="bi bi-calendar-range me-1"></i>' + escHtml(p.period_label) : null
                 ].filter(Boolean);
@@ -644,7 +653,11 @@ document.addEventListener('DOMContentLoaded', function () {
             }
 
             if (viewType.startsWith('timeGrid') && !arg.event.allDay) {
-                const line2 = [p.category_code || p.category_name, p.vehicle_number, p.driver].filter(Boolean).join(' · ');
+                const vehText = p.vehicle_number
+                    ? [p.vehicle_category, p.vehicle_number].filter(Boolean).join(' · ')
+                    : 'Tanpa Mobil';
+                const drvText = p.driver || 'Tanpa Sopir';
+                const line2 = [vehText, drvText].join(' · ');
                 return {
                     html: '<div class="px-1 py-0 overflow-hidden">'
                         + '<div class="fc-vst-pill-inner">'
@@ -664,12 +677,13 @@ document.addEventListener('DOMContentLoaded', function () {
                 : '';
             const primaryText = p.passenger || '-';
             const routeShort = compactRouteLabel(p);
-            const catShort = p.category_code || p.category_name || '';
-            const row2Parts = [
-                catShort ? '<span class="fc-vst-plate">' + escHtml(catShort) + '</span>' : '',
-                p.vehicle_number ? '<span class="fc-vst-plate">' + escHtml(p.vehicle_number) + '</span>' : '',
-                p.driver ? escHtml(p.driver) : ''
-            ].filter(Boolean);
+            const row2Parts = p.vehicle_number
+                ? [
+                    p.vehicle_category ? '<span class="fc-vst-plate">' + escHtml(p.vehicle_category) + '</span>' : '',
+                    '<span class="fc-vst-plate">' + escHtml(p.vehicle_number) + '</span>'
+                ].filter(Boolean)
+                : ['<span class="fc-vst-plate">Tanpa Mobil</span>'];
+            row2Parts.push(escHtml(p.driver || 'Tanpa Sopir'));
             const row2Html = row2Parts.join(' · ');
 
             return {

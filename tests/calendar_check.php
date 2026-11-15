@@ -49,7 +49,8 @@ check(
     && str_contains($view, 'fc-vst-pill-route')
     && str_contains($view, 'fc-vst-plate')
     && str_contains($view, 'p.brand_name')
-    && str_contains($view, 'p.category_code')
+    && str_contains($view, 'Tanpa Mobil')
+    && str_contains($view, 'Tanpa Sopir')
     && str_contains($view, 'listPrimaryText'),
     'calendar events display passenger + short route on row 1 and vehicle category + plate + driver on row 2'
 );

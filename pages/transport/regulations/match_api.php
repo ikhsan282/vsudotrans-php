@@ -36,7 +36,7 @@ try {
         }
         assert_company_access($companyId);
         if ($categoryId <= 0) {
-            echo json_encode(['ok' => false, 'error' => 'Pilih Kategori Kendaraan terlebih dahulu pada tab Detail.']);
+            echo json_encode(['ok' => false, 'error' => 'Pilih Kategori Layanan terlebih dahulu pada tab Detail.']);
             exit;
         }
         $reg = regulation_match($companyId, $categoryId, $trip, $startDate);
@@ -45,7 +45,7 @@ try {
     if (!$reg) {
         echo json_encode([
             'ok'    => false,
-            'error' => 'Belum ada Peraturan Komisi Karyawan untuk Kategori Kendaraan dan Perusahaan ini.',
+            'error' => 'Belum ada Peraturan Komisi Karyawan untuk Kategori Layanan dan Perusahaan ini.',
         ]);
         exit;
     }
