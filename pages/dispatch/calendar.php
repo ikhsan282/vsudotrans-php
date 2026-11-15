@@ -106,7 +106,9 @@ $eventsUrl = APP_URL . '/pages/dispatch/calendar_events.php';
                     <select id="cal-filter-vehicle"
                             class="form-select form-select-sm ts-select"
                             data-ts-placeholder="Semua Armada"
-                            <?php if ($cidInt > 0): ?>data-ts-url="<?= e(APP_URL) ?>/pages/vehicles/options.php" data-ts-limit="50" data-ts-company="<?= (int) $cidInt ?>"<?php endif; ?>
+                            data-ts-url="<?= e(APP_URL) ?>/pages/vehicles/options.php"
+                            data-ts-limit="50"
+                            <?php if ($cidInt > 0): ?>data-ts-company="<?= (int) $cidInt ?>"<?php endif; ?>
                             aria-label="Filter armada">
                         <option value="">Semua Armada</option>
                         <?php foreach ($vehicleOptions as $veh): ?>

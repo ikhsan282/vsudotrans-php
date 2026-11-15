@@ -84,14 +84,15 @@ if (in_array($export_format, ['xlsx', 'pdf'], true)) {
         $types,
         $params,
         static function (array $r) use ($isPdf, $dueMap): array {
-            $statusLbl = $r['is_active'] ? 'Aktif' : 'Nonaktif';
+            $statusLbl  = $r['is_active'] ? 'Aktif' : 'Nonaktif';
+            $brandModel = format_vehicle_brand_model($r['brand_name'] ?? '', $r['model_name'] ?? '');
             if ($isPdf) {
                 $nopol = $r['vehicle_number'] . "\n" . ($r['ownership'] ?: '-') . ' · ' . ($r['production_year'] ?: '-');
-                $unit  = trim($r['brand_name'] . ' ' . $r['model_name']) . (!empty($r['vehicle_color']) ? "\n" . $r['vehicle_color'] : '');
+                $unit  = $brandModel . (!empty($r['vehicle_color']) ? "\n" . $r['vehicle_color'] : '');
                 $docs  = [];
                 foreach ($dueMap as $field => $lbl) {
                     $val = $r[$field] ?? '';
-                    $docs[] = $lbl . ': ' . ($val ? date('d/m/y', strtotime($val)) : '-');
+                    $docs[] = $lbl . ': ' . ($val ? date('d-M-Y', strtotime($val)) : '-');
                 }
                 return [
                     $nopol,
@@ -103,14 +104,14 @@ if (in_array($export_format, ['xlsx', 'pdf'], true)) {
             }
             return [
                 $r['vehicle_number'],
-                $r['brand_name'] . ' ' . $r['model_name'],
+                $brandModel,
                 $r['category_name'],
                 $r['production_year'] ?: '-',
                 $r['vehicle_color'] ?: '-',
                 $r['ownership'] ?: '-',
-                $r['tax_due'] ?: '-',
-                $r['stnk_due'] ?: '-',
-                $r['kir_due'] ?: '-',
+                !empty($r['tax_due']) ? date('d-M-Y', strtotime($r['tax_due'])) : '-',
+                !empty($r['stnk_due']) ? date('d-M-Y', strtotime($r['stnk_due'])) : '-',
+                !empty($r['kir_due']) ? date('d-M-Y', strtotime($r['kir_due'])) : '-',
                 $statusLbl,
             ];
         },
@@ -260,7 +261,7 @@ require __DIR__ . '/../../includes/header.php';
                             <div class="small text-muted"><?= e($r['ownership']) ?> · <?= e($r['production_year']) ?><?= ($show_company_col && !empty($r['company_code'])) ? ' · ' . e($r['company_code']) : '' ?></div>
                         </td>
                         <td>
-                            <div><?= e($r['brand_name']) ?> <?= e($r['model_name']) ?></div>
+                            <div><?= e(format_vehicle_brand_model($r['brand_name'] ?? '', $r['model_name'] ?? '')) ?></div>
                             <small class="text-muted"><?= e($r['vehicle_color']) ?></small>
                         </td>
                         <td><?= e($r['category_name']) ?></td>
@@ -278,20 +279,21 @@ require __DIR__ . '/../../includes/header.php';
                                     $cls = $diff < 0 ? 'bg-danger' : ($diff <= 30 ? 'bg-warning text-dark' : 'bg-success');
                                 ?>
                                     <span class="badge <?= $cls ?>" title="<?= e($val) ?> (<?= $diff < 0 ? 'lewat ' . abs($diff) . ' hari' : $diff . ' hari lagi' ?>)">
-                                        <?= e($lbl) ?>: <?= e($d->format('d/m/y')) ?>
+                                        <?= e($lbl) ?>: <?= e($d->format('d-M-Y')) ?>
                                     </span>
                                 <?php endforeach; ?>
                             </div>
                         </td>
                         <td class="text-end text-nowrap">
-                            <a class="btn btn-sm btn-outline-secondary" href="<?= e(APP_URL) ?>/pages/vehicles/detail.php?id=<?= (int) $r['id'] ?>" title="Detail" aria-label="Detail"><i class="bi bi-eye"></i></a>
                             <?php if (can('vehicles.manage')): ?>
-                                <a class="btn btn-sm btn-outline-primary" href="<?= e(APP_URL) ?>/pages/vehicles/detail.php?id=<?= (int) $r['id'] ?>" title="Ubah" aria-label="Ubah"><i class="bi bi-pencil-square"></i></a>
+                                <a class="btn btn-sm btn-outline-primary" href="<?= e(APP_URL) ?>/pages/vehicles/detail.php?id=<?= (int) $r['id'] ?>" title="Detail / Ubah" aria-label="Detail / Ubah"><i class="bi bi-pencil-square"></i></a>
                                 <form method="post" action="<?= e(APP_URL) ?>/pages/vehicles/delete.php" class="d-inline" onsubmit="return confirm('Hapus kendaraan ini?')">
                                     <?= csrf_field() ?>
                                     <input type="hidden" name="id" value="<?= (int) $r['id'] ?>">
                                     <button type="submit" class="btn btn-sm btn-outline-danger" title="Hapus" aria-label="Hapus"><i class="bi bi-trash"></i></button>
                                 </form>
+                            <?php else: ?>
+                                <a class="btn btn-sm btn-outline-secondary" href="<?= e(APP_URL) ?>/pages/vehicles/detail.php?id=<?= (int) $r['id'] ?>" title="Detail" aria-label="Detail"><i class="bi bi-eye"></i></a>
                             <?php endif; ?>
                         </td>
                     </tr>

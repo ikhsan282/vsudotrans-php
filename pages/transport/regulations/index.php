@@ -63,10 +63,10 @@ if ($filter_category_id > 0) {
 }
 
 if ($q !== '') {
-    $where .= ' AND (r.note LIKE ? OR cv.name LIKE ? OR cv.code LIKE ?)';
-    $types .= 'sss';
+    $where .= ' AND (r.note LIKE ? OR cv.name LIKE ? OR cv.code LIKE ? OR EXISTS (SELECT 1 FROM rental_car_regulation_employee_details rd WHERE rd.regulation_id = r.id AND rd.employee_type LIKE ?))';
+    $types .= 'ssss';
     $q_like = '%' . $q . '%';
-    array_push($params, $q_like, $q_like, $q_like);
+    array_push($params, $q_like, $q_like, $q_like, $q_like);
 }
 
 $st = db()->prepare("SELECT COUNT(*)
@@ -141,13 +141,7 @@ if ($filter_company_id > 0) {
 }
 
 $header_actions = [];
-if (can('travel.view')) {
-    $header_actions[] = ['label' => 'Pemesanan Tiket', 'icon' => 'bus-front', 'href' => 'pages/travel/bookings/index.php', 'class' => 'btn btn-outline-secondary btn-sm'];
-}
-if (can('rental.view')) {
-    $header_actions[] = ['label' => 'Pemesanan Sewa', 'icon' => 'car-front', 'href' => 'pages/rental/bookings/index.php', 'class' => 'btn btn-outline-secondary btn-sm'];
-}
-if ($canManage) {
+if ($canManage && $active_cid !== null) {
     $header_actions[] = ['label' => 'Tambah Peraturan Komisi', 'icon' => 'plus-lg', 'href' => 'pages/transport/regulations/form.php', 'class' => 'btn btn-primary btn-sm'];
 }
 
@@ -184,7 +178,7 @@ require __DIR__ . '/../../../includes/header.php';
                 <div class="col-12 col-md-4">
                     <div class="input-group input-group-sm">
                         <span class="input-group-text bg-white text-muted"><i class="bi bi-search"></i></span>
-                        <input type="text" name="q" class="form-control" placeholder="Cari kategori layanan / catatan komisi..." value="<?= e($q) ?>">
+                        <input type="text" name="q" class="form-control" placeholder="Cari kategori layanan / jenis komisi / catatan..." value="<?= e($q) ?>">
                     </div>
                 </div>
                 <div class="col-6 col-md-3">

@@ -66,11 +66,17 @@ function booking_unique_doc(string $type, int $company_id, ?string $date = null)
         "SELECT COALESCE(MAX(seq), 1000) AS max_seq FROM (
             SELECT CAST(LEFT(document_number, 4) AS UNSIGNED) AS seq
               FROM rental_car_bookings
-             WHERE company_id = ? AND document_number REGEXP '^[0-9]{12}$'
+             WHERE company_id = ?
+               AND CHAR_LENGTH(document_number) = 12
+               AND document_number BETWEEN '000000000000' AND '999999999999'
+               AND document_number REGEXP '^[0-9]{12}$'
             UNION ALL
             SELECT CAST(LEFT(document_number, 4) AS UNSIGNED) AS seq
               FROM travel_ticket_bookings
-             WHERE company_id = ? AND document_number REGEXP '^[0-9]{12}$'
+             WHERE company_id = ?
+               AND CHAR_LENGTH(document_number) = 12
+               AND document_number BETWEEN '000000000000' AND '999999999999'
+               AND document_number REGEXP '^[0-9]{12}$'
         ) u"
     );
     $stMax->bind_param('ii', $company_id, $company_id);

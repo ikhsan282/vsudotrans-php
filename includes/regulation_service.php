@@ -12,7 +12,9 @@ const REGULATION_CALC_TYPES = ['Persentase', 'Tetap'];
 function regulation_ensure_schema(): void
 {
     static $checked = false;
-    if ($checked) {
+    $hasSess = session_status() === PHP_SESSION_ACTIVE;
+    if ($checked || ($hasSess && !empty($_SESSION['_vst_schema_reg_v1']))) {
+        $checked = true;
         return;
     }
     $checked = true;
@@ -33,6 +35,9 @@ function regulation_ensure_schema(): void
                 REFERENCES `rental_car_regulation_employees` (`id`) ON DELETE CASCADE
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci"
     );
+    if ($hasSess) {
+        $_SESSION['_vst_schema_reg_v1'] = 1;
+    }
 }
 
 /** Format nilai detail peraturan (mis. 13.5% atau 150.000). */

@@ -233,6 +233,7 @@ function opts_vehicles_detailed(int $active_cid, array $company_ids, ?int $selec
     if (!$cids) {
         return [];
     }
+    $catId = ($category_id !== null && $category_id > 0) ? $category_id : 0;
     $compIn = implode(',', $cids);
     $where = "v.is_active = 1 AND v.company_id IN ({$compIn})";
     $sql = "SELECT v.id, v.company_id, v.vehicle_category, v.category_vehicle_id, v.vehicle_number, v.vehicle_color, v.seat,
@@ -248,10 +249,10 @@ function opts_vehicles_detailed(int $active_cid, array $company_ids, ?int $selec
               LEFT JOIN category_vehicles cv ON cv.id = v.category_vehicle_id
               LEFT JOIN companies c ON c.id = v.company_id
              WHERE {$where}
-             ORDER BY v.vehicle_number ASC
+             ORDER BY (CASE WHEN ? > 0 AND v.category_vehicle_id = ? THEN 0 ELSE 1 END) ASC, v.vehicle_number ASC
              LIMIT ?";
     $st = db()->prepare($sql);
-    $st->bind_param('ii', $active_cid, $limit);
+    $st->bind_param('iiii', $active_cid, $catId, $catId, $limit);
     $st->execute();
     $rows = $st->get_result()->fetch_all(MYSQLI_ASSOC);
     $st->close();
@@ -586,13 +587,18 @@ function booking_grid_search_sql(string $booking_type, string $q_like): array
             SELECT 1 FROM trip_assignments ta
             JOIN employees ex ON ex.id = ta.employee_id
             WHERE ta.booking_type = '{$bt}' AND ta.booking_id = b.id
-              AND ta.ended_at IS NULL AND ta.employee_id > 0
+              AND ta.employee_id > 0
+              AND (ta.ended_at IS NULL OR ta.id = (
+                  SELECT t3.id FROM trip_assignments t3
+                  WHERE t3.booking_type = '{$bt}' AND t3.booking_id = b.id AND t3.employee_id > 0
+                  ORDER BY (t3.ended_at IS NULL) DESC, t3.id DESC LIMIT 1
+              ))
               AND (ex.name LIKE ? OR ex.phone_number LIKE ?)
         )
         OR (
             NOT EXISTS (
                 SELECT 1 FROM trip_assignments ta2
-                WHERE ta2.booking_type = '{$bt}' AND ta2.booking_id = b.id AND ta2.ended_at IS NULL AND ta2.employee_id > 0
+                WHERE ta2.booking_type = '{$bt}' AND ta2.booking_id = b.id AND ta2.employee_id > 0
             )
             AND EXISTS (
                 SELECT 1 FROM booking_cost_lines bcl
@@ -647,16 +653,39 @@ function booking_driver_summaries(string $booking_type, array $booking_ids): arr
     $grouped = [];
     $ph      = implode(',', array_fill(0, count($ids), '?'));
     $st      = db()->prepare(
-        "SELECT ta.booking_id, e.id AS employee_id, e.name AS driver_name, COALESCE(e.phone_number, '') AS driver_phone
+        "SELECT ta.booking_id, ta.ended_at, e.id AS employee_id, e.name AS driver_name, COALESCE(e.phone_number, '') AS driver_phone
            FROM trip_assignments ta
            JOIN employees e ON e.id = ta.employee_id
-          WHERE ta.booking_type = ? AND ta.ended_at IS NULL AND ta.employee_id > 0 AND ta.booking_id IN ({$ph})
-          ORDER BY ta.id ASC"
+          WHERE ta.booking_type = ? AND ta.employee_id > 0 AND ta.booking_id IN ({$ph})
+          ORDER BY (ta.ended_at IS NULL) DESC,
+                   CASE WHEN ta.ended_at IS NULL THEN ta.id ELSE -ta.id END ASC"
     );
     $st->bind_param('s' . str_repeat('i', count($ids)), $booking_type, ...$ids);
     $st->execute();
-    $append($grouped, $st->get_result()->fetch_all(MYSQLI_ASSOC));
+    $taRows = $st->get_result()->fetch_all(MYSQLI_ASSOC);
     $st->close();
+
+    $hasActiveTa = [];
+    foreach ($taRows as $tr) {
+        $bid = (int) $tr['booking_id'];
+        if ($tr['ended_at'] === null) {
+            $hasActiveTa[$bid] = true;
+        }
+    }
+    $filteredTaRows = [];
+    $seenDoneBid    = [];
+    foreach ($taRows as $tr) {
+        $bid = (int) $tr['booking_id'];
+        if (!empty($hasActiveTa[$bid])) {
+            if ($tr['ended_at'] === null) {
+                $filteredTaRows[] = $tr;
+            }
+        } elseif (empty($seenDoneBid[$bid])) {
+            $seenDoneBid[$bid] = true;
+            $filteredTaRows[]  = $tr;
+        }
+    }
+    $append($grouped, $filteredTaRows);
 
     $fallbackIds = array_values(array_diff($ids, array_keys($grouped)));
     if ($fallbackIds) {
@@ -767,6 +796,11 @@ function booking_driver_export_sql(string $booking_type, bool $isPdf): string
            FROM trip_assignments ta
            JOIN employees ex ON ex.id = ta.employee_id
           WHERE ta.booking_type = '{$bt}' AND ta.booking_id = b.id AND ta.ended_at IS NULL AND ta.employee_id > 0),
+        (SELECT {$fmt}
+           FROM trip_assignments ta
+           JOIN employees ex ON ex.id = ta.employee_id
+          WHERE ta.booking_type = '{$bt}' AND ta.booking_id = b.id AND ta.employee_id > 0
+          ORDER BY ta.id DESC LIMIT 1),
         (SELECT GROUP_CONCAT({$fmt} ORDER BY (CASE WHEN LOWER(bcl.cost_type) = 'sopir' THEN 0 WHEN LOWER(bcl.cost_type) = 'sopir 1' THEN 1 ELSE 2 END), bcl.id ASC SEPARATOR {$sepSql})
            FROM booking_cost_lines bcl
            JOIN employees ex ON ex.id = bcl.employee_id
@@ -793,7 +827,7 @@ function booking_export_headers(bool $isPdf, string $originLabel, string $destLa
 function booking_export_row(array $r, bool $isPdf, string $dateLabel): array
 {
     $plate      = trim((string) ($r['vehicle_number'] ?? ''));
-    $brandModel = trim(implode(' - ', array_filter([$r['brand_name'] ?? '', $r['model_name'] ?? ''])));
+    $brandModel = format_vehicle_brand_model($r['brand_name'] ?? '', $r['model_name'] ?? '', ' - ');
     $catName    = trim((string) ($r['category_name'] ?? ''));
 
     if ($isPdf) {
@@ -1085,7 +1119,9 @@ const RUTE_GRID_MAX_VISIBLE_SLOTS = 7;
 function rute_ensure_schema(): void
 {
     static $checked = false;
-    if ($checked) {
+    $hasSess = session_status() === PHP_SESSION_ACTIVE;
+    if ($checked || ($hasSess && !empty($_SESSION['_vst_schema_rute_v1']))) {
+        $checked = true;
         return;
     }
     $checked = true;
@@ -1115,13 +1151,18 @@ function rute_ensure_schema(): void
     rute_tariff_ensure_schema();
     rute_schedule_ensure_schema();
     rute_radius_ensure_schema();
+    if ($hasSess) {
+        $_SESSION['_vst_schema_rute_v1'] = 1;
+    }
 }
 
 /** Pastikan tabel `rute_tariffs` (tarif & kapasitas per kategori kendaraan per rute) tersedia dan ter-backfill. */
 function rute_tariff_ensure_schema(): void
 {
     static $checked = false;
-    if ($checked) {
+    $hasSess = session_status() === PHP_SESSION_ACTIVE;
+    if ($checked || ($hasSess && !empty($_SESSION['_vst_schema_rute_tariff_v1']))) {
+        $checked = true;
         return;
     }
     $checked = true;
@@ -1178,6 +1219,9 @@ function rute_tariff_ensure_schema(): void
           WHERE r.`category_vehicle_id` > 0
             AND NOT EXISTS (SELECT 1 FROM `rute_tariffs` rt WHERE rt.`rute_id` = r.`id`)"
     );
+    if ($hasSess) {
+        $_SESSION['_vst_schema_rute_tariff_v1'] = 1;
+    }
 }
 
 /** Parse nominal Rupiah bertanda agar input negatif tetap terdeteksi validasi. */
@@ -1497,7 +1541,9 @@ function rute_format_radius_summary(float $freeKm, float $maxKm, float $extraPer
 function rute_radius_ensure_schema(): void
 {
     static $checked = false;
-    if ($checked) {
+    $hasSess = session_status() === PHP_SESSION_ACTIVE;
+    if ($checked || ($hasSess && !empty($_SESSION['_vst_schema_rute_radius_v1']))) {
+        $checked = true;
         return;
     }
     $checked = true;
@@ -1525,6 +1571,9 @@ function rute_radius_ensure_schema(): void
             CONSTRAINT `fk_rute_radius_district` FOREIGN KEY (`district_id`) REFERENCES `districts` (`id`) ON DELETE RESTRICT
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci"
     );
+    if ($hasSess) {
+        $_SESSION['_vst_schema_rute_radius_v1'] = 1;
+    }
 }
 
 /** Ambil peta [rute_id => ['pickup' => [...], 'delivery' => [...]]] dari `rute_radius_districts`. */
@@ -1807,7 +1856,9 @@ function rute_find_district_radius_extra(array $districts, int $district_id): ar
 function rute_schedule_ensure_schema(): void
 {
     static $checked = false;
-    if ($checked) {
+    $hasSess = session_status() === PHP_SESSION_ACTIVE;
+    if ($checked || ($hasSess && !empty($_SESSION['_vst_schema_rute_sched_v1']))) {
+        $checked = true;
         return;
     }
     $checked = true;
@@ -1828,6 +1879,9 @@ function rute_schedule_ensure_schema(): void
             CONSTRAINT `fk_rute_schedules_rute` FOREIGN KEY (`rute_id`) REFERENCES `rutes` (`id`) ON DELETE CASCADE
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci"
     );
+    if ($hasSess) {
+        $_SESSION['_vst_schema_rute_sched_v1'] = 1;
+    }
 }
 
 /** Pengelompokan periode jam keberangkatan ENUM rute untuk tampilan form. */

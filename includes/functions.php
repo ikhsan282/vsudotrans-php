@@ -631,6 +631,22 @@ function ui_filter_actions(
     return $html;
 }
 
+/**
+ * Gabungkan merek dan model unit kendaraan tanpa menduplikasi merek jika nama model sudah diawali merek.
+ */
+function format_vehicle_brand_model(?string $brand, ?string $model, string $sep = ' '): string
+{
+    $b = trim((string) $brand);
+    $m = trim((string) $model);
+    if ($b !== '' && $m !== '' && stripos($m, $b) === 0) {
+        return $m;
+    }
+    if ($b !== '' && $m !== '') {
+        return $b . $sep . $m;
+    }
+    return $b !== '' ? $b : $m;
+}
+
 require_once __DIR__ . '/grid_export.php';
 
 

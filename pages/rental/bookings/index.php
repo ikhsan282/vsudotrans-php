@@ -33,8 +33,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['act'] ?? '') === 'delete')
 // Parameter Filter
 $q          = trim((string) ($_GET['q'] ?? ''));
 $status     = trim((string) ($_GET['status'] ?? ''));
-$start_date = trim((string) ($_GET['start_date'] ?? ''));
-$end_date   = trim((string) ($_GET['end_date'] ?? ''));
+$start_date = parse_valid_ymd($_GET['start_date'] ?? null) ?? '';
+$end_date   = parse_valid_ymd($_GET['end_date'] ?? null) ?? '';
 
 // Filter Perusahaan (Company)
 if (isset($_GET['company_id'])) {
@@ -95,10 +95,8 @@ if ($status !== '') {
 }
 
 // Hitung Total Data
-$st = db()->prepare("SELECT COUNT(*) FROM rental_car_bookings b
-                     JOIN companies c ON c.id = b.company_id
-                     JOIN passengers p ON p.id = b.passenger_id
-                     WHERE {$where}");
+$countJoin = $q !== '' ? 'JOIN passengers p ON p.id = b.passenger_id' : '';
+$st = db()->prepare("SELECT COUNT(*) FROM rental_car_bookings b {$countJoin} WHERE {$where}");
 if ($types !== '') {
     $st->bind_param($types, ...$params);
 }
@@ -307,7 +305,7 @@ require __DIR__ . '/../../../includes/header.php';
                 <tbody>
                 <?php foreach ($rows as $idx => $r): 
                     $plate = trim((string) ($r['vehicle_number'] ?? ''));
-                    $brand_model = trim(implode(' - ', array_filter([$r['brand_name'] ?? '', $r['model_name'] ?? ''])));
+                    $brand_model = format_vehicle_brand_model($r['brand_name'] ?? '', $r['model_name'] ?? '', ' - ');
                     $jam = !empty($r['time']) ? substr($r['time'], 0, 5) : '-';
                     $tgl_mulai = !empty($r['start_date']) ? date('d-M-Y', strtotime($r['start_date'])) : '-';
                     $tgl_selesai = !empty($r['end_date']) ? date('d-M-Y', strtotime($r['end_date'])) : '';
@@ -355,11 +353,8 @@ require __DIR__ . '/../../../includes/header.php';
                         <td class="text-end fw-semibold text-nowrap text-success booking-amount-cell"><?= e(format_nominal((float) $r['total_payment'])) ?></td>
                         <td class="text-center"><?= status_badge($r['status']) ?></td>
                         <td class="text-center text-nowrap">
-                            <a class="btn btn-sm btn-outline-secondary" href="<?= e(APP_URL) ?>/pages/rental/bookings/detail.php?id=<?= (int) $r['id'] ?>" title="Lihat Detail">
-                                <i class="bi bi-eye"></i>
-                            </a>
                             <?php if (can('rental.manage')): ?>
-                                <a class="btn btn-sm btn-outline-primary" href="<?= e(APP_URL) ?>/pages/rental/bookings/detail.php?id=<?= (int) $r['id'] ?>" title="Ubah Pemesanan">
+                                <a class="btn btn-sm btn-outline-primary" href="<?= e(APP_URL) ?>/pages/rental/bookings/detail.php?id=<?= (int) $r['id'] ?>" title="Detail / Ubah Pemesanan">
                                     <i class="bi bi-pencil-square"></i>
                                 </a>
                                 <form method="post" action="" class="d-inline" onsubmit="return confirm('Yakin ingin menghapus permanen booking <?= e($r['document_number']) ?> beserta invoice dan riwayat pembayarannya?');">
@@ -371,6 +366,10 @@ require __DIR__ . '/../../../includes/header.php';
                                         <i class="bi bi-trash"></i>
                                     </button>
                                 </form>
+                            <?php else: ?>
+                                <a class="btn btn-sm btn-outline-secondary" href="<?= e(APP_URL) ?>/pages/rental/bookings/detail.php?id=<?= (int) $r['id'] ?>" title="Lihat Detail">
+                                    <i class="bi bi-eye"></i>
+                                </a>
                             <?php endif; ?>
                         </td>
                     </tr>

@@ -70,7 +70,7 @@ if (mb_strlen($q) > 80) {
  *
  * @return array{sql:string, types:string, params:array<int,int|string>}
  */
-$buildBranchFilter = static function (string $bookingType) use ($vehicleId, $driverId, $q): array {
+$buildBranchFilter = static function (string $bookingType) use ($vehicleId, $driverId, $statusFilter, $hideCancelled, $q): array {
     $sql = '';
     $types = '';
     $params = [];
@@ -84,6 +84,14 @@ $buildBranchFilter = static function (string $bookingType) use ($vehicleId, $dri
         $sql .= " AND (ta.employee_id = ? OR EXISTS (SELECT 1 FROM trip_assignments taf WHERE taf.booking_type = '{$bookingType}' AND taf.booking_id = b.id AND taf.employee_id = ?) OR EXISTS (SELECT 1 FROM booking_cost_lines bclf WHERE bclf.booking_type = '{$bookingType}' AND bclf.booking_id = b.id AND bclf.employee_id = ? AND bclf.cost_type <> 'payment' AND (LOWER(bclf.cost_type) LIKE 'sopir%' OR LOWER(bclf.cost_type) LIKE 'driver%')))";
         $types .= 'iii';
         array_push($params, $driverId, $driverId, $driverId);
+    }
+    $statusSubq = "COALESCE((SELECT h.to_status FROM booking_status_history h WHERE h.booking_type = '{$bookingType}' AND h.booking_id = b.id ORDER BY h.id DESC LIMIT 1), 'draft')";
+    if ($statusFilter !== '') {
+        $sql .= " AND {$statusSubq} = ?";
+        $types .= 's';
+        $params[] = $statusFilter;
+    } elseif ($hideCancelled) {
+        $sql .= " AND {$statusSubq} <> 'cancelled'";
     }
     if ($q !== '') {
         $like = '%' . addcslashes($q, '%_\\') . '%';
@@ -135,7 +143,7 @@ $sql = "SELECT 'travel' AS kind, b.id, b.company_id, comp.code AS company_code, 
                NULL AS ends_on, NULL AS ends_at,
                b.date AS raw_start_date, b.date AS raw_end_date, 0 AS trip_days,
                p.name AS passenger, COALESCE(p.phone_number, '') AS passenger_phone,
-               COALESCE((SELECT COUNT(*) FROM booking_passengers bp WHERE bp.booking_type='travel' AND bp.booking_id=b.id AND bp.is_primary=0), 0) AS extra_pax,
+               0 AS extra_pax,
                COALESCE((SELECT h.to_status FROM booking_status_history h WHERE h.booking_type='travel' AND h.booking_id=b.id ORDER BY h.id DESC LIMIT 1), 'draft') AS status,
                v.id AS vehicle_id, COALESCE(v.vehicle_number, '') AS vehicle_number,
                COALESCE(v.vehicle_category, '') AS vehicle_category,
@@ -167,7 +175,7 @@ $sql = "SELECT 'travel' AS kind, b.id, b.company_id, comp.code AS company_code, 
                DATE_ADD(b.end_date, INTERVAL 1 DAY) AS ends_on, NULL AS ends_at,
                b.start_date AS raw_start_date, b.end_date AS raw_end_date, COALESCE(b.trip, 0) AS trip_days,
                p.name AS passenger, COALESCE(p.phone_number, '') AS passenger_phone,
-               COALESCE((SELECT COUNT(*) FROM booking_passengers bp WHERE bp.booking_type='rental' AND bp.booking_id=b.id AND bp.is_primary=0), 0) AS extra_pax,
+               0 AS extra_pax,
                COALESCE((SELECT h.to_status FROM booking_status_history h WHERE h.booking_type='rental' AND h.booking_id=b.id ORDER BY h.id DESC LIMIT 1), 'draft') AS status,
                v.id AS vehicle_id, COALESCE(v.vehicle_number, '') AS vehicle_number,
                COALESCE(v.vehicle_category, '') AS vehicle_category,
@@ -210,16 +218,23 @@ $st->execute();
 $rows = $st->get_result()->fetch_all(MYSQLI_ASSOC);
 $st->close();
 
-// Fallback kru sopir dari biaya booking bila belum punya baris trip_assignments
+// Fallback kru sopir dari biaya booking & jumlah penumpang tambahan (batch)
 $missingDrivers = ['travel' => [], 'rental' => []];
+$byKindIds = ['travel' => [], 'rental' => []];
 foreach ($rows as $row) {
+    $bid = (int) $row['id'];
+    $byKindIds[$row['kind']][] = $bid;
     if ((int) ($row['driver_id'] ?? 0) === 0) {
-        $missingDrivers[$row['kind']][] = (int) $row['id'];
+        $missingDrivers[$row['kind']][] = $bid;
     }
 }
 $driverFallbacks = [
     'travel' => $missingDrivers['travel'] ? booking_driver_summaries('travel', $missingDrivers['travel']) : [],
     'rental' => $missingDrivers['rental'] ? booking_driver_summaries('rental', $missingDrivers['rental']) : [],
+];
+$extraPaxMap = [
+    'travel' => $byKindIds['travel'] ? booking_extra_passenger_counts('travel', $byKindIds['travel']) : [],
+    'rental' => $byKindIds['rental'] ? booking_extra_passenger_counts('rental', $byKindIds['rental']) : [],
 ];
 
 $multiCompany = $companyId === null;
@@ -279,7 +294,7 @@ foreach ($rows as $row) {
 
     $invTotal = (float) ($row['invoice_total'] ?? $row['total_price'] ?? 0);
     $paidTotal = (float) ($row['total_payment'] ?? 0);
-    $balanceAmount = $status === 'cancelled' ? 0.0 : max(0.0, (float) $row['total_price'] - $paidTotal);
+    $balanceAmount = $status === 'cancelled' ? 0.0 : max(0.0, $invTotal - $paidTotal);
     $payStatus = ($status === 'cancelled' || ($row['invoice_status'] ?? '') === 'cancelled')
         ? 'cancelled'
         : invoice_pay_status(['total' => $invTotal, 'paid_total' => $paidTotal, 'status' => ($row['invoice_status'] ?: 'issued')]);
@@ -294,7 +309,7 @@ foreach ($rows as $row) {
     $categoryName = trim((string) ($row['category_name'] ?? ''));
     $driverName = trim((string) ($row['driver'] ?? ''));
     $passengerName = trim((string) $row['passenger']);
-    $extraPax = (int) ($row['extra_pax'] ?? 0);
+    $extraPax = (int) ($extraPaxMap[$kind][$id] ?? $row['extra_pax'] ?? 0);
 
     if ($kind === 'rental' && $plate !== '') {
         $titleParts = [$kindLabel . ' · ' . $plate, $passengerName];
@@ -378,10 +393,10 @@ foreach ($rows as $row) {
             'starts_at'          => $timeShort,
             'trip_days'          => $tripDays,
             'period_label'       => $periodLabel,
-            'total_price'        => (float) $row['total_price'],
+            'total_price'        => $invTotal,
             'total_payment'      => $paidTotal,
             'balance_amount'     => $balanceAmount,
-            'total_price_fmt'    => rupiah((float) $row['total_price']),
+            'total_price_fmt'    => rupiah($invTotal),
             'total_payment_fmt'  => rupiah($paidTotal),
             'balance_fmt'        => rupiah($balanceAmount),
             'note'               => trim((string) ($row['note'] ?? '')),

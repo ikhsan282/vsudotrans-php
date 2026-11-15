@@ -28,12 +28,15 @@ if ($reqCid > 0 && (is_super_admin() || in_array($reqCid, $allowed, true))) {
     $cid = $reqCid;
 } elseif ($activeCid > 0) {
     $cid = $activeCid;
+} elseif (is_super_admin()) {
+    $cid = 0;
 } else {
     echo '[]';
     exit;
 }
 
 $displayCid = $cid;
+$catId      = max(0, (int) ($_GET['category_id'] ?? 0));
 $q          = trim((string) ($_GET['q'] ?? ''));
 $limit      = max(1, min(50, (int) ($_GET['limit'] ?? 30)));
 $db         = db();
@@ -67,15 +70,21 @@ $append = static function (array $batch) use (&$rows, &$seen, $limit): void {
     }
 };
 
-$runQuery = static function (string $extraWhere, string $extraTypes, array $extraParams, int $lim) use ($db, $baseSelect, $displayCid, $cid, $append): void {
+$runQuery = static function (string $extraWhere, string $extraTypes, array $extraParams, int $lim) use ($db, $baseSelect, $displayCid, $cid, $catId, $append): void {
+    $compCond = $cid > 0 ? ' AND v.company_id = ?' : '';
     $st = $db->prepare(
         "{$baseSelect}
-         WHERE v.is_active = 1 AND v.company_id = ?{$extraWhere}
-         ORDER BY v.vehicle_number ASC
+         WHERE v.is_active = 1{$compCond}{$extraWhere}
+         ORDER BY (CASE WHEN ? > 0 AND v.category_vehicle_id = ? THEN 0 ELSE 1 END) ASC, v.vehicle_number ASC
          LIMIT ?"
     );
-    $types  = 'ii' . $extraTypes . 'i';
-    $params = array_merge([$displayCid, $cid], $extraParams, [$lim]);
+    if ($cid > 0) {
+        $types  = 'ii' . $extraTypes . 'iii';
+        $params = array_merge([$displayCid, $cid], $extraParams, [$catId, $catId, $lim]);
+    } else {
+        $types  = 'i' . $extraTypes . 'iii';
+        $params = array_merge([$displayCid], $extraParams, [$catId, $catId, $lim]);
+    }
     $st->bind_param($types, ...$params);
     $st->execute();
     $append($st->get_result()->fetch_all(MYSQLI_ASSOC));

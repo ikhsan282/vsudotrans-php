@@ -32,15 +32,8 @@ $active_cid = active_company_id();
 
 $q          = trim((string) ($_GET['q'] ?? ''));
 $status     = trim((string) ($_GET['status'] ?? ''));
-$start_date = trim((string) ($_GET['start_date'] ?? ''));
-$end_date   = trim((string) ($_GET['end_date'] ?? ''));
-
-if ($start_date !== '' && !preg_match('/^\d{4}-\d{2}-\d{2}$/', $start_date)) {
-    $start_date = '';
-}
-if ($end_date !== '' && !preg_match('/^\d{4}-\d{2}-\d{2}$/', $end_date)) {
-    $end_date = '';
-}
+$start_date = parse_valid_ymd($_GET['start_date'] ?? null) ?? '';
+$end_date   = parse_valid_ymd($_GET['end_date'] ?? null) ?? '';
 
 if (isset($_GET['company_id'])) {
     $filter_company_id = $_GET['company_id'] !== '' ? (int) $_GET['company_id'] : 0;
@@ -90,10 +83,8 @@ if ($status !== '') {
     $params[] = $status;
 }
 
-$st = db()->prepare("SELECT COUNT(*) FROM travel_ticket_bookings b
-                     JOIN companies c ON c.id = b.company_id
-                     JOIN passengers p ON p.id = b.passenger_id
-                     WHERE {$where}");
+$countJoin = $q !== '' ? 'JOIN passengers p ON p.id = b.passenger_id' : '';
+$st = db()->prepare("SELECT COUNT(*) FROM travel_ticket_bookings b {$countJoin} WHERE {$where}");
 if ($types !== '') {
     $st->bind_param($types, ...$params);
 }
@@ -272,7 +263,7 @@ require __DIR__ . '/../../../includes/header.php';
                 <tbody>
                 <?php foreach ($rows as $idx => $r):
                     $plate = trim((string) ($r['vehicle_number'] ?? ''));
-                    $brand_model = trim(implode(' - ', array_filter([$r['brand_name'] ?? '', $r['model_name'] ?? ''])));
+                    $brand_model = format_vehicle_brand_model($r['brand_name'] ?? '', $r['model_name'] ?? '', ' - ');
                     $jam = !empty($r['time']) ? substr($r['time'], 0, 5) : '-';
                     $tgl = !empty($r['date']) ? date('d-M-Y', strtotime($r['date'])) : '-';
                     $exCnt = $extraCounts[(int) $r['id']] ?? 0;
@@ -313,11 +304,8 @@ require __DIR__ . '/../../../includes/header.php';
                         <td class="text-end fw-semibold text-nowrap text-success booking-amount-cell"><?= e(format_nominal((float) $r['total_payment'])) ?></td>
                         <td class="text-center"><?= status_badge($r['status']) ?></td>
                         <td class="text-center text-nowrap">
-                            <a class="btn btn-sm btn-outline-secondary" href="<?= e(APP_URL) ?>/pages/travel/bookings/detail.php?id=<?= (int) $r['id'] ?>" title="Lihat Detail">
-                                <i class="bi bi-eye"></i>
-                            </a>
                             <?php if (can('travel.manage')): ?>
-                                <a class="btn btn-sm btn-outline-primary" href="<?= e(APP_URL) ?>/pages/travel/bookings/detail.php?id=<?= (int) $r['id'] ?>" title="Ubah Pemesanan">
+                                <a class="btn btn-sm btn-outline-primary" href="<?= e(APP_URL) ?>/pages/travel/bookings/detail.php?id=<?= (int) $r['id'] ?>" title="Detail / Ubah Pemesanan">
                                     <i class="bi bi-pencil-square"></i>
                                 </a>
                                 <form method="post" class="d-inline" onsubmit="return confirm('Hapus pemesanan <?= e($r['document_number']) ?>?');">
@@ -328,6 +316,10 @@ require __DIR__ . '/../../../includes/header.php';
                                         <i class="bi bi-trash"></i>
                                     </button>
                                 </form>
+                            <?php else: ?>
+                                <a class="btn btn-sm btn-outline-secondary" href="<?= e(APP_URL) ?>/pages/travel/bookings/detail.php?id=<?= (int) $r['id'] ?>" title="Lihat Detail">
+                                    <i class="bi bi-eye"></i>
+                                </a>
                             <?php endif; ?>
                         </td>
                     </tr>
