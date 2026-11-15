@@ -256,6 +256,7 @@ function master_tables(): array
                 mf_blob('qr_blob_path', 'Gambar QR (opsional)', ['module' => 'finance', 'sub' => 'qris', 'max_mb' => 2]),
                 ['col' => 'instructions', 'label' => 'Instruksi Pembayaran', 'type' => 'textarea', 'max' => 2000, 'required' => false, 'nullable' => true],
                 ['col' => 'sort_order', 'label' => 'Urutan', 'type' => 'number', 'int' => true, 'required' => false],
+                ['col' => 'is_cash', 'label' => 'Masuk Kas Tunai (centang = Kas, kosong = Bank)', 'type' => 'checkbox'],
                 mf_active(),
                 mf_note(),
             ],

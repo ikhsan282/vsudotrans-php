@@ -9,6 +9,9 @@ require_permission('finance.view');
 require_once __DIR__ . '/../_cash_query.php';
 
 $f = cash_filter($_GET);
+if (is_super_admin()) {
+    $f['company_id'] = (int) company_filter_scope('t.company_id')['filter_company_id'];
+}
 $fmt = (string) ($_GET['format'] ?? 'xlsx');
 $fmt = in_array($fmt, ['csv', 'xlsx', 'pdf', 'html'], true) ? $fmt : 'xlsx';
 $sub = 'Periode ' . $f['from'] . ' s/d ' . $f['to'];

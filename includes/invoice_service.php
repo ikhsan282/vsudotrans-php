@@ -13,6 +13,7 @@
  */
 
 require_once __DIR__ . '/booking_service.php';
+require_once __DIR__ . '/finance_sync.php';
 
 /** Definisi status pembayaran dari total vs subtotal+tax. */
 function invoice_pay_status(array $inv): string
@@ -80,7 +81,7 @@ function invoice_add_payment(int $invoice_id, int $company_id, float $amount, ?i
     $db->begin_transaction();
     try {
         // Kunci invoice + cek tenant.
-        $st = $db->prepare('SELECT id, invoice_no, booking_type, booking_id, company_id, total, status FROM invoices WHERE id = ? FOR UPDATE');
+        $st = $db->prepare('SELECT id, invoice_no, document_number, booking_type, booking_id, company_id, total, status FROM invoices WHERE id = ? FOR UPDATE');
         $st->bind_param('i', $invoice_id);
         $st->execute();
         $inv = $st->get_result()->fetch_assoc();
@@ -88,7 +89,8 @@ function invoice_add_payment(int $invoice_id, int $company_id, float $amount, ?i
         if (!$inv) {
             throw new RuntimeException('Invoice tidak ditemukan.');
         }
-        if ((int) $inv['company_id'] !== $company_id && !is_super_admin()) {
+        $real_cid = (int) $inv['company_id'];
+        if ($real_cid !== $company_id && !is_super_admin()) {
             throw new RuntimeException('Invoice bukan milik perusahaan aktif.');
         }
         if ($inv['status'] === 'cancelled') {
@@ -109,31 +111,23 @@ function invoice_add_payment(int $invoice_id, int $company_id, float $amount, ?i
             VALUES (?, ?, ?, 'payment', ?, ?, ?, ?, ?, ?)");
         $bt = $inv['booking_type'];
         $bid = (int) $inv['booking_id'];
-        $mid = $method_id ?? 0;
-        $st->bind_param('isisdisss', $company_id, $bt, $bid, $desc, $amount, $mid, $label, $proof_blob_path, $user);
+        $midParam = ($method_id !== null && $method_id > 0) ? $method_id : null;
+        $st->bind_param('isisdisss', $real_cid, $bt, $bid, $desc, $amount, $midParam, $label, $proof_blob_path, $user);
         $st->execute();
+        $newCostLineId = (int) $st->insert_id;
         $st->close();
 
-        // Jika akun kas/bank dipilih, catat otomatis ke cash_transactions (transaksi masuk)
-        if ($cash_account_id !== null && $cash_account_id > 0) {
-            $c_st = $db->prepare('SELECT id FROM cash_accounts WHERE id = ? AND company_id = ? AND is_active = 1');
-            $c_st->bind_param('ii', $cash_account_id, $company_id);
-            $c_st->execute();
-            $c_acc = $c_st->get_result()->fetch_assoc();
-            $c_st->close();
-            if ($c_acc) {
-                $c_date = date('Y-m-d');
-                $c_dir  = 'in';
-                $c_cat  = 'Pendapatan Invoice';
-                $c_desc = 'Pembayaran Invoice ' . ($inv['invoice_no'] ?? ('#' . $invoice_id)) . ($note !== null && $note !== '' ? ' - ' . $note : '');
-                $c_meth = $method_id > 0 ? $method_id : null;
-                $t_st = $db->prepare('INSERT INTO cash_transactions
-                    (company_id, cash_account_id, date, direction, amount, category, description, payment_method_id, created_user, created_date)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, NOW())');
-                $t_st->bind_param('iissdssis', $company_id, $cash_account_id, $c_date, $c_dir, $amount, $c_cat, $c_desc, $c_meth, $user);
-                $t_st->execute();
-                $t_st->close();
-            }
+        // Sinkronisasi otomatis ke Buku Kas/Bank (kecuali user eksplisit memilih tidak mencatat dengan $cash_account_id < 0).
+        if ($cash_account_id === null || $cash_account_id >= 0) {
+            finance_sync_invoice_payments_to_cash(
+                $real_cid,
+                $invoice_id,
+                (string) ($inv['invoice_no'] ?? ''),
+                $bt,
+                (string) ($inv['document_number'] ?? ''),
+                $cash_account_id !== null && $cash_account_id > 0 ? [$newCostLineId => $cash_account_id] : [],
+                null
+            );
         }
 
         $new_paid = round($paid + $amount, 2);
@@ -145,7 +139,7 @@ function invoice_add_payment(int $invoice_id, int $company_id, float $amount, ?i
         // Sinkron kolom total_payment di tabel booking (denormalisasi cepat).
         $tbl = booking_table($bt);
         $st = $db->prepare("UPDATE {$tbl} SET total_payment = ?, modified_user = ?, modified_date = NOW() WHERE id = ? AND company_id = ?");
-        $st->bind_param('dsii', $new_paid, $user, $bid, $company_id);
+        $st->bind_param('dsii', $new_paid, $user, $bid, $real_cid);
         $st->execute();
         $st->close();
 
@@ -250,7 +244,7 @@ function booking_payments_sync(string $type, int $booking_id, int $invoice_id, i
         $manualTotal += $rawAmt;
     }
 
-    $stInv = $db->prepare('SELECT total, status FROM invoices WHERE id = ? AND company_id = ? LIMIT 1');
+    $stInv = $db->prepare('SELECT invoice_no, document_number, total, status FROM invoices WHERE id = ? AND company_id = ? LIMIT 1');
     $stInv->bind_param('ii', $invoice_id, $company_id);
     $stInv->execute();
     $invRow = $stInv->get_result()->fetch_assoc();
@@ -270,6 +264,29 @@ function booking_payments_sync(string $type, int $booking_id, int $invoice_id, i
         }
     }
 
+    // Petakan akun kas lama per baris manual agar pilihan rekening manual dari Invoice detail tidak tertimpa saat booking disimpan ulang
+    finance_ensure_schema();
+    $manualOldIds = [];
+    foreach ($existing as $exId => $exRow) {
+        if (empty($exRow['is_auto_qris'])) {
+            $manualOldIds[] = (int) $exId;
+        }
+    }
+    $oldAccountMap = [];
+    if ($manualOldIds) {
+        $ph = implode(',', array_fill(0, count($manualOldIds), '?'));
+        $tStr = 'is' . str_repeat('i', count($manualOldIds));
+        $srcType = 'booking_payment';
+        $stAccMap = $db->prepare("SELECT source_id, cash_account_id FROM cash_transactions WHERE company_id = ? AND source_type = ? AND source_id IN ({$ph})");
+        $stAccMap->bind_param($tStr, $company_id, $srcType, ...$manualOldIds);
+        $stAccMap->execute();
+        foreach ($stAccMap->get_result()->fetch_all(MYSQLI_ASSOC) as $am) {
+            $oldAccountMap[(int) $am['source_id']] = (int) $am['cash_account_id'];
+        }
+        $stAccMap->close();
+        finance_unsync_cost_line_ids($company_id, $manualOldIds);
+    }
+
     // Hapus baris manual lama (pertahankan baris yang berasal dari webhook QRIS otomatis)
     $del = $db->prepare("DELETE FROM booking_cost_lines
         WHERE booking_type = ? AND booking_id = ? AND company_id = ?
@@ -280,9 +297,10 @@ function booking_payments_sync(string $type, int $booking_id, int $invoice_id, i
     $del->close();
 
     $ins = $db->prepare("INSERT INTO booking_cost_lines
-        (company_id, booking_type, booking_id, cost_type, description, amount, note, proof_blob_path, created_user, created_date)
-        VALUES (?, ?, ?, 'payment', ?, ?, ?, ?, ?, ?)");
+        (company_id, booking_type, booking_id, cost_type, description, amount, payment_method_id, note, proof_blob_path, created_user, created_date)
+        VALUES (?, ?, ?, 'payment', ?, ?, ?, ?, ?, ?, ?)");
 
+    $lineAccountOverrides = [];
     foreach ($pay_rows as $r) {
         $rowId = (int) ($r['id'] ?? 0);
         if ($rowId > 0 && !empty($existing[$rowId]['is_auto_qris'])) {
@@ -302,11 +320,25 @@ function booking_payments_sync(string $type, int $booking_id, int $invoice_id, i
         $createdDate = $pDate . ' ' . date('H:i:s');
         $noteStr     = $pType . ' | ' . $pMethod;
         $proofPath   = $r['proof_blob_path'] ?? ($rowId > 0 ? ($existing[$rowId]['proof_blob_path'] ?? null) : null);
+        $pmIdParam   = finance_resolve_payment_method_id($company_id, $pMethod);
 
-        $ins->bind_param('isisdssss', $company_id, $type, $booking_id, $desc, $amt, $noteStr, $proofPath, $user, $createdDate);
+        $ins->bind_param('isisdissss', $company_id, $type, $booking_id, $desc, $amt, $pmIdParam, $noteStr, $proofPath, $user, $createdDate);
         $ins->execute();
+        $newBclId = (int) $ins->insert_id;
+        if ($rowId > 0 && isset($oldAccountMap[$rowId])) {
+            $lineAccountOverrides[$newBclId] = $oldAccountMap[$rowId];
+        }
     }
     $ins->close();
+
+    finance_sync_invoice_payments_to_cash(
+        $company_id,
+        $invoice_id,
+        (string) ($invRow['invoice_no'] ?? ''),
+        $type,
+        (string) ($invRow['document_number'] ?? ''),
+        $lineAccountOverrides
+    );
 
     $total_paid = invoice_paid_total($invoice_id);
     $upB = $db->prepare("UPDATE {$bTable} SET total_payment = ?, modified_user = ?, modified_date = NOW() WHERE id = ? AND company_id = ?");

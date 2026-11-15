@@ -8,7 +8,7 @@ require_once __DIR__ . '/../../config/config.php';
 require_permission('finance.view'); // laporan keuangan memuat pendapatan/biaya/laba — perlu izin Keuangan
 require_once __DIR__ . '/_finance_query.php';
 
-$f = report_filter($_GET);
+$f = fin_report_filter($_GET);
 $fmt = (string) ($_GET['format'] ?? 'xlsx');
 $fmt = in_array($fmt, ['csv', 'xlsx', 'pdf', 'html'], true) ? $fmt : 'xlsx';
 $sub = 'Periode ' . $f['from'] . ' s/d ' . $f['to'];
@@ -20,13 +20,17 @@ $costs  = $data['cost_types'];
 $ct     = fin_cost_totals($costs);
 $unpaid = $data['unpaid'];
 $ut     = fin_unpaid_totals($unpaid);
+$cash   = $data['cash'] ?? ['in_total' => 0, 'out_total' => 0, 'net_cash_flow' => 0];
 
 $table = [];
-array_unshift($table, ['Ringkasan', ''], ['Laba Kotor', (float) $data['gross_profit']],
-    ['Pendapatan Total', (float) $rev['total']],
-    ['Biaya Operasional Total', (float) $data['cost_total']],
-    ['Terbayar', (float) $rev['paid']],
-    ['Piutang', (float) $rev['receivable']], ['']);
+array_unshift($table, ['Ringkasan', ''], ['Laba Kotor Trip', (float) $data['gross_profit']],
+    ['Pendapatan Booking Total', (float) $rev['total']],
+    ['Biaya Operasional Trip Total', (float) $data['cost_total']],
+    ['Terbayar Booking', (float) $rev['paid']],
+    ['Piutang', (float) $rev['receivable']],
+    ['Kas Masuk (Buku Kas)', (float) $cash['in_total']],
+    ['Kas Keluar (Buku Kas)', (float) $cash['out_total']],
+    ['Arus Kas Bersih', (float) $cash['net_cash_flow']], ['']);
 
 $table[] = ['Pendapatan per Jenis', ''];
 $table[] = ['Jenis', 'Pendapatan'];

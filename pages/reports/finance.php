@@ -8,63 +8,81 @@ require_once __DIR__ . '/../../config/config.php';
 require_permission('finance.view'); // laporan keuangan memuat pendapatan/biaya/laba — perlu izin Keuangan
 require_once __DIR__ . '/_finance_query.php';
 
-$f = report_filter($_GET);
+$f = fin_report_filter($_GET);
+$compScope = company_filter_scope('company_id', $_GET);
 $data = fin_all($f);
 
 /** URL export dengan filter aktif (halaman ini memakai finance_export.php). */
-$export_qs = http_build_query([
+$export_params = [
     'format'       => 'csv',
     'from'         => $f['from'],
     'to'           => $f['to'],
     'booking_type' => $f['booking_type'],
-]);
+];
+if (is_super_admin()) {
+    $export_params['company_id'] = (int) ($f['filter_company_id'] ?? 0);
+}
+$export_qs = http_build_query($export_params);
 $xlsx_qs = str_replace('format=csv', 'format=xlsx', $export_qs);
 
-$rev   = $data['revenue'];
-$costs = $data['cost_types'];
-$ct    = fin_cost_totals($costs);
+$rev    = $data['revenue'];
+$costs  = $data['cost_types'];
+$ct     = fin_cost_totals($costs);
 $unpaid = $data['unpaid'];
 $ut     = fin_unpaid_totals($unpaid);
 $mo     = $data['monthly'];
+$cash   = $data['cash'] ?? ['in_total' => 0, 'in_booking' => 0, 'in_other' => 0, 'out_total' => 0, 'out_payroll' => 0, 'out_other' => 0, 'net_cash_flow' => 0];
 
 $cards = [
-    ['Laba Kotor',   rupiah($data['gross_profit']), $data['gross_profit'] >= 0 ? 'success' : 'danger', 'graph-up-arrow'],
-    ['Pendapatan',   rupiah($rev['total']),         'primary', 'cash-stack'],
-    ['Biaya Operasional', rupiah($data['cost_total']), 'warning', 'receipt-cutoff'],
-    ['Piutang',      rupiah($rev['receivable']),    'info', 'hourglass-split'],
+    ['Laba Kotor Trip',   rupiah($data['gross_profit']), $data['gross_profit'] >= 0 ? 'success' : 'danger', 'graph-up-arrow'],
+    ['Pendapatan Booking', rupiah($rev['total']),        'primary', 'cash-stack'],
+    ['Biaya Operasional',  rupiah($data['cost_total']),  'warning', 'receipt-cutoff'],
+    ['Piutang Pelanggan',  rupiah($rev['receivable']),   'info', 'hourglass-split'],
+];
+
+$header_actions = [
+    ['label' => 'CSV',   'icon' => 'filetype-csv',       'href' => 'pages/reports/finance_export.php?' . $export_qs, 'class' => 'btn btn-outline-success btn-sm'],
+    ['label' => 'Excel', 'icon' => 'file-earmark-excel', 'href' => 'pages/reports/finance_export.php?' . $xlsx_qs,   'class' => 'btn btn-success btn-sm'],
+    ['label' => 'PDF',   'icon' => 'filetype-pdf',       'href' => 'pages/reports/finance_export.php?' . $export_qs . '&format=pdf', 'class' => 'btn btn-danger btn-sm'],
+    ['label' => 'Cetak', 'icon' => 'printer',            'href' => 'pages/reports/finance_export.php?' . $export_qs . '&format=html&print=1', 'class' => 'btn btn-outline-secondary btn-sm', 'target' => '_blank'],
 ];
 
 $active = 'reports';
 $title  = 'Laporan Keuangan';
 require __DIR__ . '/../../includes/header.php';
 ?>
-<main class="col-12 col-md-9 col-lg-10 p-4">
-    <div class="d-flex justify-content-between align-items-center mb-3 flex-wrap gap-2">
-        <h4 class="fw-bold mb-0">Laporan Keuangan</h4>
-        <div class="btn-group btn-group-sm">
-            <a class="btn btn-outline-success" href="finance_export.php?<?= e($export_qs) ?>">
-                <i class="bi bi-filetype-csv"></i> CSV</a>
-            <a class="btn btn-success" href="finance_export.php?<?= e($xlsx_qs) ?>">
-                <i class="bi bi-file-earmark-excel"></i> Excel</a>
-            <a class="btn btn-danger" href="finance_export.php?<?= e($export_qs) ?>&format=pdf">
-                <i class="bi bi-filetype-pdf"></i> PDF</a>
-            <a class="btn btn-outline-secondary" href="finance_export.php?<?= e($export_qs) ?>&format=html&print=1" target="_blank">
-                <i class="bi bi-printer"></i> Cetak</a>
-        </div>
-    </div>
+<main class="col-12 col-md-9 col-lg-10 p-3 p-lg-4">
+    <?= ui_page_header(
+        'Laporan Keuangan',
+        ['Dashboard' => 'pages/dashboard/index.php', 'Laporan' => null, 'Keuangan' => null],
+        [['text' => tanggal_indo($f['from']) . ' – ' . tanggal_indo($f['to']), 'class' => 'bg-light text-secondary border']],
+        $header_actions
+    ) ?>
 
     <div class="card shadow-sm border-0 mb-3">
-        <div class="card-body">
-            <form class="row g-2 align-items-end" method="get">
-                <div class="col-12 col-sm-4 col-lg-3">
+        <div class="card-body py-2 px-3">
+            <form class="row g-2 align-items-end erp-filter-bar" method="get">
+                <?php if (is_super_admin()): ?>
+                <div class="col-12 col-sm-6 col-lg-3">
+                    <label class="form-label small mb-1">Perusahaan</label>
+                    <select class="form-select form-select-sm" name="company_id" onchange="this.form.submit()">
+                        <option value="0"<?= ((int) ($f['filter_company_id'] ?? 0) === 0) ? ' selected' : '' ?>>Semua Perusahaan</option>
+                        <?php foreach ($compScope['companies'] as $co): ?>
+                            <option value="<?= (int) $co['id'] ?>"<?= ((int) ($f['filter_company_id'] ?? 0) === (int) $co['id']) ? ' selected' : '' ?>>
+                                <?= e(($co['code'] ?? '') . ' - ' . ($co['name'] ?? '')) ?></option>
+                        <?php endforeach; ?>
+                    </select>
+                </div>
+                <?php endif; ?>
+                <div class="col-12 col-sm-4 col-lg-2">
                     <label class="form-label small mb-1">Dari Tanggal</label>
                     <input type="date" class="form-control form-control-sm" name="from" value="<?= e($f['from']) ?>">
                 </div>
-                <div class="col-12 col-sm-4 col-lg-3">
+                <div class="col-12 col-sm-4 col-lg-2">
                     <label class="form-label small mb-1">Sampai Tanggal</label>
                     <input type="date" class="form-control form-control-sm" name="to" value="<?= e($f['to']) ?>">
                 </div>
-                <div class="col-12 col-sm-4 col-lg-3">
+                <div class="col-12 col-sm-4 col-lg-2">
                     <label class="form-label small mb-1">Jenis Booking</label>
                     <select class="form-select form-select-sm" name="booking_type">
                         <?php foreach (['all' => 'Semua', 'travel' => 'Travel', 'rental' => 'Rental'] as $k => $lbl): ?>
@@ -72,7 +90,7 @@ require __DIR__ . '/../../includes/header.php';
                         <?php endforeach; ?>
                     </select>
                 </div>
-                <?= ui_filter_actions(APP_URL . '/pages/reports/finance.php', ($f['from'] !== date('Y-m-01') || $f['to'] !== date('Y-m-t') || $f['booking_type'] !== 'all')) ?>
+                <?= ui_filter_actions(APP_URL . '/pages/reports/finance.php', ($f['from'] !== date('Y-m-01') || $f['to'] !== date('Y-m-t') || $f['booking_type'] !== 'all' || (is_super_admin() && !empty($f['filter_company_id'])))) ?>
             </form>
         </div>
     </div>
@@ -91,6 +109,39 @@ require __DIR__ . '/../../includes/header.php';
                 </div>
             </div>
         <?php endforeach; ?>
+    </div>
+
+    <div class="card shadow-sm border-0 mb-3">
+        <div class="card-header bg-white d-flex justify-content-between align-items-center flex-wrap gap-2">
+            <span class="fw-semibold"><i class="bi bi-wallet2 me-1 text-success"></i>Arus Kas Nyata (Buku Kas &amp; Bank)</span>
+            <a class="btn btn-outline-primary btn-sm py-0 px-2" href="<?= e(APP_URL) ?>/pages/finance/cash/index.php?from=<?= e($f['from']) ?>&to=<?= e($f['to']) ?><?= is_super_admin() ? '&company_id=' . (int) ($f['filter_company_id'] ?? 0) : '' ?>">
+                Buka Buku Kas <i class="bi bi-arrow-right-short"></i>
+            </a>
+        </div>
+        <div class="card-body py-2">
+            <div class="row g-3 text-center text-md-start align-items-center">
+                <div class="col-6 col-md-3">
+                    <div class="small text-muted">Kas Masuk (Periode)</div>
+                    <div class="fw-bold text-success"><?= e(rupiah((float) $cash['in_total'])) ?></div>
+                    <div class="text-muted" style="font-size:.75rem;">Booking: <?= e(rupiah((float) $cash['in_booking'])) ?> · Lain: <?= e(rupiah((float) $cash['in_other'])) ?></div>
+                </div>
+                <div class="col-6 col-md-3">
+                    <div class="small text-muted">Kas Keluar (Periode)</div>
+                    <div class="fw-bold text-danger"><?= e(rupiah((float) $cash['out_total'])) ?></div>
+                    <div class="text-muted" style="font-size:.75rem;">Gaji: <?= e(rupiah((float) $cash['out_payroll'])) ?> · Non-Booking: <?= e(rupiah((float) $cash['out_other'])) ?></div>
+                </div>
+                <div class="col-6 col-md-3">
+                    <div class="small text-muted">Arus Kas Bersih</div>
+                    <div class="fw-bold text-<?= $cash['net_cash_flow'] >= 0 ? 'primary' : 'danger' ?>"><?= e(rupiah((float) $cash['net_cash_flow'])) ?></div>
+                    <div class="text-muted" style="font-size:.75rem;">Kas Masuk − Kas Keluar</div>
+                </div>
+                <div class="col-6 col-md-3">
+                    <div class="small text-muted">Total Terbayar Booking</div>
+                    <div class="fw-bold"><?= e(rupiah($rev['paid'])) ?></div>
+                    <div class="text-muted" style="font-size:.75rem;">Dari tagihan <?= e(rupiah($rev['total'])) ?></div>
+                </div>
+            </div>
+        </div>
     </div>
 
     <div class="card shadow-sm border-0 mb-3">

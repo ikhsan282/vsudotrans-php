@@ -235,6 +235,7 @@ check_bot(
         $db->query("DELETE FROM payment_gateway_orders WHERE order_id = '{$ordEsc}'");
     }
     if ($bkId > 0) {
+        $db->query("DELETE ct FROM cash_transactions ct JOIN booking_cost_lines bcl ON ct.source_type = 'booking_payment' AND ct.source_id = bcl.id WHERE bcl.booking_type = 'travel' AND bcl.booking_id = {$bkId}");
         $db->query("DELETE FROM booking_cost_lines WHERE booking_type = 'travel' AND booking_id = {$bkId}");
         $db->query("DELETE FROM booking_status_history WHERE booking_type = 'travel' AND booking_id = {$bkId}");
         $db->query("DELETE FROM booking_passengers WHERE booking_type = 'travel' AND booking_id = {$bkId}");

@@ -1,4 +1,6 @@
 <?php
+require_once __DIR__ . '/finance_sync.php';
+
 /**
  * Payroll service — gaji karyawan per periode bulanan.
  *
@@ -337,18 +339,28 @@ function payroll_period_set_status(int $period_id, int $company_id, string $stat
 
                 $total_paid = (float) ($p_totals['total_net'] ?? 0);
                 if ($total_paid > 0) {
-                    $c_date = date('Y-m-d');
-                    $c_dir  = 'out';
-                    $c_cat  = 'Gaji Karyawan';
-                    $period_lbl = payroll_period_label($period);
-                    $c_desc = 'Payroll Periode ' . $period_lbl . ' (' . (int) ($p_totals['total_items'] ?? 0) . ' karyawan)';
-                    $null_method = null;
-                    $t_st = $db->prepare('INSERT INTO cash_transactions
-                        (company_id, cash_account_id, date, direction, amount, category, description, payment_method_id, created_user, created_date)
-                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, NOW())');
-                    $t_st->bind_param('iissdssis', $company_id, $cash_account_id, $c_date, $c_dir, $total_paid, $c_cat, $c_desc, $null_method, $user);
-                    $t_st->execute();
-                    $t_st->close();
+                    finance_ensure_schema();
+                    $srcType = 'payroll_period';
+                    $chkTx = $db->prepare('SELECT id FROM cash_transactions WHERE company_id = ? AND source_type = ? AND source_id = ? LIMIT 1');
+                    $chkTx->bind_param('isi', $company_id, $srcType, $period_id);
+                    $chkTx->execute();
+                    $alreadyTx = $chkTx->get_result()->fetch_assoc();
+                    $chkTx->close();
+
+                    if (!$alreadyTx) {
+                        $c_date = date('Y-m-d');
+                        $c_dir  = 'out';
+                        $c_cat  = 'Gaji Karyawan';
+                        $period_lbl = payroll_period_label($period);
+                        $c_desc = 'Payroll Periode ' . $period_lbl . ' (' . (int) ($p_totals['total_items'] ?? 0) . ' karyawan)';
+                        $null_method = null;
+                        $t_st = $db->prepare('INSERT INTO cash_transactions
+                            (company_id, cash_account_id, date, direction, amount, category, description, payment_method_id, source_type, source_id, created_user, created_date)
+                            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW())');
+                        $t_st->bind_param('iissdssisis', $company_id, $cash_account_id, $c_date, $c_dir, $total_paid, $c_cat, $c_desc, $null_method, $srcType, $period_id, $user);
+                        $t_st->execute();
+                        $t_st->close();
+                    }
                 }
             }
         }

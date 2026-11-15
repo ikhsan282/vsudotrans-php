@@ -7,7 +7,6 @@ require_once __DIR__ . '/../../../config/config.php';
 require_permission('finance.manage');
 require_once __DIR__ . '/../_cash_query.php';
 
-$cid = require_active_company();
 $id  = (int) ($_GET['id'] ?? $_POST['id'] ?? 0);
 
 $row = null;
@@ -16,6 +15,27 @@ if ($id > 0) {
     if (!$row) {
         flash('error', 'Transaksi tidak ditemukan.');
         redirect('pages/finance/cash/index.php');
+    }
+    if (!empty($row['source_type'])) {
+        flash('error', 'Transaksi hasil sinkronisasi otomatis hanya dapat diubah dari Invoice/Booking/Payroll asal.');
+        redirect('pages/finance/cash/index.php');
+    }
+    $cid = (int) $row['company_id'];
+} else {
+    $activeCid = active_company_id();
+    if ($activeCid !== null) {
+        $cid = (int) $activeCid;
+    } elseif (is_super_admin()) {
+        $cid = (int) ($_POST['company_id'] ?? $_GET['company_id'] ?? 0);
+        if ($cid <= 0) {
+            $comps = accessible_companies();
+            $cid = (int) ($comps[0]['id'] ?? 0);
+        }
+        if ($cid <= 0) {
+            $cid = require_active_company();
+        }
+    } else {
+        $cid = require_active_company();
     }
 }
 $form = [
@@ -85,6 +105,19 @@ require __DIR__ . '/../../../includes/header.php';
                             <div class="rnt-panel h-100 mb-0">
                                 <div class="rnt-panel-header"><i class="bi bi-cash-coin"></i> Rincian Transaksi</div>
                                 <div class="rnt-panel-body">
+                                    <?php if (is_super_admin() && $id === 0 && active_company_id() === null): ?>
+                                    <div class="rnt-row">
+                                        <div class="rnt-label">Perusahaan <span class="text-danger">*</span></div>
+                                        <div class="rnt-field">
+                                            <select class="form-select form-select-sm" name="company_id" onchange="window.location='form.php?company_id=' + encodeURIComponent(this.value)">
+                                                <?php foreach (accessible_companies() as $co): ?>
+                                                    <option value="<?= (int) $co['id'] ?>"<?= $cid === (int) $co['id'] ? ' selected' : '' ?>>
+                                                        <?= e(($co['code'] ?? '') . ' - ' . ($co['name'] ?? '')) ?></option>
+                                                <?php endforeach; ?>
+                                            </select>
+                                        </div>
+                                    </div>
+                                    <?php endif; ?>
                                     <div class="rnt-row<?= !$accounts ? ' rnt-row-top' : '' ?>">
                                         <div class="rnt-label">Akun Kas/Bank <span class="text-danger">*</span></div>
                                         <div class="rnt-field">

@@ -48,7 +48,26 @@ $topPaidValue  = ($isDetailMode && isset($paidTotal)) ? $paidTotalVal : $paySubt
 $remainingVal  = max(0.0, $invoiceTotal - $paidTotalVal);
 
 $payTypeOpts   = ['Down Payment (DP)', 'Pelunasan', 'Pembayaran Penuh (Full)'];
+require_once __DIR__ . '/finance_sync.php';
+$payCompanyId  = (int) ($companyId ?? $row['company_id'] ?? $booking['company_id'] ?? $cid ?? active_company_id() ?? 0);
 $payMethodOpts = ['Transfer', 'Tunai', 'QRIS', 'EDC / Kartu'];
+if ($payCompanyId > 0) {
+    $stdCodeLabels = ['TUNAI' => 'Tunai', 'TRANSFER' => 'Transfer', 'QRIS' => 'QRIS', 'EDC' => 'EDC / Kartu'];
+    $dynMethods = [];
+    foreach (finance_active_payment_methods($payCompanyId) as $pmItem) {
+        $pmCode = strtoupper((string) ($pmItem['code'] ?? ''));
+        if ($pmCode === 'QRIS-AUTO') {
+            continue;
+        }
+        $lbl = $stdCodeLabels[$pmCode] ?? trim((string) ($pmItem['name'] ?? ''));
+        if ($lbl !== '' && !in_array($lbl, $dynMethods, true)) {
+            $dynMethods[] = $lbl;
+        }
+    }
+    if ($dynMethods) {
+        $payMethodOpts = $dynMethods;
+    }
+}
 $isPayActive   = ($activeTab === 'payment');
 ?>
 <div class="tab-pane fade<?= $isPayActive ? ' show active' : '' ?>" id="tab-payment" role="tabpanel" aria-labelledby="tab-payment-btn">
@@ -78,6 +97,9 @@ $isPayActive   = ($activeTab === 'payment');
                             <i class="bi bi-arrow-repeat me-1"></i>Pantau QRIS Otomatis Aktif
                         </span>
                     <?php endif; ?>
+                    <span class="badge bg-light text-secondary border fw-normal" title="Setiap pembayaran otomatis disinkronkan ke Buku Kas/Bank sesuai metode">
+                        <i class="bi bi-arrow-left-right me-1 text-primary"></i>Auto-Sinkron Kas/Bank
+                    </span>
                 </div>
             </div>
         </div>

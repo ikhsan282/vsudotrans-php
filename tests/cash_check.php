@@ -142,8 +142,10 @@ try {
         'scoping: akun perusahaan 990 tidak ada di daftar akun company 1');
     ok(!cash_relation_ok($ACC_B, 1), 'scoping: akun 990 tidak lolos validasi relasi untuk company 1');
     ok(cash_relation_ok($ACC_B, 990), 'scoping: akun 990 sah untuk company 990 (bukti uji valid)');
-    ok(abs(cash_summary(cash_filter(['from' => '2026-10-01', 'to' => '2026-10-31', 'account' => '0']))['balance']
-        - (1000000 + 500000 - 200000 - 4000)) < 0.01,
+    $baseComp1Bal = (float) $c->query("SELECT COALESCE(SUM(opening_balance),0) FROM cash_accounts WHERE company_id = 1 AND id <> $ACC")->fetch_row()[0]
+        + (float) $c->query("SELECT COALESCE(SUM(CASE WHEN direction='in' THEN amount ELSE -amount END),0) FROM cash_transactions WHERE company_id = 1 AND cash_account_id <> $ACC AND date <= '2026-10-31'")->fetch_row()[0];
+    $actualAllAccBal = cash_summary(cash_filter(['from' => '2026-10-01', 'to' => '2026-10-31', 'account' => '0']))['balance'];
+    ok(abs($actualAllAccBal - ($baseComp1Bal + 1000000 + 500000 - 200000 - 4000)) < 0.01,
         'scoping: saldo company 1 tidak terpengaruh uang perusahaan 990 (8.000.000)');
 
     // Update lintas perusahaan: WHERE company_id = 1 → 0 baris terpengaruh, data 990 utuh.

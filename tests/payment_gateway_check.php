@@ -149,8 +149,11 @@ check_pg($fin['ok'] === true && $fin['cost_line_id'] > 0, 'gateway_finalize succ
 $invAfter = invoice_find((int) $inv['id']);
 check_pg($invAfter['pay_status'] === 'paid' && (float) $invAfter['paid_total'] === 150000.0, 'Invoice is now marked paid with principal amount 150000');
 check_pg(booking_current_status('travel', (int) $bk['id']) === 'draft', 'Booking status stays draft upon QRIS payment (payment does not alter operational status)');
+$qrisCashCnt = (int) $db->query("SELECT COUNT(*) FROM cash_transactions WHERE source_type = 'booking_payment' AND source_id = " . (int) $fin['cost_line_id'] . " AND direction = 'in'")->fetch_row()[0];
+check_pg($qrisCashCnt === 1, 'gateway_finalize auto-syncs QRIS settlement into cash_transactions');
 
 // Cleanup test rows
+$db->query("DELETE ct FROM cash_transactions ct JOIN booking_cost_lines bcl ON ct.source_type = 'booking_payment' AND ct.source_id = bcl.id WHERE bcl.booking_type = 'travel' AND bcl.booking_id = " . (int) $bk['id']);
 $db->query("DELETE FROM wa_outbox WHERE event_id = 'pay-{$ordId1}'");
 $db->query("DELETE FROM payment_gateway_orders WHERE order_id = '{$ordId1}'");
 $db->query("DELETE FROM booking_cost_lines WHERE booking_type = 'travel' AND booking_id = " . (int) $bk['id']);

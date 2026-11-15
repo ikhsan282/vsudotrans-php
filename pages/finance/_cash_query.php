@@ -11,6 +11,7 @@
 
 require_once __DIR__ . '/../../includes/functions.php';
 require_once __DIR__ . '/../../includes/auth.php';
+require_once __DIR__ . '/../../includes/finance_sync.php';
 require_once __DIR__ . '/../travel/_helpers.php';
 
 function cash_types(): array
@@ -41,11 +42,21 @@ function cash_filter(?array $in = null): array
     $d = static fn(string $k, string $def): string =>
         preg_match('/^\d{4}-\d{2}-\d{2}$/', (string) ($in[$k] ?? '')) ? (string) $in[$k] : $def;
     return [
-        'from'      => $d('from', date('Y-m-01')),
-        'to'        => $d('to', date('Y-m-t')),
-        'account'   => (int) ($in['account'] ?? 0),
-        'direction' => $dir,
+        'from'       => $d('from', date('Y-m-01')),
+        'to'         => $d('to', date('Y-m-t')),
+        'account'    => (int) ($in['account'] ?? 0),
+        'direction'  => $dir,
+        'company_id' => isset($in['company_id']) && $in['company_id'] !== '' ? max(0, (int) $in['company_id']) : 0,
     ];
+}
+
+/** Klausa scope perusahaan untuk query Buku Kas (mendukung filter company_id eksplisit Super Admin). */
+function cash_company_scope(string $column, array $f): array
+{
+    if (is_super_admin() && !empty($f['company_id'])) {
+        return ["{$column} = ?", 'i', [(int) $f['company_id']]];
+    }
+    return company_scope($column);
 }
 
 /**
@@ -54,7 +65,7 @@ function cash_filter(?array $in = null): array
  */
 function cash_tx_where(array $f, bool $with_dates = true): array
 {
-    [$w, $types, $params] = company_scope('t.company_id');
+    [$w, $types, $params] = cash_company_scope('t.company_id', $f);
     // company_scope() bisa mengembalikan klausa tanpa placeholder ('1=1' / '1=0') dengan types ''.
     // Jangan pernah menempelkan types milik klausa sendiri ke string kosong itu tanpa placeholder —
     // sebabkan ArgumentCountError di bind_param. Bangun types hanya dari klausa yang kita tambahkan.
@@ -81,12 +92,21 @@ function cash_tx_where(array $f, bool $with_dates = true): array
     return ['sql' => ($w !== '' ? $w . ' AND ' : '') . $sql, 'types' => $types, 'params' => $params];
 }
 
-/** Akun aktif perusahaan (untuk dropdown filter & form). */
+/** Akun aktif perusahaan (atau semua perusahaan jika $company_id === 0 dan Super Admin). */
 function cash_account_list(bool $active_only = true, ?int $company_id = null): array
 {
-    $cid = $company_id ?? (int) active_company_id();
-    $st = db()->prepare('SELECT id, code, name, type, opening_balance, is_active FROM cash_accounts'
-        . ' WHERE company_id = ?' . ($active_only ? ' AND is_active = 1' : '') . ' ORDER BY code');
+    $cid = $company_id ?? (int) (active_company_id() ?? 0);
+    if ($cid === 0 && is_super_admin()) {
+        $sql = 'SELECT a.id, a.company_id, c.code AS company_code, a.code, a.name, a.type, a.opening_balance, a.is_active
+                  FROM cash_accounts a
+                  LEFT JOIN companies c ON c.id = a.company_id'
+            . ($active_only ? ' WHERE a.is_active = 1' : '') . ' ORDER BY c.code, a.code';
+        return db()->query($sql)->fetch_all(MYSQLI_ASSOC);
+    }
+    $st = db()->prepare('SELECT a.id, a.company_id, c.code AS company_code, a.code, a.name, a.type, a.opening_balance, a.is_active
+        FROM cash_accounts a
+        LEFT JOIN companies c ON c.id = a.company_id
+        WHERE a.company_id = ?' . ($active_only ? ' AND a.is_active = 1' : '') . ' ORDER BY a.code');
     $st->bind_param('i', $cid);
     $st->execute();
     $rows = $st->get_result()->fetch_all(MYSQLI_ASSOC);
@@ -235,7 +255,13 @@ function cash_summary(array $f): array
     // posisi akun, bukan total kolom rentang. Filter ARAH juga dibuang: saldo adalah posisi akun,
     // mem-filter kolom "masuk" tak boleh mengubah saldo (uji: arah=in → saldo tetap 1.300.000).
     // Batas atas ditambahkan eksplisit sebagai parameter sendiri supaya types & params tetap sejajar.
-    $upto = cash_tx_where(['from' => '', 'to' => $f['to'], 'account' => $f['account'], 'direction' => 'all'], false);
+    $upto = cash_tx_where([
+        'from'       => '',
+        'to'         => $f['to'],
+        'account'    => $f['account'],
+        'direction'  => 'all',
+        'company_id' => (int) ($f['company_id'] ?? 0),
+    ], false);
     $upto['sql'] .= ' AND t.date <= ?';
     $upto['types'] .= 's';
     $upto['params'][] = $f['to'];
@@ -251,7 +277,7 @@ function cash_summary(array $f): array
         return $v;
     };
 
-    [$w, $types, $params] = company_scope('a.company_id');
+    [$w, $types, $params] = cash_company_scope('a.company_id', $f);
     $acc_sql = ($w !== '' ? $w . ' AND ' : '') . '1=1' . ($f['account'] > 0 ? ' AND a.id = ?' : '');
     if ($f['account'] > 0) {
         $types .= 'i';
@@ -288,11 +314,18 @@ function cash_summary(array $f): array
 /** Baris transaksi untuk tabel & export. $limit null = semua. */
 function cash_tx_list(array $f, ?int $limit = null, int $offset = 0): array
 {
+    finance_ensure_schema();
     $tw = cash_tx_where($f);
-    $sql = 'SELECT t.id, t.cash_account_id, t.date, t.direction, t.amount, t.category, t.description, t.created_user,
-            a.code AS account_code, a.name AS account_name
-        FROM cash_transactions t LEFT JOIN cash_accounts a ON a.id = t.cash_account_id
-        WHERE ' . $tw['sql'] . ' ORDER BY t.date ASC, t.id ASC';
+    $sql = "SELECT t.id, t.company_id, c.code AS company_code, t.cash_account_id, t.date, t.direction, t.amount, t.category, t.description, t.created_user,
+            t.source_type, t.source_id,
+            a.code AS account_code, a.name AS account_name,
+            inv.id AS ref_invoice_id
+        FROM cash_transactions t
+        LEFT JOIN cash_accounts a ON a.id = t.cash_account_id
+        LEFT JOIN companies c ON c.id = t.company_id
+        LEFT JOIN booking_cost_lines bcl ON t.source_type = 'booking_payment' AND bcl.id = t.source_id
+        LEFT JOIN invoices inv ON bcl.description = CONCAT('INV#', inv.id)
+        WHERE " . $tw['sql'] . ' ORDER BY t.date ASC, t.id ASC';
     $types = $tw['types'];
     $params = $tw['params'];
     if ($limit !== null) {

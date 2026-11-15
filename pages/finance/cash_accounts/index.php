@@ -8,13 +8,20 @@ require_once __DIR__ . '/../../../config/config.php';
 require_permission('finance.view');
 require_once __DIR__ . '/../_cash_query.php';
 
-$cid = require_active_company();
+$compScope = company_filter_scope('a.company_id');
+$filter_cid = (int) $compScope['filter_company_id'];
+$show_comp_col = is_super_admin() && $filter_cid === 0;
 
-$st = db()->prepare('SELECT a.*,
+$sqlAcc = 'SELECT a.*, c.code AS company_code,
         COALESCE((SELECT SUM(CASE WHEN t.direction = \'in\' THEN t.amount ELSE -t.amount END)
             FROM cash_transactions t WHERE t.cash_account_id = a.id AND t.company_id = a.company_id), 0) AS movement
-    FROM cash_accounts a WHERE a.company_id = ? ORDER BY a.code');
-$st->bind_param('i', $cid);
+    FROM cash_accounts a
+    LEFT JOIN companies c ON c.id = a.company_id
+    WHERE ' . $compScope['where'] . ' ORDER BY c.code, a.code';
+$st = db()->prepare($sqlAcc);
+if ($compScope['types'] !== '') {
+    $st->bind_param($compScope['types'], ...$compScope['params']);
+}
 $st->execute();
 $all = $st->get_result()->fetch_all(MYSQLI_ASSOC);
 $st->close();
@@ -26,33 +33,58 @@ foreach ($all as $a) {
     $total_balance += (float) $a['opening_balance'] + (float) $a['movement'];
 }
 
+$header_actions = [
+    ['label' => 'Buku Kas', 'icon' => 'journal-text', 'href' => 'pages/finance/cash/index.php' . (is_super_admin() ? '?company_id=' . $filter_cid : ''), 'class' => 'btn btn-outline-primary btn-sm'],
+];
+if (can('finance.manage')) {
+    $header_actions[] = ['label' => 'Tambah', 'icon' => 'plus-lg', 'href' => 'pages/finance/cash_accounts/form.php' . ($filter_cid > 0 ? '?company_id=' . $filter_cid : ''), 'class' => 'btn btn-primary btn-sm'];
+}
+$query_base = is_super_admin() ? http_build_query(['company_id' => $filter_cid]) : '';
+
 $active = 'finance';
 $title  = 'Akun Kas/Bank';
 require __DIR__ . '/../../../includes/header.php';
 ?>
-<main class="col-12 col-md-9 col-lg-10 p-4">
-    <div class="d-flex justify-content-between align-items-center mb-3 flex-wrap gap-2">
-        <h4 class="fw-bold mb-0">Akun Kas/Bank</h4>
-        <div class="d-flex gap-2 align-items-center">
-            <span class="small text-muted">Total saldo semua akun: <span class="fw-semibold"><?= e(rupiah($total_balance)) ?></span></span>
-            <a class="btn btn-outline-primary btn-sm" href="../cash/index.php"><i class="bi bi-journal-text"></i> Buku Kas</a>
-            <?php if (can('finance.manage')): ?>
-                <a class="btn btn-primary btn-sm" href="form.php"><i class="bi bi-plus-lg"></i> Tambah</a>
-            <?php endif; ?>
+<main class="col-12 col-md-9 col-lg-10 p-3 p-lg-4">
+    <?= ui_page_header(
+        'Akun Kas/Bank',
+        ['Dashboard' => 'pages/dashboard/index.php', 'Keuangan' => null, 'Akun Kas/Bank' => null],
+        [['text' => 'Total Saldo: ' . rupiah($total_balance), 'class' => 'bg-primary-subtle text-primary border']],
+        $header_actions
+    ) ?>
+
+    <?php if (is_super_admin()): ?>
+    <div class="card shadow-sm border-0 mb-3">
+        <div class="card-body py-2 px-3">
+            <form class="row g-2 align-items-end erp-filter-bar" method="get">
+                <div class="col-12 col-md-4">
+                    <label class="form-label small mb-1">Perusahaan</label>
+                    <select class="form-select form-select-sm" name="company_id" onchange="this.form.submit()">
+                        <option value="0"<?= $filter_cid === 0 ? ' selected' : '' ?>>Semua Perusahaan</option>
+                        <?php foreach ($compScope['companies'] as $co): ?>
+                            <option value="<?= (int) $co['id'] ?>"<?= $filter_cid === (int) $co['id'] ? ' selected' : '' ?>>
+                                <?= e(($co['code'] ?? '') . ' - ' . ($co['name'] ?? '')) ?></option>
+                        <?php endforeach; ?>
+                    </select>
+                </div>
+                <?= ui_filter_actions(APP_URL . '/pages/finance/cash_accounts/index.php', $filter_cid !== (active_company_id() ?? 0)) ?>
+            </form>
         </div>
     </div>
+    <?php endif; ?>
 
     <div class="card shadow-sm border-0">
         <div class="table-responsive">
             <table class="table table-hover mb-0 align-middle">
-                <thead><tr>
-                    <th>Kode</th><th>Nama</th><th>Tipe</th><th>Bank</th><th>No. Rekening</th>
+                <thead class="table-light"><tr>
+                    <?php if ($show_comp_col): ?><th>Perusahaan</th><?php endif; ?><th>Kode</th><th>Nama</th><th>Tipe</th><th>Bank</th><th>No. Rekening</th>
                     <th class="text-end">Saldo Awal</th><th class="text-end">Saldo Akhir</th><th>Status</th>
                     <th class="text-end">Aksi</th>
                 </tr></thead>
                 <tbody>
                 <?php foreach ($rows as $r): ?>
                     <tr>
+                        <?php if ($show_comp_col): ?><td><span class="badge bg-light text-dark border"><?= e((string) ($r['company_code'] ?? '-')) ?></span></td><?php endif; ?>
                         <td class="fw-semibold"><?= e((string) $r['code']) ?></td>
                         <td><?= e((string) $r['name']) ?></td>
                         <td><span class="badge bg-<?= $r['type'] === 'bank' ? 'info' : 'secondary' ?>">
@@ -63,7 +95,7 @@ require __DIR__ . '/../../../includes/header.php';
                         <td class="text-end text-nowrap fw-semibold"><?= e(rupiah((float) $r['opening_balance'] + (float) $r['movement'])) ?></td>
                         <td><span class="badge bg-<?= $r['is_active'] ? 'success' : 'secondary' ?>"><?= $r['is_active'] ? 'Aktif' : 'Nonaktif' ?></span></td>
                         <td class="text-end text-nowrap">
-                            <a class="btn btn-sm btn-outline-secondary" href="../cash/index.php?account=<?= (int) $r['id'] ?>" title="Buku Kas" aria-label="Buku Kas"><i class="bi bi-journal-text"></i></a>
+                            <a class="btn btn-sm btn-outline-secondary" href="../cash/index.php?account=<?= (int) $r['id'] ?>&amp;company_id=<?= (int) $r['company_id'] ?>" title="Buku Kas" aria-label="Buku Kas"><i class="bi bi-journal-text"></i></a>
                             <?php if (can('finance.manage')): ?>
                                 <a class="btn btn-sm btn-outline-primary" href="form.php?id=<?= (int) $r['id'] ?>" title="Ubah" aria-label="Ubah"><i class="bi bi-pencil-square"></i></a>
                                 <form method="post" action="delete.php" class="d-inline" onsubmit="return confirm('Hapus akun ini?')">
@@ -76,12 +108,12 @@ require __DIR__ . '/../../../includes/header.php';
                     </tr>
                 <?php endforeach; ?>
                 <?php if (!$rows): ?>
-                    <tr><td colspan="9" class="text-center text-muted py-4">Belum ada akun kas/bank.</td></tr>
+                    <tr><td colspan="<?= $show_comp_col ? 10 : 9 ?>" class="text-center text-muted py-4">Belum ada akun kas/bank.</td></tr>
                 <?php endif; ?>
                 </tbody>
             </table>
         </div>
-        <div class="card-footer bg-white"><?= pagination_html($p, '') ?></div>
+        <div class="card-footer bg-white"><?= pagination_html($p, $query_base) ?></div>
     </div>
 </main>
 <?php require __DIR__ . '/../../../includes/footer.php'; ?>

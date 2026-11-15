@@ -7,6 +7,7 @@
 require_once __DIR__ . '/payment_gateway_direct.php';
 require_once __DIR__ . '/invoice_service.php';
 require_once __DIR__ . '/booking_service.php';
+require_once __DIR__ . '/finance_sync.php';
 require_once __DIR__ . '/wa.php';
 
 if (!defined('KLIKQRIS_BASE')) define('KLIKQRIS_BASE', 'https://klikqris.com/api/qrisv2');
@@ -445,6 +446,16 @@ function gateway_finalize(string $orderId, ?float $paidAmount = null): array
             $uBk->bind_param('dsii', $newPaid, $user, $bId, $companyId);
             $uBk->execute();
             $uBk->close();
+
+            finance_sync_invoice_payments_to_cash(
+                $companyId,
+                $invoiceId,
+                (string) ($inv['invoice_no'] ?? ''),
+                $bType,
+                (string) ($inv['document_number'] ?? ''),
+                [],
+                null
+            );
         }
 
         $uOrd = $db->prepare(

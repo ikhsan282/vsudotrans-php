@@ -2,6 +2,7 @@
 require_once __DIR__ . '/../../config/config.php';
 require_permission('companies.view');
 require_once __DIR__ . '/../../includes/payment_gateway.php';
+require_once __DIR__ . '/../../includes/finance_sync.php';
 require_once __DIR__ . '/../../includes/payment_gateway_direct.php';
 require_once __DIR__ . '/../../includes/gopay_auth.php';
 require_once __DIR__ . '/../../includes/shopeepay_auth.php';
@@ -73,6 +74,7 @@ if ($id > 0) {
     $row = $found;
     if ($canManage) {
         gateway_ensure_company_channels($id);
+        finance_ensure_company_defaults($id, $user);
     }
 }
 
@@ -195,6 +197,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     $new_id = (int) $db->insert_id;
                     $st->close();
                     gateway_ensure_company_channels($new_id);
+                    finance_ensure_company_defaults($new_id, $user);
                     audit('company.create', "Perusahaan #{$new_id} {$row['code']}");
                     flash('success', 'Perusahaan berhasil ditambahkan beserta Secret Key Bot Hermes khusus perusahaan ini.');
                     redirect("pages/companies/detail.php?id={$new_id}&tab=payment");

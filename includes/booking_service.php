@@ -7,6 +7,7 @@
  * booking_status_history (skema tidak punya kolom status).
  */
 require_once __DIR__ . '/booking.php';
+require_once __DIR__ . '/finance_sync.php';
 
 function booking_prefix(string $type): string
 {
@@ -846,7 +847,9 @@ function booking_delete(string $type, int $booking_id, int $company_id): string
         $st->execute();
         $st->close();
 
-        // 3. Hapus rincian biaya operasional & pembayaran (booking_cost_lines)
+        // 3. Hapus transaksi kas tersinkron & rincian biaya/pembayaran (booking_cost_lines)
+        finance_unsync_booking($type, $booking_id, $real_cid);
+
         $st = $db->prepare('DELETE FROM booking_cost_lines WHERE booking_type = ? AND booking_id = ? AND company_id = ?');
         $st->bind_param('sii', $type, $booking_id, $real_cid);
         $st->execute();

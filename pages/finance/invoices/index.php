@@ -7,10 +7,13 @@ require_once __DIR__ . '/../../travel/_helpers.php';
 $filter = (string) ($_GET['status'] ?? '');
 $q = trim((string) ($_GET['q'] ?? ''));
 
-[$where, $types, $params] = company_scope('i.company_id');
-$scope = $where;
-$scope_types = $types;
-$scope_params = $params;
+$compScope = company_filter_scope('i.company_id');
+$filter_cid = (int) $compScope['filter_company_id'];
+$show_comp_col = is_super_admin() && $filter_cid === 0;
+
+$scope = $compScope['where'];
+$scope_types = $compScope['types'];
+$scope_params = $compScope['params'];
 
 if ($q !== '') {
     $scope .= ' AND (i.invoice_no LIKE ? OR i.document_number LIKE ? OR COALESCE(tp.name, rp.name, \'\') LIKE ?)';
@@ -27,6 +30,7 @@ $pay_status_expr = "CASE
 END";
 
 $joins_sql = "FROM invoices i
+    LEFT JOIN companies co ON co.id = i.company_id
     LEFT JOIN travel_ticket_bookings tb ON i.booking_type = 'travel' AND tb.id = i.booking_id
     LEFT JOIN passengers tp ON tp.id = tb.passenger_id
     LEFT JOIN rental_car_bookings rb ON i.booking_type = 'rental' AND rb.id = i.booking_id
@@ -41,11 +45,18 @@ $joins_sql = "FROM invoices i
 $where_full = $scope;
 $types_full = $scope_types;
 $params_full = $scope_params;
-if (in_array($filter, ['unpaid', 'partial', 'paid'], true)) {
+if (in_array($filter, ['unpaid', 'partial', 'paid', 'cancelled'], true)) {
     $where_full .= " AND ({$pay_status_expr}) = ?";
     $types_full .= 's';
     $params_full[] = $filter;
 }
+
+$payStatusLabels = [
+    'unpaid'    => 'Belum Bayar',
+    'partial'   => 'Sebagian',
+    'paid'      => 'Lunas',
+    'cancelled' => 'Dibatalkan',
+];
 
 $sql_count = "SELECT COUNT(*) {$joins_sql} WHERE {$where_full}";
 $st = db()->prepare($sql_count);
@@ -74,12 +85,12 @@ if (in_array($export_format, ['xlsx', 'pdf'], true)) {
         $params_full,
         static fn (array $r): array => [
             $r['invoice_number'] ?: $r['document_number'],
-            $r['issued_at'] ? date('d/m/Y', strtotime($r['issued_at'])) : '-',
-            $r['due_date'] ? date('d/m/Y', strtotime($r['due_date'])) : '-',
+            $r['issued_at'] ? date('d-M-Y', strtotime($r['issued_at'])) : '-',
+            $r['due_date'] ? date('d-M-Y', strtotime($r['due_date'])) : '-',
             $r['customer_name'] ?: '-',
             $isPdf ? rupiah((float) $r['total']) : (float) $r['total'],
             $isPdf ? rupiah((float) $r['paid_total']) : (float) $r['paid_total'],
-            ucfirst($r['pay_status']),
+            $payStatusLabels[$r['pay_status']] ?? ucfirst((string) $r['pay_status']),
         ],
         $max_export_rows
     );
@@ -108,6 +119,7 @@ $p = paginate($total, (int) ($_GET['page'] ?? 1));
 
 $sql = "SELECT i.*,
         i.invoice_no AS invoice_number,
+        co.code AS company_code,
         COALESCE(tb.date, rb.start_date) AS due_date,
         COALESCE(tp.name, rp.name, '-') AS customer_name,
         COALESCE(bcl.paid_total, 0) AS paid_total,
@@ -124,11 +136,12 @@ $rows = $st->get_result()->fetch_all(MYSQLI_ASSOC);
 $st->close();
 
 $header_actions = ui_export_actions();
-if (can('invoices.manage') && active_company_id() !== null) {
-    $header_actions[] = ['label' => 'Buat Invoice', 'icon' => 'plus-lg', 'href' => 'pages/finance/invoices/form.php', 'class' => 'btn btn-primary btn-sm'];
-}
 
-$query_base = http_build_query(array_filter(['status' => $filter, 'q' => $q]));
+$query_base = http_build_query(array_filter([
+    'company_id' => is_super_admin() ? $filter_cid : null,
+    'status'     => $filter,
+    'q'          => $q,
+], static fn ($v): bool => $v !== null && $v !== ''));
 
 $active = 'finance';
 $title  = 'Invoice';
@@ -144,35 +157,48 @@ require __DIR__ . '/../../../includes/header.php';
     <div class="card shadow-sm border-0 mb-3">
         <div class="card-body py-2 px-3">
             <form method="get" class="row g-2 align-items-center erp-filter-bar">
+                <?php if (is_super_admin()): ?>
+                <div class="col-12 col-md-3">
+                    <select name="company_id" class="form-select form-select-sm" onchange="this.form.submit()">
+                        <option value="0"<?= $filter_cid === 0 ? ' selected' : '' ?>>Semua Perusahaan</option>
+                        <?php foreach ($compScope['companies'] as $co): ?>
+                            <option value="<?= (int) $co['id'] ?>"<?= $filter_cid === (int) $co['id'] ? ' selected' : '' ?>>
+                                <?= e(($co['code'] ?? '') . ' - ' . ($co['name'] ?? '')) ?></option>
+                        <?php endforeach; ?>
+                    </select>
+                </div>
+                <?php endif; ?>
                 <div class="col-12 col-md-4">
                     <div class="input-group input-group-sm">
                         <span class="input-group-text bg-white text-muted"><i class="bi bi-search"></i></span>
                         <input type="text" name="q" class="form-control" placeholder="Cari nomor invoice, pelanggan..." value="<?= e($q) ?>">
                     </div>
                 </div>
-                <div class="col-6 col-md-3">
+                <div class="col-6 col-md-2">
                     <select name="status" class="form-select form-select-sm" onchange="this.form.submit()">
                         <option value="">Semua Status</option>
                         <option value="unpaid" <?= $filter === 'unpaid' ? 'selected' : '' ?>>Belum Bayar</option>
                         <option value="partial" <?= $filter === 'partial' ? 'selected' : '' ?>>Sebagian</option>
                         <option value="paid" <?= $filter === 'paid' ? 'selected' : '' ?>>Lunas</option>
+                        <option value="cancelled" <?= $filter === 'cancelled' ? 'selected' : '' ?>>Dibatalkan</option>
                     </select>
                 </div>
-                <?= ui_filter_actions(APP_URL . '/pages/finance/invoices/index.php', ($q !== '' || $filter !== '')) ?>
+                <?= ui_filter_actions(APP_URL . '/pages/finance/invoices/index.php', ($q !== '' || $filter !== '' || (is_super_admin() && $filter_cid !== (active_company_id() ?? 0)))) ?>
             </form>
         </div>
     </div>
     <div class="card shadow-sm border-0">
         <div class="table-responsive">
             <table class="table table-hover mb-0 align-middle">
-                <thead class="table-light"><tr><th class="text-center" style="width: 52px;">#</th><th>Nomor</th><th>Terbit</th><th>Jatuh Tempo</th><th>Pelanggan</th><th class="text-end">Total</th><th class="text-end">Dibayar</th><th>Status</th><th class="text-end">Aksi</th></tr></thead>
+                <thead class="table-light"><tr><th class="text-center" style="width: 52px;">#</th><?php if ($show_comp_col): ?><th>Perusahaan</th><?php endif; ?><th>Nomor</th><th>Terbit</th><th>Jatuh Tempo</th><th>Pelanggan</th><th class="text-end">Total</th><th class="text-end">Dibayar</th><th>Status</th><th class="text-end">Aksi</th></tr></thead>
                 <tbody>
                 <?php foreach ($rows as $idx => $r): ?>
                     <tr>
                         <td class="text-center text-muted small"><?= number_format($p['offset'] + $idx + 1, 0, ',', '.') ?></td>
+                        <?php if ($show_comp_col): ?><td><span class="badge bg-light text-dark border"><?= e((string) ($r['company_code'] ?? '-')) ?></span></td><?php endif; ?>
                         <td><a class="fw-semibold text-decoration-none" href="<?= e(APP_URL) ?>/pages/finance/invoices/detail.php?id=<?= (int) $r['id'] ?>"><?= e($r['invoice_number'] ?: $r['document_number']) ?></a></td>
-                        <td><?= e($r['issued_at'] ? date('d/m/Y', strtotime($r['issued_at'])) : '-') ?></td>
-                        <td><?= e($r['due_date'] ? date('d/m/Y', strtotime($r['due_date'])) : '-') ?></td>
+                        <td><?= e($r['issued_at'] ? date('d-M-Y', strtotime($r['issued_at'])) : '-') ?></td>
+                        <td><?= e($r['due_date'] ? date('d-M-Y', strtotime($r['due_date'])) : '-') ?></td>
                         <td><?= e($r['customer_name']) ?></td>
                         <td class="text-end fw-semibold"><?= e(rupiah((float) $r['total'])) ?></td>
                         <td class="text-end"><?= e(rupiah((float) $r['paid_total'])) ?></td>
@@ -180,21 +206,21 @@ require __DIR__ . '/../../../includes/header.php';
                             <?php
                             $badge = match ($r['pay_status']) {
                                 'paid' => 'success',
-                                'partial' => 'warning',
+                                'partial' => 'warning text-dark',
                                 'cancelled' => 'dark',
                                 default => 'danger',
                             };
                             ?>
-                            <span class="badge bg-<?= $badge ?>"><?= ucfirst($r['pay_status']) ?></span>
+                            <span class="badge bg-<?= $badge ?>"><?= e($payStatusLabels[$r['pay_status']] ?? ucfirst((string) $r['pay_status'])) ?></span>
                         </td>
                         <td class="text-end text-nowrap">
                             <a class="btn btn-sm btn-outline-secondary" href="<?= e(APP_URL) ?>/pages/finance/invoices/detail.php?id=<?= (int) $r['id'] ?>" title="Detail" aria-label="Detail"><i class="bi bi-eye"></i></a>
-                            <a class="btn btn-sm btn-outline-danger" href="<?= e(APP_URL) ?>/pages/finance/invoices/pdf.php?id=<?= (int) $r['id'] ?>" target="_blank" title="Unduh PDF" aria-label="Unduh PDF"><i class="bi bi-file-earmark-pdf"></i></a>
+                            <a class="btn btn-sm btn-outline-danger" href="<?= e(APP_URL) ?>/pages/finance/invoices/print.php?id=<?= (int) $r['id'] ?>&amp;format=pdf" target="_blank" title="Unduh PDF" aria-label="Unduh PDF"><i class="bi bi-file-earmark-pdf"></i></a>
                         </td>
                     </tr>
                 <?php endforeach; ?>
                 <?php if (!$rows): ?>
-                    <tr><td colspan="9" class="text-center text-muted py-4">Belum ada invoice.</td></tr>
+                    <tr><td colspan="<?= $show_comp_col ? 10 : 9 ?>" class="text-center text-muted py-4">Belum ada invoice.</td></tr>
                 <?php endif; ?>
                 </tbody>
             </table>

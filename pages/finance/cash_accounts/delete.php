@@ -20,8 +20,8 @@ if (!$row) {
     redirect('pages/finance/cash_accounts/index.php');
 }
 
+$cid = (int) $row['company_id'];
 $st = db()->prepare('SELECT COUNT(*) FROM cash_transactions WHERE cash_account_id = ? AND company_id = ?');
-$cid = (int) active_company_id();
 $st->bind_param('ii', $id, $cid);
 $st->execute();
 $used = (int) $st->get_result()->fetch_row()[0];

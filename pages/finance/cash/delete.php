@@ -13,9 +13,11 @@ $id = (int) ($_POST['id'] ?? 0);
 $row = cash_tx_find($id);
 if (!$row) {
     flash('error', 'Transaksi tidak ditemukan.');
+} elseif (!empty($row['source_type'])) {
+    flash('error', 'Transaksi sinkronisasi otomatis tidak dapat dihapus langsung dari Buku Kas. Ubah/hapus dari Invoice, Booking, atau Payroll terkait.');
 } else {
     $st = db()->prepare('DELETE FROM cash_transactions WHERE id = ? AND company_id = ?');
-    $cid = (int) active_company_id();
+    $cid = (int) $row['company_id'];
     $st->bind_param('ii', $id, $cid);
     $st->execute();
     $deleted = $st->affected_rows;

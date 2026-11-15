@@ -1159,6 +1159,7 @@ CREATE TABLE `payment_methods` (
   `instructions` VARCHAR(2000) DEFAULT NULL,
   `sort_order` INT(11) NOT NULL DEFAULT 0,
   `auto_verify` TINYINT(1) NOT NULL DEFAULT 0,
+  `is_cash` TINYINT(1) NOT NULL DEFAULT 0 COMMENT '1=kas tunai, 0=bank/non-tunai',
   `is_active` TINYINT(1) NOT NULL DEFAULT 1,
   `note` VARCHAR(2000) DEFAULT NULL,
   `created_user` VARCHAR(255) DEFAULT NULL,
@@ -1207,13 +1208,16 @@ CREATE TABLE `cash_transactions` (
   `category` VARCHAR(50) DEFAULT NULL,
   `description` VARCHAR(1000) DEFAULT NULL,
   `payment_method_id` INT(11) DEFAULT NULL,
+  `source_type` VARCHAR(30) DEFAULT NULL COMMENT 'booking_payment|payroll_period|NULL=manual',
+  `source_id` INT(11) DEFAULT NULL COMMENT 'id booking_cost_lines / payroll_periods',
   `created_user` VARCHAR(255) DEFAULT NULL,
   `created_date` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
   `modified_user` VARCHAR(255) DEFAULT NULL,
   `modified_date` DATETIME DEFAULT NULL,
   PRIMARY KEY (`id`),
   KEY `ix_cashtx_company_date` (`company_id`, `date`),
-  KEY `ix_cashtx_account` (`cash_account_id`)
+  KEY `ix_cashtx_account` (`cash_account_id`),
+  KEY `ix_cashtx_source` (`source_type`, `source_id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 CREATE TABLE `invoices` (
