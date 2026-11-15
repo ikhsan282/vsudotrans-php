@@ -574,18 +574,28 @@ try {
         ts_check(false, 'CSRF token extracted from travel/detail.php');
     }
 
-    // 10. Multi-Passenger Search & +N tambahan Badge on Rental & Travel Index
+    // 10. Multi-Passenger Search & +N Compact Badge on Rental & Travel Index
     booking_passengers_set('rental', $tempBookingId, 1, [$lastPaxId, $createdPaxIds[0]], $lastPaxId, 'test');
     $rIdx = $httpGet('/pages/rental/bookings/index.php?company_id=1&q=' . urlencode('ZZZScale Test Passenger 001'));
     ts_check(
-        $rIdx['code'] === 200 && str_contains($rIdx['body'], (string) $bk['document_number']) && str_contains($rIdx['body'], '+1 tambahan'),
-        'rental/bookings/index.php finds booking via extra passenger & shows +1 tambahan badge'
+        $rIdx['code'] === 200
+        && str_contains($rIdx['body'], (string) $bk['document_number'])
+        && str_contains($rIdx['body'], 'booking-extra-pax-badge')
+        && str_contains($rIdx['body'], '>+1<')
+        && !str_contains($rIdx['body'], '+1 tambahan'),
+        'rental/bookings/index.php finds booking via extra passenger & shows compact +1 badge without tambahan'
     );
 
     $tIdx = $httpGet('/pages/travel/bookings/index.php?company_id=1&q=' . urlencode('ZZZScale Test Passenger 001'));
     ts_check(
-        $tIdx['code'] === 200 && str_contains($tIdx['body'], (string) $tbk['document_number']) && str_contains($tIdx['body'], '+2 tambahan') && str_contains($tIdx['body'], 'Total Pembayaran') && str_contains($tIdx['body'], 'ZZ 0070 SC'),
-        'travel/bookings/index.php finds booking via extra passenger, shows +2 tambahan badge & Rental-parity columns'
+        $tIdx['code'] === 200
+        && str_contains($tIdx['body'], (string) $tbk['document_number'])
+        && str_contains($tIdx['body'], 'booking-extra-pax-badge')
+        && str_contains($tIdx['body'], '>+2<')
+        && !str_contains($tIdx['body'], '+2 tambahan')
+        && str_contains($tIdx['body'], 'Total Pembayaran')
+        && str_contains($tIdx['body'], 'ZZ 0070 SC'),
+        'travel/bookings/index.php finds booking via extra passenger, shows compact +2 badge without tambahan & Rental-parity columns'
     );
 
     // 10b. Menu Transportasi & struktur pages/transport/*
@@ -985,9 +995,17 @@ try {
     ts_check(
         $tkRes['code'] === 200
         && str_contains($tkRes['body'], 'E-TIKET')
-        && str_contains($tkRes['body'], 'Detail Tiket Perjalanan')
+        && str_contains($tkRes['body'], 'Detail Pemesanan')
+        && str_contains($tkRes['body'], '<td class="tk-kv-k">Resi</td>')
+        && str_contains($tkRes['body'], '<td class="tk-kv-k">Layanan</td>')
+        && str_contains($tkRes['body'], 'Tiket Perjalanan')
+        && str_contains($tkRes['body'], 'Syarat &amp; Ketentuan Perjalanan:')
+        && !str_contains($tkRes['body'], 'Detail Tiket Perjalanan')
+        && !str_contains($tkRes['body'], '<td class="tk-kv-k">Nomor Tiket</td>')
+        && !str_contains($tkRes['body'], '<td class="tk-kv-k">Rute Perjalanan</td>')
+        && !str_contains($tkRes['body'], '<td class="tk-kv-k">Total Penumpang</td>')
         && str_contains($tkRes['body'], $tempTravelDoc),
-        'Root /tiket.php?no=...&print=1 renders Travel E-Tiket HTML (HTTP 200) cleanly'
+        'Root /tiket.php?no=...&print=1 renders unified Travel E-Tiket matching Rental with Travel terms cleanly'
     );
 
     // 16. Topbar renders menu title without leading icon

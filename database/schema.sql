@@ -415,6 +415,7 @@ CREATE TABLE `cities` (
   `province_id` INT(11) NOT NULL,
   `code` VARCHAR(15) NOT NULL,
   `name` VARCHAR(255) NOT NULL,
+  `short_name` VARCHAR(10) DEFAULT NULL,
   `note` VARCHAR(2000) DEFAULT NULL,
   `created_user` VARCHAR(255) DEFAULT NULL,
   `created_date` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -425,6 +426,7 @@ CREATE TABLE `cities` (
   KEY `ix_cities_province` (`province_id`),
   KEY `ix_cities_prov_name` (`province_id`, `name`),
   KEY `ix_cities_name` (`name`),
+  KEY `ix_cities_short_name` (`short_name`),
   CONSTRAINT `fk_cities_country` FOREIGN KEY (`country_id`) REFERENCES `countries` (`id`) ON DELETE RESTRICT,
   CONSTRAINT `fk_cities_province` FOREIGN KEY (`province_id`) REFERENCES `provinces` (`id`) ON DELETE RESTRICT
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;

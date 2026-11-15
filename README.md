@@ -95,17 +95,17 @@ Password semua user: `P@ssw0rd`. **Wajib diganti sebelum production.**
 | Karyawan | ✅ | ✅ | Berkas KTP/SIM & monitoring jatuh tempo SIM |
 | Pengguna, Role & Hak Akses | ✅ | ✅ | Batas level role (`H1`/`H2`/`M1`) |
 | Audit Trail | ✅ | ✅ | Read-only |
-| Referensi umum (bank, wilayah, satuan) | ✅ | ✅ | Wilayah berjenjang + remote Tom Select (`opts_*`) |
+| Referensi umum (bank, wilayah, satuan) | ✅ | ✅ | Wilayah berjenjang (`cities.short_name` singkatan kota 3–4 huruf) + remote Tom Select (`opts_*`) |
 | Kendaraan (`brands`, `categories`, `models`, unit) | ✅ | ✅ | Master merek/kategori/model dipisah ke halaman terdedikasi; foto, STNK, KIR terintegrasi Azure Blob |
 | Master HR (grade, jabatan, posisi, struktur, penghargaan) | ✅ | ✅ | |
-| **Travel** (rute & pemesanan tiket) | ✅ | ✅ | Rute bertarif bertingkat + radius kecamatan; pemesanan tiket + resi + penumpang tambahan + kolom **Sopir** (no. WA di atas, nama diperkecil) |
-| **Rental** (sewa kendaraan) | ✅ | ✅ | Booking rental multi-hari + penumpang tambahan + komisi kru/sopir + kolom **Sopir** + inline payment & QRIS dinamis |
+| **Travel** (rute & pemesanan tiket) | ✅ | ✅ | Rute bertarif bertingkat (Daftar Harga terurut tarif termurah) + radius kecamatan; pemesanan tiket + resi + badge penumpang tambahan (`+N`) + kolom **Sopir** (no. WA di atas, nama diperkecil) |
+| **Rental** (sewa kendaraan) | ✅ | ✅ | Booking rental multi-hari + badge penumpang tambahan (`+N`) + komisi kru/sopir + kolom **Sopir** + inline payment & QRIS dinamis |
 | **Transportasi** (penumpang & peraturan komisi) | ✅ | ✅ | Master bersama Penumpang & Peraturan Komisi untuk Travel & Rental |
 | **Booking service** (5 status operasional) | ✅ | ✅ | Alur 5 status: `draft` → `scheduled` → `on_trip` → `done` / `cancelled` (status `confirmed` dihapus; pembayaran tidak mengunci status operasional); reschedule, assign driver, cancel otomatis sinkron ke invoice |
-| Tiket publik `tiket.php?no=...` | ✅ | ✅ | Tanpa login, logo & stempel dari Azure SAS |
+| Tiket publik `tiket.php?no=...` | ✅ | ✅ | Tanpa login, logo & stempel dari Azure SAS; blok `Detail Pemesanan` seragam Travel & Rental (`Resi`, `Jam Berangkat`, `Layanan`, `Kendaraan`, `Total Harga`) + Syarat & Ketentuan Travel |
 | Metode Pembayaran & **Saluran QRIS/Gopay** | ✅ | ✅ | Master `payment_methods` + konfigurasi gateway QRIS/Midtrans dinamis (`payment_channels`) |
 | **Invoice & Pembayaran** | ✅ | ✅ | Otomatis saat booking; status `issued` / `partial` / `paid` / `cancelled`; tolak overpay; cetak + **unduh PDF** |
-| **Kalender Operasional & Driver** | ✅ | ✅ | Kalender operasional (`pages/dispatch/calendar.php`), papan/penugasan aktif, detail & cetak surat jalan (`manifest.php`) dari Detail Booking |
+| **Kalender Operasional & Driver** | ✅ | ✅ | Kalender operasional (`pages/dispatch/calendar.php` Bulan/Minggu/Hari/Daftar: ringkasan 2 baris dengan singkatan kota, kategori · merk · plat armada, tanggal/jam Travel & Rental, klik Daftar buka modal detail), papan/penugasan aktif, detail & cetak surat jalan (`manifest.php`) dari Detail Booking |
 | **WhatsApp Bot API** (`api/bot/*`) | ✅ | ✅ | Endpoint internal bot untuk booking, rute, penugasan driver, QRIS dinamis, & ringkasan staf |
 | **Laporan** (Booking, Keuangan, Operasional, Driver) | ✅ | ✅ | Rekap lintas dimensi + export CSV, XLSX, PDF, & Cetak |
 | **Payroll & Absensi** | ✅ | ✅ | Absensi harian/rekap → sumber hari hadir generate payroll (`draft` → `final` → `dibayar`), cetak & PDF |
@@ -122,10 +122,10 @@ Menu sidebar (`includes/sidebar.php`) dikelompokkan dalam 7 kategori dan difilte
 | Kategori | Menu | Fitur |
 |----------|------|-------|
 | **1. UTAMA** | **Dashboard** | **Operasional:** booking hari ini & minggu ini (1x query gabungan grafik + KPI), ringkasan **5 status operasional** (`Draft`, `Terjadwal`, `Sedang Jalan`, `Selesai`, `Dibatalkan`), **Driver Sedang Bertugas** (no. WA/kode + link detail booking + status + shortcut ke Kalender), **Piutang Jatuh Tempo** (`issued` & `partial`, link detail invoice, total/jumlah dihitung dari seluruh piutang bukan hanya 8 baris teratas), **Pemesanan Aktif & Terjadwal** lengkap dengan kolom **Sopir**, **Peringatan Dokumen & Legalitas H-30** (STNK, KIR, Pajak, SIM). **Grafik & Statistik:** booking & pendapatan 6 bulan terakhir (disembunyikan bagi role tanpa izin keuangan/laporan) serta ringkasan **Karyawan Aktif**, **Armada Aktif**, **Cabang**, dan **Perusahaan** |
-| **2. OPERASIONAL & ARMADA** | **Travel** ▾ | **Pemesanan Tiket Perjalanan**: CRUD booking, resi acak, invoice otomatis, 5 status operasional, penumpang utama & tambahan, kolom **Sopir** (no. WA di atas + nama di bawah), nominal ringkas tanpa prefix `Rp`, ekspor PDF/XLSX · **Rute**: rute + harga bertingkat + radius kecamatan |
-| | **Rental** ▾ | **Pemesanan Sewa Kendaraan**: periode `start_date`–`end_date`, lama trip, BBM, premi/komisi kru, penumpang tambahan, kolom **Sopir** (WA di atas + nama di bawah), nominal ringkas tanpa `Rp`, invoice otomatis & pembayaran QRIS dinamis |
+| **2. OPERASIONAL & ARMADA** | **Travel** ▾ | **Pemesanan Tiket Perjalanan**: CRUD booking, resi acak, invoice otomatis, 5 status operasional, penumpang utama & badge tambahan ringkas (`+N`), kolom **Sopir** (no. WA di atas + nama di bawah), nominal ringkas tanpa prefix `Rp`, ekspor PDF/XLSX · **Rute**: rute + Daftar Harga terurut tarif termurah + radius kecamatan |
+| | **Rental** ▾ | **Pemesanan Sewa Kendaraan**: periode `start_date`–`end_date`, lama trip, BBM, premi/komisi kru, badge penumpang tambahan ringkas (`+N`), kolom **Sopir** (WA di atas + nama di bawah), nominal ringkas tanpa `Rp`, invoice otomatis & pembayaran QRIS dinamis |
 | | **Transportasi** ▾ | **Penumpang** (master pelanggan/penumpang bersama Travel & Rental) · **Peraturan Komisi** (aturan biaya/komisi kru & sopir) |
-| | **Kalender Operasional** | Agenda bulanan/mingguan/harian armada & driver (`pages/dispatch/calendar.php`), papan/penugasan driver aktif, dan cetak surat jalan (`manifest.php`) dari halaman detail booking |
+| | **Kalender Operasional** | Agenda bulanan/mingguan/harian/daftar armada & driver (`pages/dispatch/calendar.php`) dengan tampilan 2 baris (rute singkat, kategori · merk · plat, sopir, tanggal/periode + jam, klik Daftar buka modal detail), papan/penugasan driver aktif, dan cetak surat jalan (`manifest.php`) dari halaman detail booking |
 | | **Kendaraan** ▾ | **Daftar Kendaraan**, **Merek Kendaraan**, **Kategori Kendaraan**, **Model Unit**; lengkap foto unit, STNK, KIR (Azure Blob) |
 | **3. KEUANGAN & AKUNTANSI** | **Keuangan** ▾ | **Invoice** (`issued`/`partial`/`paid`/`cancelled`, bukti bayar Azure Blob, cetak + **unduh PDF**) · **Buku Kas & Bank** · **Akun Kas/Bank** · **Metode Pembayaran** · **Saluran QRIS/Gopay** (`pages/finance/payment_channels`, izin `companies.manage`) |
 | **4. SDM & PAYROLL** | **Karyawan** | CRUD karyawan + detail, rekening payroll, foto profil, KTP & SIM (Azure Blob) |
@@ -134,7 +134,7 @@ Menu sidebar (`includes/sidebar.php`) dikelompokkan dalam 7 kategori dan difilte
 | | **Master HR** ▾ | Grade Jabatan, Jabatan, Posisi, Struktur Org., Penghargaan + Import CSV |
 | **5. LAPORAN** | **Laporan** ▾ | **Laporan Booking** · **Laporan Keuangan** · **Laporan Operasional** · **Laporan Driver** (semua export CSV, XLSX, PDF, dan Cetak) |
 | **6. MASTER DATA & ORGANISASI** | **Organisasi** ▾ | **Grup Perusahaan** · **Perusahaan** (termasuk pengaturan WA & logo/stempel Azure Blob) · **Cabang** |
-| | **Referensi Umum** ▾ | **Bank**, **Wilayah** (`Negara` → `Provinsi` → `Kota/Kab.` → `Kecamatan` → `Desa`), **Satuan** — Streaming Grid Export & Import CSV |
+| | **Referensi Umum** ▾ | **Bank**, **Wilayah** (`Negara` → `Provinsi` → `Kota/Kab.` + `short_name` 3–4 huruf → `Kecamatan` → `Desa`), **Satuan** — Streaming Grid Export & Import CSV |
 | **7. ADMINISTRASI SISTEM** | **Pengguna & Akses** ▾ | **Pengguna** · **Role & Hak Akses** · **Audit Trail** |
 | | **Sistem** ▾ | **Backup & Restore** (khusus Super Admin) |
 
@@ -149,6 +149,8 @@ Self-check tanpa framework (butuh DB lokal sesuai `config/config.php`). Tersedia
 ```bash
 php tests/dashboard_chart_check.php   # grafik 6 bulan dashboard, scoping tenant & format rupiah_singkat
 php tests/booking_check.php           # premi/komisi, transisi 5 status, reschedule, cancel
+php tests/calendar_check.php          # kalender operasional: RBAC, scope, filter, tampilan Bulan & Daftar
+php tests/ticket_api_check.php        # WordPress Ticket Check API & multi-brand e-tiket
 php tests/payment_gateway_check.php   # QRIS dinamis, webhook/polling, saluran pembayaran
 php tests/tomselect_scale_check.php   # remote Tom Select, index DB, ekspor, Sopir & UI parity
 php tests/masters_engine_check.php    # engine master: save/scope referensi & HR

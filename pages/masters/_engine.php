@@ -25,6 +25,12 @@ function master_code_ok(string $code): bool
     return (bool) preg_match('/^[A-Z0-9-]{1,15}$/', $code);
 }
 
+/** Singkatan kota (Opsi 1): 3–4 huruf kapital A–Z. */
+function master_short_name_ok(string $v): bool
+{
+    return (bool) preg_match('/^[A-Z]{3,4}$/', $v);
+}
+
 /** Kolom numeric wajib berisi angka. */
 function master_num_ok(string $v): bool
 {
@@ -143,7 +149,10 @@ function master_tables(): array
             'fields' => [
                 mf_select('country_id', 'Negara', 'countries', ['child' => 'province_id']),
                 mf_select('province_id', 'Provinsi', 'provinces', ['endpoint' => 'pages/masters/provinces/options.php', 'param' => 'country_id']),
-                mf_code(), mf_name(), mf_note(),
+                mf_code(),
+                mf_name(),
+                ['col' => 'short_name', 'label' => 'Singkatan', 'type' => 'text', 'max' => 4, 'required' => false, 'nullable' => true, 'upper' => true, 'short_code' => true],
+                mf_note(),
             ],
             'blockers' => [
                 ['table' => 'districts', 'col' => 'city_id', 'label' => 'kecamatan'],
@@ -587,10 +596,18 @@ function master_list(string $key): void
     if ($q !== '') {
         $q_like = '%' . $q . '%';
         if (column_exists($table, 'code') && column_exists($table, 'name')) {
-            $where .= " AND (`code` LIKE ? OR `name` LIKE ?)";
-            $types .= 'ss';
-            $params[] = $q_like;
-            $params[] = $q_like;
+            if (column_exists($table, 'short_name')) {
+                $where .= " AND (`code` LIKE ? OR `name` LIKE ? OR `short_name` LIKE ?)";
+                $types .= 'sss';
+                $params[] = $q_like;
+                $params[] = $q_like;
+                $params[] = $q_like;
+            } else {
+                $where .= " AND (`code` LIKE ? OR `name` LIKE ?)";
+                $types .= 'ss';
+                $params[] = $q_like;
+                $params[] = $q_like;
+            }
         } elseif (column_exists($table, 'name')) {
             $where .= " AND `name` LIKE ?";
             $types .= 's';
@@ -1338,6 +1355,9 @@ function master_validate(array $spec, array $in, int $id, ?int $cid): array
         }
         if (!empty($f['code']) && !master_code_ok((string) $v)) {
             $errors[] = $label . ' wajib 1–15 karakter: huruf, angka, atau strip.';
+        }
+        if (!empty($f['short_code']) && !master_short_name_ok((string) $v)) {
+            $errors[] = $label . ' wajib 3–4 huruf (A–Z).';
         }
         if ($type === 'money' || $type === 'number') {
             if (!master_num_ok((string) $v)) {

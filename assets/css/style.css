@@ -1081,6 +1081,10 @@ body {
   line-height: 1.25;
 }
 
+.badge.booking-extra-pax-badge {
+  font-size: calc(.75rem - 1px);
+}
+
 /* ── Kalender Operasional (FullCalendar Light + Dark Mode) ─────────────────── */
 .content-main-row > main.ops-calendar-page {
   padding: 1rem .65rem !important;
@@ -1297,8 +1301,18 @@ html[data-bs-theme="dark"] #ops-calendar.fc-can-create .fc-daygrid-day:hover {
 }
 
 #ops-calendar .fc-vst-event.fc-vst-status-cancelled .fc-vst-pill-inner,
+#ops-calendar .fc-vst-event.fc-vst-status-cancelled .fc-vst-pill-route,
 #ops-calendar .fc-vst-event.fc-vst-status-cancelled .fc-vst-list-doc {
   text-decoration: line-through;
+}
+
+#ops-calendar .fc-vst-pill-stack {
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  min-width: 0;
+  overflow: hidden;
+  gap: 1px;
 }
 
 #ops-calendar .fc-vst-pill-inner {
@@ -1310,6 +1324,14 @@ html[data-bs-theme="dark"] #ops-calendar.fc-can-create .fc-daygrid-day:hover {
   overflow: hidden;
   white-space: nowrap;
   text-overflow: ellipsis;
+}
+
+#ops-calendar .fc-vst-pill-route {
+  font-size: .63rem;
+  line-height: 1.15;
+  opacity: .9;
+  padding-left: 14px;
+  min-width: 0;
 }
 
 #ops-calendar .fc-vst-time {
@@ -1364,10 +1386,18 @@ html[data-bs-theme="dark"] #ops-calendar.fc-can-create .fc-daygrid-day:hover {
   background-color: transparent !important;
   color: var(--text-color) !important;
   border-left-width: 0 !important;
+  cursor: pointer;
 }
 
-#ops-calendar .fc-list-event-title {
-  color: var(--text-color);
+#ops-calendar .fc-list-event.fc-vst-event:hover > td {
+  background-color: var(--surface-muted) !important;
+}
+
+#ops-calendar .fc-list-event-title,
+#ops-calendar .fc-list-event-title a {
+  color: var(--text-color) !important;
+  text-decoration: none !important;
+  cursor: pointer;
 }
 
 #ops-calendar .fc-list-event-time {

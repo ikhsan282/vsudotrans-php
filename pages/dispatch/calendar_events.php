@@ -138,9 +138,12 @@ $sql = "SELECT 'travel' AS kind, b.id, b.company_id, comp.code AS company_code, 
                COALESCE((SELECT COUNT(*) FROM booking_passengers bp WHERE bp.booking_type='travel' AND bp.booking_id=b.id AND bp.is_primary=0), 0) AS extra_pax,
                COALESCE((SELECT h.to_status FROM booking_status_history h WHERE h.booking_type='travel' AND h.booking_id=b.id ORDER BY h.id DESC LIMIT 1), 'draft') AS status,
                v.id AS vehicle_id, COALESCE(v.vehicle_number, '') AS vehicle_number,
+               COALESCE(bv.name, '') AS brand_name,
+               COALESCE(cv.code, '') AS category_code, COALESCE(cv.name, '') AS category_name,
                ta.id AS assignment_id, COALESCE(ta.employee_id, 0) AS driver_id,
                COALESCE(e.name, '') AS driver, COALESCE(e.phone_number, '') AS driver_phone,
                COALESCE(oc.name, '') AS orig_city, COALESCE(dc.name, '') AS dest_city,
+               COALESCE(oc.short_name, '') AS orig_city_short, COALESCE(dc.short_name, '') AS dest_city_short,
                COALESCE(b.pickup_address, '') AS pickup_address, COALESCE(b.delivery_address, '') AS delivery_address,
                COALESCE(b.total_price, 0) AS total_price, COALESCE(b.total_payment, 0) AS total_payment,
                COALESCE(inv.status, '') AS invoice_status, COALESCE(inv.total, b.total_price, 0) AS invoice_total,
@@ -149,6 +152,8 @@ $sql = "SELECT 'travel' AS kind, b.id, b.company_id, comp.code AS company_code, 
         JOIN companies comp ON comp.id=b.company_id
         JOIN passengers p ON p.id=b.passenger_id
         LEFT JOIN vehicles v ON v.id=b.vehicle_id
+        LEFT JOIN brand_vehicles bv ON bv.id=v.brand_id
+        LEFT JOIN category_vehicles cv ON cv.id=COALESCE(b.category_vehicle_id, v.category_vehicle_id)
         LEFT JOIN cities oc ON oc.id=b.pickup_point_city_id
         LEFT JOIN cities dc ON dc.id=b.delivery_point_city_id
         LEFT JOIN trip_assignments ta ON ta.id=(SELECT t2.id FROM trip_assignments t2 WHERE t2.booking_type='travel' AND t2.booking_id=b.id ORDER BY (t2.ended_at IS NULL) DESC, t2.id DESC LIMIT 1)
@@ -164,9 +169,12 @@ $sql = "SELECT 'travel' AS kind, b.id, b.company_id, comp.code AS company_code, 
                COALESCE((SELECT COUNT(*) FROM booking_passengers bp WHERE bp.booking_type='rental' AND bp.booking_id=b.id AND bp.is_primary=0), 0) AS extra_pax,
                COALESCE((SELECT h.to_status FROM booking_status_history h WHERE h.booking_type='rental' AND h.booking_id=b.id ORDER BY h.id DESC LIMIT 1), 'draft') AS status,
                v.id AS vehicle_id, COALESCE(v.vehicle_number, '') AS vehicle_number,
+               COALESCE(bv.name, '') AS brand_name,
+               COALESCE(cv.code, '') AS category_code, COALESCE(cv.name, '') AS category_name,
                ta.id AS assignment_id, COALESCE(ta.employee_id, 0) AS driver_id,
                COALESCE(e.name, '') AS driver, COALESCE(e.phone_number, '') AS driver_phone,
                COALESCE(oc.name, '') AS orig_city, COALESCE(dc.name, '') AS dest_city,
+               COALESCE(oc.short_name, '') AS orig_city_short, COALESCE(dc.short_name, '') AS dest_city_short,
                COALESCE(b.pickup_address, '') AS pickup_address, COALESCE(b.delivery_address, '') AS delivery_address,
                COALESCE(b.total_price, 0) AS total_price, COALESCE(b.total_payment, 0) AS total_payment,
                COALESCE(inv.status, '') AS invoice_status, COALESCE(inv.total, b.total_price, 0) AS invoice_total,
@@ -175,6 +183,8 @@ $sql = "SELECT 'travel' AS kind, b.id, b.company_id, comp.code AS company_code, 
         JOIN companies comp ON comp.id=b.company_id
         JOIN passengers p ON p.id=b.passenger_id
         LEFT JOIN vehicles v ON v.id=b.vehicle_id
+        LEFT JOIN brand_vehicles bv ON bv.id=v.brand_id
+        LEFT JOIN category_vehicles cv ON cv.id=COALESCE(b.category_vehicle_id, v.category_vehicle_id)
         LEFT JOIN cities oc ON oc.id=b.pickup_point_city_id
         LEFT JOIN cities dc ON dc.id=b.delivery_point_city_id
         LEFT JOIN trip_assignments ta ON ta.id=(SELECT t2.id FROM trip_assignments t2 WHERE t2.booking_type='rental' AND t2.booking_id=b.id ORDER BY (t2.ended_at IS NULL) DESC, t2.id DESC LIMIT 1)
@@ -246,6 +256,8 @@ foreach ($rows as $row) {
 
     $origCity = trim((string) ($row['orig_city'] ?? ''));
     $destCity = trim((string) ($row['dest_city'] ?? ''));
+    $origCityShort = trim((string) ($row['orig_city_short'] ?? ''));
+    $destCityShort = trim((string) ($row['dest_city_short'] ?? ''));
     $routeLabel = ($origCity !== '' && $destCity !== '')
         ? ($origCity . ' → ' . $destCity)
         : ($origCity !== '' ? $origCity : ($destCity !== '' ? $destCity : '—'));
@@ -274,6 +286,9 @@ foreach ($rows as $row) {
     $kindLabel = $kind === 'rental' ? 'Rental' : 'Travel';
     $compCode = trim((string) ($row['company_code'] ?? ''));
     $plate = trim((string) ($row['vehicle_number'] ?? ''));
+    $brandName = trim((string) ($row['brand_name'] ?? ''));
+    $categoryCode = trim((string) ($row['category_code'] ?? ''));
+    $categoryName = trim((string) ($row['category_name'] ?? ''));
     $driverName = trim((string) ($row['driver'] ?? ''));
     $passengerName = trim((string) $row['passenger']);
     $extraPax = (int) ($row['extra_pax'] ?? 0);
@@ -292,6 +307,8 @@ foreach ($rows as $row) {
         'No. ' . $row['document_number'],
         'Status: ' . $statusLabel,
         $routeLabel !== '—' ? 'Rute: ' . $routeLabel : null,
+        $categoryName !== '' ? 'Kategori: ' . $categoryName : null,
+        $brandName !== '' ? 'Merk: ' . $brandName : null,
         $plate !== '' ? 'Armada: ' . $plate : null,
         $driverName !== '' ? 'Sopir: ' . $driverName : null,
     ]);
@@ -335,6 +352,9 @@ foreach ($rows as $row) {
             'extra_pax'          => $extraPax,
             'vehicle_id'         => (int) ($row['vehicle_id'] ?? 0),
             'vehicle_number'     => $plate,
+            'brand_name'         => $brandName,
+            'category_code'      => $categoryCode,
+            'category_name'      => $categoryName,
             'assignment_id'      => $assignmentId,
             'driver_id'          => (int) ($row['driver_id'] ?? 0),
             'driver'             => $driverName,
@@ -343,6 +363,8 @@ foreach ($rows as $row) {
             'has_driver'         => $driverName !== '',
             'orig_city'          => $origCity,
             'dest_city'          => $destCity,
+            'orig_city_short'    => $origCityShort,
+            'dest_city_short'    => $destCityShort,
             'route_label'        => $routeLabel,
             'pickup_address'     => trim((string) ($row['pickup_address'] ?? '')),
             'delivery_address'   => trim((string) ($row['delivery_address'] ?? '')),

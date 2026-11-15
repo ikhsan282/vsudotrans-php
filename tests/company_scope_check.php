@@ -885,6 +885,14 @@ try {
         && str_contains($rtIdxDist['body'], $enumCode),
         'travel/rutes/index.php renders Daftar Harga, icon-only Status, Kecamatan Radius summary, and searches covered district names'
     );
+    cs_check(
+        $cat1b <= 0 || (
+            strpos($rtIdx1['body'], '>145.000<') !== false
+            && strpos($rtIdx1['body'], '>180.000<') !== false
+            && strpos($rtIdx1['body'], '>145.000<') < strpos($rtIdx1['body'], '>180.000<')
+        ),
+        'travel/rutes/index.php orders Daftar Harga tariffs by standard price ascending (145.000 before 180.000)'
+    );
 
     $otherCityId = (int) $db->query("SELECT id FROM cities WHERE id != {$cityA} ORDER BY id DESC LIMIT 1")->fetch_column();
     $rtFilterMatch = $httpGet(

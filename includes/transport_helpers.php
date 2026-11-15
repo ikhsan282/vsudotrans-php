@@ -734,6 +734,22 @@ function booking_driver_cell_html(?array $driverSummary): string
 }
 
 /**
+ * Render sel kolom Penumpang (nama utama + badge ringkas +N penumpang tambahan + no. HP) untuk grid Travel/Rental.
+ */
+function booking_passenger_cell_html(string $name, ?string $phone, int $extraCount): string
+{
+    $html  = '<div class="small fw-semibold text-dark d-flex flex-wrap align-items-center gap-1">';
+    $html .= '<span>' . e($name) . '</span>';
+    if ($extraCount > 0) {
+        $tip   = $extraCount . ' penumpang tambahan';
+        $html .= '<span class="badge bg-info-subtle text-info-emphasis border booking-extra-pax-badge" title="' . e($tip) . '">+' . $extraCount . '</span>';
+    }
+    $html .= '</div>';
+    $html .= '<div class="text-muted" style="font-size: 0.8rem;">' . e($phone !== null && $phone !== '' ? $phone : '-') . '</div>';
+    return $html;
+}
+
+/**
  * Ekspresi SQL subquery berkorelasi untuk mengekspor informasi sopir (prioritas trip_assignments aktif,
  * fallback booking_cost_lines Sopir/Driver). PDF meletakkan no. WA di atas nama agar konsisten dengan grid.
  */
@@ -805,7 +821,7 @@ function booking_export_row(array $r, bool $isPdf, string $dateLabel): array
 
     if ($isPdf) {
         $exCnt   = (int) ($r['extra_cnt'] ?? 0);
-        $paxHead = (string) ($r['passenger_name'] ?? '') . ($exCnt > 0 ? " (+{$exCnt} tambahan)" : '');
+        $paxHead = (string) ($r['passenger_name'] ?? '') . ($exCnt > 0 ? " (+{$exCnt})" : '');
         $paxCell = $paxHead . "\n" . (($r['passenger_phone'] ?? '') ?: '-');
         return [
             $r['document_number'],
@@ -1186,13 +1202,18 @@ function rute_parse_signed_amount(mixed $raw): float
 }
 
 /** Ambil peta [rute_id => list baris tarif kategori] dari tabel `rute_tariffs`. */
-function rute_tariffs_by_rute_ids(array $rute_ids, int $company_id = 0): array
+function rute_tariffs_by_rute_ids(array $rute_ids, int $company_id = 0, string $orderBy = 'sort_order'): array
 {
     rute_tariff_ensure_schema();
     $ids = array_values(array_unique(array_filter(array_map('intval', $rute_ids), static fn ($x) => $x > 0)));
     if (!$ids) {
         return [];
     }
+    $orderSql = match ($orderBy) {
+        'price_asc'  => 'rt.price ASC, rt.sort_order ASC, rt.id ASC',
+        'price_desc' => 'rt.price DESC, rt.sort_order ASC, rt.id ASC',
+        default      => 'rt.sort_order ASC, rt.id ASC',
+    };
     $ph    = implode(',', array_fill(0, count($ids), '?'));
     $sql   = "SELECT rt.id, rt.rute_id, rt.category_vehicle_id, rt.min_price, rt.price, rt.max_price,
                      rt.start_capacity_seat, rt.end_capacity_seat, rt.seat_capacity, rt.note, rt.sort_order,
@@ -1207,7 +1228,7 @@ function rute_tariffs_by_rute_ids(array $rute_ids, int $company_id = 0): array
         $types .= 'i';
         $args[] = $company_id;
     }
-    $sql .= ' ORDER BY rt.sort_order ASC, rt.id ASC';
+    $sql .= ' ORDER BY ' . $orderSql;
     $st = db()->prepare($sql);
     $st->bind_param($types, ...$args);
     $st->execute();

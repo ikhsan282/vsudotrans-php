@@ -7,6 +7,13 @@ assert(master_code_ok('BCA-01') === true);
 assert(master_code_ok('bca') === false);          // huruf kecil ditolak
 assert(master_code_ok('') === false);
 assert(master_code_ok(str_repeat('A', 16)) === false); // lebih dari 15
+assert(master_short_name_ok('TNG') === true);
+assert(master_short_name_ok('KTNG') === true);
+assert(master_short_name_ok('TGSL') === true);
+assert(master_short_name_ok('tng') === false);     // huruf kecil ditolak
+assert(master_short_name_ok('TN') === false);      // kurang dari 3 huruf
+assert(master_short_name_ok('TANGS') === false);   // lebih dari 4 huruf
+assert(master_short_name_ok('TNG1') === false);    // angka ditolak
 assert(master_num_ok('12.5') === true);
 assert(master_num_ok('abc') === false);
 assert(master_num_ok('') === false);

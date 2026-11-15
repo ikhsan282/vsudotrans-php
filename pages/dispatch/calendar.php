@@ -339,6 +339,23 @@ document.addEventListener('DOMContentLoaded', function () {
         .replace(/"/g, '&quot;')
         .replace(/'/g, '&#39;');
 
+    const compactCityName = (name, shortName) => {
+        const shortVal = String(shortName || '').trim();
+        if (shortVal !== '') return shortVal;
+        return String(name || '')
+            .trim()
+            .replace(/^(?:kota\s+administrasi|kota\s+admin\.?|kota|kabupaten|kab\.?)\s+/i, '');
+    };
+
+    const compactRouteLabel = (p) => {
+        const orig = compactCityName(p.orig_city, p.orig_city_short);
+        const dest = compactCityName(p.dest_city, p.dest_city_short);
+        if (orig && dest) return orig + ' → ' + dest;
+        if (orig || dest) return orig || dest;
+        const fallback = compactCityName(p.route_label, '');
+        return (fallback && fallback !== '—') ? fallback : '';
+    };
+
     const getSelectValue = (el) => {
         if (!el) return '';
         const raw = el.tomselect ? el.tomselect.getValue() : el.value;
@@ -454,8 +471,9 @@ document.addEventListener('DOMContentLoaded', function () {
         if (paxChip) paxPhoneWrap.appendChild(paxChip);
 
         const vehEl = document.getElementById('calModalVehicle');
-        vehEl.textContent = p.vehicle_number || 'Armada belum ditentukan';
-        vehEl.className = p.vehicle_number
+        const vehLabel = [p.category_name, p.brand_name, p.vehicle_number].filter(Boolean).join(' · ');
+        vehEl.textContent = vehLabel || 'Armada belum ditentukan';
+        vehEl.className = (p.vehicle_number || p.brand_name || p.category_name)
             ? 'fw-semibold ops-cal-tabular'
             : 'small text-body-secondary fst-italic';
         document.getElementById('calModalDriver').textContent = p.driver ? ('Sopir: ' + p.driver) : 'Sopir belum ditugaskan';
@@ -600,16 +618,15 @@ document.addEventListener('DOMContentLoaded', function () {
                 const stCls = statusBadgeClass[p.status] || 'badge bg-secondary';
                 const pmCls = payBadgeClass[p.payment_status] || 'badge bg-secondary';
                 const kindCls = p.kind === 'rental' ? 'badge bg-success' : 'badge bg-primary';
+                const listVeh = [p.category_name, p.brand_name, p.vehicle_number].filter(Boolean).join(' · ');
                 const subBits = [
                     p.route_label && p.route_label !== '—' ? '<i class="bi bi-geo-alt me-1"></i>' + escHtml(p.route_label) : null,
-                    p.vehicle_number ? '<i class="bi bi-truck me-1"></i>' + escHtml(p.vehicle_number) : null,
+                    listVeh ? '<i class="bi bi-truck me-1"></i>' + escHtml(listVeh) : null,
                     p.driver ? '<i class="bi bi-person-badge me-1"></i>' + escHtml(p.driver) : '<span class="text-warning-emphasis"><i class="bi bi-exclamation-circle me-1"></i>Tanpa Sopir</span>',
-                    p.kind === 'rental' && p.period_label ? '<i class="bi bi-calendar-range me-1"></i>' + escHtml(p.period_label) : null
+                    p.period_label ? '<i class="bi bi-calendar-range me-1"></i>' + escHtml(p.period_label) : null
                 ].filter(Boolean);
 
-                const listPrimaryText = (p.kind === 'rental' && p.vehicle_number)
-                    ? (p.vehicle_number + ' · ' + (p.passenger || ''))
-                    : (p.passenger || '');
+                const listPrimaryText = p.passenger || '';
 
                 return {
                     html: '<div class="d-flex flex-column gap-1">'
@@ -627,7 +644,7 @@ document.addEventListener('DOMContentLoaded', function () {
             }
 
             if (viewType.startsWith('timeGrid') && !arg.event.allDay) {
-                const line2 = [p.vehicle_number, p.driver].filter(Boolean).join(' · ');
+                const line2 = [p.category_code || p.category_name, p.vehicle_number, p.driver].filter(Boolean).join(' · ');
                 return {
                     html: '<div class="px-1 py-0 overflow-hidden">'
                         + '<div class="fc-vst-pill-inner">'
@@ -642,31 +659,51 @@ document.addEventListener('DOMContentLoaded', function () {
                 };
             }
 
-            const isRentalWithPlate = (p.kind === 'rental' && Boolean(p.vehicle_number));
-            const hasTravelPlate = (p.kind !== 'rental' && Boolean(p.vehicle_number));
             const timeChunk = (p.kind !== 'rental' && p.starts_at)
                 ? '<span class="fc-vst-time">' + escHtml(p.starts_at) + '</span>'
                 : '';
-            const primaryText = isRentalWithPlate ? p.vehicle_number : (p.passenger || '');
-            const primaryCls = isRentalWithPlate ? 'flex-shrink-0' : 'text-truncate';
-            const extraHint = isRentalWithPlate
-                ? (p.passenger || (p.route_label && p.route_label !== '—' ? p.route_label : ''))
-                : (p.vehicle_number || (p.route_label && p.route_label !== '—' ? p.route_label : ''));
-            const extraCls = hasTravelPlate ? 'fc-vst-sub fc-vst-plate flex-shrink-0' : 'fc-vst-sub text-truncate';
+            const primaryText = p.passenger || '-';
+            const routeShort = compactRouteLabel(p);
+            const catShort = p.category_code || p.category_name || '';
+            const row2Parts = [
+                catShort ? '<span class="fc-vst-plate">' + escHtml(catShort) + '</span>' : '',
+                p.vehicle_number ? '<span class="fc-vst-plate">' + escHtml(p.vehicle_number) + '</span>' : '',
+                p.driver ? escHtml(p.driver) : ''
+            ].filter(Boolean);
+            const row2Html = row2Parts.join(' · ');
 
             return {
-                html: '<div class="fc-vst-pill-inner">'
+                html: '<div class="fc-vst-pill-stack">'
+                    + '<div class="fc-vst-pill-inner">'
                     + statusIconHtml(p.status)
                     + timeChunk
                     + compTag
-                    + '<strong class="' + primaryCls + '">' + escHtml(primaryText) + '</strong>'
-                    + (extraHint ? '<span class="' + extraCls + '">· ' + escHtml(extraHint) + '</span>' : '')
+                    + '<strong class="text-truncate">' + escHtml(primaryText) + '</strong>'
+                    + (routeShort ? '<span class="fc-vst-sub fc-vst-plate flex-shrink-0">· ' + escHtml(routeShort) + '</span>' : '')
+                    + '</div>'
+                    + (row2Html ? '<div class="fc-vst-pill-route text-truncate">' + row2Html + '</div>' : '')
                     + '</div>'
             };
         },
         eventDidMount: function (info) {
             if (info.event.extendedProps && info.event.extendedProps.details) {
                 info.el.title = info.event.extendedProps.details;
+            }
+            if (info.view && info.view.type && info.view.type.startsWith('list')) {
+                info.el.querySelectorAll('a[href]').forEach(function (a) {
+                    a.removeAttribute('href');
+                    a.style.cursor = 'pointer';
+                });
+                info.el.addEventListener('click', function (e) {
+                    if (e.ctrlKey || e.metaKey) {
+                        const url = (info.event.extendedProps && info.event.extendedProps.detail_url) || info.event.url;
+                        if (url) window.open(url, '_blank', 'noopener');
+                        return;
+                    }
+                    e.preventDefault();
+                    e.stopPropagation();
+                    openEventModal(info.event);
+                });
             }
         },
         eventClick: function (info) {

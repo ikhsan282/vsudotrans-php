@@ -49,7 +49,7 @@ if (booking_doc_valid($no)) {
         LEFT JOIN vehicles v ON v.id = b.vehicle_id
         LEFT JOIN brand_vehicles bv ON bv.id = v.brand_id
         LEFT JOIN model_units mu ON mu.id = v.model_unit_id
-        LEFT JOIN category_vehicles cv ON cv.id = b.category_vehicle_id
+        LEFT JOIN category_vehicles cv ON cv.id = COALESCE(b.category_vehicle_id, v.category_vehicle_id)
         WHERE b.document_number = ?";
     if ($companyCode !== '') {
         $sql .= ' AND c.code = ? LIMIT 1';
@@ -107,6 +107,28 @@ if (booking_doc_valid($no)) {
         $sFmt = $sTs ? date('d-M-Y', $sTs) : $sDate;
         $eFmt = $eTs ? date('d-M-Y', $eTs) : $eDate;
         $periodeDisplay = $sFmt . ' s/d ' . $eFmt . ' (' . $days . ' Hari)';
+
+        $categoryLabel = trim((string) ($row['category_name'] ?? ''));
+        $serviceLabel  = ($type === 'rental' ? 'Sewa Kendaraan' : 'Tiket Perjalanan')
+            . ($categoryLabel !== '' ? ' · ' . $categoryLabel : '');
+        $timeShort     = substr(trim((string) ($row['time'] ?? '')), 0, 5);
+        $detailRows    = [
+            ['label' => 'Resi',          'value' => (string) $row['document_number']],
+            ['label' => 'Jam Berangkat', 'value' => $timeShort !== '' ? $timeShort . ' WIB' : '—'],
+            [
+                'label' => $type === 'rental' ? 'Periode Sewa' : 'Tanggal Berangkat',
+                'value' => $type === 'rental' ? $periodeDisplay : tanggal_indo((string) $row['date']),
+            ],
+            ['label' => 'Layanan',       'value' => $serviceLabel],
+        ];
+        if ($vehicleDisplay !== '' && $vehicleDisplay !== '—') {
+            $detailRows[] = ['label' => 'Kendaraan', 'value' => $vehicleDisplay];
+        }
+        $detailRows[] = [
+            'label' => 'Total Harga',
+            'value' => rupiah((float) ($row['invoice_total'] ?? $row['total_price'])),
+            'class' => 'tk-price-val',
+        ];
     }
 }
 
@@ -276,61 +298,14 @@ if ($pdf) {
                     </div>
                 </td>
                 <td class="tk-split-right">
-                    <div class="tk-sect-lbl"><?= $type === 'rental' ? 'Detail Pemesanan' : 'Detail Tiket Perjalanan' ?></div>
+                    <div class="tk-sect-lbl">Detail Pemesanan</div>
                     <table class="tk-kv">
-                        <?php if ($type === 'rental'): ?>
+                        <?php foreach ($detailRows as $dr): ?>
                             <tr>
-                                <td class="tk-kv-k">Resi</td>
-                                <td class="tk-kv-v"><?= e($row['document_number']) ?></td>
+                                <td class="tk-kv-k"><?= e($dr['label']) ?></td>
+                                <td class="tk-kv-v<?= !empty($dr['class']) ? ' ' . e($dr['class']) : '' ?>"><?= e($dr['value']) ?></td>
                             </tr>
-                            <tr>
-                                <td class="tk-kv-k">Jam Berangkat</td>
-                                <td class="tk-kv-v"><?= e(substr((string) $row['time'], 0, 5)) ?> WIB</td>
-                            </tr>
-                            <tr>
-                                <td class="tk-kv-k">Periode Sewa</td>
-                                <td class="tk-kv-v"><?= e($periodeDisplay) ?></td>
-                            </tr>
-                            <tr>
-                                <td class="tk-kv-k">Layanan</td>
-                                <td class="tk-kv-v">Sewa Kendaraan<?= !empty($row['category_name']) ? ' &middot; ' . e($row['category_name']) : '' ?></td>
-                            </tr>
-                            <?php if (!empty($vehicleDisplay) && $vehicleDisplay !== '—'): ?>
-                            <tr>
-                                <td class="tk-kv-k">Kendaraan</td>
-                                <td class="tk-kv-v"><?= e($vehicleDisplay) ?></td>
-                            </tr>
-                            <?php endif; ?>
-                            <tr>
-                                <td class="tk-kv-k">Total Harga</td>
-                                <td class="tk-kv-v tk-price-val"><?= e(rupiah((float) ($row['invoice_total'] ?? $row['total_price']))) ?></td>
-                            </tr>
-                        <?php else: ?>
-                            <tr>
-                                <td class="tk-kv-k">Nomor Tiket</td>
-                                <td class="tk-kv-v"><?= e($row['document_number']) ?></td>
-                            </tr>
-                            <tr>
-                                <td class="tk-kv-k">Rute Perjalanan</td>
-                                <td class="tk-kv-v"><?= e(trim(($row['city_from'] ?? '') . ' - ' . ($row['city_to'] ?? ''), ' -') ?: '—') ?></td>
-                            </tr>
-                            <tr>
-                                <td class="tk-kv-k">Tanggal Berangkat</td>
-                                <td class="tk-kv-v"><?= e(tanggal_indo((string) $row['date'])) ?></td>
-                            </tr>
-                            <tr>
-                                <td class="tk-kv-k">Jam Berangkat</td>
-                                <td class="tk-kv-v"><?= e(substr((string) $row['time'], 0, 5)) ?> WIB</td>
-                            </tr>
-                            <tr>
-                                <td class="tk-kv-k">Total Penumpang</td>
-                                <td class="tk-kv-v"><?= count($passengers) ?> orang</td>
-                            </tr>
-                            <tr>
-                                <td class="tk-kv-k">Total Harga</td>
-                                <td class="tk-kv-v tk-price-val"><?= e(rupiah((float) ($row['invoice_total'] ?? $row['total_price']))) ?></td>
-                            </tr>
-                        <?php endif; ?>
+                        <?php endforeach; ?>
                     </table>
                 </td>
             </tr></table>

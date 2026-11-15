@@ -40,11 +40,18 @@ check(!str_contains($view, 'index.global.min.css'), 'broken FullCalendar CDN sty
 check(!str_contains($view, "'Sewa'") && !str_contains($view, "'Trv'"), 'redundant SEWA/TRV pill tags omitted when colors distinguish types');
 check(
     str_contains($events, "\$kind === 'rental' && \$plate !== ''")
-    && str_contains($view, 'isRentalWithPlate')
-    && str_contains($view, 'hasTravelPlate')
+    && str_contains($events, 'orig_city_short')
+    && str_contains($events, 'dest_city_short')
+    && str_contains($events, 'brand_name')
+    && str_contains($events, 'category_code')
+    && str_contains($events, 'category_name')
+    && str_contains($view, 'compactRouteLabel')
+    && str_contains($view, 'fc-vst-pill-route')
     && str_contains($view, 'fc-vst-plate')
+    && str_contains($view, 'p.brand_name')
+    && str_contains($view, 'p.category_code')
     && str_contains($view, 'listPrimaryText'),
-    'calendar events prioritize plate visibility for rental and travel pills'
+    'calendar events display passenger + short route on row 1 and vehicle category + plate + driver on row 2'
 );
 check(str_contains($events, 'ORDER BY (t2.ended_at IS NULL) DESC, t2.id DESC LIMIT 1'), 'driver lookup keeps latest assignment including done trips');
 check(str_contains($events, "'allDay'") && str_contains($events, "'display'") && str_contains($events, 'booking_status_label('), 'events distinguish rental allDay vs travel block and localize status labels');
@@ -59,6 +66,22 @@ check(
     && str_contains($view, 'bi-x-circle')
     && str_contains($view, 'fc-vst-live-dot'),
     'calendar displays icon legend row for all five booking statuses'
+);
+check(
+    str_contains($view, "info.view.type.startsWith('list')")
+    && str_contains($view, 'openEventModal(info.event)')
+    && str_contains($css, '#ops-calendar .fc-list-event.fc-vst-event:hover > td'),
+    'list view rows open event detail modal on click'
+);
+check(
+    str_contains($view, "const listPrimaryText = p.passenger || '';")
+    && !str_contains($view, "(p.kind === 'rental' && p.vehicle_number)"),
+    'list view primary text shows customer name without duplicating rental plate'
+);
+check(
+    !str_contains($view, 'p.kind === \'rental\' && p.period_label')
+    && str_contains($view, "p.period_label ? '<i class=\"bi bi-calendar-range me-1\"></i>' + escHtml(p.period_label) : null"),
+    'list view displays period_label (date and time) for both travel and rental'
 );
 check(str_contains($css, 'html[data-bs-theme="dark"] #ops-calendar') && str_contains($css, '.fc-vst-status-cancelled'), 'FullCalendar includes dark mode and status styles');
 check(str_contains($travelForm, "parse_valid_ymd(\$_GET['date']") && str_contains($rentalForm, "parse_valid_ymd(\$_GET['date']"), 'travel and rental forms support optional valid ?date prefill');

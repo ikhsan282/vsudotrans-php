@@ -284,15 +284,7 @@ require __DIR__ . '/../../../includes/header.php';
                                 <?= e($r['document_number']) ?>
                             </a>
                         </td>
-                        <td>
-                            <div class="small fw-semibold text-dark d-flex flex-wrap align-items-center gap-1">
-                                <span><?= e($r['passenger_name']) ?></span>
-                                <?php if ($exCnt > 0): ?>
-                                    <span class="badge bg-info-subtle text-info-emphasis border">+<?= $exCnt ?> tambahan</span>
-                                <?php endif; ?>
-                            </div>
-                            <div class="text-muted" style="font-size: 0.8rem;"><?= e($r['passenger_phone'] ?: '-') ?></div>
-                        </td>
+                        <td><?= booking_passenger_cell_html((string) ($r['passenger_name'] ?? ''), $r['passenger_phone'] ?? null, (int) $exCnt) ?></td>
                         <td class="text-center">
                             <?php if ($plate !== ''): ?>
                                 <div class="small fw-semibold text-dark text-nowrap"><?= e($plate) ?></div>

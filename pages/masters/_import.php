@@ -54,6 +54,8 @@ function master_import_sample(array $spec, array $cols): array
             $row[] = '0';
         } elseif ($col === 'code') {
             $row[] = 'CONTOH1';
+        } elseif (!empty($f['short_code']) || $col === 'short_name') {
+            $row[] = 'TNG';
         } else {
             $row[] = 'Contoh ' . $f['label'];
         }

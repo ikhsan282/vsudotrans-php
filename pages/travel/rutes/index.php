@@ -74,7 +74,7 @@ if (in_array($export_format, ['xlsx', 'pdf'], true)) {
                                         cv.name, '~|~', rt.price, '~|~',
                                         COALESCE(NULLIF(rt.seat_capacity, 0), rt.end_capacity_seat, 0)
                                     )
-                                    ORDER BY rt.sort_order ASC, rt.id ASC SEPARATOR '~;~')
+                                    ORDER BY rt.price ASC, rt.sort_order ASC, rt.id ASC SEPARATOR '~;~')
                              FROM rute_tariffs rt
                              JOIN category_vehicles cv ON cv.id = rt.category_vehicle_id
                             WHERE rt.rute_id = r.id) AS tariffs_raw,
@@ -180,7 +180,7 @@ $rows = $st->get_result()->fetch_all(MYSQLI_ASSOC);
 $st->close();
 $ruteIds         = array_column($rows, 'id');
 $ruteScheduleMap = rute_schedules_by_rute_ids($ruteIds);
-$ruteTariffMap   = rute_tariffs_by_rute_ids($ruteIds);
+$ruteTariffMap   = rute_tariffs_by_rute_ids($ruteIds, 0, 'price_asc');
 $ruteRadiusMap   = rute_radius_by_rute_ids($ruteIds);
 
 $pickupCityOpts = opts_cities(null, $filter_pickup_city > 0 ? [$filter_pickup_city] : [], 50, true);
