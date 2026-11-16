@@ -106,7 +106,7 @@ Password semua user: `P@ssw0rd`. **Wajib diganti sebelum production.**
 | Metode Pembayaran & **Saluran QRIS/Gopay** | ✅ | ✅ | Master `payment_methods` + konfigurasi gateway QRIS/Midtrans dinamis (`payment_channels`) |
 | **Invoice & Pembayaran** | ✅ | ✅ | Otomatis saat booking; status `issued` / `partial` / `paid` / `cancelled`; tolak overpay; cetak + **unduh PDF** |
 | **Kalender Operasional & Driver** | ✅ | ✅ | Kalender operasional (`pages/dispatch/calendar.php` Bulan/Minggu/Hari/Daftar: ringkasan 2 baris dengan singkatan kota, kategori · merk · plat armada, tanggal/jam Travel & Rental, klik Daftar buka modal detail), papan/penugasan aktif, detail & cetak surat jalan (`manifest.php`) dari Detail Booking |
-| **WhatsApp Bot API** (`api/bot/*`) | ✅ | ✅ | Endpoint internal bot untuk booking, rute, penugasan driver, QRIS dinamis, & ringkasan staf |
+| **WhatsApp Bot API** (`api/bot/*`) | ✅ | ✅ | Endpoint internal bot untuk booking, rute, metode pembayaran, QRIS dinamis, & ringkasan staf |
 | **Laporan** (Booking, Keuangan, Operasional, Driver) | ✅ | ✅ | Rekap lintas dimensi + export CSV, XLSX, PDF, & Cetak |
 | **Payroll & Absensi** | ✅ | ✅ | Absensi harian/rekap → sumber hari hadir generate payroll (`draft` → `final` → `dibayar`), cetak & PDF |
 | **Buku Kas & Bank** | ✅ | ✅ | Akun kas/bank + buku besar transaksi; export CSV, XLSX, PDF, cetak |

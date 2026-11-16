@@ -129,7 +129,7 @@ function finance_active_payment_methods(int $company_id): array
 {
     finance_ensure_schema();
     $st = db()->prepare(
-        'SELECT id, company_id, code, name, account_name, account_number, auto_verify, is_cash, sort_order
+        'SELECT id, company_id, code, name, account_name, account_number, instructions, qr_blob_path, auto_verify, is_cash, sort_order
            FROM payment_methods
           WHERE is_active = 1 AND (company_id = ? OR company_id IS NULL)
           ORDER BY sort_order ASC, name ASC'

@@ -97,6 +97,8 @@ $stCh->close();
 
 $bkId = 0;
 $invId = 0;
+$partialBkId = 0;
+$partialInvId = 0;
 $orderId = '';
 $eventId = '';
 
@@ -109,14 +111,20 @@ $db->query("INSERT IGNORE INTO cities (id, country_id, province_id, code, name) 
 $db->query("INSERT IGNORE INTO districts (id, country_id, province_id, city_id, code, name) VALUES (1, 1, 1, 1, 'CPT', 'Cipondoh'), (2, 1, 1, 2, 'DGO', 'Dago')");
 $db->query("INSERT IGNORE INTO category_vehicles (id, company_id, code, name, is_active) VALUES (1, 1, 'HIACE', 'Toyota HiAce Executive', 1)");
 $db->query("INSERT IGNORE INTO rutes (id, company_id, code, name, pickup_point_city_id, delivery_point_city_id, category_vehicle_id, min_price, price, max_price, start_capacity_seat, end_capacity_seat, is_active) VALUES (1, 1, 'TNG-BDG', 'Tangerang - Bandung', 1, 2, 1, 150000, 175000, 200000, 1, 10, 1)");
+$rute1Row = $db->query('SELECT price FROM rutes WHERE id = 1 LIMIT 1')->fetch_assoc();
+$rute1UnitPrice = (int) round((float) ($rute1Row['price'] ?? 175000));
 
 // 2. Test GET /api/bot/me.php
 $meRes = call_bot_endpoint('me.php', 'GET', ['secret' => $secret, 'phone' => $testPhone, 'company' => 'MTM']);
+$mePmCodes = array_column($meRes['data']['payment_methods'] ?? [], 'code');
 check_bot(($meRes['ok'] ?? false) === true && ($meRes['data']['company']['code'] ?? '') === 'MTM', 'GET /api/bot/me.php returns MTM profile', json_encode($meRes));
+check_bot(isset($meRes['data']['company']['dynamic_qris_enabled']) && in_array('TUNAI', $mePmCodes, true) && in_array('TRANSFER', $mePmCodes, true), 'GET /api/bot/me.php exposes dynamic_qris_enabled & global payment_methods');
 
 // 3. Test GET /api/bot/routes.php
 $rtRes = call_bot_endpoint('routes.php', 'GET', ['secret' => $secret, 'phone' => $testPhone, 'company' => 'MTM']);
+$rtPmCodes = array_column($rtRes['data']['payment_methods'] ?? [], 'code');
 check_bot(($rtRes['ok'] ?? false) === true && count($rtRes['data']['routes'] ?? []) >= 1, 'GET /api/bot/routes.php returns active routes for MTM');
+check_bot(isset($rtRes['data']['dynamic_qris_available']) && in_array('TRANSFER', $rtPmCodes, true), 'GET /api/bot/routes.php exposes dynamic_qris_available & payment_methods');
 
 // 4. Test POST /api/bot/booking_create.php (Auto-Order + Auto Dynamic QRIS)
 $bkRes = call_bot_endpoint('booking_create.php', 'POST', [
@@ -139,8 +147,10 @@ $docNo   = (string) ($bkRes['data']['document_number'] ?? '');
 $invId   = (int) ($bkRes['data']['invoice_id'] ?? 0);
 $bkId    = (int) ($bkRes['data']['booking_id'] ?? 0);
 $orderId = (string) ($bkRes['data']['qris']['order_id'] ?? '');
-check_bot(($bkRes['data']['total']['raw'] ?? 0) === 350000, 'Booking total for 2 seats @ 175.000 is 350.000');
-check_bot($orderId !== '' && ($bkRes['data']['qris']['total']['raw'] ?? 0) > 350000, 'Booking auto-generates Dynamic QRIS with unique code');
+$expectedTotal = ($rute1UnitPrice * 2) + (int) ($bkRes['data']['radius_extra']['raw'] ?? 0);
+check_bot(($bkRes['data']['total']['raw'] ?? 0) === $expectedTotal, "Booking total for 2 seats @ {$rute1UnitPrice} + radius matches {$expectedTotal}");
+check_bot($orderId !== '' && ($bkRes['data']['qris']['total']['raw'] ?? 0) > $expectedTotal, 'Booking auto-generates Dynamic QRIS with unique code');
+check_bot(!empty($bkRes['data']['payment_methods']) && !empty($bkRes['data']['pay_web_url']), 'POST /api/bot/booking_create.php includes payment_methods & pay_web_url');
 
 // 5. Test GET /api/bot/bookings.php (history & active bookings by phone)
 $listRes = call_bot_endpoint('bookings.php', 'GET', ['secret' => $secret, 'phone' => $testPhone, 'company' => 'MTM']);
@@ -193,12 +203,44 @@ $outAck = call_bot_endpoint('outbox.php', 'POST', ['secret' => $secret, 'phone' 
 ]);
 check_bot(($outAck['ok'] ?? false) === true && ($outAck['data']['status'] ?? '') === 'sent', 'POST /api/bot/outbox.php marks WA notification as sent');
 
-// 9. Test GET /api/bot/staff_summary.php (rejected for customer, allowed for staff)
+// 9. Test GET /api/bot/staff_summary.php (rejected for customer, allowed for staff + partial invoice & kas/bank check)
 $staffDeny = call_bot_endpoint('staff_summary.php', 'GET', ['secret' => $secret, 'phone' => $testPhone, 'company' => 'MTM']);
 check_bot(($staffDeny['ok'] ?? true) === false && ($staffDeny['error']['code'] ?? '') === 'STAFF_ONLY', 'GET /api/bot/staff_summary.php blocks non-staff phone');
 
-$staffOk = call_bot_endpoint('staff_summary.php', 'GET', ['secret' => $secret, 'phone' => $adminPhone, 'company' => 'MTM']);
-check_bot(($staffOk['ok'] ?? false) === true && isset($staffOk['data']['today_bookings_amount']), 'GET /api/bot/staff_summary.php succeeds for staff phone');
+$staffBefore = call_bot_endpoint('staff_summary.php', 'GET', ['secret' => $secret, 'phone' => $adminPhone, 'company' => 'MTM']);
+$accCodes = array_column($staffBefore['data']['cash_accounts'] ?? [], 'code');
+check_bot(($staffBefore['ok'] ?? false) === true && isset($staffBefore['data']['today_bookings_amount']), 'GET /api/bot/staff_summary.php succeeds for staff phone');
+check_bot(in_array('KAS-TUNAI', $accCodes, true) && in_array('BANK-UTAMA', $accCodes, true) && isset($staffBefore['data']['today_cash_flow']), 'staff_summary exposes KAS-TUNAI/BANK-UTAMA cash_accounts & today_cash_flow');
+
+// Buat booking sementara dengan DP (status invoice = 'partial') & pastikan ikut dihitung sebagai unpaid invoice di staff_summary
+$beforeUnpaidCnt = (int) ($staffBefore['data']['unpaid_invoices_count'] ?? 0);
+$beforeUnpaidAmt = (int) ($staffBefore['data']['unpaid_invoices_amount']['raw'] ?? 0);
+$pBkRes = call_bot_endpoint('booking_create.php', 'POST', [
+    'secret'  => $secret,
+    'phone'   => $testPhone,
+    'company' => 'MTM',
+], [
+    'booking_type'     => 'travel',
+    'passenger_name'   => 'Partial Invoice Bot Test',
+    'rute_id'          => 1,
+    'date'             => date('Y-m-d'),
+    'time'             => '10:00',
+    'seats'            => 1,
+    'total_price'      => 300000,
+    'create_qris'      => false,
+]);
+$partialBkId  = (int) ($pBkRes['data']['booking_id'] ?? 0);
+$partialInvId = (int) ($pBkRes['data']['invoice_id'] ?? 0);
+if ($partialInvId > 0) {
+    invoice_add_payment($partialInvId, 1, 100000.0, null, 'DP | Transfer Bank', 'hermes-test');
+    $db->query("UPDATE invoices SET status = 'partial' WHERE id = {$partialInvId}");
+}
+$staffAfter = call_bot_endpoint('staff_summary.php', 'GET', ['secret' => $secret, 'phone' => $adminPhone, 'company' => 'MTM']);
+check_bot(
+    ($staffAfter['data']['unpaid_invoices_count'] ?? 0) === ($beforeUnpaidCnt + 1)
+    && ($staffAfter['data']['unpaid_invoices_amount']['raw'] ?? 0) === ($beforeUnpaidAmt + 200000),
+    'staff_summary includes partial-status invoices in unpaid_invoices_count & remaining amount'
+);
 
 // 10. Test 1-Bot-Per-Company Dedicated Secret Key (auto-lock company & block cross-company)
 $mtmKey = 'mtm_hermes_secret_key_9f8e7d6c5b4a321098765432';
@@ -234,17 +276,17 @@ check_bot(
         $ordEsc = $db->real_escape_string($orderId);
         $db->query("DELETE FROM payment_gateway_orders WHERE order_id = '{$ordEsc}'");
     }
-    if ($bkId > 0) {
-        $db->query("DELETE ct FROM cash_transactions ct JOIN booking_cost_lines bcl ON ct.source_type = 'booking_payment' AND ct.source_id = bcl.id WHERE bcl.booking_type = 'travel' AND bcl.booking_id = {$bkId}");
-        $db->query("DELETE FROM booking_cost_lines WHERE booking_type = 'travel' AND booking_id = {$bkId}");
-        $db->query("DELETE FROM booking_status_history WHERE booking_type = 'travel' AND booking_id = {$bkId}");
-        $db->query("DELETE FROM booking_passengers WHERE booking_type = 'travel' AND booking_id = {$bkId}");
+    foreach (array_filter([$bkId, $partialBkId]) as $delBkId) {
+        $db->query("DELETE ct FROM cash_transactions ct JOIN booking_cost_lines bcl ON ct.source_type = 'booking_payment' AND ct.source_id = bcl.id WHERE bcl.booking_type = 'travel' AND bcl.booking_id = {$delBkId}");
+        $db->query("DELETE FROM booking_cost_lines WHERE booking_type = 'travel' AND booking_id = {$delBkId}");
+        $db->query("DELETE FROM booking_status_history WHERE booking_type = 'travel' AND booking_id = {$delBkId}");
+        $db->query("DELETE FROM booking_passengers WHERE booking_type = 'travel' AND booking_id = {$delBkId}");
     }
-    if ($invId > 0) {
-        $db->query("DELETE FROM invoices WHERE id = {$invId}");
+    foreach (array_filter([$invId, $partialInvId]) as $delInvId) {
+        $db->query("DELETE FROM invoices WHERE id = {$delInvId}");
     }
-    if ($bkId > 0) {
-        $db->query("DELETE FROM travel_ticket_bookings WHERE id = {$bkId}");
+    foreach (array_filter([$bkId, $partialBkId]) as $delBkId) {
+        $db->query("DELETE FROM travel_ticket_bookings WHERE id = {$delBkId}");
     }
     $db->query("DELETE FROM passengers WHERE phone_number IN ('6281377778888', '081377778888')");
     $db->query("DELETE FROM bot_request_logs WHERE phone IN ('6281377778888', '6281399990000', '6281200000002')");

@@ -74,6 +74,17 @@ function bot_verify_simple(array $server, array $keys): ?array
 {
     $token = '';
     $auth  = trim((string) ($server['HTTP_AUTHORIZATION'] ?? $server['REDIRECT_HTTP_AUTHORIZATION'] ?? ''));
+    if ($auth === '' && function_exists('apache_request_headers')) {
+        $hdrs = @apache_request_headers();
+        if (is_array($hdrs)) {
+            foreach ($hdrs as $hk => $hv) {
+                if (strcasecmp((string) $hk, 'Authorization') === 0) {
+                    $auth = trim((string) $hv);
+                    break;
+                }
+            }
+        }
+    }
     if (stripos($auth, 'Bearer ') === 0) {
         $token = trim(substr($auth, 7));
     } elseif (isset($_GET['secret']) && is_string($_GET['secret'])) {
@@ -225,7 +236,6 @@ function bot_resolve_company(mysqli $db, string $companyCode): ?array
  * Cari identitas pengirim di database berdasarkan nomor telepon kanonis & perusahaan aktif:
  * - `passengers`: daftar profil penumpang milik nomor tersebut di perusahaan ini
  * - `staff`     : akun `users` (Admin Perusahaan / Super Admin / Staff) bila nomor cocok
- * - `driver`    : data `employees` bila nomor cocok sebagai karyawan/driver perusahaan ini
  */
 function bot_resolve_actor(mysqli $db, int $companyId, string $canonicalPhone, bool $forceRefresh = false): array
 {
@@ -306,41 +316,12 @@ function bot_resolve_actor(mysqli $db, int $companyId, string $canonicalPhone, b
         ];
     }
 
-    // 3. Cari di tabel employees (utamakan Index Lookup ix_employees_company_phone)
-    $st = $db->prepare(
-        "SELECT id, code, name, job_title, job_position
-           FROM employees
-          WHERE company_id = ? AND status = 'aktif'
-            AND phone_number IN (?,?,?,?)
-          LIMIT 1"
-    );
-    $st->bind_param('issss', $companyId, $variants[0], $variants[1], $variants[2], $variants[3]);
-    $st->execute();
-    $emp = $st->get_result()->fetch_assoc() ?: null;
-    $st->close();
-
-    if (!$emp) {
-        $st = $db->prepare(
-            "SELECT id, code, name, job_title, job_position
-               FROM employees
-              WHERE company_id = ? AND status = 'aktif'
-                AND REPLACE(REPLACE(REPLACE(phone_number, '-', ''), ' ', ''), '+', '') LIKE ?
-              LIMIT 1"
-        );
-        $st->bind_param('is', $companyId, $likeTail);
-        $st->execute();
-        $emp = $st->get_result()->fetch_assoc() ?: null;
-        $st->close();
-    }
-
     $actor = [
         'phone'      => $canonicalPhone,
-        'registered' => !empty($passengers) || $staff !== null || $emp !== null,
+        'registered' => !empty($passengers) || $staff !== null,
         'passengers' => $passengers,
         'is_staff'   => $staff !== null,
         'staff'      => $staff,
-        'is_driver'  => $emp !== null,
-        'employee'   => $emp,
     ];
     $GLOBALS['BOT_ACTOR_CACHE'][$cacheKey] = $actor;
     return $actor;
@@ -405,6 +386,36 @@ function bot_money(float $n): array
 {
     $raw = (int) round($n);
     return ['raw' => $raw, 'formatted' => rupiah($n)];
+}
+
+/**
+ * Daftar metode pembayaran aktif milik perusahaan + global untuk respons bot Hermes
+ * (Tunai, Transfer Bank + rekening, QRIS Statis + gambar QR, EDC, QRIS Dinamis).
+ */
+function bot_payment_methods(int $companyId): array
+{
+    require_once __DIR__ . '/finance_sync.php';
+    $rows = finance_active_payment_methods($companyId);
+    $out = [];
+    foreach ($rows as $pm) {
+        $qrPath = trim((string) ($pm['qr_blob_path'] ?? ''));
+        $qrUrl = null;
+        if ($qrPath !== '' && function_exists('azure_blob_url')) {
+            $qrUrl = azure_blob_url($qrPath) ?: null;
+        }
+        $out[] = [
+            'id'             => (int) $pm['id'],
+            'code'           => (string) $pm['code'],
+            'name'           => (string) $pm['name'],
+            'is_cash'        => !empty($pm['is_cash']),
+            'is_global'      => empty($pm['company_id']),
+            'account_name'   => $pm['account_name'] ?: null,
+            'account_number' => $pm['account_number'] ?: null,
+            'instructions'   => $pm['instructions'] ?: null,
+            'qr_image_url'   => $qrUrl,
+        ];
+    }
+    return $out;
 }
 
 /** Bangun base URL publik aplikasi. */

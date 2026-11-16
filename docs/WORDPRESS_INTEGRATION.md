@@ -19,7 +19,7 @@ Panduan ini mencakup:
 
 ## 1. Spesifikasi Endpoint `/api/ticket.php`
 
-- **URL**: `https://panel.domain-vsudotrans.com/api/ticket.php?no=TRV-8K4M9P2X&company=MTM`
+- **URL**: `https://panel.domain-vsudotrans.com/api/ticket.php?no=100120261113&company=MTM`
 - **Method**: `GET` (mendukung CORS `Access-Control-Allow-Origin: *`)
 - **Isolasi Multi-Tenant**: Jika parameter `company=MTM` dikirim, maka nomor tiket milik perusahaan lain (mis. `LIZ` atau `GTM`) akan otomatis ditolak (`404 TICKET_NOT_FOUND`), sehingga pelanggan di web Maura Trans Mandiri hanya bisa mengecek tiket Maura Trans Mandiri.
 
@@ -29,10 +29,10 @@ Panduan ini mencakup:
   "ok": true,
   "data": {
     "valid": true,
-    "document_number": "TRV-8K4M9P2X",
+    "document_number": "100120261113",
     "invoice_no": "INV/2026/000012",
     "booking_type": "travel",
-    "booking_status": "confirmed",
+    "booking_status": "scheduled",
     "payment_status": "paid",
     "company": {
       "id": 1,
@@ -63,9 +63,9 @@ Panduan ini mencakup:
       { "no": 1, "name": "Budi Santoso", "is_primary": true, "phone_masked": "0812*****890" }
     ],
     "links": {
-      "tiket_url": "https://panel.domain-vsudotrans.com/tiket.php?no=TRV-8K4M9P2X&company=MTM",
-      "print_pdf_url": "https://panel.domain-vsudotrans.com/tiket.php?no=TRV-8K4M9P2X&company=MTM&print=1",
-      "verifikasi_url": "https://panel.domain-vsudotrans.com/verifikasi.php?no=TRV-8K4M9P2X&company=MTM",
+      "tiket_url": "https://panel.domain-vsudotrans.com/tiket.php?no=100120261113&company=MTM",
+      "print_pdf_url": "https://panel.domain-vsudotrans.com/tiket.php?no=100120261113&company=MTM&print=1",
+      "verifikasi_url": "https://panel.domain-vsudotrans.com/verifikasi.php?no=100120261113&company=MTM",
       "pay_qris_url": null
     }
   }
@@ -99,7 +99,7 @@ add_shortcode('vsudo_cek_tiket', function ($atts) {
     ?>
     <div class="vsudo-ticket-widget" style="max-width:640px;margin:24px auto;font-family:system-ui,-apple-system,sans-serif;">
         <form id="vsudoTicketForm" style="display:flex;gap:8px;margin-bottom:16px;">
-            <input type="text" id="vsudoTicketNo" placeholder="Masukkan Nomor Tiket (contoh: TRV-8K4M9P2X)" required
+            <input type="text" id="vsudoTicketNo" placeholder="Masukkan Nomor Tiket (contoh: 100120261113)" required
                    style="flex:1;padding:12px 14px;border:1px solid #cbd5e1;border-radius:8px;font-size:15px;text-transform:uppercase;">
             <button type="submit" style="padding:12px 20px;background:#0f172a;color:#fff;border:0;border-radius:8px;font-weight:600;cursor:pointer;">
                 Cek Tiket
@@ -174,7 +174,7 @@ add_shortcode('vsudo_cek_tiket', function ($atts) {
 ## 3. Fitur Auto-Verifikasi dari Link E-Tiket PDF (`/verifikasi?no=...`)
 
 Pada E-Tiket PDF, tautan keaslian tiket yang dicetak adalah:
-`https://mauratransmandiri.com/verifikasi?no=TRV-DEMO8888`
+`https://mauratransmandiri.com/verifikasi?no=100120261113`
 
 Agar saat link tersebut diklik atau QR Code-nya di-scan langsung menampilkan hasil validasi secara otomatis tanpa pengunjung harus mengetik nomor tiket lagi:
 

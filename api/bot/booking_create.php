@@ -266,10 +266,12 @@ bot_reply(201, [
     'seats'           => $seats,
     'radius_extra'    => bot_money($radiusExtra),
     'total'           => bot_money((float) ($inv['total'] ?? $totalPrice)),
-    'booking_status'  => 'draft',
-    'payment_status'  => 'unpaid',
-    'tiket_url'       => $baseUrl . '/tiket.php?no=' . rawurlencode($docNo) . '&company=' . rawurlencode($company['code']),
-    'verifikasi_url'  => $baseUrl . '/verifikasi.php?no=' . rawurlencode($docNo) . '&company=' . rawurlencode($company['code']),
-    'qris'            => $qrisInfo,
+    'booking_status'       => 'draft',
+    'payment_status'       => 'unpaid',
+    'tiket_url'            => $baseUrl . '/tiket.php?no=' . rawurlencode($docNo) . '&company=' . rawurlencode($company['code']),
+    'verifikasi_url'       => $baseUrl . '/verifikasi.php?no=' . rawurlencode($docNo) . '&company=' . rawurlencode($company['code']),
+    'pay_web_url'          => $baseUrl . '/pages/finance/invoices/gateway_pay.php?no=' . rawurlencode($docNo),
+    'qris'                 => $qrisInfo,
+    'payment_methods'      => bot_payment_methods($cid),
 ]);
 

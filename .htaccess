@@ -41,6 +41,10 @@ RedirectMatch 403 ^.*/database/.*$
 <IfModule mod_rewrite.c>
     RewriteEngine On
 
+    # Teruskan header Authorization ke PHP (cPanel/CGI/PHP-FPM)
+    RewriteCond %{HTTP:Authorization} ^(.+)$
+    RewriteRule .* - [E=HTTP_AUTHORIZATION:%1]
+
     # Blokir hidden files (.git, .env, dll)
     RewriteRule (^|/)\. - [F,L]
 </IfModule>

@@ -8,7 +8,7 @@
  * - LIZ Wisata Alam Indah (lizwisataalamindah.com -> ?company=LIZ)
  *
  * Contoh pemanggilan:
- *   GET /api/ticket.php?no=TRV-8K4M9P2X&company=MTM
+ *   GET /api/ticket.php?no=100120261113&company=MTM
  */
 require_once __DIR__ . '/../config/config.php';
 require_once __DIR__ . '/../includes/booking_service.php';

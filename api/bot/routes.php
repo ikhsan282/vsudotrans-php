@@ -7,6 +7,7 @@
  */
 require __DIR__ . '/_bootstrap.php';
 require_once __DIR__ . '/../../includes/transport_helpers.php';
+require_once __DIR__ . '/../../includes/payment_gateway.php';
 
 $ctx     = bot_boot(['GET'], false);
 $db      = $ctx['db'];
@@ -157,10 +158,12 @@ $branches = $st->get_result()->fetch_all(MYSQLI_ASSOC);
 $st->close();
 
 bot_reply(200, [
-    'company'            => ['id' => $cid, 'code' => $company['code'], 'name' => $company['name']],
-    'routes'             => $routes,
-    'schedules'          => $schedules,
-    'vehicle_categories' => $categories,
-    'branches'           => $branches,
+    'company'                => ['id' => $cid, 'code' => $company['code'], 'name' => $company['name']],
+    'routes'                 => $routes,
+    'schedules'              => $schedules,
+    'vehicle_categories'     => $categories,
+    'branches'               => $branches,
+    'dynamic_qris_available' => gateway_active_channel($cid) !== null,
+    'payment_methods'        => bot_payment_methods($cid),
 ]);
 

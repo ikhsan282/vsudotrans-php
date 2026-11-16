@@ -7,6 +7,7 @@
  * langsung (`/api/bot/booking_create.php`).
  */
 require __DIR__ . '/_bootstrap.php';
+require_once __DIR__ . '/../../includes/payment_gateway.php';
 
 $ctx     = bot_boot(['GET']);
 $db      = $ctx['db'];
@@ -43,18 +44,19 @@ if ($paxIds) {
 }
 
 $primaryName = $actor['passengers'][0]['name']
-    ?? ($actor['staff']['name'] ?? ($actor['employee']['name'] ?? null));
+    ?? ($actor['staff']['name'] ?? null);
 
 bot_reply(200, [
     'company' => [
-        'id'        => $cid,
-        'code'      => $company['code'],
-        'name'      => $company['name'],
-        'phone'     => $company['phone_number'],
-        'bot_phone' => $company['bot_phone'] ?? null,
-        'email'     => $company['email'],
-        'website'   => $company['website'],
-        'city'      => $company['city'],
+        'id'                   => $cid,
+        'code'                 => $company['code'],
+        'name'                 => $company['name'],
+        'phone'                => $company['phone_number'],
+        'bot_phone'            => $company['bot_phone'] ?? null,
+        'email'                => $company['email'],
+        'website'              => $company['website'],
+        'city'                 => $company['city'],
+        'dynamic_qris_enabled' => gateway_active_channel($cid) !== null,
     ],
     'phone'                 => $ctx['phone'],
     'registered'            => $actor['registered'],
@@ -70,7 +72,6 @@ bot_reply(200, [
     'unpaid_invoices_count' => $unpaidInvoicesCount,
     'is_staff'              => $actor['is_staff'],
     'staff'                 => $actor['staff'],
-    'is_driver'             => $actor['is_driver'],
-    'driver'                => $actor['employee'],
+    'payment_methods'       => bot_payment_methods($cid),
 ]);
 
