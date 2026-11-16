@@ -45,12 +45,14 @@ $canInvoices  = can('invoices.view');
 $canFinance   = can('finance.view') || can('reports.view') || $canInvoices;
 $canVehicles  = can('vehicles.view');
 $canEmployees = can('employees.view');
+$canCashBook  = can('finance.view');
 
 $counts      = dash_master_counts();
 $employees   = $counts['employees'];
 $vehicles    = $counts['vehicles'];
 $branches    = $counts['branches'];
 $n_companies = count(accessible_companies());
+$cash_sum    = $canCashBook ? dash_cash_summary() : null;
 
 // Operasional & grafik dalam 1x pass UNION ALL
 $today      = date('Y-m-d');
@@ -195,6 +197,34 @@ require __DIR__ . '/../../includes/header.php';
     </div>
     <?php endif; ?>
 
+    <?php if ($canCashBook && $cash_sum !== null): ?>
+    <div class="card shadow-sm border-0 mb-3">
+        <div class="card-body py-2 px-3 d-flex flex-wrap align-items-center justify-content-between gap-2">
+            <div class="d-flex flex-wrap align-items-center gap-3">
+                <span class="small fw-semibold text-muted text-uppercase"><i class="bi bi-wallet2 me-1 text-primary"></i>Saldo Kas &amp; Bank</span>
+                <span class="badge rounded-pill bg-primary-subtle text-primary-emphasis border px-3 py-2">
+                    Total: <strong><?= e(rupiah($cash_sum['total'])) ?></strong>
+                </span>
+                <span class="badge rounded-pill bg-success-subtle text-success-emphasis border px-3 py-2">
+                    Kas Tunai: <strong><?= e(rupiah($cash_sum['kas'])) ?></strong>
+                </span>
+                <span class="badge rounded-pill bg-info-subtle text-info-emphasis border px-3 py-2">
+                    Bank: <strong><?= e(rupiah($cash_sum['bank'])) ?></strong>
+                </span>
+                <?php if ($cash_sum['unconfigured_bank'] > 0): ?>
+                    <a href="<?= e(APP_URL) ?>/pages/finance/cash_accounts/index.php" class="badge rounded-pill bg-warning-subtle text-warning-emphasis border text-decoration-none px-3 py-2">
+                        <i class="bi bi-exclamation-circle me-1"></i><?= (int) $cash_sum['unconfigured_bank'] ?> rekening bank belum diisi
+                    </a>
+                <?php endif; ?>
+            </div>
+            <div class="d-flex flex-wrap gap-3 small">
+                <a href="<?= e(APP_URL) ?>/pages/finance/cash/index.php" class="text-decoration-none">Buku Kas →</a>
+                <a href="<?= e(APP_URL) ?>/pages/reports/finance.php" class="text-decoration-none">Laporan Keuangan →</a>
+            </div>
+        </div>
+    </div>
+    <?php endif; ?>
+
     <!-- Driver bertugas + piutang jatuh tempo -->
     <div class="row g-3 mb-3">
         <div class="col-12 <?= $canInvoices ? 'col-xl-6' : '' ?>">
@@ -277,7 +307,7 @@ require __DIR__ . '/../../includes/header.php';
                                             <?= e($o['invoice_no']) ?>
                                         </a>
                                     </td>
-                                    <td class="small text-muted text-nowrap"><?= e(date('d/m/Y', strtotime($o['booking_date']))) ?></td>
+                                    <td class="small text-muted text-nowrap"><?= e(date('d-M-Y', strtotime($o['booking_date']))) ?></td>
                                     <td class="small text-end text-danger fw-semibold text-nowrap"><?= e(rupiah_singkat((float) $o['sisa'])) ?></td>
                                     <td class="small text-end text-nowrap"><?= (int) $o['umur_hari'] ?> hr</td>
                                 </tr>

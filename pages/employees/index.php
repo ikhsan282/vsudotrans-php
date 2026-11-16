@@ -1,9 +1,14 @@
 <?php
 /** Daftar karyawan — list + pagination + search + filter status, scoped company_scope(). */
 require_once __DIR__ . '/../../config/config.php';
+require_once __DIR__ . '/../../includes/transport_helpers.php';
 require_once __DIR__ . '/_helpers.php';
 require_permission('employees.view');
 employee_scope_cid();
+
+$compScope     = company_filter_scope('e.company_id');
+$filter_cid    = (int) $compScope['filter_company_id'];
+$show_comp_col = is_super_admin() && $filter_cid === 0;
 
 $q = trim((string) ($_GET['q'] ?? ''));
 $status = trim((string) ($_GET['status'] ?? ''));
@@ -17,10 +22,9 @@ $page = max(1, (int) ($_GET['page'] ?? 1));
 // ---------------------------------------------------------------------
 $export_format = strtolower(trim((string) ($_GET['export'] ?? '')));
 if (in_array($export_format, ['xlsx', 'pdf'], true)) {
-    [$wsql, $wtypes, $wparams] = company_scope('e.company_id');
-    $where = [$wsql];
-    $types = $wtypes;
-    $params = $wparams;
+    $where  = [$compScope['where']];
+    $types  = $compScope['types'];
+    $params = $compScope['params'];
 
     if ($q !== '') {
         $where[] = '(e.name LIKE ? OR e.code LIKE ?)';
@@ -103,12 +107,16 @@ if (in_array($export_format, ['xlsx', 'pdf'], true)) {
     );
 }
 
-[$rows, $p] = employee_list($page, $q, $status);
+[$rows, $p] = employee_list($page, $q, $status, is_super_admin() ? $filter_cid : null);
 $can_manage = can('employees.manage');
-$query_base = http_build_query(array_filter(['q' => $q, 'status' => $status]));
+$query_base = http_build_query(array_filter([
+    'company_id' => is_super_admin() ? (string) $filter_cid : '',
+    'q'          => $q,
+    'status'     => $status,
+], static fn($v): bool => $v !== ''));
 
 $header_actions = ui_export_actions();
-if ($can_manage) {
+if ($can_manage && active_company_id() !== null) {
     $header_actions[] = ['label' => 'Tambah', 'icon' => 'plus-lg', 'href' => 'pages/employees/detail.php', 'class' => 'btn btn-primary btn-sm'];
 }
 
@@ -116,7 +124,7 @@ $active = 'employees';
 $title = 'Karyawan';
 require __DIR__ . '/../../includes/header.php';
 ?>
-<main class="col-12 col-md-9 col-lg-10 p-3 p-lg-4">
+<main class="p-3 p-lg-4 w-100 flex-grow-1">
 <?= ui_page_header(
     'Karyawan',
     ['Dashboard' => 'pages/dashboard/index.php', 'Karyawan' => null],
@@ -126,20 +134,31 @@ require __DIR__ . '/../../includes/header.php';
 <div class="card shadow-sm border-0 mb-3">
     <div class="card-body py-2 px-3">
         <form method="get" class="row g-2 align-items-center erp-filter-bar">
+            <?php if (is_super_admin()): ?>
+            <div class="col-12 col-md-3">
+                <select name="company_id" class="form-select form-select-sm" onchange="this.form.submit()">
+                    <option value="0"<?= $filter_cid === 0 ? ' selected' : '' ?>>Semua Perusahaan</option>
+                    <?php foreach ($compScope['companies'] as $co): ?>
+                        <option value="<?= (int) $co['id'] ?>"<?= $filter_cid === (int) $co['id'] ? ' selected' : '' ?>>
+                            <?= e(($co['code'] ?? '') . ' - ' . ($co['name'] ?? '')) ?></option>
+                    <?php endforeach; ?>
+                </select>
+            </div>
+            <?php endif; ?>
             <div class="col-12 col-md-4">
                 <div class="input-group input-group-sm">
                     <span class="input-group-text bg-white text-muted"><i class="bi bi-search"></i></span>
                     <input type="text" name="q" class="form-control" placeholder="Cari nama atau kode karyawan..." value="<?= e($q) ?>">
                 </div>
             </div>
-            <div class="col-6 col-md-3">
+            <div class="col-6 col-md-2">
                 <select name="status" class="form-select form-select-sm" onchange="this.form.submit()">
                     <option value="">Semua status</option>
                     <option value="aktif" <?= $status === 'aktif' ? 'selected' : '' ?>>Aktif</option>
                     <option value="resign" <?= $status === 'resign' ? 'selected' : '' ?>>Resign</option>
                 </select>
             </div>
-            <?= ui_filter_actions(APP_URL . '/pages/employees/index.php', ($q !== '' || $status !== '')) ?>
+            <?= ui_filter_actions(APP_URL . '/pages/employees/index.php', ($q !== '' || $status !== '' || (is_super_admin() && $filter_cid > 0))) ?>
         </form>
     </div>
 </div>
@@ -150,6 +169,7 @@ require __DIR__ . '/../../includes/header.php';
             <thead class="table-light">
             <tr>
                 <th class="text-center" style="width: 52px;">#</th>
+                <?php if ($show_comp_col): ?><th>Perusahaan</th><?php endif; ?>
                 <th>Kode</th>
                 <th>Nama</th>
                 <th>Cabang</th>
@@ -164,6 +184,7 @@ require __DIR__ . '/../../includes/header.php';
             <?php foreach ($rows as $idx => $r): ?>
                 <tr>
                     <td class="text-center text-muted small"><?= number_format($p['offset'] + $idx + 1, 0, ',', '.') ?></td>
+                    <?php if ($show_comp_col): ?><td><span class="badge bg-light text-dark border"><?= e((string) ($r['company_code'] ?? '-')) ?></span></td><?php endif; ?>
                     <td class="fw-semibold"><?= e($r['code']) ?></td>
                     <td><a class="text-decoration-none fw-medium" href="detail.php?id=<?= (int) $r['id'] ?>"><?= e($r['name']) ?></a></td>
                     <td><?= e($r['branch_name'] ?? '') ?: '<span class="text-muted">—</span>' ?></td>
@@ -172,7 +193,7 @@ require __DIR__ . '/../../includes/header.php';
                         <?php if ($r['phone_number']): ?><div class="small text-muted"><?= e($r['phone_number']) ?></div><?php endif; ?>
                     </td>
                     <td><?= e($r['job_title'] ?? '') ?: '<span class="text-muted">—</span>' ?></td>
-                    <td class="small"><?= e($r['join_date'] ?: '-') ?></td>
+                    <td class="small text-nowrap"><?= !empty($r['join_date']) ? e(date('d-M-Y', strtotime((string) $r['join_date']))) : '-' ?></td>
                     <td>
                         <span class="badge bg-<?= $r['status'] === 'aktif' ? 'success' : 'secondary' ?>">
                             <?= e(ucfirst($r['status'])) ?>
@@ -193,7 +214,7 @@ require __DIR__ . '/../../includes/header.php';
                 </tr>
             <?php endforeach; ?>
             <?php if (!$rows): ?>
-                <tr><td colspan="9" class="text-center text-muted py-4">Tidak ada data karyawan.</td></tr>
+                <tr><td colspan="<?= $show_comp_col ? 10 : 9 ?>" class="text-center text-muted py-4">Tidak ada data karyawan.</td></tr>
             <?php endif; ?>
             </tbody>
         </table>

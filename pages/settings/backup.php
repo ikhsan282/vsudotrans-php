@@ -89,8 +89,12 @@ $active = 'system';
 $title  = 'Backup & Restore Database';
 require __DIR__ . '/../../includes/header.php';
 ?>
-<main class="col-12 col-md-9 col-lg-10 p-4">
-    <h4 class="fw-bold mb-3"><?= e($title) ?></h4>
+<main class="p-3 p-lg-4 w-100 flex-grow-1">
+    <?= ui_page_header(
+        $title,
+        ['Dashboard' => 'pages/dashboard/index.php', 'Sistem' => null, $title => null],
+        [['text' => count(backup_tables()) . ' Tabel', 'class' => 'bg-light text-secondary border']]
+    ) ?>
 
     <?php if ($errors): ?>
         <div class="alert alert-danger py-2">

@@ -51,7 +51,7 @@ $active = 'reports';
 $title  = 'Laporan Keuangan';
 require __DIR__ . '/../../includes/header.php';
 ?>
-<main class="col-12 col-md-9 col-lg-10 p-3 p-lg-4">
+<main class="p-3 p-lg-4 w-100 flex-grow-1">
     <?= ui_page_header(
         'Laporan Keuangan',
         ['Dashboard' => 'pages/dashboard/index.php', 'Laporan' => null, 'Keuangan' => null],
@@ -294,62 +294,104 @@ require __DIR__ . '/../../includes/header.php';
   const fmt = v => 'Rp ' + Number(v).toLocaleString('id-ID');
   const jt  = v => 'Rp ' + (v / 1000000).toLocaleString('id-ID', { maximumFractionDigits: 1 }) + ' jt';
   const mo  = <?= json_encode($mo, JSON_UNESCAPED_UNICODE) ?>;
+  const charts = [];
+
+  function themePalette() {
+    const cs = getComputedStyle(document.documentElement);
+    const dark = document.documentElement.getAttribute('data-bs-theme') === 'dark';
+    return {
+      text: (cs.getPropertyValue('--text-color') || '').trim() || (dark ? '#e3e8ee' : '#212529'),
+      grid: dark ? 'rgba(255,255,255,0.09)' : 'rgba(0,0,0,0.08)',
+      surface: (cs.getPropertyValue('--surface') || '').trim() || (dark ? '#1b222b' : '#ffffff'),
+    };
+  }
+
+  function applyChartTheme() {
+    const pal = themePalette();
+    Chart.defaults.color = pal.text;
+    Chart.defaults.borderColor = pal.grid;
+    charts.forEach(ch => {
+      if (!ch || !ch.options) return;
+      if (ch.options.plugins && ch.options.plugins.legend && ch.options.plugins.legend.labels) {
+        ch.options.plugins.legend.labels.color = pal.text;
+      }
+      if (ch.options.scales) {
+        Object.values(ch.options.scales).forEach(sc => {
+          if (sc.ticks) sc.ticks.color = pal.text;
+          if (sc.grid) sc.grid.color = pal.grid;
+        });
+      }
+      if (ch.config && ch.config.type === 'doughnut' && ch.data && ch.data.datasets && ch.data.datasets[0]) {
+        ch.data.datasets[0].borderColor = pal.surface;
+      }
+      ch.update('none');
+    });
+  }
+
+  const initPal = themePalette();
+  Chart.defaults.color = initPal.text;
+  Chart.defaults.borderColor = initPal.grid;
 
   // 1) Tren pendapatan vs biaya (garis)
   const elTrend = document.getElementById('finTrend');
   if (elTrend) {
-    new Chart(elTrend, {
+    charts.push(new Chart(elTrend, {
       type: 'line',
       data: {
         labels: mo.labels,
         datasets: [
-          { label: 'Pendapatan', data: mo.revenue, borderColor: '#0d6efd', backgroundColor: 'rgba(13,110,253,.12)', fill: true, tension: .3 },
-          { label: 'Terbayar',   data: mo.paid,    borderColor: '#198754', backgroundColor: 'rgba(25,135,84,.12)',  fill: true, tension: .3 },
-          { label: 'Biaya',      data: mo.cost,    borderColor: '#dc3545', backgroundColor: 'rgba(220,53,69,.12)',  fill: true, tension: .3 }
+          { label: 'Pendapatan', data: mo.revenue, borderColor: '#0d6efd', backgroundColor: 'rgba(13,110,253,.14)', fill: true, tension: .3 },
+          { label: 'Terbayar',   data: mo.paid,    borderColor: '#198754', backgroundColor: 'rgba(25,135,84,.14)',  fill: true, tension: .3 },
+          { label: 'Biaya',      data: mo.cost,    borderColor: '#dc3545', backgroundColor: 'rgba(220,53,69,.14)',  fill: true, tension: .3 }
         ]
       },
       options: {
         plugins: {
-          legend: { position: 'bottom' },
+          legend: { position: 'bottom', labels: { color: initPal.text } },
           tooltip: { callbacks: { label: c => c.dataset.label + ': ' + fmt(c.parsed.y) } }
         },
-        scales: { y: { ticks: { callback: jt } } }
+        scales: {
+          x: { ticks: { color: initPal.text }, grid: { color: initPal.grid } },
+          y: { ticks: { color: initPal.text, callback: jt }, grid: { color: initPal.grid } }
+        }
       }
-    });
+    }));
   }
 
   // 2) Pendapatan per jenis booking (donat)
   const elType = document.getElementById('finByType');
   if (elType) {
-    new Chart(elType, {
+    charts.push(new Chart(elType, {
       type: 'doughnut',
       data: {
         labels: ['Travel', 'Rental'],
         datasets: [{
           data: [<?= (float) $rev['travel'] ?>, <?= (float) $rev['rental'] ?>],
-          backgroundColor: ['#0d6efd', '#fd7e14']
+          backgroundColor: ['#0d6efd', '#fd7e14'],
+          borderColor: initPal.surface,
+          borderWidth: 2
         }]
       },
       options: {
         plugins: {
-          legend: { position: 'bottom' },
+          legend: { position: 'bottom', labels: { color: initPal.text } },
           tooltip: { callbacks: { label: c => c.label + ': ' + fmt(c.parsed) } }
         }
       }
-    });
+    }));
   }
 
   // 3) Biaya per jenis (batang horizontal)
   const elCost = document.getElementById('finCost');
   if (elCost) {
-    new Chart(elCost, {
+    charts.push(new Chart(elCost, {
       type: 'bar',
       data: {
         labels: <?= json_encode(array_column($costs, 'cost_type'), JSON_UNESCAPED_UNICODE) ?>,
         datasets: [{
           label: 'Biaya',
           data: <?= json_encode(array_map('floatval', array_column($costs, 'amount'))) ?>,
-          backgroundColor: 'rgba(220,53,69,.7)',
+          backgroundColor: 'rgba(220,53,69,.78)',
           borderRadius: 4
         }]
       },
@@ -359,9 +401,14 @@ require __DIR__ . '/../../includes/header.php';
           legend: { display: false },
           tooltip: { callbacks: { label: c => fmt(c.parsed.x) } }
         },
-        scales: { x: { ticks: { callback: jt } } }
+        scales: {
+          x: { ticks: { color: initPal.text, callback: jt }, grid: { color: initPal.grid } },
+          y: { ticks: { color: initPal.text }, grid: { color: initPal.grid } }
+        }
       }
-    });
+    }));
   }
+
+  window.addEventListener('vst:themechange', applyChartTheme);
 })();
 </script>

@@ -180,14 +180,23 @@ function attendance_find(int $id): ?array
     return $row ?: null;
 }
 
+/** Scope tenant untuk UI Absensi (Super Admin dapat memfilter per PT atau Semua Perusahaan). */
+function attendance_ui_scope(string $col, ?int $filter_cid = null): array
+{
+    if (is_super_admin() && $filter_cid !== null) {
+        return $filter_cid > 0 ? ["{$col} = ?", 'i', [$filter_cid]] : ['1=1', '', []];
+    }
+    return company_scope($col);
+}
+
 /**
  * Daftar absensi (rentang tanggal + karyawan + status + pagination), discope tenant.
  *
  * @return array{0: list<array<string,mixed>>, 1: array}
  */
-function attendance_list(string $from, string $to, int $employee_id, string $status, int $page): array
+function attendance_list(string $from, string $to, int $employee_id, string $status, int $page, ?int $filter_cid = null): array
 {
-    [$wsql, $wtypes, $wparams] = company_scope('a.company_id');
+    [$wsql, $wtypes, $wparams] = attendance_ui_scope('a.company_id', $filter_cid);
     $where = [$wsql, 'a.date BETWEEN ? AND ?'];
     $types = $wtypes . 'ss';
     $params = array_merge($wparams, [$from, $to]);
@@ -211,8 +220,10 @@ function attendance_list(string $from, string $to, int $employee_id, string $sta
     $count_stmt->close();
 
     $p = paginate($total, $page);
-    $stmt = db()->prepare('SELECT a.*, e.code AS employee_code, e.name AS employee_name
-        FROM employee_attendances a JOIN employees e ON e.id = a.employee_id
+    $stmt = db()->prepare('SELECT a.*, e.code AS employee_code, e.name AS employee_name, co.code AS company_code, co.name AS company_name
+        FROM employee_attendances a
+        JOIN employees e ON e.id = a.employee_id
+        LEFT JOIN companies co ON co.id = a.company_id
         WHERE ' . $where_sql . '
         ORDER BY a.date DESC, e.code ASC
         LIMIT ? OFFSET ?');
@@ -228,14 +239,14 @@ function attendance_list(string $from, string $to, int $employee_id, string $sta
  * Rekap per karyawan pada rentang tanggal: jumlah tiap status + total hari tercatat.
  * Dihitung on-the-fly (tanpa tabel ringkasan); karyawan tanpa absensi tampil 0.
  */
-function attendance_summary(string $from, string $to, ?int $cid): array
+function attendance_summary(string $from, string $to, ?int $cid, ?int $filter_cid = null): array
 {
-    [$wsql, $wtypes, $wparams] = company_scope('a.company_id');
+    [$wsql, $wtypes, $wparams] = attendance_ui_scope('a.company_id', $filter_cid);
     // Urutan placeholder WAJIB sama dengan urutan string tipe: rentang tanggal (JOIN) dulu,
     // baru scope tenant, terakhir filter perusahaan karyawan.
     $types = 'ss' . $wtypes;
     $params = array_merge([$from, $to], $wparams);
-    $sql = "SELECT e.id, e.code, e.name,
+    $sql = "SELECT e.id, e.code, e.name, co.code AS company_code, co.name AS company_name,
             SUM(a.status = 'hadir') AS hadir,
             SUM(a.status = 'izin')  AS izin,
             SUM(a.status = 'sakit') AS sakit,
@@ -243,15 +254,17 @@ function attendance_summary(string $from, string $to, ?int $cid): array
             SUM(a.status = 'alpa')  AS alpa,
             COUNT(a.id)             AS total
         FROM employees e
+        LEFT JOIN companies co ON co.id = e.company_id
         LEFT JOIN employee_attendances a
                ON a.employee_id = e.id AND a.date BETWEEN ? AND ? AND {$wsql}
         WHERE e.status = 'aktif'";
-    if ($cid !== null) {
+    $empCid = is_super_admin() && $filter_cid !== null ? ($filter_cid > 0 ? $filter_cid : null) : $cid;
+    if ($empCid !== null) {
         $sql .= ' AND e.company_id = ?';
         $types .= 'i';
-        $params[] = $cid;
+        $params[] = $empCid;
     }
-    $sql .= ' GROUP BY e.id, e.code, e.name ORDER BY e.code';
+    $sql .= ' GROUP BY e.id, e.code, e.name, co.code, co.name ORDER BY e.code';
     $stmt = db()->prepare($sql);
     $stmt->bind_param($types, ...$params);
     $stmt->execute();

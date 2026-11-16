@@ -11,7 +11,9 @@ require_permission('payroll.view');
 require_once __DIR__ . '/../../../includes/payroll_service.php';
 require_once __DIR__ . '/../../travel/_helpers.php';
 
-$cid = require_active_company();
+if (!is_super_admin() && active_company_id() === null) {
+    require_active_company();
+}
 $id  = (int) ($_GET['id'] ?? $_POST['id'] ?? 0);
 $user = $_SESSION['username'] ?? null;
 $errors = [];
@@ -21,11 +23,8 @@ if (!$period) {
     flash('error', 'Periode payroll tidak ditemukan.');
     redirect('pages/payroll/periods/index.php');
 }
-if ((int) $period['company_id'] !== $cid) {
-    http_response_code(403);
-    include __DIR__ . '/../../../includes/403.php';
-    exit;
-}
+$cid = (int) $period['company_id'];
+assert_company_access($cid);
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     require_permission('payroll.manage');
@@ -69,11 +68,32 @@ $cols = $editable ? 8 : 7;
 
 $cash_accounts = [];
 if ($can_manage && $period['status'] === 'final') {
-    $cst = db()->prepare('SELECT id, name, account_number FROM cash_accounts WHERE is_active = 1 AND company_id = ? ORDER BY name');
+    finance_ensure_company_defaults($cid, $user ?: 'system');
+    $cst = db()->prepare("SELECT id, code, name, type, account_number FROM cash_accounts WHERE is_active = 1 AND company_id = ? ORDER BY CASE type WHEN 'bank' THEN 0 ELSE 1 END, id ASC");
     $cst->bind_param('i', $cid);
     $cst->execute();
     $cash_accounts = $cst->get_result()->fetch_all(MYSQLI_ASSOC);
     $cst->close();
+}
+
+$compRow = db()->prepare('SELECT code, name FROM companies WHERE id = ? LIMIT 1');
+$compRow->bind_param('i', $cid);
+$compRow->execute();
+$compInfo = $compRow->get_result()->fetch_assoc() ?: ['code' => '', 'name' => ''];
+$compRow->close();
+
+$linkedCashTx = null;
+if ($period['status'] === 'paid') {
+    finance_ensure_schema();
+    $lSt = db()->prepare("SELECT ct.id, ct.amount, ct.date, ca.code AS acc_code, ca.name AS acc_name
+        FROM cash_transactions ct
+        LEFT JOIN cash_accounts ca ON ca.id = ct.cash_account_id
+        WHERE ct.company_id = ? AND ct.source_type = 'payroll_period' AND ct.source_id = ?
+        LIMIT 1");
+    $lSt->bind_param('ii', $cid, $id);
+    $lSt->execute();
+    $linkedCashTx = $lSt->get_result()->fetch_assoc() ?: null;
+    $lSt->close();
 }
 
 $active = 'payroll';
@@ -97,15 +117,16 @@ $payActions[] = ['label' => 'CSV', 'icon' => 'filetype-csv', 'href' => 'pages/pa
 $payActions[] = ['label' => 'Excel', 'icon' => 'file-earmark-excel', 'href' => 'pages/payroll/periods/export.php?id=' . $id . '&format=xlsx', 'class' => 'btn btn-outline-success btn-sm'];
 $payActions[] = ['label' => 'PDF', 'icon' => 'filetype-pdf', 'href' => 'pages/payroll/periods/print.php?id=' . $id . '&format=pdf', 'class' => 'btn btn-danger btn-sm'];
 ?>
-<main class="p-2 p-md-3">
+<main class="p-2 p-md-3 w-100 flex-grow-1">
     <?= ui_erp_toolbar(
         'Payroll',
         'cash-coin',
         'Periode ' . payroll_period_label($period),
-        [
+        array_values(array_filter([
+            $compInfo['code'] !== '' ? ['text' => $compInfo['code'] . ' — ' . $compInfo['name'], 'class' => 'bg-light text-dark border'] : null,
             ['html' => payroll_status_badge($period['status'])],
             ['text' => (int) $period['item_count'] . ' Karyawan', 'class' => 'bg-info-subtle text-info-emphasis border'],
-        ],
+        ])),
         $payActions
     ) ?>
 
@@ -142,6 +163,9 @@ $payActions[] = ['label' => 'PDF', 'icon' => 'filetype-pdf', 'href' => 'pages/pa
                                 <div class="col-12 col-lg-6">
                                     <?= ui_erp_ro_row('Total Gaji Bersih', rupiah($total_net)) ?>
                                     <?= ui_erp_ro_html_row('Status Periode', payroll_status_badge($period['status']) . ($period['status'] === 'paid' ? '<span class="small text-success">Periode terkunci — item tidak dapat diubah.</span>' : '')) ?>
+                                    <?php if ($linkedCashTx): ?>
+                                        <?= ui_erp_ro_html_row('Tercatat Buku Kas', '<span class="badge bg-primary-subtle text-primary-emphasis border">' . e(($linkedCashTx['acc_code'] ?? '') . ' - ' . ($linkedCashTx['acc_name'] ?? 'Akun Kas')) . '</span> <span class="small">' . e(rupiah((float) $linkedCashTx['amount'])) . ' (' . e(date('d-M-Y', strtotime((string) $linkedCashTx['date']))) . ')</span> <a href="' . e(APP_URL) . '/pages/finance/cash/index.php" class="small text-decoration-none ms-1">Lihat Kas →</a>') ?>
+                                    <?php endif; ?>
                                 </div>
                             </div>
                         </div>

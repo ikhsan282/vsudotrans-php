@@ -6,7 +6,7 @@
  * 3. Validasi hierarki wilayah (provinsi-negara, kota-provinsi, desa-kecamatan).
  * 4. Pagination sliding window.
  * 5. master_resolve_relation_id (lookup relasi via kode & nama).
- * 6. master_find_existing untuk employee_recognitions.
+ * 6. master_find_existing berdasarkan code & empty fallback.
  * 7. master_delete affected rows & scope global.
  */
 require_once __DIR__ . '/../config/config.php';
@@ -120,16 +120,12 @@ ok($res_by_name === 901, "lookup via Nama 'Negara Uji 1' -> id $res_by_name");
 $res_none = master_resolve_relation_id('countries', 'TIDAK_ADA_XYZ', null);
 ok($res_none === null, 'lookup nilai yang tidak ada -> null');
 
-echo "\n=== 5. Test master_find_existing untuk employee_recognitions ===\n";
-$spec_er = master_spec('employee_recognitions');
-$db->query("INSERT INTO employee_recognitions (company_id, employee_id, type, index_no, template) VALUES (991, $emp_id, 'Prestasi', 1, 'Gold')");
-$er_id = $db->insert_id;
-
-$existing_er = master_find_existing($spec_er, ['employee_id' => $emp_id, 'type' => 'Prestasi', 'index_no' => 1], 991);
-ok($existing_er !== null && (int)$existing_er['id'] === $er_id, 'employee_recognitions berhasil dicocokkan berdasarkan (employee_id, type, index_no)');
+echo "\n=== 5. Test master_find_existing berdasarkan code ===\n";
+$existing_jg = master_find_existing($spec_jg, ['code' => 'JG-CHK1'], 991);
+ok($existing_jg !== null && (int)$existing_jg['id'] === $jg_id, 'master_find_existing mencocokkan job_grades berdasarkan code JG-CHK1');
+ok(master_find_existing($spec_jg, ['name' => 'Tanpa Kode'], 991) === null, 'master_find_existing tanpa code mengembalikan null');
 
 // Cleanup data uji
-$db->query("DELETE FROM employee_recognitions WHERE id = $er_id");
 $db->query("DELETE FROM employees WHERE id = $emp_id");
 $db->query("DELETE FROM job_grades WHERE id = $jg_id");
 $db->query("DELETE FROM provinces WHERE id = 911");

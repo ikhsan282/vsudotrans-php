@@ -27,7 +27,7 @@ require_once __DIR__ . '/_query.php';
  */
 function ops_assign_source(array $f, string $alias = 'ta'): array
 {
-    [$w, $wt, $wp] = company_scope("{$alias}.company_id");
+    [$w, $wt, $wp] = report_scope("{$alias}.company_id", $f);
     $cond  = $w !== '' ? $w . ' AND ' : '';
     $cond .= "{$alias}.started_at >= ? AND {$alias}.started_at < DATE_ADD(?, INTERVAL 1 DAY)";
     $types  = $wt . 'ss';
@@ -50,6 +50,7 @@ function ops_vehicle_usage(array $f): array
     // Kondisi filter harus di klausa ON agar LEFT JOIN tetap mempertahankan
     // kendaraan tanpa penugasan (di WHERE, LEFT JOIN jadi INNER JOIN).
     $s = ops_assign_source($f);
+    [$vw, $vt, $vp] = report_scope('v.company_id', $f);
     return report_run("SELECT v.id, v.vehicle_number, v.vehicle_color,
         COUNT(DISTINCT ta.id) AS tugas,
         COALESCE(SUM(ta.ended_at IS NOT NULL), 0) AS selesai,
@@ -57,8 +58,9 @@ function ops_vehicle_usage(array $f): array
         COALESCE(COUNT(DISTINCT DATE(ta.started_at)), 0) AS hari
         FROM vehicles v
         LEFT JOIN trip_assignments ta ON ta.vehicle_id = v.id AND {$s['where']}
+        WHERE {$vw}
         GROUP BY v.id, v.vehicle_number, v.vehicle_color
-        ORDER BY tugas DESC, v.vehicle_number ASC", $s['types'], $s['params']);
+        ORDER BY tugas DESC, v.vehicle_number ASC", $s['types'] . $vt, array_merge($s['params'], $vp));
 }
 
 /** Aktivitas driver: hanya karyawan yang benar-benar pernah ditugaskan. */

@@ -13,6 +13,7 @@
  */
 
 require_once __DIR__ . '/../../includes/booking_service.php';
+require_once __DIR__ . '/../../includes/transport_helpers.php';
 
 /** Normalisasi filter dari $_GET/param. Tanggal ngawur → default bulan berjalan. */
 function report_filter(?array $in = null): array
@@ -33,6 +34,102 @@ function report_filter(?array $in = null): array
 }
 
 /**
+ * Filter UI laporan: mewarisi report_filter() plus filter_company_id eksplisit
+ * untuk dropdown Super Admin (tanpa mengubah kontrak report_filter() untuk test).
+ */
+function report_ui_filter(?array $in = null): array
+{
+    $src = $in ?? $_GET;
+    $f   = report_filter($src);
+    $scope = company_filter_scope('company_id', $src);
+    $f['filter_company_id'] = (int) $scope['filter_company_id'];
+    return $f;
+}
+
+/** Clause scoping tenant laporan (hormati filter_company_id Super Admin jika diset). */
+function report_scope(string $column, array $f): array
+{
+    if (is_super_admin() && isset($f['filter_company_id'])) {
+        $fcid = (int) $f['filter_company_id'];
+        return $fcid > 0 ? ["{$column} = ?", 'i', [$fcid]] : ['1=1', '', []];
+    }
+    return company_scope($column);
+}
+
+/** Bangun query string export standar laporan + company_id bila diset Super Admin. */
+function report_export_qs(array $f, string $format = 'csv'): string
+{
+    $p = [
+        'format'       => $format,
+        'from'         => $f['from'],
+        'to'           => $f['to'],
+        'booking_type' => $f['booking_type'],
+    ];
+    if (is_super_admin() && isset($f['filter_company_id'])) {
+        $p['company_id'] = (int) $f['filter_company_id'];
+    }
+    return http_build_query($p);
+}
+
+/** Tombol aksi header standar export CSV/Excel/PDF/Cetak untuk halaman laporan. */
+function report_header_actions(string $export_script, array $f): array
+{
+    $csv_qs  = report_export_qs($f, 'csv');
+    $xlsx_qs = report_export_qs($f, 'xlsx');
+    return [
+        ['label' => 'CSV',   'icon' => 'filetype-csv',       'href' => $export_script . '?' . $csv_qs,  'class' => 'btn btn-outline-success btn-sm'],
+        ['label' => 'Excel', 'icon' => 'file-earmark-excel', 'href' => $export_script . '?' . $xlsx_qs, 'class' => 'btn btn-success btn-sm'],
+        ['label' => 'PDF',   'icon' => 'filetype-pdf',       'href' => $export_script . '?' . $csv_qs . '&format=pdf', 'class' => 'btn btn-danger btn-sm'],
+        ['label' => 'Cetak', 'icon' => 'printer',            'href' => $export_script . '?' . $csv_qs . '&format=html&print=1', 'class' => 'btn btn-outline-secondary btn-sm', 'target' => '_blank'],
+    ];
+}
+
+/** Subtitle periode + nama perusahaan bila difilter per PT. */
+function report_period_subtitle(array $f): string
+{
+    $sub = 'Periode ' . $f['from'] . ' s/d ' . $f['to'];
+    if (is_super_admin() && !empty($f['filter_company_id'])) {
+        foreach (accessible_companies() as $co) {
+            if ((int) ($co['id'] ?? 0) === (int) $f['filter_company_id']) {
+                $sub .= ' (' . ($co['code'] ?? '') . ' - ' . ($co['name'] ?? '') . ')';
+                break;
+            }
+        }
+    }
+    return $sub;
+}
+
+/** Render kolom filter Perusahaan khusus Super Admin agar seragam di semua halaman Laporan. */
+function report_company_filter_col(array $f): string
+{
+    if (!is_super_admin()) {
+        return '';
+    }
+    $sel = (int) ($f['filter_company_id'] ?? 0);
+    $html = '<div class="col-12 col-sm-6 col-lg-3">'
+        . '<label class="form-label small mb-1">Perusahaan</label>'
+        . '<select class="form-select form-select-sm" name="company_id" onchange="this.form.submit()">'
+        . '<option value="0"' . ($sel === 0 ? ' selected' : '') . '>Semua Perusahaan</option>';
+    foreach (accessible_companies() as $co) {
+        $cid = (int) ($co['id'] ?? 0);
+        $lbl = trim(($co['code'] ?? '') . ' - ' . ($co['name'] ?? ''));
+        $html .= '<option value="' . $cid . '"' . ($sel === $cid ? ' selected' : '') . '>' . e($lbl) . '</option>';
+    }
+    return $html . '</select></div>';
+}
+
+/** Header download dual-form (ASCII fallback + filename* UTF-8). */
+function report_send_download_headers(string $base, string $ext, string $mime): void
+{
+    $ascii = preg_replace('/[^\x20-\x7E]/', '_', $base);
+    $ascii = str_replace('"', '', (string) $ascii);
+    $utf8  = rawurlencode($base . '.' . $ext);
+    header('Content-Type: ' . $mime);
+    header('Content-Disposition: attachment; filename="' . $ascii . '.' . $ext . '"; filename*=UTF-8\'\'' . $utf8);
+    header('Cache-Control: no-store');
+}
+
+/**
  * Derived table bernama x: UNION per tipe terpilih (kolom seragam) + WHERE filter
  * tanggal & tenant. Dipakai sebagai FROM oleh semua query agregat, jadi struktur
  * UNION-nya hanya ada di satu tempat.
@@ -41,7 +138,7 @@ function report_filter(?array $in = null): array
  */
 function report_source(array $f): array
 {
-    [$w, $wt, $wp] = company_scope('b.company_id');
+    [$w, $wt, $wp] = report_scope('b.company_id', $f);
     $inner_where = ($w !== '' ? $w . ' AND ' : '') . 'b.date BETWEEN ? AND ?';
     $branch_types = $wt . 'ss';
     $branch_params = array_merge($wp, [$f['from'], $f['to']]);

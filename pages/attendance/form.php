@@ -9,7 +9,6 @@ require_once __DIR__ . '/../../config/config.php';
 require_once __DIR__ . '/_helpers.php';
 require_permission('attendance.manage');
 
-$cid = attendance_scope_cid();
 $id = (int) ($_GET['id'] ?? $_POST['id'] ?? 0);
 $row = $id > 0 ? attendance_find($id) : null;
 if ($id > 0 && !$row) {
@@ -18,6 +17,9 @@ if ($id > 0 && !$row) {
 }
 if ($row) {
     assert_company_access((int) $row['company_id']);
+    $cid = (int) $row['company_id'];
+} else {
+    $cid = attendance_scope_cid();
 }
 
 $errors = [];
@@ -25,18 +27,24 @@ $input = $row ?? [];
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     verify_csrf();
-    [$data, $errors] = attendance_map_input($_POST, $cid);
-    $input = $_POST;
+    $postForMap = $row ? array_merge($_POST, [
+        'employee_id' => (string) $row['employee_id'],
+        'date'        => (string) $row['date'],
+    ]) : $_POST;
+    [$data, $errors] = attendance_map_input($postForMap, $cid);
+    $input = $postForMap;
 
     if (!$errors) {
         $user = (string) ($_SESSION['username'] ?? '');
+        $ci = $data['check_in'] === '' ? null : $data['check_in'];
+        $co = $data['check_out'] === '' ? null : $data['check_out'];
         if ($row) {
             // Ubah baris yang sedang diedit: kunci pada id + pemilik + tanggal asli,
             // supaya "Ubah" tidak bisa menyuntik baris karyawan/tanggal lain.
             $stmt = db()->prepare('UPDATE employee_attendances
                 SET status = ?, check_in = ?, check_out = ?, note = ?, modified_user = ?, modified_date = NOW()
                 WHERE id = ? AND employee_id = ? AND date = ? AND company_id = ?');
-            $stmt->bind_param('sssssissi', $data['status'], $data['check_in'], $data['check_out'], $data['note'],
+            $stmt->bind_param('sssssissi', $data['status'], $ci, $co, $data['note'],
                 $user, $id, $row['employee_id'], $row['date'], $row['company_id']);
             $stmt->execute();
             $stmt->close();
@@ -60,13 +68,13 @@ $title = $id > 0 ? 'Ubah Absensi' : 'Input Absensi';
 $active = 'attendance';
 require __DIR__ . '/../../includes/header.php';
 ?>
-<main class="p-2 p-md-3">
+<main class="p-2 p-md-3 w-100 flex-grow-1">
     <?= ui_erp_toolbar(
         'Absensi',
         'calendar-check',
         $title,
         $id > 0 ? array_values(array_filter([
-            $row['date'] ?? null,
+            !empty($row['date']) ? date('d-M-Y', strtotime((string) $row['date'])) : null,
             attendance_statuses()[$v('status')] ?? ($v('status') ?: null),
         ])) : [],
         [
@@ -112,6 +120,7 @@ require __DIR__ . '/../../includes/header.php';
                                             <select name="employee_id" class="form-select form-select-sm ts-select" required
                                                 data-ts-url="<?= e(APP_URL) ?>/pages/employees/options.php"
                                                 <?= $cid !== null ? 'data-ts-company="' . (int) $cid . '"' : '' ?>
+                                                <?= $id > 0 ? 'disabled' : '' ?>
                                                 data-ts-limit="30">
                                                 <option value="">— pilih karyawan —</option>
                                                 <?php foreach ($employees as $emp): ?>

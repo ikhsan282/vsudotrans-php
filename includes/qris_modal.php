@@ -20,7 +20,7 @@ if (!empty($canManage) && !empty($qrisChannels)): ?>
                         <i class="bi bi-exclamation-triangle me-1"></i>Perubahan harga di Tab Detail belum disimpan. Batas maksimal mengikuti total invoice tersimpan.
                     </div>
 
-                    <div class="p-2 px-3 bg-light border rounded small mb-3 d-flex justify-content-between align-items-center">
+                    <div class="p-2 px-3 bg-body-secondary border rounded small mb-3 d-flex justify-content-between align-items-center">
                         <span class="text-muted">Sisa Tagihan Invoice:</span>
                         <strong class="text-danger fs-6" id="qrisFormSisaText">Rp <?= format_nominal($qrisRemaining) ?></strong>
                     </div>
@@ -74,18 +74,18 @@ if (!empty($canManage) && !empty($qrisChannels)): ?>
             <div id="qrisStepShow" class="d-none">
                 <div class="modal-body text-center">
                     <div class="d-flex justify-content-between align-items-center mb-2">
-                        <span class="badge bg-dark" id="qrisShowChannelBadge">QRIS</span>
+                        <span class="badge bg-secondary" id="qrisShowChannelBadge">QRIS</span>
                         <span class="badge bg-warning-subtle text-warning-emphasis border" id="qrisShowStatusBadge">
                             <span class="spinner-border spinner-border-sm me-1" style="width:.7rem;height:.7rem;" role="status"></span>Menunggu Pembayaran
                         </span>
                     </div>
                     <div class="text-muted small mb-2">Order ID: <code id="qrisShowOrderId">-</code></div>
 
-                    <div class="p-2 bg-white border rounded-3 d-inline-block mb-3 shadow-sm">
+                    <div class="p-2 bg-white border rounded-3 d-inline-block mb-3 shadow-sm qr-code-frame">
                         <img id="qrisShowImg" src="" alt="QRIS Dinamis" width="230" height="230" class="img-fluid">
                     </div>
 
-                    <div class="border rounded bg-light p-2 px-3 text-start small mb-2">
+                    <div class="border rounded bg-body-secondary p-2 px-3 text-start small mb-2">
                         <div class="d-flex justify-content-between mb-1">
                             <span class="text-muted">Tipe Pembayaran</span>
                             <strong id="qrisShowPayType">-</strong>

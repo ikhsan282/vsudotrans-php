@@ -97,7 +97,7 @@ Password semua user: `P@ssw0rd`. **Wajib diganti sebelum production.**
 | Audit Trail | ✅ | ✅ | Read-only |
 | Referensi umum (bank, wilayah, satuan) | ✅ | ✅ | Wilayah berjenjang (`cities.short_name` singkatan kota 3–4 huruf) + remote Tom Select (`opts_*`) |
 | Kendaraan (`brands`, `categories`, `models`, unit) | ✅ | ✅ | Master merek/kategori/model dipisah ke halaman terdedikasi; foto, STNK, KIR terintegrasi Azure Blob |
-| Master HR (grade, jabatan, posisi, struktur, penghargaan) | ✅ | ✅ | |
+| Master HR (grade, jabatan, posisi, struktur) | ✅ | ✅ | |
 | **Travel** (rute & pemesanan tiket) | ✅ | ✅ | Rute bertarif bertingkat (Daftar Harga terurut tarif termurah) + radius kecamatan; pemesanan tiket + resi + badge penumpang tambahan (`+N`) + kolom **Sopir** (no. WA di atas, nama diperkecil) |
 | **Rental** (sewa kendaraan) | ✅ | ✅ | Booking rental multi-hari + badge penumpang tambahan (`+N`) + komisi kru/sopir + kolom **Sopir** + inline payment & QRIS dinamis |
 | **Transportasi** (penumpang & peraturan komisi) | ✅ | ✅ | Master bersama Penumpang & Peraturan Komisi untuk Travel & Rental |
@@ -131,7 +131,7 @@ Menu sidebar (`includes/sidebar.php`) dikelompokkan dalam 7 kategori dan difilte
 | **4. SDM & PAYROLL** | **Karyawan** | CRUD karyawan + detail, rekening payroll, foto profil, KTP & SIM (Azure Blob) |
 | | **Absensi** ▾ | **Absensi Harian** · **Rekap Absensi** (sumber hari hadir Payroll, export CSV/XLSX/PDF/Cetak) |
 | | **Payroll** | Periode bulanan (`draft` → `final` → `dibayar`), generate per karyawan aktif, hitung ulang potongan & hari hadir, cetak + export CSV/XLSX/PDF |
-| | **Master HR** ▾ | Grade Jabatan, Jabatan, Posisi, Struktur Org., Penghargaan + Import CSV |
+| | **Master HR** ▾ | Grade Jabatan, Jabatan, Posisi, Struktur Org. + Import CSV |
 | **5. LAPORAN** | **Laporan** ▾ | **Laporan Booking** · **Laporan Keuangan** · **Laporan Operasional** · **Laporan Driver** (semua export CSV, XLSX, PDF, dan Cetak) |
 | **6. MASTER DATA & ORGANISASI** | **Organisasi** ▾ | **Grup Perusahaan** · **Perusahaan** (termasuk pengaturan WA & logo/stempel Azure Blob) · **Cabang** |
 | | **Referensi Umum** ▾ | **Bank**, **Wilayah** (`Negara` → `Provinsi` → `Kota/Kab.` + `short_name` 3–4 huruf → `Kecamatan` → `Desa`), **Satuan** — Streaming Grid Export & Import CSV |

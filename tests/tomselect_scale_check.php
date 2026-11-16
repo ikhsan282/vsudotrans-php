@@ -659,7 +659,6 @@ try {
     foreach ([
         ['/pages/attendance/form.php', 'pages/employees/options.php', 'attendance/form.php'],
         ['/pages/attendance/index.php', 'pages/employees/options.php', 'attendance/index.php'],
-        ['/pages/hr/employee_recognitions/form.php', 'pages/employees/options.php?status=all', 'hr/employee_recognitions/form.php'],
         ['/pages/travel/bookings/detail.php?id=' . $tempTravelId, 'pages/employees/options.php', 'travel/detail.php #tab-crew'],
         ['/pages/travel/bookings/form.php', 'crew-emp-select', 'travel/form.php crew'],
         ['/pages/rental/bookings/detail.php?id=' . $tempBookingId, 'crew-emp-select', 'rental/detail.php crew'],

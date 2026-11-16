@@ -7,10 +7,10 @@ require_once __DIR__ . '/../../config/config.php';
 require_permission('reports.view');
 require_once __DIR__ . '/_dispatch_query.php';
 
-$f   = report_filter($_GET);
+$f   = report_ui_filter($_GET);
 $fmt = (string) ($_GET['format'] ?? 'xlsx');
 $fmt = in_array($fmt, ['csv', 'xlsx', 'pdf', 'html'], true) ? $fmt : 'xlsx';
-$sub = 'Periode ' . $f['from'] . ' s/d ' . $f['to'];
+$sub = report_period_subtitle($f);
 $data = dispatch_all($f);
 
 $sum = $data['summary'];
@@ -47,24 +47,13 @@ $table[] = ['TOTAL PENUGASAN', '', '', '', '', '', count($det), ''];
 
 $base = 'Laporan Penjadwalan Driver ' . $f['from'] . ' s-d ' . $f['to'];
 
-// Header download dual-form: ASCII fallback + filename* UTF-8 (spasi/karakter Indonesia aman).
-function send_download_headers(string $base, string $ext, string $mime): void
-{
-    $ascii = preg_replace('/[^\x20-\x7E]/', '_', $base);
-    $ascii = str_replace('"', '', $ascii);
-    $utf8  = rawurlencode($base . '.' . $ext);
-    header('Content-Type: ' . $mime);
-    header('Content-Disposition: attachment; filename="' . $ascii . '.' . $ext . '"; filename*=UTF-8\'\'' . $utf8);
-    header('Cache-Control: no-store');
-}
-
 if ($fmt === 'pdf' || $fmt === 'html') {
     require_once __DIR__ . '/_print.php';
     rpt_send($table, 'Penjadwalan Driver', $base, $sub, null, 'portrait', 'reports.dispatch.print');
 }
 
 if ($fmt === 'csv') {
-    send_download_headers($base, 'csv', 'text/csv; charset=UTF-8');
+    report_send_download_headers($base, 'csv', 'text/csv; charset=UTF-8');
     echo "\xEF\xBB\xBF"; // BOM UTF-8 agar Excel membaca karakter Indonesia dengan benar
     $out = fopen('php://output', 'w');
     foreach ($table as $row) {
@@ -76,6 +65,6 @@ if ($fmt === 'csv') {
 }
 
 require_once __DIR__ . '/../../includes/xlsx.php';
-send_download_headers($base, 'xlsx', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+report_send_download_headers($base, 'xlsx', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
 audit('reports.dispatch.print', $base . ' (XLSX)');
 echo xlsx_build($table, 'Penjadwalan Driver');

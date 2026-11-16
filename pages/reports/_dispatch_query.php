@@ -35,7 +35,7 @@ function dispatch_doc_expr(string $alias = 'ta'): string
  */
 function dispatch_assign_source(array $f, string $alias = 'ta'): array
 {
-    [$w, $wt, $wp] = company_scope("{$alias}.company_id");
+    [$w, $wt, $wp] = report_scope("{$alias}.company_id", $f);
     $cond  = $w !== '' ? $w . ' AND ' : '';
     $cond .= "{$alias}.started_at >= ? AND {$alias}.started_at < DATE_ADD(?, INTERVAL 1 DAY)";
     $types  = $wt . 'ss';
@@ -86,7 +86,7 @@ function dispatch_driver_load(array $f): array
 function dispatch_details(array $f): array
 {
     $s  = dispatch_assign_source($f);
-    $uk = company_scope('v.company_id'); // kendaraan tenant lain tidak pernah ikut ter-JOIN
+    $uk = report_scope('v.company_id', $f); // kendaraan tenant lain tidak pernah ikut ter-JOIN
     // Klausa ON LEFT JOIN berada SEBELUM WHERE → placeholder-nya juga lebih dulu.
     $on = $uk[0] !== '' ? ' AND ' . $uk[0] : '';
     return report_run("SELECT ta.id, ta.booking_type, ta.started_at, ta.ended_at, ta.reason,

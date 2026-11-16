@@ -8,18 +8,17 @@ require_permission('payroll.view');
 require_once __DIR__ . '/../../../includes/payroll_service.php';
 require_once __DIR__ . '/../../travel/_helpers.php';
 
-$cid = require_active_company();
+if (!is_super_admin() && active_company_id() === null) {
+    require_active_company();
+}
 $id  = (int) ($_GET['id'] ?? 0);
 $period = payroll_period_find($id);
 if (!$period) {
     flash('error', 'Periode payroll tidak ditemukan.');
     redirect('pages/payroll/periods/index.php');
 }
-if ((int) $period['company_id'] !== $cid) {
-    http_response_code(403);
-    include __DIR__ . '/../../../includes/403.php';
-    exit;
-}
+$cid = (int) $period['company_id'];
+assert_company_access($cid);
 
 $items = payroll_items($id);
 $table = [[

@@ -749,7 +749,7 @@ function booking_driver_cell_html(?array $driverSummary): string
     $titleText = implode(', ', $titleParts);
     $titleAttr = $titleText !== '' ? ' title="' . e($titleText) . '"' : '';
 
-    $html  = '<div class="small fw-semibold text-dark d-flex flex-wrap align-items-center gap-1 text-nowrap booking-driver-phone"' . $titleAttr . '>';
+    $html  = '<div class="small fw-semibold text-body-emphasis d-flex flex-wrap align-items-center gap-1 text-nowrap booking-driver-phone"' . $titleAttr . '>';
     $html .= '<span>' . e($phone !== '' ? $phone : '-') . '</span>';
     if ($extra > 0) {
         $html .= '<span class="badge bg-info-subtle text-info-emphasis border"' . $titleAttr . '>+' . $extra . ' sopir</span>';
@@ -764,7 +764,7 @@ function booking_driver_cell_html(?array $driverSummary): string
  */
 function booking_passenger_cell_html(string $name, ?string $phone, int $extraCount): string
 {
-    $html  = '<div class="small fw-semibold text-dark d-flex flex-wrap align-items-center gap-1">';
+    $html  = '<div class="small fw-semibold text-body-emphasis d-flex flex-wrap align-items-center gap-1">';
     $html .= '<span>' . e($name) . '</span>';
     if ($extraCount > 0) {
         $tip   = $extraCount . ' penumpang tambahan';
@@ -1850,6 +1850,59 @@ function rute_find_district_radius_extra(array $districts, int $district_id): ar
         }
     }
     return ['matched' => false, 'extra_price' => 0.0, 'note' => '', 'district_name' => ''];
+}
+
+/**
+ * Hitung simulasi/tarif Travel berdasarkan rute, kategori layanan (`rute_tariffs`),
+ * jumlah kursi, dan tambahan biaya kecamatan radius (`rute_radius_districts`).
+ *
+ * @return array{unit_price:float,seats:int,subtotal:float,pickup_extra:float,delivery_extra:float,radius_extra:float,total:float}
+ */
+function rute_calculate_travel_quote(
+    int $company_id,
+    array $ruteRow,
+    ?int $category_vehicle_id,
+    int $seats = 1,
+    int $pickup_district_id = 0,
+    int $delivery_district_id = 0
+): array {
+    $seats = max(1, $seats);
+    $unitPrice = (float) ($ruteRow['price'] ?? 0);
+    $rid = (int) ($ruteRow['id'] ?? 0);
+    $pickupExtra = 0.0;
+    $deliveryExtra = 0.0;
+
+    if ($rid > 0 && $company_id > 0) {
+        try {
+            if ($category_vehicle_id !== null && $category_vehicle_id > 0) {
+                rute_tariff_ensure_schema();
+                $stRt = db()->prepare('SELECT price FROM rute_tariffs WHERE rute_id = ? AND company_id = ? AND category_vehicle_id = ? LIMIT 1');
+                $stRt->bind_param('iii', $rid, $company_id, $category_vehicle_id);
+                $stRt->execute();
+                $foundTariff = $stRt->get_result()->fetch_column();
+                $stRt->close();
+                if ($foundTariff !== false) {
+                    $unitPrice = (float) $foundTariff;
+                }
+            }
+            $rRad = rute_radius_for_rute($rid, $company_id);
+            $pickupExtra   = round((float) rute_find_district_radius_extra($rRad['pickup'], $pickup_district_id)['extra_price'], 2);
+            $deliveryExtra = round((float) rute_find_district_radius_extra($rRad['delivery'], $delivery_district_id)['extra_price'], 2);
+        } catch (Throwable $ignore) {
+        }
+    }
+
+    $subtotal    = round($unitPrice * $seats, 2);
+    $radiusExtra = round($pickupExtra + $deliveryExtra, 2);
+    return [
+        'unit_price'     => $unitPrice,
+        'seats'          => $seats,
+        'subtotal'       => $subtotal,
+        'pickup_extra'   => $pickupExtra,
+        'delivery_extra' => $deliveryExtra,
+        'radius_extra'   => $radiusExtra,
+        'total'          => round($subtotal + $radiusExtra, 2),
+    ];
 }
 
 /** Pastikan tabel terpisah `rute_schedules` (ENUM jam keberangkatan per rute) tersedia di DB. */

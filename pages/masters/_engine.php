@@ -231,18 +231,6 @@ function master_tables(): array
                 mf_code(), mf_name(), mf_level(), mf_note(), mf_active(),
             ],
         ]),
-        'employee_recognitions' => $hr([
-            'table' => 'employee_recognitions', 'title' => 'Penghargaan Karyawan',
-            'order' => 'index_no',
-            'fields' => [
-                mf_select('employee_id', 'Karyawan', 'employees'),
-                ['col' => 'type', 'label' => 'Jenis', 'type' => 'text', 'max' => 30, 'required' => true],
-                ['col' => 'index_no', 'label' => 'No. Urut', 'type' => 'number', 'int' => true, 'required' => false],
-                ['col' => 'template', 'label' => 'Template', 'type' => 'text', 'max' => 255, 'required' => false, 'nullable' => true],
-                ['col' => 'size', 'label' => 'Ukuran', 'type' => 'number', 'int' => true, 'required' => false, 'nullable' => true],
-                mf_note(),
-            ],
-        ]),
 
         // ---------------- METODE PEMBAYARAN (company_id, NULL = semua perusahaan) ----------------
         'payment_methods' => [
@@ -737,7 +725,7 @@ function master_list(string $key): void
     $query_base = $q !== '' ? 'q=' . urlencode($q) : '';
     require __DIR__ . '/../../includes/header.php';
     ?>
-    <main class="col-12 col-md-9 col-lg-10 p-3 p-lg-4">
+    <main class="p-3 p-lg-4 w-100 flex-grow-1">
         <?= ui_page_header(
             $spec['title'],
             ['Dashboard' => 'pages/dashboard/index.php', ($spec['module'] === 'hr' ? 'Master HR' : 'Master Data') => null, $spec['title'] => null],
@@ -779,7 +767,11 @@ function master_list(string $key): void
                             <?php foreach ($list_cols as $idx_c => $f): $col = $f['col']; ?>
                                 <td>
                                 <?php if (($f['type'] ?? '') === 'checkbox'): ?>
-                                    <span class="badge bg-<?= $r[$col] ? 'success' : 'secondary' ?>"><?= $r[$col] ? 'Aktif' : 'Nonaktif' ?></span>
+                                    <?php if ($col === 'is_cash'): ?>
+                                        <span class="badge bg-<?= $r[$col] ? 'success' : 'info' ?>"><?= $r[$col] ? 'Kas Tunai' : 'Bank / Non-Tunai' ?></span>
+                                    <?php else: ?>
+                                        <span class="badge bg-<?= $r[$col] ? 'success' : 'secondary' ?>"><?= $r[$col] ? 'Aktif' : 'Nonaktif' ?></span>
+                                    <?php endif; ?>
                                 <?php elseif (($f['type'] ?? '') === 'select'): ?>
                                     <?= e(master_label($maps[$f['source']], $r[$col])) ?>
                                 <?php else: ?>
@@ -1489,24 +1481,11 @@ function master_find_code(array $spec, string $code, ?int $cid): ?array
     return $row ?: null;
 }
 
-/** Cari data existing untuk form/import (berdasarkan code atau kunci unik alternatif). */
+/** Cari data existing untuk form/import (berdasarkan code). */
 function master_find_existing(array $spec, array $in, ?int $cid): ?array
 {
     if (!empty($in['code'])) {
         return master_find_code($spec, (string) $in['code'], $cid);
-    }
-    if ($spec['table'] === 'employee_recognitions') {
-        $emp_id = (int) ($in['employee_id'] ?? 0);
-        $type = (string) ($in['type'] ?? '');
-        $idx = (int) ($in['index_no'] ?? 0);
-        if ($emp_id > 0 && $type !== '') {
-            $st = db()->prepare('SELECT * FROM employee_recognitions WHERE employee_id = ? AND type = ? AND index_no = ? AND company_id = ? LIMIT 1');
-            $st->bind_param('isii', $emp_id, $type, $idx, $cid);
-            $st->execute();
-            $row = $st->get_result()->fetch_assoc();
-            $st->close();
-            return $row ?: null;
-        }
     }
     return null;
 }

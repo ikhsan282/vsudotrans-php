@@ -8,16 +8,9 @@ require_once __DIR__ . '/../../config/config.php';
 require_permission('reports.view');
 require_once __DIR__ . '/_operations_query.php';
 
-$f = report_filter($_GET);
+$f = report_ui_filter($_GET);
 $data = ops_all($f);
-
-$export_qs = http_build_query([
-    'format'       => 'csv',
-    'from'         => $f['from'],
-    'to'           => $f['to'],
-    'booking_type' => $f['booking_type'],
-]);
-$xlsx_qs = str_replace('format=csv', 'format=xlsx', $export_qs);
+$header_actions = report_header_actions('pages/reports/operations_export.php', $f);
 
 $comp   = $data['completion'];
 $veh    = $data['vehicles'];
@@ -38,33 +31,27 @@ $active = 'reports';
 $title  = 'Laporan Operasional';
 require __DIR__ . '/../../includes/header.php';
 ?>
-<main class="col-12 col-md-9 col-lg-10 p-4">
-    <div class="d-flex justify-content-between align-items-center mb-3 flex-wrap gap-2">
-        <h4 class="fw-bold mb-0">Laporan Operasional</h4>
-        <div class="btn-group btn-group-sm">
-            <a class="btn btn-outline-success" href="operations_export.php?<?= e($export_qs) ?>">
-                <i class="bi bi-filetype-csv"></i> CSV</a>
-            <a class="btn btn-success" href="operations_export.php?<?= e($xlsx_qs) ?>">
-                <i class="bi bi-file-earmark-excel"></i> Excel</a>
-            <a class="btn btn-danger" href="operations_export.php?<?= e($export_qs) ?>&format=pdf">
-                <i class="bi bi-filetype-pdf"></i> PDF</a>
-            <a class="btn btn-outline-secondary" href="operations_export.php?<?= e($export_qs) ?>&format=html&print=1" target="_blank">
-                <i class="bi bi-printer"></i> Cetak</a>
-        </div>
-    </div>
+<main class="p-3 p-lg-4 w-100 flex-grow-1">
+    <?= ui_page_header(
+        'Laporan Operasional',
+        ['Dashboard' => 'pages/dashboard/index.php', 'Laporan' => null, 'Operasional' => null],
+        [['text' => tanggal_indo($f['from']) . ' – ' . tanggal_indo($f['to']), 'class' => 'bg-light text-secondary border']],
+        $header_actions
+    ) ?>
 
     <div class="card shadow-sm border-0 mb-3">
-        <div class="card-body">
-            <form class="row g-2 align-items-end" method="get">
-                <div class="col-12 col-sm-4 col-lg-3">
+        <div class="card-body py-2 px-3">
+            <form class="row g-2 align-items-end erp-filter-bar" method="get">
+                <?= report_company_filter_col($f) ?>
+                <div class="col-12 col-sm-4 col-lg-2">
                     <label class="form-label small mb-1">Dari Tanggal</label>
                     <input type="date" class="form-control form-control-sm" name="from" value="<?= e($f['from']) ?>">
                 </div>
-                <div class="col-12 col-sm-4 col-lg-3">
+                <div class="col-12 col-sm-4 col-lg-2">
                     <label class="form-label small mb-1">Sampai Tanggal</label>
                     <input type="date" class="form-control form-control-sm" name="to" value="<?= e($f['to']) ?>">
                 </div>
-                <div class="col-12 col-sm-4 col-lg-3">
+                <div class="col-12 col-sm-4 col-lg-2">
                     <label class="form-label small mb-1">Jenis Booking</label>
                     <select class="form-select form-select-sm" name="booking_type">
                         <?php foreach (['all' => 'Semua', 'travel' => 'Travel', 'rental' => 'Rental'] as $k => $lbl): ?>
@@ -72,7 +59,7 @@ require __DIR__ . '/../../includes/header.php';
                         <?php endforeach; ?>
                     </select>
                 </div>
-                <?= ui_filter_actions(APP_URL . '/pages/reports/operations.php', ($f['from'] !== date('Y-m-01') || $f['to'] !== date('Y-m-t') || $f['booking_type'] !== 'all')) ?>
+                <?= ui_filter_actions(APP_URL . '/pages/reports/operations.php', ($f['from'] !== date('Y-m-01') || $f['to'] !== date('Y-m-t') || $f['booking_type'] !== 'all' || (is_super_admin() && !empty($f['filter_company_id'])))) ?>
             </form>
         </div>
     </div>

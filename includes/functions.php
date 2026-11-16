@@ -399,7 +399,7 @@ function ui_breadcrumb(array $items): string
     $last = end($keys);
     foreach ($items as $label => $url) {
         if ($label === $last || empty($url)) {
-            $html .= '<li class="breadcrumb-item active text-dark" aria-current="page">' . e($label) . '</li>';
+            $html .= '<li class="breadcrumb-item active text-body-emphasis" aria-current="page">' . e($label) . '</li>';
         } else {
             $href = str_starts_with($url, 'http') ? $url : APP_URL . '/' . ltrim($url, '/');
             $html .= '<li class="breadcrumb-item"><a href="' . e($href) . '" class="text-decoration-none text-muted">' . e($label) . '</a></li>';
@@ -419,13 +419,13 @@ function ui_page_header(string $title, array $breadcrumb = [], array $badges = [
     $html = ui_breadcrumb($breadcrumb);
     $html .= '<div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-3">';
     $html .= '<div class="d-flex align-items-center gap-2 flex-wrap">';
-    $html .= '<h4 class="fw-bold mb-0 text-dark">' . e($title) . '</h4>';
+    $html .= '<h4 class="fw-bold mb-0 text-body-emphasis">' . e($title) . '</h4>';
 
     foreach ($badges as $b) {
         if (is_string($b) && $b !== '') {
-            $html .= '<span class="badge bg-light text-secondary border px-2 py-1">' . e($b) . '</span>';
+            $html .= '<span class="badge bg-body-secondary text-body-secondary border px-2 py-1">' . e($b) . '</span>';
         } elseif (is_array($b) && !empty($b['text'])) {
-            $cls = $b['class'] ?? 'bg-light text-secondary border';
+            $cls = $b['class'] ?? 'bg-body-secondary text-body-secondary border';
             $html .= '<span class="badge ' . e($cls) . ' px-2 py-1">' . e($b['text']) . '</span>';
         }
     }
@@ -490,9 +490,9 @@ function ui_erp_toolbar(string $moduleLabel, string $moduleIcon, string $titleTe
         if (is_array($b) && isset($b['html'])) {
             $html .= (string) $b['html'];
         } elseif (is_string($b) && $b !== '') {
-            $html .= '<span class="badge bg-light text-secondary border">' . e($b) . '</span>';
+            $html .= '<span class="badge bg-body-secondary text-body-secondary border">' . e($b) . '</span>';
         } elseif (is_array($b) && !empty($b['text'])) {
-            $cls = $b['class'] ?? 'bg-light text-secondary border';
+            $cls = $b['class'] ?? 'bg-body-secondary text-body-secondary border';
             $idAttr = !empty($b['id']) ? ' id="' . e((string) $b['id']) . '"' : '';
             $html .= '<span class="badge ' . e($cls) . '"' . $idAttr . '>' . e($b['text']) . '</span>';
         }
@@ -541,13 +541,13 @@ function ui_erp_ro_row(string $label, string|int|float|null $value, bool $multil
         return '<div class="rnt-row align-items-start">'
             . '<label class="rnt-label pt-1">' . e($label) . '</label>'
             . '<div class="rnt-field">'
-            . '<textarea class="form-control form-control-sm bg-light rnt-ta-compact' . $monoCls . '" rows="2" readonly>' . e($str) . '</textarea>'
+            . '<textarea class="form-control form-control-sm bg-body-secondary rnt-ta-compact' . $monoCls . '" rows="2" readonly>' . e($str) . '</textarea>'
             . '</div></div>';
     }
     return '<div class="rnt-row">'
         . '<label class="rnt-label">' . e($label) . '</label>'
         . '<div class="rnt-field">'
-        . '<input type="text" class="form-control form-control-sm bg-light' . $monoCls . '" value="' . e($str) . '" readonly>'
+        . '<input type="text" class="form-control form-control-sm bg-body-secondary' . $monoCls . '" value="' . e($str) . '" readonly>'
         . '</div></div>';
 }
 

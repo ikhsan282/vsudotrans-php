@@ -150,26 +150,26 @@ require __DIR__ . '/../../../includes/header.php';
 
 <style>
 .reg-panel-card {
-    background: #ffffff;
-    border: 1px solid #ced4da;
+    background: var(--surface);
+    border: 1px solid var(--border-strong);
     border-radius: 4px;
     box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
 }
 .reg-table thead th {
-    background: #f8f9fa;
-    color: #495057;
+    background: var(--surface-muted);
+    color: var(--text-color);
     font-weight: 600;
-    border-bottom: 1px solid #dee2e6;
+    border-bottom: 1px solid var(--border-color);
     padding: 7px 10px;
     font-size: 0.81rem;
 }
 .reg-table tbody td {
     padding: 6px 10px;
-    border-color: #f1f3f5;
+    border-color: var(--border-color);
     vertical-align: middle;
 }
 .reg-table tbody tr:hover td {
-    background-color: #f8fbff;
+    background-color: var(--surface-hover);
 }
 </style>
 

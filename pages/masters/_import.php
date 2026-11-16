@@ -147,7 +147,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 }
                 $in = master_map_input($spec, $raw);
 
-                // Cari baris existing: bisa via code atau kunci unik alternatif (mis. employee_recognitions)
+                // Cari baris existing via code
                 $existing = master_find_existing($spec, $in, $cid);
                 $row_id = $existing ? (int) $existing['id'] : 0;
 
@@ -196,9 +196,19 @@ $active = $spec['module'];
 $cols = master_import_cols($spec);
 require __DIR__ . '/../../includes/header.php';
 ?>
-<main class="col-12 col-md-9 col-lg-10 p-4">
-    <h4 class="fw-bold mb-1">Import CSV — <?= e($spec['title']) ?></h4>
+<main class="p-3 p-lg-4 w-100 flex-grow-1">
+    <?= ui_page_header(
+        'Import CSV — ' . $spec['title'],
+        ['Dashboard' => 'pages/dashboard/index.php', $spec['title'] => master_base_url($spec) . '/index.php', 'Import CSV' => null],
+        [],
+        [['label' => 'Template CSV', 'icon' => 'download', 'href' => master_base_url($spec) . '/import.php?template=1', 'class' => 'btn btn-outline-primary btn-sm']]
+    ) ?>
     <p class="text-muted small">Unggah berkas CSV untuk menambah banyak data sekaligus. Semua baris diproses dalam satu transaksi: bila ada satu baris bermasalah, tidak ada yang tersimpan.</p>
+    <?php if (!empty($spec['company']) && $cid === null): ?>
+        <div class="alert alert-warning py-2 small">
+            <i class="bi bi-building me-1"></i>Anda sedang berada di mode <strong>Semua Perusahaan</strong>. Data yang diimpor tanpa perusahaan aktif akan berstatus Global (<code>company_id = NULL</code>) bila diizinkan tabel, atau pilih perusahaan aktif di pojok kanan atas terlebih dahulu.
+        </div>
+    <?php endif; ?>
 
     <?php if ($report !== null): ?>
         <?php if (!empty($report['fatal'])): ?>

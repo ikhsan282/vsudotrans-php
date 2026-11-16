@@ -51,6 +51,8 @@ $row = [
     'is_active'    => 1,
 ];
 
+$user = $_SESSION['username'] ?? null;
+
 if ($id > 0) {
     $st = $db->prepare('SELECT * FROM companies WHERE id = ?');
     $st->bind_param('i', $id);
@@ -81,7 +83,6 @@ if ($id > 0) {
 $groups = $db->query('SELECT id, name FROM groups WHERE is_active = 1 ORDER BY name')->fetch_all(MYSQLI_ASSOC);
 
 $errors = [];
-$user = $_SESSION['username'] ?? null;
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     verify_csrf();
@@ -173,7 +174,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                      $nul($row['phone_number']), $nul($row['website']), $nul($row['email']),
                      $nul($row['address']), $nul($row['city']), $nul($row['logo']), $nul($row['stamp']), $row['is_active']];
             try {
-                if ($id > 0) {
+                $user = $_SESSION['username'] ?? null;
+
+if ($id > 0) {
                     $st = $db->prepare('UPDATE companies SET group_id = ?, code = ?, name = ?, note = ?,
                         phone_number = ?, website = ?, email = ?, address = ?, city = ?, logo = ?, stamp = ?, is_active = ?,
                         modified_user = ?, modified_date = NOW() WHERE id = ?');
@@ -660,7 +663,46 @@ if ($canManage) {
             $chMasked = empty($curChannel['api_key'])
                 ? 'Belum diatur'
                 : ('Tersimpan (' . strlen((string) $curChannel['api_key']) . ' karakter, akhiran …' . substr((string) $curChannel['api_key'], -6) . ')');
+
+            $activeQrisCount = 0;
+            foreach ($payTabs as $pt) {
+                if (!empty($pt['is_active'])) {
+                    $activeQrisCount++;
+                }
+            }
+            $bankMainSt = db()->prepare("SELECT id, bank_name, account_number FROM cash_accounts WHERE company_id = ? AND type = 'bank' AND is_active = 1 ORDER BY id ASC LIMIT 1");
+            $bankMainSt->bind_param('i', $id);
+            $bankMainSt->execute();
+            $bankMain = $bankMainSt->get_result()->fetch_assoc() ?: null;
+            $bankMainSt->close();
+            $bankReady = $bankMain && trim((string) ($bankMain['bank_name'] ?? '')) !== '' && trim((string) ($bankMain['account_number'] ?? '')) !== '';
             ?>
+            <div class="alert alert-<?= $activeQrisCount > 0 && $bankReady ? 'success' : 'light border' ?> py-2 px-3 small d-flex flex-wrap align-items-center justify-content-between gap-2 mb-3">
+                <div class="d-flex flex-wrap align-items-center gap-3">
+                    <span>
+                        <i class="bi bi-qr-code me-1"></i>QRIS Dinamis:
+                        <?php if ($activeQrisCount > 0): ?>
+                            <strong class="text-success"><?= $activeQrisCount ?> channel aktif</strong>
+                        <?php else: ?>
+                            <strong class="text-warning-emphasis">Belum aktif</strong> (pembayaran lewat metode manual / transfer)
+                        <?php endif; ?>
+                    </span>
+                    <span>
+                        <i class="bi bi-bank me-1"></i>Rekening Utama:
+                        <?php if ($bankReady): ?>
+                            <strong><?= e((string) $bankMain['bank_name']) ?> · <?= e((string) $bankMain['account_number']) ?></strong>
+                        <?php else: ?>
+                            <strong class="text-danger">Belum dilengkapi</strong>
+                        <?php endif; ?>
+                    </span>
+                </div>
+                <div class="d-flex flex-wrap gap-2">
+                    <?php if ($bankMain): ?>
+                        <a href="<?= e(APP_URL) ?>/pages/finance/cash_accounts/form.php?id=<?= (int) $bankMain['id'] ?>" class="btn btn-outline-secondary btn-sm py-0">Atur Rekening Bank</a>
+                    <?php endif; ?>
+                    <a href="<?= e(APP_URL) ?>/pages/finance/payment_methods/index.php" class="btn btn-outline-primary btn-sm py-0">Metode Bayar</a>
+                </div>
+            </div>
             <div class="rnt-panel">
                 <div class="rnt-panel-header">
                     <span>Konfigurasi Channel Pembayaran QRIS — <?= e($curChannel['name']) ?></span>

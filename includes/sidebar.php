@@ -91,7 +91,6 @@ $menu = [
         ['label' => 'Jabatan',       'href' => 'pages/hr/job_titles/index.php',              'perms' => 'hr.view'],
         ['label' => 'Posisi',        'href' => 'pages/hr/job_positions/index.php',           'perms' => 'hr.view'],
         ['label' => 'Struktur Org.', 'href' => 'pages/hr/organization_structures/index.php', 'perms' => 'hr.view'],
-        ['label' => 'Penghargaan',   'href' => 'pages/hr/employee_recognitions/index.php',   'perms' => 'hr.view'],
     ]],
 
     // ── LAPORAN ─────────────────────────────────────────────────────────────

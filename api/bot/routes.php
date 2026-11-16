@@ -157,7 +157,41 @@ $st->execute();
 $branches = $st->get_result()->fetch_all(MYSQLI_ASSOC);
 $st->close();
 
-bot_reply(200, [
+$quoteResult = null;
+if (!empty($_GET['quote'])) {
+    $qRid   = (int) ($_GET['rute_id'] ?? 0);
+    $qCode  = strtoupper(trim((string) ($_GET['rute_code'] ?? '')));
+    $qCatId = !empty($_GET['category_vehicle_id']) ? (int) $_GET['category_vehicle_id'] : null;
+    $qSeats = max(1, min(20, (int) ($_GET['seats'] ?? 1)));
+    $qPickD = (int) ($_GET['pickup_district_id'] ?? 0);
+    $qDelivD = (int) ($_GET['delivery_district_id'] ?? 0);
+
+    $qRute = null;
+    foreach ($rawRoutes as $cand) {
+        if (($qRid > 0 && (int) $cand['id'] === $qRid) || ($qCode !== '' && strtoupper((string) $cand['code']) === $qCode)) {
+            $qRute = $cand;
+            break;
+        }
+    }
+    if ($qRute) {
+        $calc = rute_calculate_travel_quote($cid, $qRute, $qCatId ?: (!empty($qRute['category_vehicle_id']) ? (int) $qRute['category_vehicle_id'] : null), $qSeats, $qPickD, $qDelivD);
+        $quoteResult = [
+            'rute_id'             => (int) $qRute['id'],
+            'rute_code'           => $qRute['code'],
+            'rute_name'           => $qRute['name'],
+            'category_vehicle_id' => $qCatId ?: (!empty($qRute['category_vehicle_id']) ? (int) $qRute['category_vehicle_id'] : null),
+            'seats'               => $calc['seats'],
+            'unit_price'          => bot_money($calc['unit_price']),
+            'subtotal'            => bot_money($calc['subtotal']),
+            'pickup_extra'        => bot_money($calc['pickup_extra']),
+            'delivery_extra'      => bot_money($calc['delivery_extra']),
+            'radius_extra'        => bot_money($calc['radius_extra']),
+            'total'               => bot_money($calc['total']),
+        ];
+    }
+}
+
+$reply = [
     'company'                => ['id' => $cid, 'code' => $company['code'], 'name' => $company['name']],
     'routes'                 => $routes,
     'schedules'              => $schedules,
@@ -165,5 +199,9 @@ bot_reply(200, [
     'branches'               => $branches,
     'dynamic_qris_available' => gateway_active_channel($cid) !== null,
     'payment_methods'        => bot_payment_methods($cid),
-]);
+];
+if ($quoteResult !== null) {
+    $reply['quote'] = $quoteResult;
+}
+bot_reply(200, $reply);
 

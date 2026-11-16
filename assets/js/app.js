@@ -135,17 +135,29 @@ if (proofInput && proofPreview) {
 // ── Dark mode toggle ──────────────────────────────────────────────────────
 const THEME_KEY = 'vst_theme';
 function applyTheme(theme) {
-  document.documentElement.setAttribute('data-bs-theme', theme);
-  document.querySelectorAll('.dark-toggle i').forEach(icon => {
-    icon.classList.toggle('bi-moon-stars', theme === 'light');
-    icon.classList.toggle('bi-sun', theme === 'dark');
+  const mode = theme === 'dark' ? 'dark' : 'light';
+  document.documentElement.setAttribute('data-bs-theme', mode);
+  document.querySelectorAll('.dark-toggle').forEach(btn => {
+    const label = mode === 'dark' ? 'Beralih ke mode terang' : 'Beralih ke mode gelap';
+    btn.setAttribute('title', label);
+    btn.setAttribute('aria-label', label);
+    btn.setAttribute('aria-pressed', mode === 'dark' ? 'true' : 'false');
+    const icon = btn.querySelector('i');
+    if (icon) {
+      icon.classList.toggle('bi-moon-stars', mode === 'light');
+      icon.classList.toggle('bi-sun', mode === 'dark');
+    }
   });
+  try {
+    window.dispatchEvent(new CustomEvent('vst:themechange', { detail: { theme: mode } }));
+  } catch (err) {}
 }
+applyTheme(document.documentElement.getAttribute('data-bs-theme') || 'light');
 document.addEventListener('click', e => {
   const toggle = e.target.closest('.dark-toggle');
   if (!toggle) return;
   const next = document.documentElement.getAttribute('data-bs-theme') === 'dark' ? 'light' : 'dark';
-  localStorage.setItem(THEME_KEY, next);
+  try { localStorage.setItem(THEME_KEY, next); } catch (err) {}
   applyTheme(next);
 });
 

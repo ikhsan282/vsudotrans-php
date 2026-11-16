@@ -27,10 +27,16 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Masuk — <?= e(APP_NAME) ?></title>
+    <script>
+      (function(){try{var t=localStorage.getItem('vst_theme');if(!t)t=matchMedia('(prefers-color-scheme: dark)').matches?'dark':'light';document.documentElement.setAttribute('data-bs-theme',t);}catch(e){}})();
+    </script>
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.8/dist/css/bootstrap.min.css" rel="stylesheet">
     <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.13.2/font/bootstrap-icons.css" rel="stylesheet">
 </head>
-<body class="bg-light d-flex align-items-center justify-content-center vh-100">
+<body class="bg-body-tertiary d-flex align-items-center justify-content-center vh-100 position-relative">
+    <button type="button" id="loginThemeToggle" class="btn btn-sm btn-outline-secondary position-fixed top-0 end-0 m-3" aria-label="Ganti tema" title="Ganti tema">
+        <i class="bi bi-moon-stars"></i>
+    </button>
     <div class="card shadow-sm" style="width: 100%; max-width: 380px;">
         <div class="card-body p-4">
             <h4 class="fw-bold text-center mb-1"><?= e(APP_NAME) ?></h4>
@@ -55,5 +61,27 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             </form>
         </div>
     </div>
+    <script>
+      (function(){
+        var btn = document.getElementById('loginThemeToggle');
+        if (!btn) return;
+        function sync() {
+          var dark = document.documentElement.getAttribute('data-bs-theme') === 'dark';
+          var icon = btn.querySelector('i');
+          if (icon) {
+            icon.classList.toggle('bi-moon-stars', !dark);
+            icon.classList.toggle('bi-sun', dark);
+          }
+          btn.setAttribute('title', dark ? 'Beralih ke mode terang' : 'Beralih ke mode gelap');
+        }
+        sync();
+        btn.addEventListener('click', function () {
+          var next = document.documentElement.getAttribute('data-bs-theme') === 'dark' ? 'light' : 'dark';
+          document.documentElement.setAttribute('data-bs-theme', next);
+          try { localStorage.setItem('vst_theme', next); } catch (e) {}
+          sync();
+        });
+      })();
+    </script>
 </body>
 </html>

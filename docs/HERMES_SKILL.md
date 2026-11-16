@@ -87,11 +87,17 @@ Panggil di awal percakapan untuk mengetahui nama pelanggan, jumlah booking aktif
 curl -sS "$BASE/api/bot/me.php?secret=$SECRET&phone=$PHONE"
 ```
 
-### 5.2 `GET /api/bot/routes.php` — Daftar Rute, Multi-Tarif, Jadwal, Radius & Metode Bayar
+### 5.2 `GET /api/bot/routes.php` — Daftar Rute, Multi-Tarif, Jadwal, Radius, Simulasi Harga & Metode Bayar
 Panggil saat pelanggan bertanya rute, pilihan armada/kategori layanan (`tariffs[]` per `category_vehicle_id`), jam keberangkatan (`schedules[]`), kecamatan radius beserta biaya tambahan (`pickup_radius.districts`, `delivery_radius.districts`), cabang (`branches`), maupun info `payment_methods` & `dynamic_qris_available`.
 ```bash
 curl -sS "$BASE/api/bot/routes.php?secret=$SECRET&phone=$PHONE"
 ```
+**Simulasi Estimasi Harga Sebelum Booking (`?quote=1`)**:
+Agar tidak salah hitung saat pelanggan menanyakan total biaya untuk beberapa kursi + kategori + kecamatan jemput/antar:
+```bash
+curl -sS "$BASE/api/bot/routes.php?secret=$SECRET&phone=$PHONE&quote=1&rute_id=1&category_vehicle_id=8&seats=2&pickup_district_id=1&delivery_district_id=2"
+```
+Jika `quote=1` dikirim, respons menyertakan objek `quote` (`unit_price`, `subtotal`, `pickup_extra`, `delivery_extra`, `radius_extra`, `total` lengkap dalam format `formatted` & `raw`).
 
 ### 5.3 `GET /api/bot/bookings.php` — Cek Pesanan Aktif & Riwayat berdasarkan Nomor WA
 Menampilkan semua pesanan aktif/belum lunas (`active`, mencakup status `draft`, `scheduled`, `on_trip`, `rescheduled` atau masih bersisa tagihan) dan riwayat (`history`) milik nomor WA pengirim, lengkap dengan `booking_status`, `payment_status`, `tiket_url`, `pay_web_url`, dan `pending_qris`.

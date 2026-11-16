@@ -7,18 +7,23 @@ require_permission('payroll.view');
 require_once __DIR__ . '/../../../includes/payroll_service.php';
 require_once __DIR__ . '/../../travel/_helpers.php';
 
-$cid = require_active_company();
+if (!is_super_admin() && active_company_id() === null) {
+    require_active_company();
+}
 $id  = (int) ($_GET['id'] ?? 0);
 $period = payroll_period_find($id);
 if (!$period) {
     flash('error', 'Periode payroll tidak ditemukan.');
     redirect('pages/payroll/periods/index.php');
 }
-if ((int) $period['company_id'] !== $cid) {
-    http_response_code(403);
-    include __DIR__ . '/../../../includes/403.php';
-    exit;
-}
+$cid = (int) $period['company_id'];
+assert_company_access($cid);
+
+$coSt = db()->prepare('SELECT name, address, phone_number FROM companies WHERE id = ? LIMIT 1');
+$coSt->bind_param('i', $cid);
+$coSt->execute();
+$coInfo = $coSt->get_result()->fetch_assoc() ?: [];
+$coSt->close();
 
 $items = payroll_items($id);
 $total_net = 0.0;
@@ -51,8 +56,8 @@ foreach ($items as $i) {
 
 <div class="d-flex justify-content-between align-items-start mb-3">
     <div>
-        <h5 class="mb-0"><?= e(COMPANY_NAME) ?></h5>
-        <div class="text-muted"><?= e(COMPANY_ADDRESS) ?> · <?= e(COMPANY_PHONE) ?></div>
+        <h5 class="mb-0"><?= e((string) ($coInfo['name'] ?: COMPANY_NAME)) ?></h5>
+        <div class="text-muted"><?= e((string) ($coInfo['address'] ?: COMPANY_ADDRESS)) ?> · <?= e((string) ($coInfo['phone_number'] ?: COMPANY_PHONE)) ?></div>
     </div>
     <div class="text-end">
         <div class="fw-bold">DAFTAR GAJI KARYAWAN</div>

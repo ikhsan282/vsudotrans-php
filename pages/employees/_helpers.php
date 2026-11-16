@@ -111,10 +111,14 @@ function employee_code_unique(string $code, ?int $company_id, int $exclude_id = 
  *
  * @return array{0: list<array<string,mixed>>, 1: array} [rows, pagination]
  */
-function employee_list(int $page, string $q, string $status): array
+function employee_list(int $page, string $q, string $status, ?int $filter_cid = null): array
 {
-    // Alias 'e.' wajib: query ini JOIN branches yang juga punya company_id -> ambigu.
-    [$wsql, $wtypes, $wparams] = company_scope('e.company_id');
+    // Alias 'e.' wajib: query ini JOIN branches/companies yang juga punya company_id -> ambigu.
+    if (is_super_admin() && $filter_cid !== null) {
+        [$wsql, $wtypes, $wparams] = $filter_cid > 0 ? ['e.company_id = ?', 'i', [$filter_cid]] : ['1=1', '', []];
+    } else {
+        [$wsql, $wtypes, $wparams] = company_scope('e.company_id');
+    }
     $where = [$wsql];
     $types = $wtypes;
     $params = [];
@@ -144,9 +148,10 @@ function employee_list(int $page, string $q, string $status): array
     $count_stmt->close();
 
     $p = paginate($total, $page);
-    $sql = 'SELECT e.*, b.name AS branch_name
+    $sql = 'SELECT e.*, b.name AS branch_name, co.code AS company_code, co.name AS company_name
         FROM employees e
         LEFT JOIN branches b ON b.id = e.branch_id
+        LEFT JOIN companies co ON co.id = e.company_id
         WHERE ' . $where_sql . '
         ORDER BY e.code ASC
         LIMIT ? OFFSET ?';

@@ -29,8 +29,12 @@ $st->close();
 $p = paginate(count($all), (int) ($_GET['page'] ?? 1));
 $rows = array_slice($all, $p['offset'], $p['per_page']);
 $total_balance = 0.0;
+$unconf_banks = [];
 foreach ($all as $a) {
     $total_balance += (float) $a['opening_balance'] + (float) $a['movement'];
+    if (!empty($a['is_active']) && ($a['type'] ?? '') === 'bank' && (trim((string) ($a['bank_name'] ?? '')) === '' || trim((string) ($a['account_number'] ?? '')) === '')) {
+        $unconf_banks[] = $a;
+    }
 }
 
 $header_actions = [
@@ -45,13 +49,26 @@ $active = 'finance';
 $title  = 'Akun Kas/Bank';
 require __DIR__ . '/../../../includes/header.php';
 ?>
-<main class="col-12 col-md-9 col-lg-10 p-3 p-lg-4">
+<main class="p-3 p-lg-4 w-100 flex-grow-1">
     <?= ui_page_header(
         'Akun Kas/Bank',
         ['Dashboard' => 'pages/dashboard/index.php', 'Keuangan' => null, 'Akun Kas/Bank' => null],
         [['text' => 'Total Saldo: ' . rupiah($total_balance), 'class' => 'bg-primary-subtle text-primary border']],
         $header_actions
     ) ?>
+
+    <?php if ($unconf_banks): ?>
+    <div class="alert alert-warning py-2 px-3 small d-flex flex-wrap align-items-center justify-content-between gap-2 mb-3">
+        <div>
+            <i class="bi bi-bank me-1"></i>
+            <strong>Kesiapan Rekening Bank:</strong> Terdapat <?= count($unconf_banks) ?> akun bank aktif yang Nama Bank / Nomor Rekening-nya belum dilengkapi
+            (<?= e(implode(', ', array_map(static fn(array $u): string => trim(($u['company_code'] ?? '') . ' ' . ($u['code'] ?? '')), array_slice($unconf_banks, 0, 5)))) ?><?= count($unconf_banks) > 5 ? ', …' : '' ?>).
+        </div>
+        <?php if (can('finance.manage') && count($unconf_banks) === 1): ?>
+            <a href="form.php?id=<?= (int) $unconf_banks[0]['id'] ?>" class="btn btn-sm btn-warning py-0 px-2">Lengkapi Sekarang</a>
+        <?php endif; ?>
+    </div>
+    <?php endif; ?>
 
     <?php if (is_super_admin()): ?>
     <div class="card shadow-sm border-0 mb-3">

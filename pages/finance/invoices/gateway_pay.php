@@ -129,6 +129,9 @@ $backUrl = $no !== ''
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Pembayaran QRIS — <?= e($inv['document_number']) ?></title>
+    <script>
+      (function(){try{var t=localStorage.getItem('vst_theme');if(!t)t=matchMedia('(prefers-color-scheme: dark)').matches?'dark':'light';document.documentElement.setAttribute('data-bs-theme',t);}catch(e){}})();
+    </script>
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.8/dist/css/bootstrap.min.css" rel="stylesheet">
     <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css" rel="stylesheet">
 </head>
@@ -136,7 +139,7 @@ $backUrl = $no !== ''
 <main class="container py-4" style="max-width: 540px;">
     <div class="d-flex justify-content-between align-items-center mb-3">
         <a href="<?= e($backUrl) ?>" class="btn btn-outline-secondary btn-sm"><i class="bi bi-arrow-left me-1"></i> Kembali</a>
-        <span class="badge bg-dark"><?= e($channel['name']) ?></span>
+        <span class="badge bg-secondary"><?= e($channel['name']) ?></span>
     </div>
 
     <div class="card shadow-sm border-0">
@@ -144,12 +147,12 @@ $backUrl = $no !== ''
             <h5 class="fw-bold mb-1"><?= e($comp['name']) ?></h5>
             <div class="text-muted small mb-3">No. Tiket: <strong><?= e($inv['document_number']) ?></strong> · Invoice: <?= e($inv['invoice_no']) ?></div>
 
-            <div class="p-3 bg-white border rounded-3 d-inline-block mb-3">
+            <div class="p-3 bg-white border rounded-3 d-inline-block mb-3 qr-code-frame">
                 <img src="<?= e($primaryQrSrc) ?>" alt="QRIS Dinamis" width="260" height="260" class="img-fluid"
                      <?php if ($primaryFallback !== ''): ?>onerror="if(this.src!==<?= e(json_encode($primaryFallback)) ?>)this.src=<?= e(json_encode($primaryFallback)) ?>;"<?php endif; ?>>
             </div>
 
-            <div class="border rounded bg-light p-3 text-start mb-3 small">
+            <div class="border rounded bg-body-secondary p-3 text-start mb-3 small">
                 <div class="d-flex justify-content-between">
                     <span>Pokok Tagihan</span>
                     <span class="fw-semibold"><?= e(rupiah($remaining)) ?></span>

@@ -120,11 +120,12 @@ $mePmCodes = array_column($meRes['data']['payment_methods'] ?? [], 'code');
 check_bot(($meRes['ok'] ?? false) === true && ($meRes['data']['company']['code'] ?? '') === 'MTM', 'GET /api/bot/me.php returns MTM profile', json_encode($meRes));
 check_bot(isset($meRes['data']['company']['dynamic_qris_enabled']) && in_array('TUNAI', $mePmCodes, true) && in_array('TRANSFER', $mePmCodes, true), 'GET /api/bot/me.php exposes dynamic_qris_enabled & global payment_methods');
 
-// 3. Test GET /api/bot/routes.php
-$rtRes = call_bot_endpoint('routes.php', 'GET', ['secret' => $secret, 'phone' => $testPhone, 'company' => 'MTM']);
+// 3. Test GET /api/bot/routes.php (+ simulasi harga ?quote=1)
+$rtRes = call_bot_endpoint('routes.php', 'GET', ['secret' => $secret, 'phone' => $testPhone, 'company' => 'MTM', 'quote' => 1, 'rute_id' => 1, 'seats' => 2]);
 $rtPmCodes = array_column($rtRes['data']['payment_methods'] ?? [], 'code');
 check_bot(($rtRes['ok'] ?? false) === true && count($rtRes['data']['routes'] ?? []) >= 1, 'GET /api/bot/routes.php returns active routes for MTM');
 check_bot(isset($rtRes['data']['dynamic_qris_available']) && in_array('TRANSFER', $rtPmCodes, true), 'GET /api/bot/routes.php exposes dynamic_qris_available & payment_methods');
+check_bot(($rtRes['data']['quote']['rute_id'] ?? 0) === 1 && ($rtRes['data']['quote']['total']['raw'] ?? 0) >= ($rute1UnitPrice * 2), 'GET /api/bot/routes.php?quote=1 returns exact travel price quote');
 
 // 4. Test POST /api/bot/booking_create.php (Auto-Order + Auto Dynamic QRIS)
 $bkRes = call_bot_endpoint('booking_create.php', 'POST', [

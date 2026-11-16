@@ -151,27 +151,17 @@ if ($pickupDistId <= 0 || $deliveryDistId <= 0) {
 $ruteTariffPrice = (float) ($rute['price'] ?? 0);
 $radiusExtra     = 0.0;
 if ($rute) {
-    try {
-        require_once __DIR__ . '/../../includes/transport_helpers.php';
-        if ($catVehicleId) {
-            rute_tariff_ensure_schema();
-            $stRt = $db->prepare('SELECT price FROM rute_tariffs WHERE rute_id = ? AND company_id = ? AND category_vehicle_id = ? LIMIT 1');
-            $stRt->bind_param('iii', $rute['id'], $cid, $catVehicleId);
-            $stRt->execute();
-            $foundTariff = $stRt->get_result()->fetch_column();
-            $stRt->close();
-            if ($foundTariff !== false) {
-                $ruteTariffPrice = (float) $foundTariff;
-            }
-        }
-        if ($bType === 'travel') {
-            $rRad   = rute_radius_for_rute((int) $rute['id'], $cid);
-            $pMatch = rute_find_district_radius_extra($rRad['pickup'], $pickupDistId);
-            $dMatch = rute_find_district_radius_extra($rRad['delivery'], $deliveryDistId);
-            $radiusExtra = round((float) $pMatch['extra_price'] + (float) $dMatch['extra_price'], 2);
-        }
-    } catch (Throwable $ignore) {
-    }
+    require_once __DIR__ . '/../../includes/transport_helpers.php';
+    $quote = rute_calculate_travel_quote(
+        $cid,
+        $rute,
+        $catVehicleId,
+        $seats,
+        $bType === 'travel' ? $pickupDistId : 0,
+        $bType === 'travel' ? $deliveryDistId : 0
+    );
+    $ruteTariffPrice = $quote['unit_price'];
+    $radiusExtra     = $bType === 'travel' ? $quote['radius_extra'] : 0.0;
 }
 $unitPrice = isset($body['price']) && is_numeric($body['price'])
     ? (float) $body['price']
