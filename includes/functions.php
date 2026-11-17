@@ -81,11 +81,20 @@ function format_nominal(float $n): string
 function parse_rupiah_input(mixed $val): float
 {
     if (is_int($val) || is_float($val)) {
-        return (float) $val;
+        return is_finite((float) $val) ? (float) $val : 0.0;
     }
     $str = trim((string) $val);
     if ($str === '') {
         return 0.0;
+    }
+
+    $neg = str_starts_with($str, '-');
+    if ($neg) {
+        $str = ltrim(substr($str, 1));
+    }
+    if (preg_match('/^\d+(?:\.\d+)?e[+-]?\d+$/i', $str)) {
+        $expVal = (float) $str;
+        return is_finite($expVal) ? ($neg ? -$expVal : $expVal) : 0.0;
     }
 
     // Bersihkan prefix Rp, rp, spasi, dan karakter selain digit, titik, koma
@@ -94,6 +103,7 @@ function parse_rupiah_input(mixed $val): float
         return 0.0;
     }
 
+    $parsed = 0.0;
     // Jika mengandung titik dan koma (misal: "2.000.000,00" atau "2,000,000.00")
     if (str_contains($str, '.') && str_contains($str, ',')) {
         if (strrpos($str, ',') > strrpos($str, '.')) {
@@ -104,31 +114,31 @@ function parse_rupiah_input(mixed $val): float
             // Koma ribuan, titik desimal
             $str = str_replace(',', '', $str);
         }
-        return (float) $str;
-    }
-
-    // Jika hanya mengandung titik (misal: "2.000.000", "150.000", "50.000", "5.000")
-    if (str_contains($str, '.')) {
-        // Cek jika diakhiri desimal .00 atau .0
-        if (preg_match('/^\d+\.(0|00)$/', $str)) {
-            return (float) preg_replace('/\.(0|00)$/', '', $str);
+        $parsed = (float) $str;
+    } elseif (str_contains($str, '.')) {
+        // Desimal USD/DB (.0, .00, .5, .25) vs pemisah ribuan ID (2.000.000, 150.000)
+        if (preg_match('/^\d+\.\d{1,2}$/', $str)) {
+            $parsed = (float) $str;
+        } else {
+            $parsed = (float) str_replace('.', '', $str);
         }
-        // Dalam konteks rupiah ID, titik adalah pemisah ribuan
-        return (float) str_replace('.', '', $str);
-    }
-
-    // Jika hanya mengandung koma (misal: "2,000,000" atau "150,000" atau "150000,00")
-    if (str_contains($str, ',')) {
+    } elseif (str_contains($str, ',')) {
+        // Jika hanya mengandung koma (misal: "2,000,000" atau "150,000" atau "150000,00")
         if (preg_match('/^\d+\,(0|00)$/', $str)) {
-            return (float) preg_replace('/\,(0|00)$/', '', $str);
+            $parsed = (float) preg_replace('/\,(0|00)$/', '', $str);
+        } elseif (preg_match('/,\d{3}/', $str)) {
+            $parsed = (float) str_replace(',', '', $str);
+        } else {
+            $parsed = (float) str_replace(',', '.', $str);
         }
-        if (preg_match('/,\d{3}/', $str)) {
-            return (float) str_replace(',', '', $str);
-        }
-        return (float) str_replace(',', '.', $str);
+    } else {
+        $parsed = (float) (preg_replace('/[^\d]/', '', $str) ?: '0');
     }
 
-    return (float) (preg_replace('/[^\d]/', '', $str) ?: '0');
+    if (!is_finite($parsed)) {
+        return 0.0;
+    }
+    return $neg ? -$parsed : $parsed;
 }
 
 /** Tanggal Indonesia: 2026-10-31 -> "31 Oktober 2026". */

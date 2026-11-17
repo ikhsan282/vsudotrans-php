@@ -1,23 +1,23 @@
 <?php
 /**
  * Sinkronisasi & master data terpusat modul Keuangan:
- * - Lazy schema ensure (`cash_transactions.source_type/source_id`, `payment_methods.is_cash`).
- * - Provisioning default Akun Kas/Bank per perusahaan & Metode Pembayaran standar global.
- * - Auto-routing Metode Pembayaran -> Akun Kas (`kas`) atau Bank (`bank`).
- * - Auto-sync idempoten pembayaran Booking/Invoice/QRIS ke `cash_transactions`.
+ * - Lazy schema ensure (`cash_transactions.source_type/source_id`, `payment_methods.is_cash`, hapus skema lama `cash_accounts`).
+ * - Provisioning Metode Pembayaran standar global.
+ * - Auto-sync idempoten pembayaran Booking/Invoice/QRIS ke Buku Kas (`cash_transactions`).
  */
 
 require_once __DIR__ . '/../config/config.php';
 
 /**
- * Pastikan kolom linkage sinkronisasi pada `cash_transactions` & `payment_methods` tersedia.
+ * Pastikan kolom linkage sinkronisasi pada `cash_transactions` & `payment_methods` tersedia,
+ * serta hapus kolom/tabel `cash_accounts` bila masih tersisa dari versi lama.
  * Aman dipanggil berulang; memakai guard static + session.
  */
 function finance_ensure_schema(): void
 {
     static $checked = false;
     $hasSess = session_status() === PHP_SESSION_ACTIVE;
-    if ($checked || ($hasSess && !empty($_SESSION['_vst_schema_fin_v1']))) {
+    if ($checked || ($hasSess && !empty($_SESSION['_vst_schema_fin_v2']))) {
         $checked = true;
         return;
     }
@@ -30,6 +30,13 @@ function finance_ensure_schema(): void
         while ($c = $res->fetch_assoc()) {
             $txCols[(string) $c['Field']] = true;
         }
+    }
+    if (!empty($txCols['cash_account_id'])) {
+        $accIdx = $db->query("SHOW INDEX FROM `cash_transactions` WHERE Key_name = 'ix_cashtx_account'");
+        if ($accIdx && $accIdx->num_rows > 0) {
+            $db->query('ALTER TABLE `cash_transactions` DROP INDEX `ix_cashtx_account`');
+        }
+        $db->query('ALTER TABLE `cash_transactions` DROP COLUMN `cash_account_id`');
     }
     if (empty($txCols['source_type'])) {
         $db->query("ALTER TABLE `cash_transactions` ADD COLUMN `source_type` VARCHAR(30) DEFAULT NULL COMMENT 'booking_payment|payroll_period|NULL=manual' AFTER `payment_method_id`");
@@ -54,8 +61,10 @@ function finance_ensure_schema(): void
         $db->query("UPDATE `payment_methods` SET is_cash = 1 WHERE UPPER(code) IN ('TUNAI','CASH') OR LOWER(name) LIKE '%tunai%'");
     }
 
+    $db->query('DROP TABLE IF EXISTS `cash_accounts`');
+
     if ($hasSess) {
-        $_SESSION['_vst_schema_fin_v1'] = 1;
+        $_SESSION['_vst_schema_fin_v2'] = 1;
     }
 }
 
@@ -90,8 +99,7 @@ function finance_ensure_global_payment_methods(?string $user = 'system'): void
 }
 
 /**
- * Provisioning default Akun Kas/Bank (KAS-TUNAI & BANK-UTAMA) untuk sebuah perusahaan
- * plus metode pembayaran standar global agar langsung siap pakai saat transaksi pertama.
+ * Provisioning metode pembayaran standar global agar perusahaan baru langsung siap transaksi.
  */
 function finance_ensure_company_defaults(int $company_id, ?string $user = 'system'): void
 {
@@ -100,28 +108,6 @@ function finance_ensure_company_defaults(int $company_id, ?string $user = 'syste
     }
     finance_ensure_schema();
     finance_ensure_global_payment_methods($user);
-    $db = db();
-
-    $chkType = $db->prepare('SELECT COUNT(*) FROM cash_accounts WHERE company_id = ? AND type = ?');
-    $insAcc  = $db->prepare('INSERT IGNORE INTO cash_accounts (company_id, code, name, type, opening_balance, is_active, note, created_user) VALUES (?, ?, ?, ?, 0, 1, ?, ?)');
-
-    $defaults = [
-        ['type' => 'kas',  'code' => 'KAS-TUNAI',  'name' => 'Kas Tunai Operasional', 'note' => 'Akun kas tunai default (otomatis untuk pembayaran Tunai)'],
-        ['type' => 'bank', 'code' => 'BANK-UTAMA', 'name' => 'Bank Utama Perusahaan', 'note' => 'Akun bank default (otomatis untuk Transfer / QRIS / EDC)'],
-    ];
-
-    foreach ($defaults as $acc) {
-        $chkType->bind_param('is', $company_id, $acc['type']);
-        $chkType->execute();
-        $cnt = (int) $chkType->get_result()->fetch_row()[0];
-        if ($cnt === 0) {
-            $insAcc->bind_param('isssss', $company_id, $acc['code'], $acc['name'], $acc['type'], $acc['note'], $user);
-            $insAcc->execute();
-        }
-    }
-
-    $chkType->close();
-    $insAcc->close();
 }
 
 /** Daftar metode pembayaran aktif milik perusahaan + global, urut sort_order. */
@@ -226,71 +212,6 @@ function finance_resolve_payment_method_id(int $company_id, ?string $methodLabel
     return null;
 }
 
-/**
- * Pilih Akun Kas/Bank aktif milik `$company_id`:
- * - `$explicitAccountId < 0` => null (sengaja tidak dicatat ke Kas/Bank)
- * - `$explicitAccountId > 0` => verifikasi akun milik company & aktif
- * - `$explicitAccountId === null` => auto-routing ke 'kas' (Tunai) atau 'bank' (Transfer/QRIS/EDC).
- */
-function finance_resolve_cash_account_id(int $company_id, ?string $methodLabel = null, ?int $methodId = null, ?int $explicitAccountId = null): ?int
-{
-    if ($company_id <= 0) {
-        return null;
-    }
-    if ($explicitAccountId !== null) {
-        if ($explicitAccountId < 0) {
-            return null;
-        }
-        if ($explicitAccountId > 0) {
-            $st = db()->prepare('SELECT id FROM cash_accounts WHERE id = ? AND company_id = ? AND is_active = 1 LIMIT 1');
-            $st->bind_param('ii', $explicitAccountId, $company_id);
-            $st->execute();
-            $acc = $st->get_result()->fetch_assoc();
-            $st->close();
-            if ($acc) {
-                return (int) $acc['id'];
-            }
-        }
-    }
-
-    $db = db();
-    // Pastikan minimal ada akun aktif; jika belum ada sama sekali, provision default.
-    $chk = $db->prepare('SELECT COUNT(*) FROM cash_accounts WHERE company_id = ? AND is_active = 1');
-    $chk->bind_param('i', $company_id);
-    $chk->execute();
-    $cnt = (int) $chk->get_result()->fetch_row()[0];
-    $chk->close();
-    if ($cnt === 0) {
-        finance_ensure_company_defaults($company_id, 'system');
-    }
-
-    $pmRow = null;
-    if ($methodId !== null && $methodId > 0) {
-        $stPm = $db->prepare('SELECT id, code, name, is_cash FROM payment_methods WHERE id = ? LIMIT 1');
-        $stPm->bind_param('i', $methodId);
-        $stPm->execute();
-        $pmRow = $stPm->get_result()->fetch_assoc();
-        $stPm->close();
-    }
-
-    $wantType = finance_is_cash_method($methodLabel, $pmRow) ? 'kas' : 'bank';
-
-    $stAcc = $db->prepare(
-        "SELECT id, type FROM cash_accounts
-          WHERE company_id = ? AND is_active = 1
-          ORDER BY CASE WHEN type = ? THEN 0 ELSE 1 END ASC,
-                   CASE WHEN code IN ('KAS-TUNAI', 'BANK-UTAMA') THEN 0 ELSE 1 END ASC,
-                   id ASC
-          LIMIT 1"
-    );
-    $stAcc->bind_param('is', $company_id, $wantType);
-    $stAcc->execute();
-    $pick = $stAcc->get_result()->fetch_assoc();
-    $stAcc->close();
-
-    return $pick ? (int) $pick['id'] : null;
-}
-
 /** Ekstrak label metode pembayaran yang bersih dari string `note` `Tipe | Metode`. */
 function finance_extract_method_label(?string $note): string
 {
@@ -344,17 +265,13 @@ function finance_unsync_booking(string $booking_type, int $booking_id, int $comp
 /**
  * Sinkronkan baris `booking_cost_lines` (`cost_type='payment'`) milik sebuah invoice ke `cash_transactions`
  * secara idempoten (berdasarkan `source_type='booking_payment'`, `source_id=bcl.id`).
- *
- * @param array<int, int> $accountOverrides Peta `cost_line_id => cash_account_id` (atau -1 untuk lewati).
  */
 function finance_sync_invoice_payments_to_cash(
     int $company_id,
     int $invoice_id,
     string $invoice_no,
     string $booking_type,
-    string $document_number = '',
-    array $accountOverrides = [],
-    ?int $defaultAccountOverride = null
+    string $document_number = ''
 ): void {
     if ($company_id <= 0 || $invoice_id <= 0) {
         return;
@@ -365,7 +282,7 @@ function finance_sync_invoice_payments_to_cash(
     $descKey = 'INV#' . $invoice_id;
     $stLines = $db->prepare(
         "SELECT bcl.id, bcl.amount, bcl.payment_method_id, bcl.note, bcl.created_user, bcl.created_date,
-                pm.name AS pm_name, pm.code AS pm_code, pm.is_cash AS pm_is_cash
+                pm.name AS pm_name
            FROM booking_cost_lines bcl
            LEFT JOIN payment_methods pm ON pm.id = NULLIF(bcl.payment_method_id, 0)
           WHERE bcl.company_id = ? AND bcl.cost_type = 'payment' AND bcl.description = ?
@@ -399,12 +316,12 @@ function finance_sync_invoice_payments_to_cash(
 
     $insTx = $db->prepare(
         "INSERT INTO cash_transactions
-            (company_id, cash_account_id, date, direction, amount, category, description, payment_method_id, source_type, source_id, created_user, created_date)
-         VALUES (?, ?, ?, 'in', ?, ?, ?, ?, 'booking_payment', ?, ?, ?)"
+            (company_id, date, direction, amount, category, description, payment_method_id, source_type, source_id, created_user, created_date)
+         VALUES (?, ?, 'in', ?, ?, ?, ?, 'booking_payment', ?, ?, ?)"
     );
     $updTx = $db->prepare(
         'UPDATE cash_transactions
-            SET cash_account_id = ?, date = ?, amount = ?, category = ?, description = ?, payment_method_id = ?, modified_user = ?, modified_date = NOW()
+            SET date = ?, amount = ?, category = ?, description = ?, payment_method_id = ?, modified_user = ?, modified_date = NOW()
           WHERE id = ? AND company_id = ?'
     );
     $updBclPm = $db->prepare('UPDATE booking_cost_lines SET payment_method_id = ? WHERE id = ? AND company_id = ?');
@@ -414,10 +331,6 @@ function finance_sync_invoice_payments_to_cash(
         $amount = round((float) $ln['amount'], 2);
         if ($amount <= 0) {
             continue;
-        }
-        $override = $accountOverrides[$bclId] ?? $defaultAccountOverride;
-        if ($override !== null && $override < 0) {
-            continue; // User memilih tidak mencatat transaksi kas
         }
 
         $methodLabel = finance_extract_method_label((string) ($ln['note'] ?? ''));
@@ -435,11 +348,6 @@ function finance_sync_invoice_payments_to_cash(
         }
         $pmIdParam = $pmId > 0 ? $pmId : null;
 
-        $accId = finance_resolve_cash_account_id($company_id, $methodLabel, $pmIdParam, $override);
-        if ($accId === null || $accId <= 0) {
-            continue;
-        }
-
         $rawDate   = (string) ($ln['created_date'] ?? '');
         $txDate    = preg_match('/^\d{4}-\d{2}-\d{2}/', $rawDate) ? substr($rawDate, 0, 10) : date('Y-m-d');
         $txCreated = $rawDate !== '' ? $rawDate : date('Y-m-d H:i:s');
@@ -449,10 +357,10 @@ function finance_sync_invoice_payments_to_cash(
 
         if (!empty($existingMap[$bclId])) {
             $txId = $existingMap[$bclId];
-            $updTx->bind_param('isdssisii', $accId, $txDate, $amount, $category, $txDesc, $pmIdParam, $txUser, $txId, $company_id);
+            $updTx->bind_param('sdssisii', $txDate, $amount, $category, $txDesc, $pmIdParam, $txUser, $txId, $company_id);
             $updTx->execute();
         } else {
-            $insTx->bind_param('iisdssiiss', $company_id, $accId, $txDate, $amount, $category, $txDesc, $pmIdParam, $bclId, $txUser, $txCreated);
+            $insTx->bind_param('isdssiiss', $company_id, $txDate, $amount, $category, $txDesc, $pmIdParam, $bclId, $txUser, $txCreated);
             $insTx->execute();
         }
     }

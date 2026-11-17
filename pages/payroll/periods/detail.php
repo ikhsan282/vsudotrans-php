@@ -45,10 +45,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             flash('success', $res['updated'] . ' item gaji diperbarui dari Absensi.');
         } elseif ($act === 'final' || $act === 'pay') {
             $next = $act === 'final' ? 'final' : 'paid';
-            $cash_account_id = (int) ($_POST['cash_account_id'] ?? 0);
-            payroll_period_set_status($id, $cid, $next, $user, $cash_account_id > 0 ? $cash_account_id : null);
+            $record_cash = !isset($_POST['record_cash']) || (string) $_POST['record_cash'] !== '0';
+            payroll_period_set_status($id, $cid, $next, $user, $record_cash);
             audit('payroll.' . $act, "Periode #{$id} -> {$next}");
-            flash('success', $act === 'final' ? 'Periode difinalkan.' : 'Periode ditandai sudah dibayar' . ($cash_account_id > 0 ? ' & pengeluaran kas dicatat.' : '.'));
+            flash('success', $act === 'final' ? 'Periode difinalkan.' : 'Periode ditandai sudah dibayar' . ($record_cash ? ' & pengeluaran dicatat ke Buku Kas.' : '.'));
         }
         redirect('pages/payroll/periods/detail.php?id=' . $id);
     } catch (Throwable $ex) {
@@ -66,16 +66,6 @@ $can_manage = can('payroll.manage');
 $editable = $can_manage && $period['status'] !== 'paid';
 $cols = $editable ? 8 : 7;
 
-$cash_accounts = [];
-if ($can_manage && $period['status'] === 'final') {
-    finance_ensure_company_defaults($cid, $user ?: 'system');
-    $cst = db()->prepare("SELECT id, code, name, type, account_number FROM cash_accounts WHERE is_active = 1 AND company_id = ? ORDER BY CASE type WHEN 'bank' THEN 0 ELSE 1 END, id ASC");
-    $cst->bind_param('i', $cid);
-    $cst->execute();
-    $cash_accounts = $cst->get_result()->fetch_all(MYSQLI_ASSOC);
-    $cst->close();
-}
-
 $compRow = db()->prepare('SELECT code, name FROM companies WHERE id = ? LIMIT 1');
 $compRow->bind_param('i', $cid);
 $compRow->execute();
@@ -85,9 +75,8 @@ $compRow->close();
 $linkedCashTx = null;
 if ($period['status'] === 'paid') {
     finance_ensure_schema();
-    $lSt = db()->prepare("SELECT ct.id, ct.amount, ct.date, ca.code AS acc_code, ca.name AS acc_name
+    $lSt = db()->prepare("SELECT ct.id, ct.amount, ct.date
         FROM cash_transactions ct
-        LEFT JOIN cash_accounts ca ON ca.id = ct.cash_account_id
         WHERE ct.company_id = ? AND ct.source_type = 'payroll_period' AND ct.source_id = ?
         LIMIT 1");
     $lSt->bind_param('ii', $cid, $id);
@@ -164,7 +153,7 @@ $payActions[] = ['label' => 'PDF', 'icon' => 'filetype-pdf', 'href' => 'pages/pa
                                     <?= ui_erp_ro_row('Total Gaji Bersih', rupiah($total_net)) ?>
                                     <?= ui_erp_ro_html_row('Status Periode', payroll_status_badge($period['status']) . ($period['status'] === 'paid' ? '<span class="small text-success">Periode terkunci — item tidak dapat diubah.</span>' : '')) ?>
                                     <?php if ($linkedCashTx): ?>
-                                        <?= ui_erp_ro_html_row('Tercatat Buku Kas', '<span class="badge bg-primary-subtle text-primary-emphasis border">' . e(($linkedCashTx['acc_code'] ?? '') . ' - ' . ($linkedCashTx['acc_name'] ?? 'Akun Kas')) . '</span> <span class="small">' . e(rupiah((float) $linkedCashTx['amount'])) . ' (' . e(date('d-M-Y', strtotime((string) $linkedCashTx['date']))) . ')</span> <a href="' . e(APP_URL) . '/pages/finance/cash/index.php" class="small text-decoration-none ms-1">Lihat Kas →</a>') ?>
+                                        <?= ui_erp_ro_html_row('Tercatat Buku Kas', '<span class="badge bg-success-subtle text-success-emphasis border"><i class="bi bi-check2 me-1"></i>Buku Kas</span> <span class="small">' . e(rupiah((float) $linkedCashTx['amount'])) . ' (' . e(date('d-M-Y', strtotime((string) $linkedCashTx['date']))) . ')</span> <a href="' . e(APP_URL) . '/pages/finance/cash/index.php" class="small text-decoration-none ms-1">Lihat Kas →</a>') ?>
                                     <?php endif; ?>
                                 </div>
                             </div>
@@ -184,19 +173,15 @@ $payActions[] = ['label' => 'PDF', 'icon' => 'filetype-pdf', 'href' => 'pages/pa
                                 </form>
                             <?php endif; ?>
                             <?php if ($period['status'] === 'final'): ?>
-                                <form method="post" action="" class="d-inline-flex align-items-center gap-2 flex-wrap" onsubmit="return confirm('Tandai periode ini SUDAH DIBAYAR? Data payroll akan dikunci.')">
+                                <form method="post" action="" class="d-inline-flex align-items-center gap-3 flex-wrap" onsubmit="return confirm('Tandai periode ini SUDAH DIBAYAR? Data payroll akan dikunci.')">
                                     <?= csrf_field() ?>
                                     <input type="hidden" name="id" value="<?= $id ?>">
                                     <input type="hidden" name="act" value="pay">
-                                    <div class="input-group input-group-sm" style="max-width: 320px;">
-                                        <span class="input-group-text bg-light text-muted"><i class="bi bi-wallet2"></i></span>
-                                        <select class="form-select form-select-sm" name="cash_account_id" title="Pilih akun Kas/Bank untuk mencatat pengeluaran otomatis">
-                                            <option value="">— Jangan potong Kas/Bank —</option>
-                                            <?php foreach ($cash_accounts as $ca): ?>
-                                                <option value="<?= (int) $ca['id'] ?>"><?= e($ca['name']) ?><?= $ca['account_number'] ? ' (' . e($ca['account_number']) . ')' : '' ?></option>
-                                            <?php endforeach; ?>
-                                        </select>
-                                    </div>
+                                    <input type="hidden" name="record_cash" value="0">
+                                    <label class="form-check form-check-inline mb-0 small">
+                                        <input class="form-check-input" type="checkbox" name="record_cash" value="1" checked>
+                                        <span class="form-check-label">Catat pengeluaran ke Buku Kas</span>
+                                    </label>
                                     <button class="btn btn-sm btn-success" type="submit"><i class="bi bi-cash-coin me-1"></i>Tandai Dibayar</button>
                                 </form>
                             <?php endif; ?>

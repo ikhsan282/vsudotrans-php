@@ -162,15 +162,27 @@ document.addEventListener('click', e => {
 });
 
 // ── Rupiah input formatter & helpers ─────────────────────────────────────────
+window.RUPIAH_MAX_DIGITS = 15; // Maks Rp 999.999.999.999.999 (aman presisi JS & DECIMAL(18,2))
+
 window.parseRupiah = function (val) {
   if (val === null || val === undefined || val === '') return 0;
-  if (typeof val === 'number') return Math.round(val);
+  if (typeof val === 'number') {
+    return Number.isFinite(val) ? Math.max(0, Math.round(val)) : 0;
+  }
   var str = String(val).trim();
-  if (/^\d+\.(0|00)$/.test(str)) {
-    str = str.replace(/\.(0|00)$/, '');
+  if (!str || str.charAt(0) === '-') return 0;
+  if (/^\d+(?:\.\d+)?e[+-]?\d+$/i.test(str)) {
+    var expNum = Number(str);
+    return Number.isFinite(expNum) ? Math.max(0, Math.round(expNum)) : 0;
+  }
+  if (/^\d+\.\d{1,2}$/.test(str)) {
+    var decNum = parseFloat(str);
+    return Number.isFinite(decNum) ? Math.max(0, Math.round(decNum)) : 0;
   }
   var digits = str.replace(/[^0-9]/g, '');
-  return digits ? parseInt(digits, 10) : 0;
+  if (!digits) return 0;
+  var parsed = Number(digits);
+  return Number.isFinite(parsed) ? Math.max(0, Math.round(parsed)) : 0;
 };
 
 window.formatRupiah = function (val) {
@@ -179,18 +191,26 @@ window.formatRupiah = function (val) {
   if (num === 0) {
     return String(val).replace(/[^0-9]/g, '') === '' ? '' : '0';
   }
+  if (typeof Intl !== 'undefined' && typeof Intl.NumberFormat === 'function') {
+    return new Intl.NumberFormat('id-ID', { maximumFractionDigits: 0 }).format(num);
+  }
   return num.toString().replace(/\B(?=(\d{3})+(?!\d))/g, '.');
 };
 
 window.attachRupiahInput = function (inputEl, hiddenEl, onChangeCallback) {
   if (!inputEl) return;
+  var maxDigits = window.RUPIAH_MAX_DIGITS || 15;
   inputEl.addEventListener('input', function () {
     var oldVal = this.value;
     var caretPos = this.selectionStart || 0;
     var digitsBeforeCaret = oldVal.slice(0, caretPos).replace(/[^0-9]/g, '').length;
 
     var clean = oldVal.replace(/[^0-9]/g, '');
-    var num = parseInt(clean || '0', 10);
+    if (clean.length > maxDigits) {
+      clean = clean.slice(0, maxDigits);
+      if (digitsBeforeCaret > maxDigits) digitsBeforeCaret = maxDigits;
+    }
+    var num = clean === '' ? 0 : (Number(clean) || 0);
     if (hiddenEl) hiddenEl.value = String(num);
 
     var formatted = clean === '' ? '' : window.formatRupiah(num);

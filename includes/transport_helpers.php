@@ -1069,6 +1069,12 @@ function booking_parse_payments_post(array $post): array
     $rows      = [];
     foreach ($p_types as $idx => $pt) {
         $pAmt = parse_rupiah_input($p_amts[$idx] ?? 0);
+        if ($pAmt < -0.001) {
+            throw new InvalidArgumentException('Nominal pembayaran tidak boleh negatif.');
+        }
+        if ($pAmt > 999999999999999.99) {
+            throw new InvalidArgumentException('Nominal pembayaran melebihi batas maksimal (Rp 999.999.999.999.999).');
+        }
         if ($pAmt > 0) {
             $rows[] = [
                 '_file_idx'  => (int) $idx,

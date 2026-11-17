@@ -15,6 +15,7 @@ $CID = 952;
 $YEAR = 2098; // tahun jauh di depan supaya tidak bertabrakan dengan data nyata
 $MONTH = 3;
 
+$c->query("DELETE FROM cash_transactions WHERE company_id = $CID AND source_type = 'payroll_period'");
 $c->query("DELETE i FROM payroll_items i JOIN payroll_periods p ON p.id = i.payroll_period_id WHERE p.company_id = $CID");
 $c->query("DELETE FROM payroll_periods WHERE company_id = $CID");
 $c->query("DELETE FROM employee_attendances WHERE company_id = $CID");
@@ -92,6 +93,8 @@ try {
     catch (RuntimeException $e) { $thrown = true; }
     ok($thrown, 'periode final ditolak (throw)');
     payroll_period_set_status($pid, $CID, 'paid', 'test');
+    $cashSyncAtt = (int) $c->query("SELECT COUNT(*) FROM cash_transactions WHERE company_id = $CID AND source_type = 'payroll_period' AND source_id = $pid AND direction = 'out'")->fetch_row()[0];
+    ok($cashSyncAtt === 1, 'status paid otomatis mencatat pengeluaran gaji ke Buku Kas');
     $thrown = false;
     try { payroll_pull_attendance($pid, $CID, 'test'); }
     catch (RuntimeException $e) { $thrown = true; }
@@ -103,7 +106,8 @@ try {
     catch (RuntimeException $e) { $thrown = true; }
     ok($thrown, 'periode perusahaan lain ditolak (scope company_id)');
 } finally {
-    $c->query("DELETE i FROM payroll_items i JOIN payroll_periods p ON p.id = i.payroll_period_id WHERE p.company_id = $CID");
+    $c->query("DELETE FROM cash_transactions WHERE company_id = $CID AND source_type = 'payroll_period'");
+$c->query("DELETE i FROM payroll_items i JOIN payroll_periods p ON p.id = i.payroll_period_id WHERE p.company_id = $CID");
     $c->query("DELETE FROM payroll_periods WHERE company_id = $CID");
     $c->query("DELETE FROM employee_attendances WHERE company_id = $CID");
     $c->query("DELETE FROM employees WHERE company_id = $CID");

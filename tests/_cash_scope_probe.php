@@ -1,11 +1,11 @@
 <?php
 /**
- * Probe scoping Kas & Bank — dijalankan sebagai SUBPROSES oleh tests/cash_check.php
+ * Probe scoping Buku Kas — dijalankan sebagai SUBPROSES oleh tests/cash_check.php
  * karena assert_company_access() memanggil exit, yang akan menghentikan proses induk.
  *
- * Pakai: php tests/_cash_scope_probe.php <tx|account> <id>
- * Keluar dengan kode 3 bila request benar-benar berhenti di 403 (Akses Ditolak),
- * 0 bila baris ternyata boleh diakses (berarti scoping bocor).
+ * Pakai: php tests/_cash_scope_probe.php tx <id>
+ * Mencetak "Akses Ditolak" bila request berhenti di 403, "BOLEH AKSES" bila baris
+ * ternyata boleh diakses (berarti scoping bocor).
  */
 require_once __DIR__ . '/../config/config.php';
 require_once __DIR__ . '/../pages/finance/_cash_query.php';
@@ -20,10 +20,8 @@ $id   = (int) ($argv[2] ?? 0);
 
 if ($what === 'tx') {
     cash_tx_find($id);
-} elseif ($what === 'account') {
-    cash_account_find($id);
 } else {
-    fwrite(STDERR, "pakai: tx|account <id>\n");
+    fwrite(STDERR, "pakai: tx <id>\n");
     exit(2);
 }
 

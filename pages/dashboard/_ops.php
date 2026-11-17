@@ -427,55 +427,33 @@ function dash_master_counts(): array
 }
 
 /**
- * Ringkasan saldo real-time Buku Kas & Bank per jenis akun ('kas' vs 'bank')
- * serta jumlah akun bank yang nomor rekeningnya belum dilengkapi.
+ * Ringkasan saldo & arus kas Buku Kas (`cash_transactions`): total saldo berjalan sampai hari ini
+ * serta total kas masuk & kas keluar bulan berjalan.
  *
- * @return array{total:float, kas:float, bank:float, unconfigured_bank:int}
+ * @return array{balance:float, month_in:float, month_out:float}
  */
 function dash_cash_summary(): array
 {
-    [$aw, $at, $ap] = company_scope('a.company_id');
     [$tw, $tt, $tp] = company_scope('company_id');
-    $sql = "SELECT a.type,
-                   COALESCE(SUM(a.opening_balance), 0) AS open_bal,
-                   COALESCE(SUM(COALESCE(tx.delta, 0)), 0) AS tx_delta,
-                   SUM(CASE WHEN a.type = 'bank' AND (a.account_number IS NULL OR a.account_number = '') THEN 1 ELSE 0 END) AS unconfigured_bank
-            FROM cash_accounts a
-            LEFT JOIN (
-                SELECT cash_account_id,
-                       SUM(CASE WHEN direction = 'in' THEN amount WHEN direction = 'out' THEN -amount ELSE 0 END) AS delta
-                FROM cash_transactions
-                WHERE {$tw}
-                GROUP BY cash_account_id
-            ) tx ON tx.cash_account_id = a.id
-            WHERE a.is_active = 1 AND {$aw}
-            GROUP BY a.type";
+    $monthStart = date('Y-m-01');
+    $today      = date('Y-m-d');
+    $sql = "SELECT
+                COALESCE(SUM(CASE WHEN date <= ? THEN (CASE WHEN direction = 'in' THEN amount WHEN direction = 'out' THEN -amount ELSE 0 END) ELSE 0 END), 0) AS balance,
+                COALESCE(SUM(CASE WHEN direction = 'in'  AND date BETWEEN ? AND ? THEN amount ELSE 0 END), 0) AS month_in,
+                COALESCE(SUM(CASE WHEN direction = 'out' AND date BETWEEN ? AND ? THEN amount ELSE 0 END), 0) AS month_out
+            FROM cash_transactions
+            WHERE {$tw}";
     $st = db()->prepare($sql);
-    $types  = $tt . $at;
-    $params = array_merge($tp, $ap);
-    if ($types !== '') {
-        $st->bind_param($types, ...$params);
-    }
+    $types  = 'sssss' . $tt;
+    $params = array_merge([$today, $monthStart, $today, $monthStart, $today], $tp);
+    $st->bind_param($types, ...$params);
     $st->execute();
-    $rows = $st->get_result()->fetch_all(MYSQLI_ASSOC);
+    $row = $st->get_result()->fetch_assoc() ?: [];
     $st->close();
 
-    $kas = 0.0;
-    $bank = 0.0;
-    $unconf = 0;
-    foreach ($rows as $r) {
-        $bal = (float) ($r['open_bal'] ?? 0) + (float) ($r['tx_delta'] ?? 0);
-        if (($r['type'] ?? '') === 'kas') {
-            $kas += $bal;
-        } else {
-            $bank += $bal;
-            $unconf += (int) ($r['unconfigured_bank'] ?? 0);
-        }
-    }
     return [
-        'total'             => $kas + $bank,
-        'kas'               => $kas,
-        'bank'              => $bank,
-        'unconfigured_bank' => $unconf,
+        'balance'   => (float) ($row['balance'] ?? 0),
+        'month_in'  => (float) ($row['month_in'] ?? 0),
+        'month_out' => (float) ($row['month_out'] ?? 0),
     ];
 }

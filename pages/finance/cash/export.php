@@ -1,7 +1,7 @@
 <?php
 /**
  * Export Buku Kas: ?format=csv | ?format=xlsx + filter yang sama dengan halaman.
- * Isi: tanggal, akun, arah, kategori, keterangan, nominal bertanda (keluar minus),
+ * Isi: tanggal, metode, arah, kategori, keterangan, nominal bertanda (keluar minus),
  * ditutup baris Total Masuk / Total Keluar / Saldo Akhir.
  */
 require_once __DIR__ . '/../../../config/config.php';

@@ -1041,7 +1041,6 @@ try {
         '/pages/attendance/index.php?company_id=1',
         '/pages/payroll/periods/index.php?company_id=1',
         '/pages/finance/cash/index.php?company_id=1',
-        '/pages/finance/cash_accounts/index.php?company_id=1',
         '/pages/finance/invoices/index.php?company_id=1',
         '/pages/masters/countries/index.php',
         '/pages/users/index.php',

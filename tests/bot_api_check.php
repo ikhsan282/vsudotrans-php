@@ -209,9 +209,8 @@ $staffDeny = call_bot_endpoint('staff_summary.php', 'GET', ['secret' => $secret,
 check_bot(($staffDeny['ok'] ?? true) === false && ($staffDeny['error']['code'] ?? '') === 'STAFF_ONLY', 'GET /api/bot/staff_summary.php blocks non-staff phone');
 
 $staffBefore = call_bot_endpoint('staff_summary.php', 'GET', ['secret' => $secret, 'phone' => $adminPhone, 'company' => 'MTM']);
-$accCodes = array_column($staffBefore['data']['cash_accounts'] ?? [], 'code');
 check_bot(($staffBefore['ok'] ?? false) === true && isset($staffBefore['data']['today_bookings_amount']), 'GET /api/bot/staff_summary.php succeeds for staff phone');
-check_bot(in_array('KAS-TUNAI', $accCodes, true) && in_array('BANK-UTAMA', $accCodes, true) && isset($staffBefore['data']['today_cash_flow']), 'staff_summary exposes KAS-TUNAI/BANK-UTAMA cash_accounts & today_cash_flow');
+check_bot(isset($staffBefore['data']['cash_book_balance']) && isset($staffBefore['data']['today_cash_flow']) && !array_key_exists('cash_accounts', $staffBefore['data']), 'staff_summary exposes cash_book_balance & today_cash_flow without per-account cash_accounts');
 
 // Buat booking sementara dengan DP (status invoice = 'partial') & pastikan ikut dihitung sebagai unpaid invoice di staff_summary
 $beforeUnpaidCnt = (int) ($staffBefore['data']['unpaid_invoices_count'] ?? 0);

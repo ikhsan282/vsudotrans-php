@@ -95,7 +95,7 @@ require __DIR__ . '/../../includes/header.php';
 
     <div class="card shadow-sm border-0 mb-3">
         <div class="card-header bg-white d-flex justify-content-between align-items-center flex-wrap gap-2">
-            <span class="fw-semibold"><i class="bi bi-wallet2 me-1 text-success"></i>Arus Kas Nyata (Buku Kas &amp; Bank)</span>
+            <span class="fw-semibold"><i class="bi bi-wallet2 me-1 text-success"></i>Arus Kas Nyata (Buku Kas)</span>
             <a class="btn btn-outline-primary btn-sm py-0 px-2" href="<?= e(APP_URL) ?>/pages/finance/cash/index.php?from=<?= e($f['from']) ?>&to=<?= e($f['to']) ?><?= is_super_admin() ? '&company_id=' . (int) ($f['filter_company_id'] ?? 0) : '' ?>">
                 Buka Buku Kas <i class="bi bi-arrow-right-short"></i>
             </a>
@@ -225,7 +225,97 @@ require __DIR__ . '/../../includes/header.php';
         </div>
     </div>
 
-    <div class="card shadow-sm border-0 mb-3">
+    <?php
+    $daily = $data['daily'] ?? [];
+    $dt    = fin_daily_totals($daily);
+    ?>
+    <div class="card shadow-sm border-0 mb-3" id="rekap-harian">
+        <div class="card-header bg-white d-flex justify-content-between align-items-center flex-wrap gap-2">
+            <span class="fw-semibold">Rekap Harian (Pemasukan &amp; Pengeluaran)</span>
+            <span class="small text-muted">
+                <?= count($daily) ?> hari aktif
+                <?php if ($daily): ?>
+                    · Arus Kas Bersih <strong class="<?= $dt['net_cash_flow'] >= 0 ? 'text-success' : 'text-danger' ?>"><?= e(rupiah($dt['net_cash_flow'])) ?></strong>
+                <?php endif; ?>
+            </span>
+        </div>
+        <?php if (($f['booking_type'] ?? 'all') !== 'all'): ?>
+        <div class="px-3 py-2 border-bottom small text-muted">
+            Catatan: Kas Masuk &amp; Kas Keluar mengikuti Buku Kas perusahaan (semua transaksi), sedangkan Omzet Booking &amp; Biaya Trip mengikuti filter jenis booking.
+        </div>
+        <?php endif; ?>
+        <?php if ($daily): ?>
+        <div class="p-3 border-bottom" style="position:relative; height:190px;">
+            <canvas id="finDailyChart"></canvas>
+        </div>
+        <?php endif; ?>
+        <div class="table-responsive">
+            <table class="table table-sm table-hover mb-0 align-middle">
+                <thead><tr>
+                    <th>Tanggal</th>
+                    <th class="text-end">Kas Masuk</th>
+                    <th class="text-end">Kas Keluar</th>
+                    <th class="text-end">Arus Kas Bersih</th>
+                    <th class="text-end">Omzet Booking</th>
+                    <th class="text-end">Biaya Trip</th>
+                    <th class="text-end">Laba Kotor Trip</th>
+                </tr></thead>
+                <tbody>
+                <?php foreach ($daily as $r):
+                    $netCash = (float) $r['net_cash_flow'];
+                    $gp      = (float) $r['gross_profit'];
+                ?>
+                    <tr>
+                        <td class="text-nowrap"><?= e(tanggal_indo((string) $r['date'])) ?></td>
+                        <td class="text-end text-nowrap">
+                            <span class="fw-semibold text-success"><?= e(rupiah((float) $r['in_total'])) ?></span>
+                            <?php if ((float) $r['in_other'] > 0): ?>
+                                <div class="small text-muted">Booking <?= e(rupiah((float) $r['in_booking'])) ?> · Lain <?= e(rupiah((float) $r['in_other'])) ?></div>
+                            <?php endif; ?>
+                        </td>
+                        <td class="text-end text-nowrap">
+                            <span class="fw-semibold text-danger"><?= e(rupiah((float) $r['out_total'])) ?></span>
+                            <?php if ((float) $r['out_payroll'] > 0): ?>
+                                <div class="small text-muted">Gaji <?= e(rupiah((float) $r['out_payroll'])) ?> · Lain <?= e(rupiah((float) $r['out_other'])) ?></div>
+                            <?php endif; ?>
+                        </td>
+                        <td class="text-end text-nowrap fw-semibold <?= $netCash >= 0 ? 'text-success' : 'text-danger' ?>">
+                            <?= e(rupiah($netCash)) ?>
+                        </td>
+                        <td class="text-end text-nowrap">
+                            <?= e(rupiah((float) $r['booking_total'])) ?>
+                            <?php if ((int) $r['booking_count'] > 0): ?>
+                                <div class="small text-muted"><?= (int) $r['booking_count'] ?> booking</div>
+                            <?php endif; ?>
+                        </td>
+                        <td class="text-end text-nowrap"><?= e(rupiah((float) $r['trip_cost'])) ?></td>
+                        <td class="text-end text-nowrap fw-semibold <?= $gp >= 0 ? 'text-success' : 'text-danger' ?>">
+                            <?= e(rupiah($gp)) ?>
+                        </td>
+                    </tr>
+                <?php endforeach; ?>
+                <?php if (!$daily): ?>
+                    <tr><td colspan="7" class="text-center text-muted py-3">Belum ada transaksi kas, booking, maupun biaya pada periode ini.</td></tr>
+                <?php endif; ?>
+                </tbody>
+                <?php if ($daily): ?>
+                <tfoot class="table-light fw-semibold">
+                    <tr>
+                        <td>Total (<?= count($daily) ?> hari)</td>
+                        <td class="text-end text-success"><?= e(rupiah($dt['in_total'])) ?></td>
+                        <td class="text-end text-danger"><?= e(rupiah($dt['out_total'])) ?></td>
+                        <td class="text-end <?= $dt['net_cash_flow'] >= 0 ? 'text-success' : 'text-danger' ?>"><?= e(rupiah($dt['net_cash_flow'])) ?></td>
+                        <td class="text-end"><?= e(rupiah($dt['booking_total'])) ?></td>
+                        <td class="text-end"><?= e(rupiah($dt['trip_cost'])) ?></td>
+                        <td class="text-end <?= $dt['gross_profit'] >= 0 ? 'text-success' : 'text-danger' ?>"><?= e(rupiah($dt['gross_profit'])) ?></td>
+                    </tr>
+                </tfoot>
+                <?php endif; ?>
+            </table>
+        </div>
+    </div>
+
+    <div class="card shadow-sm border-0 mb-3" id="tagihan-belum-lunas">
         <div class="card-header bg-white d-flex justify-content-between align-items-center">
             <span class="fw-semibold">Tagihan Belum Lunas</span>
             <span class="small text-muted">
@@ -240,9 +330,11 @@ require __DIR__ . '/../../includes/header.php';
                     <th class="text-end">Nilai</th><th class="text-end">Terbayar</th><th class="text-end">Sisa</th>
                 </tr></thead>
                 <tbody>
-                <?php foreach ($unpaid as $r): ?>
+                <?php foreach ($unpaid as $r):
+                    $unpHref = APP_URL . '/pages/' . ($r['booking_type'] === 'rental' ? 'rental' : 'travel') . '/bookings/detail.php?id=' . (int) $r['id'] . '&tab=payment#tab-payment';
+                ?>
                     <tr>
-                        <td><?= e((string) $r['document_number']) ?></td>
+                        <td><a class="text-decoration-none fw-medium" href="<?= e($unpHref) ?>"><?= e((string) $r['document_number']) ?></a></td>
                         <td><?= e(tanggal_indo((string) $r['date'])) ?></td>
                         <td><?= e(ucfirst((string) $r['booking_type'])) ?></td>
                         <td class="text-end"><?= e(rupiah((float) $r['total_price'])) ?></td>
@@ -386,6 +478,57 @@ require __DIR__ . '/../../includes/header.php';
         scales: {
           x: { ticks: { color: initPal.text, callback: jt }, grid: { color: initPal.grid } },
           y: { ticks: { color: initPal.text }, grid: { color: initPal.grid } }
+        }
+      }
+    }));
+  }
+
+  // 4) Rekap harian: Kas Masuk vs Kas Keluar (batang) + Omzet Booking (garis)
+  const elDaily = document.getElementById('finDailyChart');
+  const dailyRows = <?= json_encode($daily, JSON_UNESCAPED_UNICODE) ?>;
+  if (elDaily && Array.isArray(dailyRows) && dailyRows.length > 0) {
+    const dailyLabels = dailyRows.map(r => {
+      const p = String(r.date || '').split('-');
+      return p.length === 3 ? (p[2] + '/' + p[1]) : String(r.date || '');
+    });
+    charts.push(new Chart(elDaily, {
+      type: 'bar',
+      data: {
+        labels: dailyLabels,
+        datasets: [
+          {
+            label: 'Kas Masuk',
+            data: dailyRows.map(r => Number(r.in_total || 0)),
+            backgroundColor: 'rgba(25,135,84,.78)',
+            borderRadius: 3
+          },
+          {
+            label: 'Kas Keluar',
+            data: dailyRows.map(r => Number(r.out_total || 0)),
+            backgroundColor: 'rgba(220,53,69,.78)',
+            borderRadius: 3
+          },
+          {
+            type: 'line',
+            label: 'Omzet Booking',
+            data: dailyRows.map(r => Number(r.booking_total || 0)),
+            borderColor: '#0d6efd',
+            backgroundColor: 'rgba(13,110,253,.12)',
+            tension: 0.25,
+            pointRadius: dailyRows.length > 31 ? 0 : 2.5
+          }
+        ]
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        plugins: {
+          legend: { position: 'bottom', labels: { color: initPal.text } },
+          tooltip: { callbacks: { label: c => c.dataset.label + ': ' + fmt(c.parsed.y) } }
+        },
+        scales: {
+          x: { ticks: { color: initPal.text, autoSkip: true, maxTicksLimit: 15 }, grid: { color: initPal.grid } },
+          y: { ticks: { color: initPal.text, callback: jt }, grid: { color: initPal.grid } }
         }
       }
     }));

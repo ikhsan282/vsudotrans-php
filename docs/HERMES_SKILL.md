@@ -20,7 +20,7 @@ Tugas utamamu:
    - Jika `company.dynamic_qris_enabled = true` (atau `booking_create.php` mengembalikan objek `qris` tidak `null`), buatkan QRIS Dinamis tepat nominal + kode unik 3 digit (`/api/bot/qris_create.php`) dan verifikasi statusnya lewat `/api/bot/qris_status.php`.
    - Jika channel QRIS Dinamis sedang tidak aktif (`qris: null` / `dynamic_qris_enabled: false`), gunakan daftar `payment_methods` (`TUNAI`, `TRANSFER`, `QRIS` statis, `EDC`) beserta `account_number`, `account_name`, `instructions`, atau `qr_image_url` dari respons API.
 4. **Cek Tiket & Riwayat berdasarkan Nomor WA**: Menampilkan pesanan aktif/belum lunas (`active`), riwayat perjalanan/pembayaran (`history`), serta tautan **E-Tiket PDF resmi** (`tiket_url`) berdasarkan nomor WhatsApp pengirim (`/api/bot/bookings.php`).
-5. **Rekapitulasi Operasional & Keuangan Pengurus/Admin**: Khusus nomor WhatsApp milik Admin/Staff perusahaan (`is_staff = true`), menyajikan ringkasan booking aktif hari ini, penerimaan pembayaran + rincian per metode, piutang/invoice belum lunas (`issued` dan `partial`), biaya operasional + BBM rental hari ini, arus kas nyata (`today_cash_flow`), dan saldo per akun kas (`KAS-TUNAI`, `BANK-UTAMA`) dari `/api/bot/staff_summary.php`.
+5. **Rekapitulasi Operasional & Keuangan Pengurus/Admin**: Khusus nomor WhatsApp milik Admin/Staff perusahaan (`is_staff = true`), menyajikan ringkasan booking aktif hari ini, penerimaan pembayaran + rincian per metode, piutang/invoice belum lunas (`issued` dan `partial`), biaya operasional + BBM rental hari ini, arus kas nyata (`today_cash_flow`), dan saldo Buku Kas (`cash_book_balance`) dari `/api/bot/staff_summary.php`.
 
 ---
 
@@ -33,9 +33,7 @@ Tugas utamamu:
 2. **4 Status Pembayaran Invoice**:
    - `unpaid` (Belum Bayar), `partial` (Sebagian / DP), `paid` (Lunas), `cancelled` (Dibatalkan).
 3. **Auto-Sync Keuangan Idempoten (`Operational-Driven`)**:
-   - Setiap pembayaran yang terverifikasi (pelunasan QRIS Dinamis via `qris_status.php` / `gateway_finalize`, maupun input pembayaran DP/Lunas di Invoice/Booking oleh admin) otomatis tersinkron ke **Buku Kas & Bank** (`cash_transactions`):
-     - Pembayaran **Tunai (`is_cash = 1`)** masuk ke **`KAS-TUNAI`** (`Kas Tunai Operasional`).
-     - Pembayaran **Non-Tunai (`Transfer Bank`, `QRIS`, `EDC`)** masuk ke **`BANK-UTAMA`** (`Bank Utama Perusahaan`).
+   - Setiap pembayaran yang terverifikasi (pelunasan QRIS Dinamis via `qris_status.php` / `gateway_finalize`, maupun input pembayaran DP/Lunas di Invoice/Booking oleh admin) otomatis tersinkron ke **Buku Kas** (`cash_transactions`) beserta metode pembayarannya (`Tunai`, `Transfer Bank`, `QRIS`, `EDC`). Tidak ada konsep akun kas/bank terpisah.
    - Pembayaran di Invoice berstatus `cancelled` otomatis dikecualikan dari laporan & perhitungan kas operasional.
 4. **Format Nomor Dokumen / Tiket**:
    - Format terbaru menggunakan **12 digit numerik** (4 digit urutan + `YYYYMMDD`, contoh: `100120261113`). Format legacy berawalan `TRV-` / `RNT-` tetap dikenali oleh sistem.
@@ -152,7 +150,7 @@ Panggil saat pelanggan berkata *"Sudah saya bayar"* atau *"Cek status pembayaran
 ```bash
 curl -sS "$BASE/api/bot/qris_status.php?secret=$SECRET&phone=$PHONE&document_number=100120261120"
 ```
-- Jika `data.status == "PAID"`, sistem **otomatis** mencatat pelunasan ke invoice (`payment_status = "paid"`), melakukan **auto-sync ke Buku Kas (`BANK-UTAMA`)**, **tanpa mengubah `booking_status` operasional** (`draft` tetap `draft` hingga dijadwalkan oleh admin/dispatcher), lalu mengembalikan `tiket_url`. Kirim konfirmasi lunas beserta `tiket_url`!
+- Jika `data.status == "PAID"`, sistem **otomatis** mencatat pelunasan ke invoice (`payment_status = "paid"`), melakukan **auto-sync ke Buku Kas**, **tanpa mengubah `booking_status` operasional** (`draft` tetap `draft` hingga dijadwalkan oleh admin/dispatcher), lalu mengembalikan `tiket_url`. Kirim konfirmasi lunas beserta `tiket_url`!
 
 ### 5.7 `GET /api/bot/staff_summary.php` — Rekapitulasi Operasional & Keuangan (Khusus Admin/Staff)
 Hanya boleh dipanggil bila `me.php` menunjukkan `is_staff: true`.
@@ -164,7 +162,7 @@ Data yang tersedia untuk diringkas kepada pengurus:
 - `today_payments_count`, `today_payments_amount`, `today_payments_by_method[]` (pelunasan/DP masuk hari ini di luar invoice `cancelled`, dirinci per kode metode bayar seperti `TUNAI`, `TRANSFER`, `QRIS-AUTO`, dll).
 - `today_operational_cost_amount` & `today_rental_bbm_amount` (biaya operasional non-payment + BBM rental hari ini).
 - `unpaid_invoices_count` & `unpaid_invoices_amount` (mencakup semua invoice aktif berstatus `issued` maupun `partial`).
-- `cash_book_balance` total serta rincian `cash_accounts[]` per akun (`KAS-TUNAI` vs `BANK-UTAMA`), dan `today_cash_flow` (`in_booking`, `in_other`, `out_payroll`, `out_other`, `net`).
+- `cash_book_balance` (saldo berjalan Buku Kas) dan `today_cash_flow` (`in_booking`, `in_other`, `out_payroll`, `out_other`, `net`).
 
 ### 5.8 `GET` & `POST /api/bot/outbox.php` — Antrean Notifikasi WhatsApp Otomatis
 Digunakan worker Hermes untuk menarik notifikasi bukti bayar/booking (`GET /api/bot/outbox.php?secret=$SECRET&phone=628000000000`) dan menandai terkirim (`POST` dengan `{"event_id":"...","status":"sent"}`).

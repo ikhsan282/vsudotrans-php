@@ -1,23 +1,16 @@
 <?php
 /**
- * Kas & Bank — semua query, validasi, dan angka ringkasan ada di sini.
+ * Buku Kas — semua query, validasi, dan angka ringkasan ada di sini.
  * Dipakai pages/finance/cash/{index,form,delete,export}.php dan tests/cash_check.php,
  * sehingga rumus saldo hanya hidup di satu tempat.
  *
- * Scope tenant: company_scope() untuk daftar, assert_company_access() untuk satu baris
- * (akun maupun transaksi). Akun sah = milik perusahaan aktif, dicek di SQL sebelum
- * dipakai menulis.
+ * Scope tenant: company_scope() untuk daftar, assert_company_access() untuk satu baris.
  */
 
 require_once __DIR__ . '/../../includes/functions.php';
 require_once __DIR__ . '/../../includes/auth.php';
 require_once __DIR__ . '/../../includes/finance_sync.php';
 require_once __DIR__ . '/../travel/_helpers.php';
-
-function cash_types(): array
-{
-    return ['kas' => 'Kas', 'bank' => 'Bank'];
-}
 
 function cash_directions(): array
 {
@@ -31,7 +24,7 @@ function cash_direction_badge(string $d): string
         : '<span class="badge bg-danger">Keluar</span>';
 }
 
-/** Normalisasi filter buku kas. Arah/tanggal ngawur → default aman (bukan error). */
+/** Normalisasi filter buku kas. Arah/tanggal ngawur -> default aman (bukan error). */
 function cash_filter(?array $in = null): array
 {
     $in = $in ?? $_GET;
@@ -44,7 +37,7 @@ function cash_filter(?array $in = null): array
     return [
         'from'       => $d('from', date('Y-m-01')),
         'to'         => $d('to', date('Y-m-t')),
-        'account'    => (int) ($in['account'] ?? 0),
+        'method'     => max(0, (int) ($in['method'] ?? 0)),
         'direction'  => $dir,
         'company_id' => isset($in['company_id']) && $in['company_id'] !== '' ? max(0, (int) $in['company_id']) : 0,
     ];
@@ -66,9 +59,6 @@ function cash_company_scope(string $column, array $f): array
 function cash_tx_where(array $f, bool $with_dates = true): array
 {
     [$w, $types, $params] = cash_company_scope('t.company_id', $f);
-    // company_scope() bisa mengembalikan klausa tanpa placeholder ('1=1' / '1=0') dengan types ''.
-    // Jangan pernah menempelkan types milik klausa sendiri ke string kosong itu tanpa placeholder —
-    // sebabkan ArgumentCountError di bind_param. Bangun types hanya dari klausa yang kita tambahkan.
     $sql = '';
     if ($with_dates) {
         $sql = 't.date >= ? AND t.date <= ?';
@@ -76,10 +66,10 @@ function cash_tx_where(array $f, bool $with_dates = true): array
         $params[] = $f['from'];
         $params[] = $f['to'];
     }
-    if ($f['account'] > 0) {
-        $sql .= ($sql === '' ? '' : ' AND ') . 't.cash_account_id = ?';
+    if (!empty($f['method']) && (int) $f['method'] > 0) {
+        $sql .= ($sql === '' ? '' : ' AND ') . 't.payment_method_id = ?';
         $types .= 'i';
-        $params[] = $f['account'];
+        $params[] = (int) $f['method'];
     }
     if ($f['direction'] !== 'all') {
         $sql .= ($sql === '' ? '' : ' AND ') . 't.direction = ?';
@@ -92,54 +82,46 @@ function cash_tx_where(array $f, bool $with_dates = true): array
     return ['sql' => ($w !== '' ? $w . ' AND ' : '') . $sql, 'types' => $types, 'params' => $params];
 }
 
-/** Akun aktif perusahaan (atau semua perusahaan jika $company_id === 0 dan Super Admin). */
-function cash_account_list(bool $active_only = true, ?int $company_id = null): array
+/** Daftar metode pembayaran aktif untuk dropdown/filter Buku Kas. */
+function cash_method_list(?int $company_id = null): array
 {
+    finance_ensure_schema();
     $cid = $company_id ?? (int) (active_company_id() ?? 0);
     if ($cid === 0 && is_super_admin()) {
-        $sql = 'SELECT a.id, a.company_id, c.code AS company_code, a.code, a.name, a.type, a.opening_balance, a.is_active
-                  FROM cash_accounts a
-                  LEFT JOIN companies c ON c.id = a.company_id'
-            . ($active_only ? ' WHERE a.is_active = 1' : '') . ' ORDER BY c.code, a.code';
-        return db()->query($sql)->fetch_all(MYSQLI_ASSOC);
+        return db()->query(
+            'SELECT pm.id, pm.company_id, pm.code, pm.name, pm.is_cash, pm.is_active
+               FROM payment_methods pm
+              WHERE pm.is_active = 1
+              ORDER BY pm.sort_order ASC, pm.name ASC'
+        )->fetch_all(MYSQLI_ASSOC);
     }
-    $st = db()->prepare('SELECT a.id, a.company_id, c.code AS company_code, a.code, a.name, a.type, a.opening_balance, a.is_active
-        FROM cash_accounts a
-        LEFT JOIN companies c ON c.id = a.company_id
-        WHERE a.company_id = ?' . ($active_only ? ' AND a.is_active = 1' : '') . ' ORDER BY a.code');
-    $st->bind_param('i', $cid);
-    $st->execute();
-    $rows = $st->get_result()->fetch_all(MYSQLI_ASSOC);
-    $st->close();
-    return $rows;
+    return finance_active_payment_methods($cid);
 }
 
-/** Satu akun; tabel ber-company_id → 403 bila bukan milik perusahaan aktif. */
-function cash_account_find(int $id): ?array
+/** Cek apakah payment_method_id sah dipakai perusahaan $cid (aktif milik perusahaan atau global). */
+function cash_method_ok(int $method_id, int $cid): bool
 {
-    if ($id <= 0) {
-        return null;
-    }
-    $st = db()->prepare('SELECT * FROM cash_accounts WHERE id = ? LIMIT 1');
-    $st->bind_param('i', $id);
+    $st = db()->prepare('SELECT 1 FROM payment_methods WHERE id = ? AND is_active = 1 AND (company_id = ? OR company_id IS NULL) LIMIT 1');
+    $st->bind_param('ii', $method_id, $cid);
     $st->execute();
-    $row = $st->get_result()->fetch_assoc();
+    $ok = $st->get_result()->num_rows > 0;
     $st->close();
-    if (!$row) {
-        return null;
-    }
-    assert_company_access((int) $row['company_id']);
-    return $row;
+    return $ok;
 }
 
-/** Satu transaksi + nama akun & metode bayar; 403 bila tenant lain. */
+/** Satu transaksi + metode bayar; 403 bila tenant lain. */
 function cash_tx_find(int $id): ?array
 {
     if ($id <= 0) {
         return null;
     }
-    $st = db()->prepare('SELECT t.*, a.name AS account_name, a.code AS account_code'
-        . ' FROM cash_transactions t LEFT JOIN cash_accounts a ON a.id = t.cash_account_id WHERE t.id = ? LIMIT 1');
+    finance_ensure_schema();
+    $st = db()->prepare(
+        'SELECT t.*, pm.code AS method_code, pm.name AS method_name
+           FROM cash_transactions t
+           LEFT JOIN payment_methods pm ON pm.id = NULLIF(t.payment_method_id, 0)
+          WHERE t.id = ? LIMIT 1'
+    );
     $st->bind_param('i', $id);
     $st->execute();
     $row = $st->get_result()->fetch_assoc();
@@ -152,21 +134,18 @@ function cash_tx_find(int $id): ?array
 }
 
 /**
- * Validasi input transaksi. Akun wajib milik perusahaan aktif ($cid) — bukan sekadar
- * ada di cash_accounts (scoping antar perusahaan).
+ * Validasi input transaksi buku kas.
  */
 function cash_tx_validate(array $in, int $cid): array
 {
     $errors = [];
-    $account_id = (int) ($in['cash_account_id'] ?? 0);
+    $method_id = (int) ($in['payment_method_id'] ?? 0);
     $date = (string) ($in['date'] ?? '');
     $direction = (string) ($in['direction'] ?? '');
     $amount = (float) ($in['amount'] ?? 0);
 
-    if ($account_id <= 0) {
-        $errors[] = 'Akun kas/bank wajib dipilih.';
-    } elseif (!cash_relation_ok($account_id, $cid)) {
-        $errors[] = 'Akun kas/bank harus dipilih dari daftar yang tersedia.';
+    if ($method_id > 0 && !cash_method_ok($method_id, $cid)) {
+        $errors[] = 'Metode pembayaran harus dipilih dari daftar yang tersedia.';
     }
     if (!preg_match('/^\d{4}-\d{2}-\d{2}$/', $date) || !checkdate((int) substr($date, 5, 2), (int) substr($date, 8, 2), (int) substr($date, 0, 4))) {
         $errors[] = 'Tanggal wajib diisi dengan format tanggal yang benar.';
@@ -186,26 +165,17 @@ function cash_tx_validate(array $in, int $cid): array
     return $errors;
 }
 
-/** Akun ada & milik perusahaan aktif (menahan id akun perusahaan lain). */
-function cash_relation_ok(int $account_id, int $cid): bool
-{
-    $st = db()->prepare('SELECT 1 FROM cash_accounts WHERE id = ? AND company_id = ?');
-    $st->bind_param('ii', $account_id, $cid);
-    $st->execute();
-    $ok = $st->get_result()->num_rows > 0;
-    $st->close();
-    return $ok;
-}
-
 /**
  * Simpan (insert/update) transaksi. Update: baris wajib milik perusahaan aktif —
  * baris tenant lain tidak ditemukan sehingga tidak mungkin diubah.
  */
 function cash_tx_save(int $id, array $in, int $cid, ?string $user): int
 {
+    finance_ensure_schema();
     $user = (string) $user;
     $now = date('Y-m-d H:i:s');
-    $account_id = (int) $in['cash_account_id'];
+    $pmRaw = (int) ($in['payment_method_id'] ?? 0);
+    $method_id = $pmRaw > 0 ? $pmRaw : null;
     $date = (string) $in['date'];
     $direction = (string) $in['direction'];
     $amount = (float) $in['amount'];
@@ -216,18 +186,18 @@ function cash_tx_save(int $id, array $in, int $cid, ?string $user): int
 
     if ($id === 0) {
         $st = db()->prepare('INSERT INTO cash_transactions'
-            . ' (company_id, cash_account_id, date, direction, amount, category, description, created_user, created_date)'
+            . ' (company_id, date, direction, amount, category, description, payment_method_id, created_user, created_date)'
             . ' VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)');
-        $st->bind_param('iissdssss', $cid, $account_id, $date, $direction, $amount, $category, $description, $user, $now);
+        $st->bind_param('issdssiss', $cid, $date, $direction, $amount, $category, $description, $method_id, $user, $now);
         $st->execute();
         $new_id = $st->insert_id;
         $st->close();
         return $new_id;
     }
 
-    $st = db()->prepare('UPDATE cash_transactions SET cash_account_id = ?, date = ?, direction = ?, amount = ?,'
-        . ' category = ?, description = ?, modified_user = ?, modified_date = ? WHERE id = ? AND company_id = ?');
-    $st->bind_param('issdssssii', $account_id, $date, $direction, $amount, $category, $description, $user, $now, $id, $cid);
+    $st = db()->prepare('UPDATE cash_transactions SET date = ?, direction = ?, amount = ?,'
+        . ' category = ?, description = ?, payment_method_id = ?, modified_user = ?, modified_date = ? WHERE id = ? AND company_id = ?');
+    $st->bind_param('ssdssissii', $date, $direction, $amount, $category, $description, $method_id, $user, $now, $id, $cid);
     $st->execute();
     $st->close();
     return $id;
@@ -235,37 +205,35 @@ function cash_tx_save(int $id, array $in, int $cid, ?string $user): int
 
 /**
  * Ringkasan buku kas.
- *  - total_in / total_out : hanya dalam rentang (dan filter arah) — inilah angka yang ditampilkan.
- *  - balance              : saldo akhir = saldo awal akun + Σmasuk − Σkeluar sampai tanggal `to`.
- *
- * Saldo TIDAK dipotong filter arah: saldo adalah saldo akun, bukan total kolom terfilter.
- * Filter arah == 'in' membuat total_out 0; saldo tetap dihitung dari semua transaksi.
- * Tanpa akun terpilih (Semua Akun) saldo = jumlah saldo awal akun + seluruh transaksi.
- * Di-scope perusahaan: transaksi perusahaan lain tidak ikut (uang mereka bukan uang kita).
+ *  - opening   : saldo akumulasi sebelum tanggal `from` (Σmasuk − Σkeluar sebelum `from`).
+ *  - total_in  : Σmasuk pada rentang filter (`from`..`to`, ikut filter arah & metode).
+ *  - total_out : Σkeluar pada rentang filter (`from`..`to`, ikut filter arah & metode).
+ *  - balance   : saldo akumulasi sampai tanggal `to` (`t.date <= to`, tidak terpotong filter arah).
  */
 function cash_summary(array $f): array
 {
-    // Saldo akhir = saldo awal akun + Σ masuk − Σ keluar S/D TANGGAL `to`.
-    // Rentang tanggal `from` TIDAK memotong saldo (saldo itu posisi akun, bukan total kolom),
-    // tapi batas atas `to` WAJIB dihormati: memilih periode lampau tak boleh menampilkan
-    // mutasi setelahnya. Filter arah ikut apa adanya (sudut pandang kolom, bukan saldo akun).
-    // Semua angka memakai satu WHERE yang sama → kartu ringkasan tak mungkin berselisih dengan tabel.
+    finance_ensure_schema();
     $range = cash_tx_where($f);
-    // Saldo s/d `to`: klausa tanggal bawah sengaja dibuang (with_dates=false) karena saldo itu
-    // posisi akun, bukan total kolom rentang. Filter ARAH juga dibuang: saldo adalah posisi akun,
-    // mem-filter kolom "masuk" tak boleh mengubah saldo (uji: arah=in → saldo tetap 1.300.000).
-    // Batas atas ditambahkan eksplisit sebagai parameter sendiri supaya types & params tetap sejajar.
-    $upto = cash_tx_where([
+
+    $baseFilter = [
         'from'       => '',
         'to'         => $f['to'],
-        'account'    => $f['account'],
+        'method'     => (int) ($f['method'] ?? 0),
         'direction'  => 'all',
         'company_id' => (int) ($f['company_id'] ?? 0),
-    ], false);
+    ];
+
+    $beforeFrom = cash_tx_where($baseFilter, false);
+    $beforeFrom['sql'] .= ' AND t.date < ?';
+    $beforeFrom['types'] .= 's';
+    $beforeFrom['params'][] = $f['from'];
+
+    $upto = cash_tx_where($baseFilter, false);
     $upto['sql'] .= ' AND t.date <= ?';
     $upto['types'] .= 's';
     $upto['params'][] = $f['to'];
-    $bal = static function (array $w): float {
+
+    $netQuery = static function (array $w): float {
         $st = db()->prepare("SELECT COALESCE(SUM(CASE WHEN t.direction = 'in' THEN t.amount ELSE -t.amount END), 0)
             FROM cash_transactions t WHERE " . $w['sql']);
         if ($w['types'] !== '') {
@@ -277,20 +245,8 @@ function cash_summary(array $f): array
         return $v;
     };
 
-    [$w, $types, $params] = cash_company_scope('a.company_id', $f);
-    $acc_sql = ($w !== '' ? $w . ' AND ' : '') . '1=1' . ($f['account'] > 0 ? ' AND a.id = ?' : '');
-    if ($f['account'] > 0) {
-        $types .= 'i';
-        $params[] = $f['account'];
-    }
-    $st = db()->prepare('SELECT COALESCE(SUM(a.opening_balance), 0), COUNT(*) FROM cash_accounts a WHERE ' . $acc_sql);
-    if ($types !== '') {
-        $st->bind_param($types, ...$params);
-    }
-    $st->execute();
-    $acc_row = $st->get_result()->fetch_row();
-    $st->close();
-    $opening = (float) $acc_row[0];
+    $opening = $netQuery($beforeFrom);
+    $balance = $netQuery($upto);
 
     $st = db()->prepare("SELECT COALESCE(SUM(CASE WHEN t.direction = 'in' THEN t.amount ELSE 0 END), 0) AS total_in,
             COALESCE(SUM(CASE WHEN t.direction = 'out' THEN t.amount ELSE 0 END), 0) AS total_out
@@ -306,8 +262,8 @@ function cash_summary(array $f): array
         'opening'       => $opening,
         'total_in'      => (float) $sum['total_in'],
         'total_out'     => (float) $sum['total_out'],
-        'balance'       => $opening + $bal($upto),
-        'range_balance' => $opening + $bal($upto),
+        'balance'       => $balance,
+        'range_balance' => $balance,
     ];
 }
 
@@ -316,12 +272,12 @@ function cash_tx_list(array $f, ?int $limit = null, int $offset = 0): array
 {
     finance_ensure_schema();
     $tw = cash_tx_where($f);
-    $sql = "SELECT t.id, t.company_id, c.code AS company_code, t.cash_account_id, t.date, t.direction, t.amount, t.category, t.description, t.created_user,
+    $sql = "SELECT t.id, t.company_id, c.code AS company_code, t.payment_method_id, t.date, t.direction, t.amount, t.category, t.description, t.created_user,
             t.source_type, t.source_id,
-            a.code AS account_code, a.name AS account_name,
-            inv.id AS ref_invoice_id
+            pm.code AS method_code, pm.name AS method_name,
+            inv.id AS ref_invoice_id, inv.booking_type AS ref_booking_type, inv.booking_id AS ref_booking_id
         FROM cash_transactions t
-        LEFT JOIN cash_accounts a ON a.id = t.cash_account_id
+        LEFT JOIN payment_methods pm ON pm.id = NULLIF(t.payment_method_id, 0)
         LEFT JOIN companies c ON c.id = t.company_id
         LEFT JOIN booking_cost_lines bcl ON t.source_type = 'booking_payment' AND bcl.id = t.source_id
         LEFT JOIN invoices inv ON bcl.description = CONCAT('INV#', inv.id)
@@ -346,6 +302,7 @@ function cash_tx_list(array $f, ?int $limit = null, int $offset = 0): array
 
 function cash_tx_count(array $f): int
 {
+    finance_ensure_schema();
     $tw = cash_tx_where($f);
     $st = db()->prepare('SELECT COUNT(*) FROM cash_transactions t WHERE ' . $tw['sql']);
     if ($tw['types'] !== '') {
@@ -358,12 +315,12 @@ function cash_tx_count(array $f): int
 }
 
 /**
- * Baris siap-tulis export: tanggal, akun, arah, kategori, keterangan, nominal, diakhiri TOTAL.
+ * Baris siap-tulis export: tanggal, metode, arah, kategori, keterangan, nominal, diakhiri TOTAL.
  * CSV & XLSX memakai daftar yang sama supaya isi kedua berkas identik.
  */
 function cash_export_table(array $f): array
 {
-    $heads = ['Tanggal', 'Akun', 'Arah', 'Kategori', 'Keterangan', 'Nominal'];
+    $heads = ['Tanggal', 'Metode', 'Arah', 'Kategori', 'Keterangan', 'Nominal'];
     $table = [['Buku Kas', $f['from'] . ' s/d ' . $f['to']], [], $heads];
     $s = cash_summary($f);
     $tot_in = 0.0;
@@ -377,9 +334,13 @@ function cash_export_table(array $f): array
         } else {
             $tot_out += $amount;
         }
+        $methodLabel = trim((string) ($r['method_name'] ?? ''));
+        if ($methodLabel === '') {
+            $methodLabel = '-';
+        }
         $table[] = [
             (string) $r['date'],
-            trim($r['account_code'] . ' - ' . $r['account_name'], ' -'),
+            $methodLabel,
             cash_directions()[$r['direction']] ?? (string) $r['direction'],
             (string) $r['category'],
             (string) $r['description'],

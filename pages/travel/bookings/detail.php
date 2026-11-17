@@ -79,7 +79,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $payType    = trim((string) ($_POST['pay_type'] ?? 'Pelunasan'));
             $payMethod  = trim((string) ($_POST['pay_method'] ?? 'Transfer'));
             $methodId   = (int) ($_POST['payment_method_id'] ?? 0);
-            $cashAccId  = (int) ($_POST['cash_account_id'] ?? 0);
             $payNote    = trim((string) ($_POST['pay_note'] ?? ''));
             if ($payAmt <= 0) {
                 throw new InvalidArgumentException('Nominal pembayaran harus lebih dari Rp 0.');
@@ -137,7 +136,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $user,
                 false,
                 $proofPath,
-                $cashAccId > 0 ? $cashAccId : null
+                true
             );
             audit('booking.travel.pay_manual', "Pemesanan #{$id} INV#{$invId} nominal {$payAmt} ({$payRes['status']})");
             flash('success', 'Pembayaran manual sebesar ' . rupiah($payAmt) . ' berhasil dicatat.');
@@ -189,6 +188,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             }
             if ($total_price < 0) {
                 throw new InvalidArgumentException('Harga pemesanan tidak boleh negatif.');
+            }
+            if ($total_price > 999999999999999.99) {
+                throw new InvalidArgumentException('Nominal harga pemesanan melebihi batas maksimal (Rp 999.999.999.999.999).');
             }
 
             $cat_id_post = $category_vehicle_id > 0 ? $category_vehicle_id : null;
@@ -263,6 +265,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $invUp = $stInvUp->get_result()->fetch_assoc();
                 $stInvUp->close();
 
+                $hasInvNoteIn = array_key_exists('invoice_note', $_POST);
+                $invNoteIn    = $hasInvNoteIn ? trim((string) ($_POST['invoice_note'] ?? '')) : null;
+                $invNoteDb    = ($invNoteIn === null || $invNoteIn === '') ? null : mb_substr($invNoteIn, 0, 2000);
+
                 if ($invUp && (($invUp['status'] ?? '') !== 'cancelled' || ($reqStatus !== '' && $reqStatus !== 'cancelled'))) {
                     $invIdUp = (int) $invUp['id'];
                     $taxPct  = (float) ($invUp['tax_percent'] ?? 0);
@@ -279,8 +285,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         if ($newTot + 0.01 < $qrisLocked) {
                             throw new InvalidArgumentException('Total harga tidak dapat diturunkan di bawah pembayaran QRIS otomatis yang sudah tercatat (' . rupiah($qrisLocked) . ').');
                         }
-                        $upInvPre = $db->prepare('UPDATE invoices SET branch_id = ?, subtotal = ?, tax_amount = ?, total = ?, modified_user = ?, modified_date = NOW() WHERE id = ?');
-                        $upInvPre->bind_param('idddsi', $branch_id, $total_price, $taxAmt, $newTot, $user, $invIdUp);
+                        if ($hasInvNoteIn) {
+                            $upInvPre = $db->prepare('UPDATE invoices SET branch_id = ?, subtotal = ?, tax_amount = ?, total = ?, note = ?, modified_user = ?, modified_date = NOW() WHERE id = ?');
+                            $upInvPre->bind_param('idddssi', $branch_id, $total_price, $taxAmt, $newTot, $invNoteDb, $user, $invIdUp);
+                        } else {
+                            $upInvPre = $db->prepare('UPDATE invoices SET branch_id = ?, subtotal = ?, tax_amount = ?, total = ?, modified_user = ?, modified_date = NOW() WHERE id = ?');
+                            $upInvPre->bind_param('idddsi', $branch_id, $total_price, $taxAmt, $newTot, $user, $invIdUp);
+                        }
                         $upInvPre->execute();
                         $upInvPre->close();
 
@@ -299,8 +310,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                             throw new InvalidArgumentException('Total harga tidak dapat lebih rendah dari total pembayaran yang sudah dibayar (' . rupiah($paid) . ').');
                         }
                         $newInvSt = ($paid + 0.01 >= $newTot && $paid > 0) ? 'paid' : ($paid > 0.01 ? 'partial' : 'issued');
-                        $upInv = $db->prepare('UPDATE invoices SET branch_id = ?, subtotal = ?, tax_amount = ?, total = ?, status = ?, modified_user = ?, modified_date = NOW() WHERE id = ?');
-                        $upInv->bind_param('idddssi', $branch_id, $total_price, $taxAmt, $newTot, $newInvSt, $user, $invIdUp);
+                        if ($hasInvNoteIn) {
+                            $upInv = $db->prepare('UPDATE invoices SET branch_id = ?, subtotal = ?, tax_amount = ?, total = ?, status = ?, note = ?, modified_user = ?, modified_date = NOW() WHERE id = ?');
+                            $upInv->bind_param('idddsssi', $branch_id, $total_price, $taxAmt, $newTot, $newInvSt, $invNoteDb, $user, $invIdUp);
+                        } else {
+                            $upInv = $db->prepare('UPDATE invoices SET branch_id = ?, subtotal = ?, tax_amount = ?, total = ?, status = ?, modified_user = ?, modified_date = NOW() WHERE id = ?');
+                            $upInv->bind_param('idddssi', $branch_id, $total_price, $taxAmt, $newTot, $newInvSt, $user, $invIdUp);
+                        }
                         $upInv->execute();
                         $upInv->close();
                     }
@@ -475,7 +491,8 @@ if ($invId > 0) {
 
 $assignments = dispatch_by_booking('travel', $id);
 
-$activeTab   = 'detail';
+$reqTab      = (string) ($_GET['tab'] ?? '');
+$activeTab   = in_array($reqTab, ['detail', 'crew', 'payment', 'note', 'audit'], true) ? $reqTab : 'detail';
 $active      = 'travel';
 $title       = 'Pemesanan Tiket Perjalanan - ' . $b['document_number'];
 $openQrisNow = !empty($_GET['open_qris']) && $canManage && $status !== 'cancelled' && $qrisRemaining > 0 && !empty($qrisChannels);
@@ -904,6 +921,7 @@ require __DIR__ . '/../../../includes/header.php';
                 $payments      = $payment_rows;
                 $totalPrice    = (float) $b['total_price'];
                 $isDetailMode  = true;
+                $invoice       = $invRow;
                 $invoiceTotal  = $invTotal;
                 $bookingStatus = $status;
                 $tabTitle      = 'Pembayaran Travel';

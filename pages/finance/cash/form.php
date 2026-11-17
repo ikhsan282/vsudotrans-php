@@ -1,7 +1,6 @@
 <?php
 /**
- * Buku Kas: input/ubah transaksi (akun, tanggal, arah, jumlah, kategori, keterangan).
- * Akun yang boleh dipilih hanya milik perusahaan aktif (divalidasi ulang di server).
+ * Buku Kas: input/ubah transaksi (tanggal, arah, jumlah, metode bayar opsional, kategori, keterangan).
  */
 require_once __DIR__ . '/../../../config/config.php';
 require_permission('finance.manage');
@@ -39,12 +38,12 @@ if ($id > 0) {
     }
 }
 $form = [
-    'cash_account_id' => (string) ($row['cash_account_id'] ?? ''),
-    'date'            => (string) ($row['date'] ?? date('Y-m-d')),
-    'direction'       => (string) ($row['direction'] ?? 'in'),
-    'amount'          => $row !== null ? (string) $row['amount'] : '',
-    'category'        => (string) ($row['category'] ?? ''),
-    'description'     => (string) ($row['description'] ?? ''),
+    'payment_method_id' => (string) ($row['payment_method_id'] ?? ''),
+    'date'              => (string) ($row['date'] ?? date('Y-m-d')),
+    'direction'         => (string) ($row['direction'] ?? 'in'),
+    'amount'            => $row !== null ? (string) $row['amount'] : '',
+    'category'          => (string) ($row['category'] ?? ''),
+    'description'       => (string) ($row['description'] ?? ''),
 ];
 
 $errors = [];
@@ -59,20 +58,20 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     if (!$errors) {
         cash_tx_save($id, $form, $cid, $_SESSION['username'] ?? null);
         audit('kas.' . ($id > 0 ? 'update' : 'create'), 'Transaksi kas #' . ($id > 0 ? $id : '-')
-            . ' akun #' . (int) $form['cash_account_id'] . ' ' . $form['direction'] . ' ' . rupiah((float) $form['amount']));
+            . ' ' . $form['direction'] . ' ' . rupiah((float) $form['amount']));
         flash('success', 'Transaksi berhasil ' . ($id > 0 ? 'diperbarui' : 'disimpan') . '.');
         redirect('pages/finance/cash/index.php');
     }
 }
 
-$accounts = cash_account_list(true, $cid);
+$methods = cash_method_list($cid);
 $active = 'finance';
 $title  = ($id > 0 ? 'Ubah' : 'Tambah') . ' Transaksi Kas';
 require __DIR__ . '/../../../includes/header.php';
 ?>
 <main class="p-2 p-md-3">
     <?= ui_erp_toolbar(
-        'Kas & Bank',
+        'Buku Kas',
         'wallet2',
         $title,
         $id > 0 ? ['ID #' . $id, cash_directions()[$form['direction']] ?? $form['direction']] : [],
@@ -118,20 +117,16 @@ require __DIR__ . '/../../../includes/header.php';
                                         </div>
                                     </div>
                                     <?php endif; ?>
-                                    <div class="rnt-row<?= !$accounts ? ' rnt-row-top' : '' ?>">
-                                        <div class="rnt-label">Akun Kas/Bank <span class="text-danger">*</span></div>
+                                    <div class="rnt-row">
+                                        <div class="rnt-label">Metode Pembayaran</div>
                                         <div class="rnt-field">
-                                            <select class="form-select form-select-sm" id="cash_account_id" name="cash_account_id" required>
-                                                <option value="">— pilih —</option>
-                                                <?php foreach ($accounts as $a): ?>
-                                                    <option value="<?= (int) $a['id'] ?>"<?= (int) $form['cash_account_id'] === (int) $a['id'] ? ' selected' : '' ?>>
-                                                        <?= e($a['code'] . ' - ' . $a['name']) ?> (<?= e(cash_types()[$a['type']] ?? $a['type']) ?>)</option>
+                                            <select class="form-select form-select-sm" id="payment_method_id" name="payment_method_id">
+                                                <option value="">— opsional (Tunai/Transfer/dll) —</option>
+                                                <?php foreach ($methods as $m): ?>
+                                                    <option value="<?= (int) $m['id'] ?>"<?= (int) $form['payment_method_id'] === (int) $m['id'] ? ' selected' : '' ?>>
+                                                        <?= e((string) $m['name']) ?></option>
                                                 <?php endforeach; ?>
                                             </select>
-                                            <?php if (!$accounts): ?>
-                                                <div class="form-text small text-danger">Belum ada akun aktif.
-                                                    <a href="../cash_accounts/form.php">Tambah akun kas/bank</a> terlebih dahulu.</div>
-                                            <?php endif; ?>
                                         </div>
                                     </div>
                                     <div class="rnt-row">

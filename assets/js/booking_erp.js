@@ -21,9 +21,19 @@
       return window.parseRupiah(val);
     }
     if (val === null || val === undefined || val === '') return 0;
-    if (typeof val === 'number') return Math.round(val);
-    const digits = String(val).replace(/\.(0|00)$/, '').replace(/[^0-9]/g, '');
-    return digits ? parseInt(digits, 10) : 0;
+    if (typeof val === 'number') return Number.isFinite(val) ? Math.max(0, Math.round(val)) : 0;
+    const str = String(val).trim();
+    if (!str || str.charAt(0) === '-') return 0;
+    if (/^\d+(?:\.\d+)?e[+-]?\d+$/i.test(str)) {
+      const expNum = Number(str);
+      return Number.isFinite(expNum) ? Math.max(0, Math.round(expNum)) : 0;
+    }
+    if (/^\d+\.\d{1,2}$/.test(str)) {
+      const decNum = parseFloat(str);
+      return Number.isFinite(decNum) ? Math.max(0, Math.round(decNum)) : 0;
+    }
+    const digits = str.replace(/[^0-9]/g, '');
+    return digits ? (Math.max(0, Math.round(Number(digits))) || 0) : 0;
   }
 
   function fmtRp(val) {
@@ -32,6 +42,9 @@
     }
     const n = parseRp(val);
     if (n === 0) return String(val == null ? '' : val).replace(/[^0-9]/g, '') === '' ? '' : '0';
+    if (typeof Intl !== 'undefined' && typeof Intl.NumberFormat === 'function') {
+      return new Intl.NumberFormat('id-ID', { maximumFractionDigits: 0 }).format(n);
+    }
     return n.toString().replace(/\B(?=(\d{3})+(?!\d))/g, '.');
   }
 
@@ -41,10 +54,13 @@
       window.attachRupiahInput(inputEl, hiddenEl, cb);
       return;
     }
+    const maxDigits = window.RUPIAH_MAX_DIGITS || 15;
     inputEl.addEventListener('input', function () {
-      const n = parseRp(this.value);
+      let clean = String(this.value || '').replace(/[^0-9]/g, '');
+      if (clean.length > maxDigits) clean = clean.slice(0, maxDigits);
+      const n = clean === '' ? 0 : (Number(clean) || 0);
       if (hiddenEl) hiddenEl.value = String(n);
-      this.value = n ? fmtRp(n) : '';
+      this.value = clean === '' ? '' : (fmtRp(n) || '0');
       if (typeof cb === 'function') cb(n);
     });
   }
@@ -495,10 +511,11 @@
     const overAlert = document.getElementById('payOverpayAlert');
     const overMsg = document.getElementById('payOverpayMsg');
     const remDispEl = cfg.remainingDisplayEl || document.getElementById('qrisRemainingDisplay');
+    const overBadgeEl = document.getElementById('qrisOverpayBadge');
     const todayIso = cfg.todayIso || new Date().toISOString().slice(0, 10);
     const taxPct = Number(cfg.taxPercent || 0);
     const origBookingPrice = Number(cfg.origBookingPrice || 0);
-    const origInvoiceTotal = Number(cfg.invoiceTotal || 0);
+    let origInvoiceTotal = Number(cfg.invoiceTotal || 0);
 
     const payTypeOpts = ['Down Payment (DP)', 'Pelunasan', 'Pembayaran Penuh (Full)'];
     const payMethodOpts = ['Transfer', 'Tunai', 'QRIS', 'EDC / Kartu'];
@@ -511,6 +528,12 @@
       return Math.round(liveBill * (1 + (taxPct / 100)));
     }
 
+    function setInvoiceTotal(v) {
+      if (typeof v === 'number' && Number.isFinite(v)) {
+        origInvoiceTotal = v;
+      }
+    }
+
     function getPaySum() {
       if (!tbody) return 0;
       let sum = 0;
@@ -518,6 +541,13 @@
         sum += parseRp(inp.value);
       });
       return sum;
+    }
+
+    function getValidationState(sumOpt) {
+      const paySum = sumOpt !== undefined ? sumOpt : getPaySum();
+      const billTotal = getExpectedBillTotal();
+      const exceeded = billTotal > 0 ? (paySum > billTotal + 0.001) : (paySum > 0);
+      return { paySum: paySum, billTotal: billTotal, exceeded: exceeded };
     }
 
     function recalcPayTotals() {
@@ -538,17 +568,27 @@
       }
       if (countEl) countEl.textContent = 'Record ' + (rows.length ? 1 : 0) + ' of ' + rows.length;
 
-      const billTotal = getExpectedBillTotal();
-      const exceeded = billTotal > 0 ? (sum > billTotal + 0.001) : (sum > 0);
+      const st = getValidationState(sum);
+      const billTotal = st.billTotal;
+      const exceeded = st.exceeded;
       const sisa = Math.round(billTotal - sum);
 
       if (remDispEl) {
         if (exceeded) {
-          remDispEl.textContent = 'Melebihi Rp ' + (fmtRp(Math.abs(sisa)) || '0');
+          remDispEl.textContent = 'Rp 0';
           remDispEl.className = 'text-danger fw-bold';
         } else {
           remDispEl.textContent = sisa > 0 ? ('Rp ' + (fmtRp(sisa) || '0')) : 'Lunas (Rp 0)';
           remDispEl.className = sisa > 0 ? 'text-danger fw-bold' : 'text-success fw-bold';
+        }
+      }
+      if (overBadgeEl) {
+        if (exceeded) {
+          overBadgeEl.textContent = 'Lebih Bayar +Rp ' + (fmtRp(Math.abs(sisa)) || '0');
+          overBadgeEl.classList.remove('d-none');
+        } else {
+          overBadgeEl.textContent = '';
+          overBadgeEl.classList.add('d-none');
         }
       }
 
@@ -566,6 +606,14 @@
         if (!el) return;
         el.classList.toggle('is-invalid', exceeded);
         el.classList.toggle('text-danger', exceeded);
+      });
+      rows.forEach(function (tr) {
+        const disp = tr.querySelector('.pay-amt-display');
+        const hid = tr.querySelector('.pay-amt-value');
+        if (!disp || disp.readOnly) return;
+        const rowOver = exceeded && parseRp(hid ? hid.value : '0') > 0;
+        disp.classList.toggle('is-invalid', rowOver);
+        disp.classList.toggle('text-danger', rowOver);
       });
       if (typeof cfg.onChange === 'function') cfg.onChange(sum, billTotal);
       return sum;
@@ -729,7 +777,10 @@
       recalcPayTotals: recalcPayTotals,
       addPayRow: addPayRow,
       appendAutoQrisRow: appendAutoQrisRow,
-      getPaySum: getPaySum
+      getPaySum: getPaySum,
+      getExpectedBillTotal: getExpectedBillTotal,
+      getValidationState: getValidationState,
+      setInvoiceTotal: setInvoiceTotal
     };
   }
 
@@ -796,7 +847,12 @@
       if (data.booking_status) qrisBookStat = data.booking_status;
 
       const rem = Math.max(0, Math.round(qrisInvTotal - qrisServerPaid));
-      if (qrisRemDisp) {
+      if (cfg.paymentCtrl && typeof cfg.paymentCtrl.setInvoiceTotal === 'function') {
+        cfg.paymentCtrl.setInvoiceTotal(qrisInvTotal);
+      }
+      if (cfg.paymentCtrl && typeof cfg.paymentCtrl.recalcPayTotals === 'function') {
+        cfg.paymentCtrl.recalcPayTotals();
+      } else if (qrisRemDisp) {
         qrisRemDisp.textContent = rem > 0 ? ('Rp ' + (fmtRp(rem) || '0')) : 'Lunas (Rp 0)';
         qrisRemDisp.className = rem > 0 ? 'fw-bold text-danger' : 'fw-bold text-success';
       }
@@ -1124,11 +1180,32 @@
       }
 
       if (cfg.paymentCtrl) {
-        const pSum = cfg.paymentCtrl.getPaySum();
-        const bill = typeof cfg.getBillTotal === 'function' ? parseRp(cfg.getBillTotal()) : 0;
-        if (pSum > 0 && pSum > bill) {
+        const paySt = typeof cfg.paymentCtrl.getValidationState === 'function'
+          ? cfg.paymentCtrl.getValidationState()
+          : {
+              paySum: cfg.paymentCtrl.getPaySum(),
+              billTotal: typeof cfg.getBillTotal === 'function' ? parseRp(cfg.getBillTotal()) : 0,
+              exceeded: false
+            };
+        if (typeof cfg.paymentCtrl.getValidationState !== 'function') {
+          paySt.exceeded = paySt.billTotal > 0 ? (paySt.paySum > paySt.billTotal + 0.001) : (paySt.paySum > 0);
+        }
+        if (paySt.exceeded) {
           e.preventDefault();
+          if (typeof cfg.paymentCtrl.recalcPayTotals === 'function') cfg.paymentCtrl.recalcPayTotals();
           showTabById('tab-payment');
+          setTimeout(function () {
+            let targetInp = null;
+            document.querySelectorAll('#payTableBody tr.pay-row').forEach(function (tr) {
+              if (targetInp) return;
+              const disp = tr.querySelector('.pay-amt-display');
+              const val = parseRp((tr.querySelector('.pay-amt-value') || {}).value || '0');
+              if (disp && !disp.readOnly && val > 0) targetInp = disp;
+            });
+            if (targetInp) targetInp.focus();
+            const overAlert = document.getElementById('payOverpayAlert');
+            if (overAlert) overAlert.scrollIntoView({ behavior: 'smooth', block: 'center' });
+          }, 150);
           return false;
         }
       }

@@ -1,7 +1,7 @@
 <?php
 /**
- * Buku Kas: filter rentang tanggal + akun + arah, kartu saldo akhir/masuk/keluar,
- * tabel transaksi dengan paginasi, tombol export CSV/XLSX.
+ * Buku Kas: filter rentang tanggal + metode bayar + arah, kartu saldo akhir/masuk/keluar/awal,
+ * tabel transaksi dengan paginasi, tombol export CSV/XLSX/PDF/Cetak.
  */
 require_once __DIR__ . '/../../../config/config.php';
 require_permission('finance.view');
@@ -19,11 +19,11 @@ if (is_super_admin()) {
 $p = paginate(cash_tx_count($f), (int) ($_GET['page'] ?? 1));
 $rows = cash_tx_list($f, $p['per_page'], $p['offset']);
 $sum = cash_summary($f);
-$accounts = cash_account_list(false, $filter_cid);
-$account_name = '';
-foreach ($accounts as $a) {
-    if ((int) $a['id'] === $f['account']) {
-        $account_name = ($show_comp_col && !empty($a['company_code']) ? '[' . $a['company_code'] . '] ' : '') . $a['code'] . ' - ' . $a['name'];
+$methods = cash_method_list($filter_cid);
+$method_name = '';
+foreach ($methods as $m) {
+    if ((int) $m['id'] === $f['method']) {
+        $method_name = (string) $m['name'];
     }
 }
 
@@ -31,7 +31,7 @@ $qsParams = [
     'format'    => 'csv',
     'from'      => $f['from'],
     'to'        => $f['to'],
-    'account'   => $f['account'],
+    'method'    => $f['method'],
     'direction' => $f['direction'],
 ];
 if (is_super_admin()) {
@@ -43,11 +43,11 @@ unset($qsParams['format']);
 $page_qs = http_build_query($qsParams);
 
 $cards = [
-    ['Saldo Akhir' . ($account_name !== '' ? ' — ' . $account_name : ($f['account'] > 0 ? '' : ' (semua akun)')),
+    ['Saldo Akhir' . ($method_name !== '' ? ' (' . $method_name . ')' : ''),
         rupiah($sum['balance']), 'primary', 'wallet2'],
     ['Total Masuk', rupiah($sum['total_in']), 'success', 'arrow-down-circle'],
     ['Total Keluar', rupiah($sum['total_out']), 'danger', 'arrow-up-circle'],
-    ['Saldo Awal', rupiah($sum['opening']), 'secondary', 'flag'],
+    ['Saldo Awal (sblm ' . date('d M', strtotime($f['from'])) . ')', rupiah($sum['opening']), 'secondary', 'flag'],
 ];
 
 $header_actions = [
@@ -61,13 +61,13 @@ if (can('finance.manage')) {
 }
 
 $active = 'finance';
-$title  = 'Kas & Bank';
+$title  = 'Buku Kas';
 require __DIR__ . '/../../../includes/header.php';
 ?>
 <main class="col-12 col-md-9 col-lg-10 p-3 p-lg-4">
     <?= ui_page_header(
-        'Kas & Bank',
-        ['Dashboard' => 'pages/dashboard/index.php', 'Keuangan' => null, 'Kas & Bank' => null],
+        'Buku Kas',
+        ['Dashboard' => 'pages/dashboard/index.php', 'Keuangan' => null, 'Buku Kas' => null],
         [['text' => number_format((int) $p['total'], 0, ',', '.') . ' Transaksi', 'class' => 'bg-light text-secondary border']],
         $header_actions
     ) ?>
@@ -96,12 +96,12 @@ require __DIR__ . '/../../../includes/header.php';
                     <input type="text" class="form-control form-control-sm bg-white flatpickr-date" data-flatpickr-auto placeholder="dd-MMM-yyyy" name="to" value="<?= e($f['to']) ?>">
                 </div>
                 <div class="col-12 col-sm-6 col-lg-2">
-                    <label class="form-label small mb-1">Akun</label>
-                    <select class="form-select form-select-sm" name="account">
-                        <option value="0">Semua akun</option>
-                        <?php foreach ($accounts as $a): ?>
-                            <option value="<?= (int) $a['id'] ?>"<?= (int) $a['id'] === $f['account'] ? ' selected' : '' ?>>
-                                <?= e(($show_comp_col && !empty($a['company_code']) ? '[' . $a['company_code'] . '] ' : '') . $a['code'] . ' - ' . $a['name']) ?><?= $a['is_active'] ? '' : ' (nonaktif)' ?></option>
+                    <label class="form-label small mb-1">Metode</label>
+                    <select class="form-select form-select-sm" name="method">
+                        <option value="0">Semua metode</option>
+                        <?php foreach ($methods as $m): ?>
+                            <option value="<?= (int) $m['id'] ?>"<?= (int) $m['id'] === $f['method'] ? ' selected' : '' ?>>
+                                <?= e((string) $m['name']) ?></option>
                         <?php endforeach; ?>
                     </select>
                 </div>
@@ -114,7 +114,7 @@ require __DIR__ . '/../../../includes/header.php';
                         <?php endforeach; ?>
                     </select>
                 </div>
-                <?= ui_filter_actions(APP_URL . '/pages/finance/cash/index.php', ($f['from'] !== date('Y-m-01') || $f['to'] !== date('Y-m-t') || $f['account'] > 0 || $f['direction'] !== 'all' || (is_super_admin() && $filter_cid !== (active_company_id() ?? 0)))) ?>
+                <?= ui_filter_actions(APP_URL . '/pages/finance/cash/index.php', ($f['from'] !== date('Y-m-01') || $f['to'] !== date('Y-m-t') || $f['method'] > 0 || $f['direction'] !== 'all' || (is_super_admin() && $filter_cid !== (active_company_id() ?? 0)))) ?>
             </form>
         </div>
     </div>
@@ -139,8 +139,8 @@ require __DIR__ . '/../../../includes/header.php';
         <div class="table-responsive">
             <table class="table table-hover mb-0 align-middle">
                 <thead class="table-light"><tr>
-                    <th>Tanggal</th><?php if ($show_comp_col): ?><th>Perusahaan</th><?php endif; ?><th>Akun</th><th>Arah</th><th>Kategori</th>
-                    <th>Keterangan</th><th class="text-end">Nominal</th><th class="text-end">Aksi</th>
+                    <th>Tanggal</th><?php if ($show_comp_col): ?><th>Perusahaan</th><?php endif; ?><th>Arah</th><th>Kategori</th>
+                    <th>Metode</th><th>Keterangan</th><th class="text-end">Nominal</th><th class="text-end">Aksi</th>
                 </tr></thead>
                 <tbody>
                 <?php foreach ($rows as $r):
@@ -151,18 +151,22 @@ require __DIR__ . '/../../../includes/header.php';
                     <tr>
                         <td class="text-nowrap"><?= e(date('d-M-Y', strtotime((string) $r['date']))) ?></td>
                         <?php if ($show_comp_col): ?><td><span class="badge bg-light text-dark border"><?= e((string) ($r['company_code'] ?? '-')) ?></span></td><?php endif; ?>
-                        <td class="text-nowrap"><?= e(trim((string) $r['account_code'] . ' - ' . (string) $r['account_name'], ' -')) ?></td>
                         <td class="text-nowrap"><?= cash_direction_badge((string) $r['direction']) ?></td>
                         <td class="text-nowrap">
                             <?= e((string) $r['category']) ?>
-                            <?php if ($srcType === 'booking_payment' && !empty($r['ref_invoice_id'])): ?>
-                                <a class="badge bg-primary-subtle text-primary border text-decoration-none ms-1" href="../invoices/detail.php?id=<?= (int) $r['ref_invoice_id'] ?>" title="Sumber otomatis dari Invoice #<?= (int) $r['ref_invoice_id'] ?>"><i class="bi bi-link-45deg"></i>Auto Invoice</a>
+                            <?php if ($srcType === 'booking_payment' && !empty($r['ref_booking_id'])):
+                                $refBookHref = '../../' . ($r['ref_booking_type'] === 'rental' ? 'rental' : 'travel') . '/bookings/detail.php?id=' . (int) $r['ref_booking_id'] . '&tab=payment#tab-payment';
+                            ?>
+                                <a class="badge bg-primary-subtle text-primary border text-decoration-none ms-1" href="<?= e($refBookHref) ?>" title="Sumber otomatis dari pembayaran pemesanan (Invoice #<?= (int) ($r['ref_invoice_id'] ?? 0) ?>)"><i class="bi bi-link-45deg"></i>Auto Booking</a>
+                            <?php elseif ($srcType === 'booking_payment'): ?>
+                                <span class="badge bg-primary-subtle text-primary border ms-1">Auto Booking</span>
                             <?php elseif ($srcType === 'payroll_period' && $srcId > 0): ?>
                                 <a class="badge bg-info-subtle text-info-emphasis border text-decoration-none ms-1" href="../../payroll/periods/detail.php?id=<?= $srcId ?>" title="Sumber otomatis dari Payroll"><i class="bi bi-link-45deg"></i>Auto Payroll</a>
                             <?php elseif ($isAuto): ?>
                                 <span class="badge bg-secondary-subtle text-secondary border ms-1">Auto</span>
                             <?php endif; ?>
                         </td>
+                        <td class="text-nowrap"><?= !empty($r['method_name']) ? e((string) $r['method_name']) : '<span class="text-muted">-</span>' ?></td>
                         <td><?= e((string) $r['description']) ?></td>
                         <td class="text-end text-nowrap fw-semibold <?= $r['direction'] === 'in' ? 'text-success' : 'text-danger' ?>">
                             <?= e(($r['direction'] === 'in' ? '+' : '−') . ' ' . rupiah((float) $r['amount'])) ?>

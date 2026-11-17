@@ -20,6 +20,7 @@ $TO   = '2026-12-31';
 // --- Fixture: perusahaan B (991) + booking + biaya, agar scoping & angka teruji sendiri.
 // Id fixture memakai rentang >= 990 (di luar data seed) supaya tahan dijalankan berulang.
 $cleanup = static function () use ($c): void {
+    $c->query("DELETE FROM cash_transactions WHERE id >= 990000 OR created_user = 'fin-check'");
     $c->query("DELETE FROM booking_cost_lines WHERE id >= 990000 OR created_user = 'fin-check'");
     $c->query("DELETE FROM trip_assignments WHERE id >= 990000 OR reason = 'fin-check'");
     $c->query("DELETE FROM travel_ticket_bookings WHERE id >= 990000 OR document_number LIKE 'TRV-FCHK%'");
@@ -84,6 +85,18 @@ $c->query("INSERT INTO employees (id, company_id, code, name, job_position, stat
 $c->query("INSERT INTO trip_assignments (id, company_id, booking_type, booking_id, employee_id, vehicle_id, started_at, ended_at, reason, created_user)
     VALUES (990010, 1, 'travel', 990010, 990010, 990010, '$FROM 08:00:00', '$FROM 17:00:00', 'fin-check', 'fin-check'),
            (990011, 1, 'rental', 990011, 990010, NULL, '$FROM 08:00:00', NULL, 'fin-check', 'fin-check')");
+
+// Transaksi kas (perusahaan 1 pada 2 hari + perusahaan 991 + luar rentang).
+$DAY2 = '2026-12-02';
+finance_ensure_schema(); // pastikan skema tanpa akun kas/bank
+$c->query("INSERT INTO cash_transactions (id, company_id, date, direction, amount, category, description, source_type, created_user)
+    VALUES (990001, 1,   '$FROM', 'in',  400000, 'booking',     'DP Travel fchk',  'booking_payment', 'fin-check'),
+           (990002, 1,   '$FROM', 'out', 150000, 'operasional', 'Bayar tol fchk',  NULL,              'fin-check'),
+           (990003, 1,   '$DAY2', 'in',  250000, 'lainnya',     'Modal/refund',    'manual',          'fin-check'),
+           (990004, 1,   '$DAY2', 'out', 500000, 'payroll',     'Bayar gaji fchk', 'payroll_period',  'fin-check'),
+           (990005, 991, '$FROM', 'in',  888888, 'booking',     'Kas masuk B',     'booking_payment', 'fin-check'),
+           (990006, 991, '$FROM', 'out', 111111, 'operasional', 'Kas keluar B',    NULL,              'fin-check'),
+           (990007, 1,   '2026-11-30', 'in', 9999999, 'lainnya', 'Luar rentang',   NULL,              'fin-check')");
 
 try {
     // ---------- A. Super Admin: angka persis vs query langsung DB ----------
@@ -193,6 +206,42 @@ try {
     $lim = fin_unpaid($f, 1);
     ok(count($lim) === 1, 'LIMIT 1: daftar piutang dibatasi 1 baris');
     ok(count(fin_unpaid($f, null)) >= 1, 'tanpa limit: semua baris piutang terbaca');
+
+    // ---------- D. Rekap Harian: rekonsiliasi dengan Kas, Omzet, Biaya, Laba + scoping ----------
+    $_SESSION['role_name'] = 'Super Admin';
+    $_SESSION['company_id'] = 1;
+    $allSup = fin_all($f);
+    $dSup = $allSup['daily'];
+    $dtSup = fin_daily_totals($dSup);
+    ok(count($dSup) === 2 && $dSup[0]['date'] === $FROM && $dSup[1]['date'] === $DAY2,
+        '(f) daily (Super Admin): 2 hari aktif urut kronologis (' . count($dSup) . ')');
+    ok(abs($dtSup['in_total'] - $allSup['cash']['in_total']) < 0.01,
+        '(f) daily total kas masuk = cash summary (' . $dtSup['in_total'] . ' = ' . $allSup['cash']['in_total'] . ')');
+    ok(abs($dtSup['out_total'] - $allSup['cash']['out_total']) < 0.01,
+        '(f) daily total kas keluar = cash summary (' . $dtSup['out_total'] . ' = ' . $allSup['cash']['out_total'] . ')');
+    ok(abs($dtSup['net_cash_flow'] - $allSup['cash']['net_cash_flow']) < 0.01,
+        '(f) daily arus kas bersih = cash summary');
+    ok(abs($dtSup['booking_total'] - $allSup['revenue']['total']) < 0.01,
+        '(f) daily total omzet booking = revenue total');
+    ok(abs($dtSup['trip_cost'] - $allSup['cost_total']) < 0.01,
+        '(f) daily total biaya trip = cost total');
+    ok(abs($dtSup['gross_profit'] - $allSup['gross_profit']) < 0.01,
+        '(f) daily total laba kotor trip = gross profit');
+
+    $_SESSION['role_name'] = 'Admin Perusahaan';
+    $_SESSION['company_id'] = 1;
+    $all1 = fin_all($f1);
+    $d1 = $all1['daily'];
+    $dt1 = fin_daily_totals($d1);
+    ok(count($d1) === 2, '(f) daily (company 1): 2 hari aktif');
+    ok(abs($d1[0]['in_total'] - 400000) < 0.01 && abs($d1[0]['out_total'] - 150000) < 0.01,
+        '(f) hari-1 company 1: kas masuk 400k, kas keluar 150k (991 tidak bocor)');
+    ok(abs($d1[0]['booking_total'] - 3500000) < 0.01 && abs($d1[0]['trip_cost'] - 700000) < 0.01 && abs($d1[0]['gross_profit'] - 2800000) < 0.01,
+        '(f) hari-1 company 1: omzet 3.5jt, biaya 700k, laba 2.8jt');
+    ok(abs($d1[1]['in_other'] - 250000) < 0.01 && abs($d1[1]['out_payroll'] - 500000) < 0.01 && abs($d1[1]['net_cash_flow'] - (-250000)) < 0.01,
+        '(f) hari-2 company 1: kas masuk lain 250k, gaji 500k, arus kas -250k');
+    ok(abs($dt1['in_total'] - 650000) < 0.01 && abs($dt1['out_total'] - 650000) < 0.01 && abs($dt1['net_cash_flow']) < 0.01,
+        '(f) total daily company 1 konsisten (luar rentang 2026-11-30 terabaikan)');
 
 } finally {
     $cleanup();

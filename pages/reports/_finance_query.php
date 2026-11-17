@@ -234,6 +234,7 @@ function fin_all(array $f, ?int $unpaid_limit = 200): array
         'cost_types'   => fin_cost_by_type($f),
         'unpaid'       => fin_unpaid($f, $unpaid_limit),
         'monthly'      => fin_monthly($f),
+        'daily'        => fin_daily($f),
         'cash'         => fin_cash_summary($f),
     ];
 }
@@ -317,6 +318,170 @@ function fin_unpaid_totals(array $rows): array
         $t['price']       += (float) $r['total_price'];
         $t['paid']        += (float) $r['total_payment'];
         $t['outstanding'] += (float) $r['outstanding'];
+    }
+    return $t;
+}
+
+/**
+ * Rekap harian pemasukan & pengeluaran dalam rentang filter, urut kronologis (ASC).
+ * Menggabungkan Buku Kas (Kas Masuk / Kas Keluar nyata) & kinerja trip harian
+ * (Omzet Booking, Biaya Trip termasuk BBM rental) dari sumber yang sama dengan kartu ringkasan.
+ */
+function fin_daily(array $f): array
+{
+    $map = [];
+    $ensure = static function (string $d) use (&$map): void {
+        if (!isset($map[$d])) {
+            $map[$d] = [
+                'date'          => $d,
+                'in_booking'    => 0.0,
+                'in_other'      => 0.0,
+                'in_total'      => 0.0,
+                'out_payroll'   => 0.0,
+                'out_other'     => 0.0,
+                'out_total'     => 0.0,
+                'net_cash_flow' => 0.0,
+                'booking_count' => 0,
+                'booking_total' => 0.0,
+                'booking_paid'  => 0.0,
+                'trip_cost'     => 0.0,
+                'gross_profit'  => 0.0,
+            ];
+        }
+    };
+
+    // 1. Arus kas harian dari Buku Kas & Bank (cash_transactions).
+    [$w, $wt, $wp] = fin_company_scope('t.company_id', $f);
+    $cashRows = report_run(
+        "SELECT DATE_FORMAT(t.date, '%Y-%m-%d') AS d,
+                COALESCE(SUM(CASE WHEN t.direction = 'in' AND t.source_type = 'booking_payment' THEN t.amount ELSE 0 END), 0) AS in_booking,
+                COALESCE(SUM(CASE WHEN t.direction = 'in' AND (t.source_type IS NULL OR t.source_type <> 'booking_payment') THEN t.amount ELSE 0 END), 0) AS in_other,
+                COALESCE(SUM(CASE WHEN t.direction = 'out' AND t.source_type = 'payroll_period' THEN t.amount ELSE 0 END), 0) AS out_payroll,
+                COALESCE(SUM(CASE WHEN t.direction = 'out' AND (t.source_type IS NULL OR t.source_type <> 'payroll_period') THEN t.amount ELSE 0 END), 0) AS out_other
+         FROM cash_transactions t
+         WHERE " . ($w !== '' ? $w . ' AND ' : '') . "t.date BETWEEN ? AND ?
+         GROUP BY d",
+        $wt . 'ss',
+        array_merge($wp, [$f['from'], $f['to']])
+    );
+    foreach ($cashRows as $cr) {
+        $d = (string) ($cr['d'] ?? '');
+        if ($d === '') {
+            continue;
+        }
+        $ensure($d);
+        $inB = (float) ($cr['in_booking'] ?? 0);
+        $inO = (float) ($cr['in_other'] ?? 0);
+        $outP = (float) ($cr['out_payroll'] ?? 0);
+        $outO = (float) ($cr['out_other'] ?? 0);
+        $map[$d]['in_booking']    = $inB;
+        $map[$d]['in_other']      = $inO;
+        $map[$d]['in_total']      = $inB + $inO;
+        $map[$d]['out_payroll']   = $outP;
+        $map[$d]['out_other']     = $outO;
+        $map[$d]['out_total']     = $outP + $outO;
+        $map[$d]['net_cash_flow'] = ($inB + $inO) - ($outP + $outO);
+    }
+
+    // 2. Omzet booking & penerimaan booking per tanggal booking.
+    $bs = fin_booking_source($f);
+    $revRows = report_run(
+        "SELECT DATE_FORMAT(x.date, '%Y-%m-%d') AS d,
+                COUNT(*) AS booking_count,
+                COALESCE(SUM(x.total_price), 0) AS booking_total,
+                COALESCE(SUM(x.total_payment), 0) AS booking_paid
+         FROM {$bs['sql']}
+         GROUP BY d",
+        $bs['types'],
+        $bs['params']
+    );
+    foreach ($revRows as $rr) {
+        $d = (string) ($rr['d'] ?? '');
+        if ($d === '') {
+            continue;
+        }
+        $ensure($d);
+        $map[$d]['booking_count'] = (int) ($rr['booking_count'] ?? 0);
+        $map[$d]['booking_total'] = (float) ($rr['booking_total'] ?? 0);
+        $map[$d]['booking_paid']  = (float) ($rr['booking_paid'] ?? 0);
+    }
+
+    // 3. Biaya operasional trip per tanggal pencatatan biaya + BBM rental.
+    $cs = fin_cost_source($f);
+    $costRows = report_run(
+        "SELECT DATE_FORMAT(z.created_date, '%Y-%m-%d') AS d,
+                COALESCE(SUM(z.amount), 0) AS total
+         FROM {$cs['sql']}
+         GROUP BY d",
+        $cs['types'],
+        $cs['params']
+    );
+    foreach ($costRows as $cr) {
+        $d = (string) ($cr['d'] ?? '');
+        if ($d === '') {
+            continue;
+        }
+        $ensure($d);
+        $map[$d]['trip_cost'] += (float) ($cr['total'] ?? 0);
+    }
+    $bbm = fin_rental_bbm_source($f);
+    if ($bbm !== null) {
+        $bbmRows = report_run(
+            "SELECT DATE_FORMAT(COALESCE(NULLIF(r.start_date, ''), r.date), '%Y-%m-%d') AS d,
+                    COALESCE(SUM(r.bbm), 0) AS total
+             FROM {$bbm['sql']}
+             GROUP BY d",
+            $bbm['types'],
+            $bbm['params']
+        );
+        foreach ($bbmRows as $br) {
+            $d = (string) ($br['d'] ?? '');
+            if ($d === '') {
+                continue;
+            }
+            $ensure($d);
+            $map[$d]['trip_cost'] += (float) ($br['total'] ?? 0);
+        }
+    }
+
+    ksort($map);
+    foreach ($map as &$row) {
+        $row['gross_profit'] = $row['booking_total'] - $row['trip_cost'];
+    }
+    unset($row);
+    return array_values($map);
+}
+
+/** Total kolom untuk baris <tfoot> tabel Rekap Harian. */
+function fin_daily_totals(array $rows): array
+{
+    $t = [
+        'in_booking'    => 0.0,
+        'in_other'      => 0.0,
+        'in_total'      => 0.0,
+        'out_payroll'   => 0.0,
+        'out_other'     => 0.0,
+        'out_total'     => 0.0,
+        'net_cash_flow' => 0.0,
+        'booking_count' => 0,
+        'booking_total' => 0.0,
+        'booking_paid'  => 0.0,
+        'trip_cost'     => 0.0,
+        'gross_profit'  => 0.0,
+    ];
+    foreach ($rows as $r) {
+        $t['in_booking']    += (float) ($r['in_booking'] ?? 0);
+        $t['in_other']      += (float) ($r['in_other'] ?? 0);
+        $t['in_total']      += (float) ($r['in_total'] ?? 0);
+        $t['out_payroll']   += (float) ($r['out_payroll'] ?? 0);
+        $t['out_other']     += (float) ($r['out_other'] ?? 0);
+        $t['out_total']     += (float) ($r['out_total'] ?? 0);
+        $t['net_cash_flow'] += (float) ($r['net_cash_flow'] ?? 0);
+        $t['booking_count'] += (int) ($r['booking_count'] ?? 0);
+        $t['booking_total'] += (float) ($r['booking_total'] ?? 0);
+        $t['booking_paid']  += (float) ($r['booking_paid'] ?? 0);
+        $t['trip_cost']     += (float) ($r['trip_cost'] ?? 0);
+        $t['gross_profit']  += (float) ($r['gross_profit'] ?? 0);
     }
     return $t;
 }

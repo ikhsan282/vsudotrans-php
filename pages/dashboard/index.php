@@ -201,21 +201,16 @@ require __DIR__ . '/../../includes/header.php';
     <div class="card shadow-sm border-0 mb-3">
         <div class="card-body py-2 px-3 d-flex flex-wrap align-items-center justify-content-between gap-2">
             <div class="d-flex flex-wrap align-items-center gap-3">
-                <span class="small fw-semibold text-muted text-uppercase"><i class="bi bi-wallet2 me-1 text-primary"></i>Saldo Kas &amp; Bank</span>
+                <span class="small fw-semibold text-muted text-uppercase"><i class="bi bi-wallet2 me-1 text-primary"></i>Buku Kas (Bulan Ini)</span>
                 <span class="badge rounded-pill bg-primary-subtle text-primary-emphasis border px-3 py-2">
-                    Total: <strong><?= e(rupiah($cash_sum['total'])) ?></strong>
+                    Saldo Kas: <strong><?= e(rupiah($cash_sum['balance'])) ?></strong>
                 </span>
                 <span class="badge rounded-pill bg-success-subtle text-success-emphasis border px-3 py-2">
-                    Kas Tunai: <strong><?= e(rupiah($cash_sum['kas'])) ?></strong>
+                    Kas Masuk: <strong><?= e(rupiah($cash_sum['month_in'])) ?></strong>
                 </span>
-                <span class="badge rounded-pill bg-info-subtle text-info-emphasis border px-3 py-2">
-                    Bank: <strong><?= e(rupiah($cash_sum['bank'])) ?></strong>
+                <span class="badge rounded-pill bg-danger-subtle text-danger-emphasis border px-3 py-2">
+                    Kas Keluar: <strong><?= e(rupiah($cash_sum['month_out'])) ?></strong>
                 </span>
-                <?php if ($cash_sum['unconfigured_bank'] > 0): ?>
-                    <a href="<?= e(APP_URL) ?>/pages/finance/cash_accounts/index.php" class="badge rounded-pill bg-warning-subtle text-warning-emphasis border text-decoration-none px-3 py-2">
-                        <i class="bi bi-exclamation-circle me-1"></i><?= (int) $cash_sum['unconfigured_bank'] ?> rekening bank belum diisi
-                    </a>
-                <?php endif; ?>
             </div>
             <div class="d-flex flex-wrap gap-3 small">
                 <a href="<?= e(APP_URL) ?>/pages/finance/cash/index.php" class="text-decoration-none">Buku Kas →</a>
@@ -290,20 +285,25 @@ require __DIR__ . '/../../includes/header.php';
                             <span class="small text-muted fw-normal ms-1">(<?= count($overdue['rows']) ?> dari <?= (int) $overdue['count'] ?>)</span>
                         <?php endif; ?>
                     </span>
-                    <a href="<?= e(APP_URL) ?>/pages/finance/invoices/index.php" class="small text-decoration-none">Semua →</a>
+                    <?php if ($canCashBook): ?>
+                        <a href="<?= e(APP_URL) ?>/pages/reports/finance.php#tagihan-belum-lunas" class="small text-decoration-none">Semua →</a>
+                    <?php endif; ?>
                 </div>
                 <div class="card-body p-0">
                     <div class="table-responsive">
                         <table class="table table-sm table-hover mb-0 align-middle">
                             <thead class="table-light"><tr>
-                                <th>Invoice</th><th>Tanggal</th><th class="text-end">Sisa</th><th class="text-end">Umur</th>
+                                <th>Invoice / Resi</th><th>Tanggal</th><th class="text-end">Sisa</th><th class="text-end">Umur</th>
                             </tr></thead>
                             <tbody>
-                            <?php foreach ($overdue['rows'] as $o): ?>
+                            <?php foreach ($overdue['rows'] as $o):
+                                $invBookHref = ($o['booking_type'] === 'rental' ? 'pages/rental/bookings/detail.php' : 'pages/travel/bookings/detail.php')
+                                    . '?id=' . (int) $o['booking_id'] . '&tab=payment#tab-payment';
+                            ?>
                                 <tr>
                                     <td class="small">
                                         <span class="badge bg-secondary text-uppercase" style="font-size:.6rem"><?= e($o['booking_type']) ?></span>
-                                        <a class="fw-semibold text-decoration-none" href="<?= e(APP_URL) ?>/pages/finance/invoices/detail.php?id=<?= (int) $o['invoice_id'] ?>">
+                                        <a class="fw-semibold text-decoration-none" href="<?= e(APP_URL . '/' . $invBookHref) ?>" title="Buka tab pembayaran pemesanan">
                                             <?= e($o['invoice_no']) ?>
                                         </a>
                                     </td>

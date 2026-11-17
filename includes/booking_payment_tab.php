@@ -75,6 +75,15 @@ $isPayActive   = ($activeTab === 'payment');
         <input type="hidden" name="pay_sync_present" value="1" form="<?= e($formId) ?>">
     <?php endif; ?>
 
+    <?php
+    if ($isDetailMode && !empty($invoice) && is_array($invoice)) {
+        $invCard          = $invoice;
+        $invCardFormId    = $formId;
+        $invCardCanManage = $canManage;
+        require __DIR__ . '/booking_invoice_card.php';
+    }
+    ?>
+
     <!-- Field Atas: Total Pembayaran (+ Info Tagihan & QRIS di mode Detail) -->
     <div class="rnt-panel">
         <div class="rnt-panel-body">
@@ -84,11 +93,12 @@ $isPayActive   = ($activeTab === 'payment');
                     <input type="text" class="form-control form-control-sm fw-bold bg-light" id="payTotalDisplay"
                         value="<?= e(format_nominal($topPaidValue)) ?>" readonly<?= $isDetailMode ? ' style="max-width:240px;"' : '' ?>>
                     <?php if ($isDetailMode): ?>
-                        <span class="small text-muted">
-                            Sisa Tagihan:
+                        <span class="small text-muted d-inline-flex flex-wrap align-items-center gap-1">
+                            <span id="qrisRemainingLabel">Sisa Tagihan:</span>
                             <strong id="qrisRemainingDisplay" class="<?= $remainingVal > 0 ? 'text-danger' : 'text-success' ?>">
                                 <?= $remainingVal > 0 ? ('Rp ' . e(format_nominal($remainingVal))) : 'Lunas (Rp 0)' ?>
                             </strong>
+                            <span id="qrisOverpayBadge" class="badge bg-danger-subtle text-danger border fw-semibold d-none"></span>
                         </span>
                         <?php if ($payBadgeHtml !== ''): ?>
                             <span><?= $payBadgeHtml ?></span>
@@ -97,8 +107,8 @@ $isPayActive   = ($activeTab === 'payment');
                             <i class="bi bi-arrow-repeat me-1"></i>Pantau QRIS Otomatis Aktif
                         </span>
                     <?php endif; ?>
-                    <span class="badge bg-light text-secondary border fw-normal" title="Setiap pembayaran otomatis disinkronkan ke Buku Kas/Bank sesuai metode">
-                        <i class="bi bi-arrow-left-right me-1 text-primary"></i>Auto-Sinkron Kas/Bank
+                    <span class="badge bg-light text-secondary border fw-normal" title="Setiap pembayaran otomatis disinkronkan ke Buku Kas">
+                        <i class="bi bi-arrow-left-right me-1 text-primary"></i>Auto-Sinkron Buku Kas
                     </span>
                 </div>
             </div>

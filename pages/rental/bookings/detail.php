@@ -28,8 +28,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         flash('error', 'Anda tidak memiliki izin mengelola pemesanan sewa kendaraan.');
         redirect('pages/rental/bookings/detail.php?id=' . $id);
     }
-    $act  = (string) ($_POST['act'] ?? '');
-    $note = trim((string) ($_POST['reason'] ?? ''));
+    $act         = (string) ($_POST['act'] ?? '');
+    $note        = trim((string) ($_POST['reason'] ?? ''));
+    $allowedTabs = ['detail', 'crew', 'payment', 'note', 'audit'];
+    $targetTab   = trim((string) ($_POST['active_tab'] ?? 'detail'));
+    $hash        = in_array($targetTab, $allowedTabs, true) ? ('#tab-' . $targetTab) : '';
     try {
         if ($act === 'update_detail') {
             $reqStatus    = trim((string) ($_POST['booking_status'] ?? ''));
@@ -59,25 +62,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     ];
                 }
             }
-            $p_ids     = (array) ($_POST['pay_id'] ?? []);
-            $p_types   = (array) ($_POST['pay_type'] ?? []);
-            $p_methods = (array) ($_POST['pay_method'] ?? []);
-            $p_dates   = (array) ($_POST['pay_date'] ?? []);
-            $p_amts    = (array) ($_POST['pay_amount'] ?? []);
-            $in_payments = [];
-            foreach ($p_types as $idx => $pt) {
-                $pAmt = parse_rupiah_input($p_amts[$idx] ?? 0);
-                if ($pAmt > 0) {
-                    $in_payments[] = [
-                        '_file_idx'  => (int) $idx,
-                        'id'         => (int) ($p_ids[$idx] ?? 0),
-                        'pay_type'   => trim((string) $pt) ?: 'Down Payment (DP)',
-                        'pay_method' => trim((string) ($p_methods[$idx] ?? 'Transfer')) ?: 'Transfer',
-                        'pay_date'   => trim((string) ($p_dates[$idx] ?? date('Y-m-d'))) ?: date('Y-m-d'),
-                        'amount'     => $pAmt,
-                    ];
-                }
-            }
+            $in_payments = booking_parse_payments_post($_POST);
             $p_prov       = (int) ($_POST['pickup_point_province_id'] ?? 0) ?: null;
             $p_city       = (int) ($_POST['pickup_point_city_id'] ?? 0) ?: null;
             $p_dist       = resolve_district_id($_POST['pickup_point_district_id'] ?? $b['pickup_point_district_id']);
@@ -99,6 +84,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             }
             if ($branch_id <= 0 || $passenger_id <= 0 || $p_dist <= 0 || $d_dist <= 0) {
                 throw new InvalidArgumentException('Cabang, pelanggan, serta kecamatan penjemputan & pengantaran wajib dipilih.');
+            }
+            if ($total_price < -0.001 || $bbm < -0.001 || $trip < -0.001) {
+                throw new InvalidArgumentException('Trip, BBM, dan harga sewa tidak boleh negatif.');
+            }
+            if ($total_price > 999999999999999.99 || $bbm > 999999999999999.99) {
+                throw new InvalidArgumentException('Nominal harga sewa atau BBM melebihi batas maksimal (Rp 999.999.999.999.999).');
             }
 
             $extra_pids = array_values(array_unique(array_filter(
@@ -173,21 +164,35 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $up->execute();
                 $up->close();
 
-                // Sinkronkan invoice subtotal & total bila harga berubah
-                if (abs($total_price - (float) $b['total_price']) > 0.01) {
-                    $stInv = $db->prepare("SELECT id, tax_percent FROM invoices WHERE booking_type = 'rental' AND booking_id = ? AND company_id = ? LIMIT 1");
-                    $stInv->bind_param('ii', $id, $booking_cid);
-                    $stInv->execute();
-                    $invRow = $stInv->get_result()->fetch_assoc();
-                    $stInv->close();
-                    if ($invRow) {
+                // Sinkronkan invoice (subtotal/total bila harga berubah + ketentuan/catatan invoice bila disunting)
+                $stInv = $db->prepare("SELECT id, tax_percent FROM invoices WHERE booking_type = 'rental' AND booking_id = ? AND company_id = ? LIMIT 1");
+                $stInv->bind_param('ii', $id, $booking_cid);
+                $stInv->execute();
+                $invRow = $stInv->get_result()->fetch_assoc();
+                $stInv->close();
+                if ($invRow) {
+                    $hasInvNoteIn = array_key_exists('invoice_note', $_POST);
+                    $invNoteIn    = $hasInvNoteIn ? trim((string) ($_POST['invoice_note'] ?? '')) : null;
+                    $invNoteDb    = ($invNoteIn === null || $invNoteIn === '') ? null : mb_substr($invNoteIn, 0, 2000);
+                    $priceChanged = abs($total_price - (float) $b['total_price']) > 0.01;
+                    if ($priceChanged) {
                         $taxPct = (float) $invRow['tax_percent'];
                         $taxAmt = round($total_price * $taxPct / 100, 2);
                         $newTot = $total_price + $taxAmt;
-                        $upInv = $db->prepare('UPDATE invoices SET branch_id = ?, subtotal = ?, tax_amount = ?, total = ?, modified_user = ?, modified_date = NOW() WHERE id = ?');
-                        $upInv->bind_param('idddsi', $branch_id, $total_price, $taxAmt, $newTot, $user, $invRow['id']);
+                        if ($hasInvNoteIn) {
+                            $upInv = $db->prepare('UPDATE invoices SET branch_id = ?, subtotal = ?, tax_amount = ?, total = ?, note = ?, modified_user = ?, modified_date = NOW() WHERE id = ?');
+                            $upInv->bind_param('idddssi', $branch_id, $total_price, $taxAmt, $newTot, $invNoteDb, $user, $invRow['id']);
+                        } else {
+                            $upInv = $db->prepare('UPDATE invoices SET branch_id = ?, subtotal = ?, tax_amount = ?, total = ?, modified_user = ?, modified_date = NOW() WHERE id = ?');
+                            $upInv->bind_param('idddsi', $branch_id, $total_price, $taxAmt, $newTot, $user, $invRow['id']);
+                        }
                         $upInv->execute();
                         $upInv->close();
+                    } elseif ($hasInvNoteIn) {
+                        $upInvN = $db->prepare('UPDATE invoices SET note = ?, modified_user = ?, modified_date = NOW() WHERE id = ?');
+                        $upInvN->bind_param('ssi', $invNoteDb, $user, $invRow['id']);
+                        $upInvN->execute();
+                        $upInvN->close();
                     }
                 }
 
@@ -266,9 +271,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             redirect('pages/rental/bookings/index.php');
         }
     } catch (Throwable $ex) {
+        if (str_contains($ex->getMessage(), 'pembayaran') || str_contains($ex->getMessage(), 'tagihan') || str_contains($ex->getMessage(), 'Invoice')) {
+            $hash = '#tab-payment';
+        }
         flash('error', $ex->getMessage() === '' ? 'Aksi gagal dijalankan.' : $ex->getMessage());
     }
-    redirect('pages/rental/bookings/detail.php?id=' . $id);
+    $tabParam = ($hash === '#tab-payment') ? '&tab=payment' : '';
+    redirect('pages/rental/bookings/detail.php?id=' . $id . $tabParam . $hash);
 }
 
 $status = booking_current_status('rental', $id);
@@ -431,6 +440,8 @@ $duration_days = max(1, (int) $d1->diff($d2)->days + 1);
 $active      = 'rental';
 $title       = 'Detail Pemesanan Sewa Kendaraan - ' . $b['document_number'];
 $openQrisNow = !empty($_GET['open_qris']) && $canManage && $status !== 'cancelled' && $qrisRemaining > 0 && !empty($qrisChannels);
+$reqTab      = (string) ($_GET['tab'] ?? '');
+$openPayTab  = $openQrisNow || $reqTab === 'payment';
 require __DIR__ . '/../../../includes/header.php';
 ?>
 
@@ -466,7 +477,7 @@ require __DIR__ . '/../../../includes/header.php';
         <!-- 5 SUB-TABS -->
         <ul class="nav nav-tabs erp-sub-tabs" id="rentalDetailTabs" role="tablist">
             <li class="nav-item" role="presentation">
-                <button class="nav-link<?= $openQrisNow ? '' : ' active' ?>" id="tab-detail-btn" data-bs-toggle="tab" data-bs-target="#tab-detail" type="button" role="tab">
+                <button class="nav-link<?= $openPayTab ? '' : ' active' ?>" id="tab-detail-btn" data-bs-toggle="tab" data-bs-target="#tab-detail" type="button" role="tab">
                     Detail
                 </button>
             </li>
@@ -476,7 +487,7 @@ require __DIR__ . '/../../../includes/header.php';
                 </button>
             </li>
             <li class="nav-item" role="presentation">
-                <button class="nav-link<?= $openQrisNow ? ' active' : '' ?>" id="tab-payment-btn" data-bs-toggle="tab" data-bs-target="#tab-payment" type="button" role="tab">
+                <button class="nav-link<?= $openPayTab ? ' active' : '' ?>" id="tab-payment-btn" data-bs-toggle="tab" data-bs-target="#tab-payment" type="button" role="tab">
                     Pembayaran Sewa
                 </button>
             </li>
@@ -498,6 +509,7 @@ require __DIR__ . '/../../../includes/header.php';
                 <?= csrf_field() ?>
                 <input type="hidden" name="id" value="<?= $id ?>">
                 <input type="hidden" name="act" value="update_detail">
+                <input type="hidden" name="active_tab" id="activeTabInput" value="<?= $openPayTab ? 'payment' : 'detail' ?>">
                 <input type="hidden" name="pay_sync_present" value="1">
                 <input type="hidden" name="trip" id="hiddenTrip" value="<?= e((string) $b['trip']) ?>">
                 <input type="hidden" name="bbm" id="hiddenBbm" value="<?= (int) round((float) $b['bbm']) ?>">
@@ -505,7 +517,7 @@ require __DIR__ . '/../../../includes/header.php';
 
             <div class="tab-content" id="rentalDetailTabContent">
                 <!-- ================= TAB 1: DETAIL ================= -->
-                <div class="tab-pane fade<?= $openQrisNow ? '' : ' show active' ?>" id="tab-detail" role="tabpanel">
+                <div class="tab-pane fade<?= $openPayTab ? '' : ' show active' ?>" id="tab-detail" role="tabpanel">
                     <div class="rnt-panel">
                         <div class="rnt-panel-header"><span>Informasi Pemesanan</span></div>
                         <div class="rnt-panel-body">
@@ -960,18 +972,27 @@ require __DIR__ . '/../../../includes/header.php';
                 </div>
 
                 <!-- ================= TAB 3: PEMBAYARAN SEWA ================= -->
-                <div class="tab-pane fade<?= $openQrisNow ? ' show active' : '' ?>" id="tab-payment" role="tabpanel">
+                <div class="tab-pane fade<?= $openPayTab ? ' show active' : '' ?>" id="tab-payment" role="tabpanel">
+                    <?php
+                    if ($invoice) {
+                        $invCard          = $invoice;
+                        $invCardFormId    = 'rentalDetailForm';
+                        $invCardCanManage = $canManage && $status !== 'cancelled';
+                        require __DIR__ . '/../../../includes/booking_invoice_card.php';
+                    }
+                    ?>
                     <div class="rnt-panel">
                         <div class="rnt-panel-body">
                             <div class="rnt-row">
                                 <div class="rnt-label">Total Pembayaran</div>
                                 <div class="rnt-field d-flex flex-wrap align-items-center gap-3">
                                     <input type="text" class="form-control form-control-sm fw-bold bg-light" id="pay_total_top_display" value="<?= format_nominal((float) ($invoice['paid_total'] ?? $b['total_payment'] ?? 0)) ?>" readonly style="max-width:240px;">
-                                    <span class="small text-muted">
-                                        Sisa Tagihan:
+                                    <span class="small text-muted d-inline-flex flex-wrap align-items-center gap-1">
+                                        <span id="qrisRemainingLabel">Sisa Tagihan:</span>
                                         <strong id="qrisRemainingDisplay" class="<?= $qrisRemaining > 0 ? 'text-danger' : 'text-success' ?>">
                                             <?= $qrisRemaining > 0 ? ('Rp ' . format_nominal($qrisRemaining)) : 'Lunas (Rp 0)' ?>
                                         </strong>
+                                        <span id="qrisOverpayBadge" class="badge bg-danger-subtle text-danger border fw-semibold d-none"></span>
                                     </span>
                                     <span id="qrisLiveSyncBadge" class="badge bg-info-subtle text-info-emphasis border <?= $hasPendingQris ? '' : 'd-none' ?>">
                                         <i class="bi bi-arrow-repeat me-1"></i>Pantau QRIS Otomatis Aktif
@@ -1089,7 +1110,7 @@ require __DIR__ . '/../../../includes/header.php';
                                         <td>
                                             <?php $pRowAmt = (float) ($pr['amount'] ?? 0); ?>
                                             <input type="text" inputmode="numeric" class="form-control form-control-sm text-end fw-semibold pay-amt-display" value="<?= format_nominal($pRowAmt) ?>" <?= ($canManage && !$isAutoQris) ? '' : 'readonly' ?>>
-                                            <input type="hidden" name="pay_amount[]" class="pay-amt-value" form="rentalDetailForm" value="<?= $pRowAmt ?>">
+                                            <input type="hidden" name="pay_amount[]" class="pay-amt-value" form="rentalDetailForm" value="<?= (int) round($pRowAmt) ?>">
                                         </td>
                                         <?php if ($canManage): ?>
                                         <td class="text-center">
@@ -1227,68 +1248,50 @@ document.addEventListener('DOMContentLoaded', () => {
     const appUrl   = <?= json_encode(APP_URL) ?>;
     const csrfTok  = <?= json_encode(csrf_token()) ?>;
 
-    // Helper format & parse rupiah standar Indonesia
-    function parseRupiah(val) {
-        if (val === null || val === undefined || val === '') return 0;
-        if (typeof val === 'number') return Math.round(val);
-        var str = String(val).trim();
-        if (/^\d+\.(0|00)$/.test(str)) {
-            str = str.replace(/\.(0|00)$/, '');
-        }
-        var digits = str.replace(/[^0-9]/g, '');
-        return digits ? parseInt(digits, 10) : 0;
-    }
+    // Helper format & parse rupiah standar Indonesia (gunakan global app.js agar aman dari overflow)
+    const parseRupiah = typeof window.parseRupiah === 'function'
+        ? window.parseRupiah
+        : function (val) {
+            if (val === null || val === undefined || val === '') return 0;
+            if (typeof val === 'number') return Number.isFinite(val) ? Math.max(0, Math.round(val)) : 0;
+            var str = String(val).trim();
+            if (!str || str.charAt(0) === '-') return 0;
+            if (/^\d+\.\d{1,2}$/.test(str)) return Math.max(0, Math.round(parseFloat(str) || 0));
+            var digits = str.replace(/[^0-9]/g, '');
+            return digits ? (Math.max(0, Math.round(Number(digits))) || 0) : 0;
+        };
 
-    function formatRupiah(val) {
-        if (val === null || val === undefined || val === '') return '';
-        var num = parseRupiah(val);
-        if (num === 0) {
-            return String(val).replace(/[^0-9]/g, '') === '' ? '' : '0';
-        }
-        return num.toString().replace(/\B(?=(\d{3})+(?!\d))/g, '.');
-    }
+    const formatRupiah = typeof window.formatRupiah === 'function'
+        ? window.formatRupiah
+        : function (val) {
+            if (val === null || val === undefined || val === '') return '';
+            var num = parseRupiah(val);
+            if (num === 0) return String(val).replace(/[^0-9]/g, '') === '' ? '' : '0';
+            if (typeof Intl !== 'undefined' && typeof Intl.NumberFormat === 'function') {
+                return new Intl.NumberFormat('id-ID', { maximumFractionDigits: 0 }).format(num);
+            }
+            return num.toString().replace(/\B(?=(\d{3})+(?!\d))/g, '.');
+        };
 
-    function attachRupiahMask(inputEl, hiddenEl, onChangeCallback) {
-        if (!inputEl) return;
-        inputEl.addEventListener('input', function () {
-            var oldVal = this.value;
-            var caretPos = this.selectionStart || 0;
-            var digitsBeforeCaret = oldVal.slice(0, caretPos).replace(/[^0-9]/g, '').length;
-
-            var clean = oldVal.replace(/[^0-9]/g, '');
-            var num = parseInt(clean || '0', 10);
-            if (hiddenEl) hiddenEl.value = String(num);
-
-            var formatted = clean === '' ? '' : formatRupiah(num);
-            this.value = formatted;
-
-            if (this.setSelectionRange && formatted) {
-                var newCaret = 0;
-                var digitCount = 0;
-                for (var i = 0; i < formatted.length; i++) {
-                    if (/[0-9]/.test(formatted[i])) {
-                        digitCount++;
-                    }
-                    if (digitCount === digitsBeforeCaret) {
-                        newCaret = i + 1;
-                        break;
-                    }
+    const attachRupiahMask = typeof window.attachRupiahInput === 'function'
+        ? window.attachRupiahInput
+        : function (inputEl, hiddenEl, onChangeCallback) {
+            if (!inputEl) return;
+            inputEl.addEventListener('input', function () {
+                var clean = String(this.value || '').replace(/[^0-9]/g, '').slice(0, 15);
+                var num = clean === '' ? 0 : (Number(clean) || 0);
+                if (hiddenEl) hiddenEl.value = String(num);
+                this.value = clean === '' ? '' : formatRupiah(num);
+                if (typeof onChangeCallback === 'function') onChangeCallback(num);
+            });
+            inputEl.addEventListener('blur', function () {
+                if (this.value.trim() === '') {
+                    this.value = '0';
+                    if (hiddenEl) hiddenEl.value = '0';
+                    if (typeof onChangeCallback === 'function') onChangeCallback(0);
                 }
-                if (digitCount < digitsBeforeCaret) newCaret = formatted.length;
-                try { this.setSelectionRange(newCaret, newCaret); } catch (e) {}
-            }
-
-            if (typeof onChangeCallback === 'function') onChangeCallback(num);
-        });
-
-        inputEl.addEventListener('blur', function () {
-            if (this.value.trim() === '') {
-                this.value = '0';
-                if (hiddenEl) hiddenEl.value = '0';
-                if (typeof onChangeCallback === 'function') onChangeCallback(0);
-            }
-        });
-    }
+            });
+        };
 
     // Sinkronisasi input Note, BBM, dan Grid Kru (Sopir/Kernet/Montir/Agen)
     const hidBbm        = document.getElementById('hiddenBbm');
@@ -1854,6 +1857,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const payOverAlert = document.getElementById('payOverpayAlert');
     const payOverMsg   = document.getElementById('payOverpayMsg');
     const qrisRemainingDisp  = document.getElementById('qrisRemainingDisplay');
+    const qrisOverpayBadge   = document.getElementById('qrisOverpayBadge');
     const todayIso     = <?= json_encode(date('Y-m-d')) ?>;
     const qrisTaxPct   = <?= json_encode((float) ($invoice['tax_percent'] ?? 0)) ?>;
     const qrisOrigBookingPrice = <?= json_encode((float) $b['total_price']) ?>;
@@ -1863,7 +1867,7 @@ document.addEventListener('DOMContentLoaded', () => {
     function getExpectedInvoiceTotal() {
         if (priceVal) {
             const uiPrice = parseRupiah(priceVal.value || '0');
-            if (Math.abs(uiPrice - Math.round(qrisOrigBookingPrice)) > 1) {
+            if (Math.round(uiPrice) !== Math.round(qrisOrigBookingPrice)) {
                 return uiPrice + Math.round(uiPrice * qrisTaxPct / 100);
             }
         }
@@ -1883,7 +1887,7 @@ document.addEventListener('DOMContentLoaded', () => {
     function getPayValidationState(currentPaySum) {
         const paySum = currentPaySum !== undefined ? currentPaySum : getCurrentPaySum();
         const targetTotal = getExpectedInvoiceTotal();
-        const exceeded = paySum > targetTotal + 0.001;
+        const exceeded = targetTotal > 0 ? (paySum > targetTotal + 0.001) : (paySum > 0);
         return { paySum, targetTotal, exceeded };
     }
 
@@ -1892,16 +1896,25 @@ document.addEventListener('DOMContentLoaded', () => {
         const sisa = Math.round(st.targetTotal - st.paySum);
         if (qrisRemainingDisp) {
             if (st.exceeded) {
-                qrisRemainingDisp.textContent = 'Melebihi Rp ' + formatRupiah(Math.abs(sisa));
+                qrisRemainingDisp.textContent = 'Rp 0';
                 qrisRemainingDisp.className = 'text-danger fw-bold';
             } else {
-                qrisRemainingDisp.textContent = sisa > 0 ? ('Rp ' + formatRupiah(sisa)) : 'Lunas (Rp 0)';
-                qrisRemainingDisp.className = sisa > 0 ? 'text-danger' : 'text-success';
+                qrisRemainingDisp.textContent = sisa > 0 ? ('Rp ' + (formatRupiah(sisa) || '0')) : 'Lunas (Rp 0)';
+                qrisRemainingDisp.className = sisa > 0 ? 'text-danger fw-bold' : 'text-success fw-bold';
+            }
+        }
+        if (qrisOverpayBadge) {
+            if (st.exceeded) {
+                qrisOverpayBadge.textContent = 'Lebih Bayar +Rp ' + (formatRupiah(Math.abs(sisa)) || '0');
+                qrisOverpayBadge.classList.remove('d-none');
+            } else {
+                qrisOverpayBadge.textContent = '';
+                qrisOverpayBadge.classList.add('d-none');
             }
         }
         if (payOverAlert && payOverMsg) {
             if (st.exceeded) {
-                payOverMsg.textContent = 'Total pembayaran (Rp ' + formatRupiah(st.paySum) + ') tidak boleh melebihi total tagihan (Rp ' + formatRupiah(st.targetTotal) + ').';
+                payOverMsg.textContent = 'Total pembayaran (Rp ' + (formatRupiah(st.paySum) || '0') + ') tidak boleh melebihi total tagihan (Rp ' + (formatRupiah(st.targetTotal) || '0') + ').';
                 payOverAlert.classList.remove('d-none');
             } else {
                 payOverAlert.classList.add('d-none');
@@ -1913,6 +1926,16 @@ document.addEventListener('DOMContentLoaded', () => {
             el.classList.toggle('is-invalid', st.exceeded);
             el.classList.toggle('text-danger', st.exceeded);
         });
+        if (payTbody) {
+            payTbody.querySelectorAll('tr.pay-row').forEach((tr) => {
+                const disp = tr.querySelector('.pay-amt-display');
+                const hid  = tr.querySelector('.pay-amt-value');
+                if (!disp || disp.readOnly) return;
+                const rowOver = st.exceeded && parseRupiah(hid ? hid.value : '0') > 0;
+                disp.classList.toggle('is-invalid', rowOver);
+                disp.classList.toggle('text-danger', rowOver);
+            });
+        }
     }
 
     function recalcPayTotals() {
@@ -1924,8 +1947,9 @@ document.addEventListener('DOMContentLoaded', () => {
             const hid = tr.querySelector('.pay-amt-value');
             paySum += parseRupiah(hid ? hid.value : '0');
         });
-        if (payTopDisp) payTopDisp.value = formatRupiah(paySum);
-        if (paySubDisp) paySubDisp.value = formatRupiah(paySum);
+        const paySumFmt = formatRupiah(paySum) || '0';
+        if (payTopDisp) payTopDisp.value = paySumFmt;
+        if (paySubDisp) paySubDisp.value = paySumFmt;
         if (payCountEl) payCountEl.textContent = 'Record ' + (rows.length ? 1 : 0) + ' of ' + rows.length;
         updateDynamicInvoiceSisa(paySum);
     }
@@ -2123,12 +2147,9 @@ document.addEventListener('DOMContentLoaded', () => {
         if (typeof data.has_pending === 'boolean') qrisHasPending = data.has_pending;
 
         const rem = Math.max(0, Math.round(qrisInvTotal - qrisServerPaid));
-        if (qrisRemainingDisp) {
-            qrisRemainingDisp.textContent = rem > 0 ? ('Rp ' + formatRupiah(rem)) : 'Lunas (Rp 0)';
-            qrisRemainingDisp.className = rem > 0 ? 'text-danger' : 'text-success';
-        }
+        updateDynamicInvoiceSisa();
         if (qrisFormSisaText) {
-            qrisFormSisaText.textContent = 'Rp ' + formatRupiah(rem);
+            qrisFormSisaText.textContent = 'Rp ' + (formatRupiah(rem) || '0');
         }
         if (btnPayQrisAuto) {
             const curSt = data.booking_status || qrisBookStat;
@@ -2272,10 +2293,17 @@ document.addEventListener('DOMContentLoaded', () => {
             refreshBgQrisPoller();
         });
     }
+    const activeTabInp = document.getElementById('activeTabInput');
     document.querySelectorAll('#rentalDetailTabs [data-bs-toggle="tab"]').forEach((btn) => {
-        if (btn.id !== 'tab-payment-btn') {
-            btn.addEventListener('shown.bs.tab', refreshBgQrisPoller);
-        }
+        btn.addEventListener('shown.bs.tab', (ev) => {
+            const targetSel = ev.target.getAttribute('data-bs-target') || '';
+            const shortName = targetSel.replace(/^#tab-/, '') || 'detail';
+            if (activeTabInp) activeTabInp.value = shortName;
+            if (window.history && window.history.replaceState && targetSel) {
+                try { window.history.replaceState(null, '', targetSel); } catch (e) {}
+            }
+            refreshBgQrisPoller();
+        });
     });
     document.addEventListener('visibilitychange', refreshBgQrisPoller);
 
@@ -2562,6 +2590,12 @@ document.addEventListener('DOMContentLoaded', () => {
                 return false;
             }
         });
+    }
+    if (window.location.hash && /^#tab-(detail|crew|payment|note|audit)$/.test(window.location.hash)) {
+        const hBtn = document.querySelector(`[data-bs-target="${window.location.hash}"]`);
+        if (hBtn && typeof bootstrap !== 'undefined' && bootstrap.Tab) {
+            bootstrap.Tab.getOrCreateInstance(hBtn).show();
+        }
     }
     <?php if ($openQrisNow): ?>
     if (btnPayQrisAuto) {

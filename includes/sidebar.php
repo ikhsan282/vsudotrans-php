@@ -73,9 +73,7 @@ $menu = [
 
     // ── KEUANGAN & AKUNTANSI ────────────────────────────────────────────────
     ['key' => 'finance', 'section' => 'Keuangan & Akuntansi', 'label' => 'Keuangan', 'icon' => 'cash-coin', 'perm' => null, 'sub' => [
-        ['label' => 'Invoice',            'href' => 'pages/finance/invoices/index.php',         'perms' => 'invoices.view'],
-        ['label' => 'Buku Kas & Bank',    'href' => 'pages/finance/cash/index.php',             'perms' => 'finance.view'],
-        ['label' => 'Akun Kas/Bank',      'href' => 'pages/finance/cash_accounts/index.php',    'perms' => 'finance.view'],
+        ['label' => 'Buku Kas',           'href' => 'pages/finance/cash/index.php',             'perms' => 'finance.view'],
         ['label' => 'Metode Pembayaran',  'href' => 'pages/finance/payment_methods/index.php',  'perms' => 'finance.view'],
     ]],
 

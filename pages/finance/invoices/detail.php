@@ -40,8 +40,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     5
                 );
             }
-            $cash_account_raw = (string) ($_POST['cash_account_id'] ?? '');
-            $cash_account_id  = $cash_account_raw === '' ? null : (int) $cash_account_raw;
+            $sync_cash = !isset($_POST['sync_cash']) || (string) $_POST['sync_cash'] !== '0';
             $res = invoice_add_payment(
                 $id,
                 (int) $inv['company_id'],
@@ -51,10 +50,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $user,
                 false,
                 $proof_path,
-                $cash_account_id
+                $sync_cash
             );
             audit('invoice.pay', "Invoice #{$id} " . rupiah($amount) . " -> {$res['status']}");
-            $syncNote = ($cash_account_id !== null && $cash_account_id < 0) ? ' (tidak dicatat ke Kas/Bank)' : ' & Kas/Bank disinkronkan';
+            $syncNote = $sync_cash ? ' & dicatat ke Buku Kas' : ' (tidak dicatat ke Buku Kas)';
             flash('success', 'Pembayaran ' . rupiah($amount) . ' dicatat' . $syncNote . '. Status: ' . $res['status'] . '.');
         } elseif ($act === 'cancel') {
             $reason = trim((string) ($_POST['reason'] ?? ''));
@@ -77,12 +76,6 @@ $payments = invoice_payments($id);
 $methods  = finance_active_payment_methods((int) $inv['company_id']);
 
 finance_ensure_company_defaults((int) $inv['company_id'], $user);
-$cash_accounts = [];
-$cst = db()->prepare('SELECT id, code, name, type, account_number FROM cash_accounts WHERE is_active = 1 AND company_id = ? ORDER BY type, code, name');
-$cst->bind_param('i', $inv['company_id']);
-$cst->execute();
-$cash_accounts = $cst->get_result()->fetch_all(MYSQLI_ASSOC);
-$cst->close();
 
 $remaining = max(0, round((float) $inv['total'] - (float) $inv['paid_total'], 2));
 $qrisChannels = $remaining > 0 ? gateway_active_channels((int) $inv['company_id']) : [];
@@ -192,7 +185,7 @@ $invActions[] = ['label' => 'PDF', 'icon' => 'filetype-pdf', 'href' => 'pages/fi
                                                value="<?= e(format_nominal((float) round($remaining))) ?>" placeholder="0">
                                         <div class="invalid-feedback" id="invPayAmountErr">Nominal melebihi sisa tagihan.</div>
                                     </div>
-                                    <div class="col-md-3">
+                                    <div class="col-md-4">
                                         <label class="form-label small mb-1 fw-medium">Metode Pembayaran</label>
                                         <select class="form-select form-select-sm" name="payment_method_id">
                                             <option value="">— pilih metode —</option>
@@ -201,23 +194,20 @@ $invActions[] = ['label' => 'PDF', 'icon' => 'filetype-pdf', 'href' => 'pages/fi
                                             <?php endforeach; ?>
                                         </select>
                                     </div>
-                                    <div class="col-md-3">
-                                        <label class="form-label small mb-1 fw-medium">Masuk ke Buku Kas/Bank</label>
-                                        <select class="form-select form-select-sm" name="cash_account_id">
-                                            <option value="">Otomatis sesuai Metode Bayar</option>
-                                            <?php foreach ($cash_accounts as $ca): ?>
-                                                <option value="<?= (int) $ca['id'] ?>">[<?= e(strtoupper((string) ($ca['type'] ?? 'kas'))) ?>] <?= e($ca['name']) ?><?= $ca['account_number'] ? ' (' . e($ca['account_number']) . ')' : '' ?></option>
-                                            <?php endforeach; ?>
-                                            <option value="-1">— Jangan catat ke Kas/Bank —</option>
-                                        </select>
-                                    </div>
-                                    <div class="col-md-3">
+                                    <div class="col-md-5">
                                         <label class="form-label small mb-1 fw-medium">Bukti Bayar (Blob)</label>
                                         <input type="file" class="form-control form-control-sm" name="proof_file" accept="image/*,application/pdf">
                                     </div>
-                                    <div class="col-md-10">
+                                    <div class="col-md-7">
                                         <label class="form-label small mb-1 fw-medium">Catatan</label>
                                         <input class="form-control form-control-sm" name="note" maxlength="2000" placeholder="mis. transfer BCA 12:30">
+                                    </div>
+                                    <div class="col-md-3 d-flex align-items-center pb-1">
+                                        <input type="hidden" name="sync_cash" value="0">
+                                        <div class="form-check">
+                                            <input class="form-check-input" type="checkbox" id="invSyncCash" name="sync_cash" value="1" checked>
+                                            <label class="form-check-label small" for="invSyncCash">Catat ke Buku Kas</label>
+                                        </div>
                                     </div>
                                     <div class="col-md-2">
                                         <button class="btn btn-sm btn-success w-100" type="submit"><i class="bi bi-check-lg" aria-hidden="true"></i> Simpan</button>

@@ -72,7 +72,7 @@ function invoice_find(int $id): ?array
  *
  * @return array{invoice_id:int, amount:float, paid_total:float, status:string}
  */
-function invoice_add_payment(int $invoice_id, int $company_id, float $amount, ?int $method_id, ?string $note, ?string $user, bool $allow_over = false, ?string $proof_blob_path = null, ?int $cash_account_id = null): array
+function invoice_add_payment(int $invoice_id, int $company_id, float $amount, ?int $method_id, ?string $note, ?string $user, bool $allow_over = false, ?string $proof_blob_path = null, bool $sync_cash = true): array
 {
     if ($amount <= 0) {
         throw new InvalidArgumentException('Nominal pembayaran harus lebih dari 0.');
@@ -117,16 +117,14 @@ function invoice_add_payment(int $invoice_id, int $company_id, float $amount, ?i
         $newCostLineId = (int) $st->insert_id;
         $st->close();
 
-        // Sinkronisasi otomatis ke Buku Kas/Bank (kecuali user eksplisit memilih tidak mencatat dengan $cash_account_id < 0).
-        if ($cash_account_id === null || $cash_account_id >= 0) {
+        // Sinkronisasi otomatis ke Buku Kas.
+        if ($sync_cash) {
             finance_sync_invoice_payments_to_cash(
                 $real_cid,
                 $invoice_id,
                 (string) ($inv['invoice_no'] ?? ''),
                 $bt,
-                (string) ($inv['document_number'] ?? ''),
-                $cash_account_id !== null && $cash_account_id > 0 ? [$newCostLineId => $cash_account_id] : [],
-                null
+                (string) ($inv['document_number'] ?? '')
             );
         }
 
@@ -235,8 +233,11 @@ function booking_payments_sync(string $type, int $booking_id, int $invoice_id, i
             continue;
         }
         $rawAmt = (float) ($r['amount'] ?? 0);
-        if ($rawAmt < -0.001) {
+        if (!is_finite($rawAmt) || $rawAmt < -0.001) {
             throw new InvalidArgumentException('Nominal pembayaran tidak boleh negatif.');
+        }
+        if ($rawAmt > 999999999999999.99) {
+            throw new InvalidArgumentException('Nominal pembayaran melebihi batas maksimal (Rp 999.999.999.999.999).');
         }
         if ($rawAmt <= 0) {
             continue;
@@ -264,7 +265,7 @@ function booking_payments_sync(string $type, int $booking_id, int $invoice_id, i
         }
     }
 
-    // Petakan akun kas lama per baris manual agar pilihan rekening manual dari Invoice detail tidak tertimpa saat booking disimpan ulang
+    // Bersihkan sinkronisasi kas baris pembayaran manual sebelum menulis ulang baris manual terbaru
     finance_ensure_schema();
     $manualOldIds = [];
     foreach ($existing as $exId => $exRow) {
@@ -272,18 +273,7 @@ function booking_payments_sync(string $type, int $booking_id, int $invoice_id, i
             $manualOldIds[] = (int) $exId;
         }
     }
-    $oldAccountMap = [];
     if ($manualOldIds) {
-        $ph = implode(',', array_fill(0, count($manualOldIds), '?'));
-        $tStr = 'is' . str_repeat('i', count($manualOldIds));
-        $srcType = 'booking_payment';
-        $stAccMap = $db->prepare("SELECT source_id, cash_account_id FROM cash_transactions WHERE company_id = ? AND source_type = ? AND source_id IN ({$ph})");
-        $stAccMap->bind_param($tStr, $company_id, $srcType, ...$manualOldIds);
-        $stAccMap->execute();
-        foreach ($stAccMap->get_result()->fetch_all(MYSQLI_ASSOC) as $am) {
-            $oldAccountMap[(int) $am['source_id']] = (int) $am['cash_account_id'];
-        }
-        $stAccMap->close();
         finance_unsync_cost_line_ids($company_id, $manualOldIds);
     }
 
@@ -300,7 +290,6 @@ function booking_payments_sync(string $type, int $booking_id, int $invoice_id, i
         (company_id, booking_type, booking_id, cost_type, description, amount, payment_method_id, note, proof_blob_path, created_user, created_date)
         VALUES (?, ?, ?, 'payment', ?, ?, ?, ?, ?, ?, ?)");
 
-    $lineAccountOverrides = [];
     foreach ($pay_rows as $r) {
         $rowId = (int) ($r['id'] ?? 0);
         if ($rowId > 0 && !empty($existing[$rowId]['is_auto_qris'])) {
@@ -324,10 +313,6 @@ function booking_payments_sync(string $type, int $booking_id, int $invoice_id, i
 
         $ins->bind_param('isisdissss', $company_id, $type, $booking_id, $desc, $amt, $pmIdParam, $noteStr, $proofPath, $user, $createdDate);
         $ins->execute();
-        $newBclId = (int) $ins->insert_id;
-        if ($rowId > 0 && isset($oldAccountMap[$rowId])) {
-            $lineAccountOverrides[$newBclId] = $oldAccountMap[$rowId];
-        }
     }
     $ins->close();
 
@@ -336,8 +321,7 @@ function booking_payments_sync(string $type, int $booking_id, int $invoice_id, i
         $invoice_id,
         (string) ($invRow['invoice_no'] ?? ''),
         $type,
-        (string) ($invRow['document_number'] ?? ''),
-        $lineAccountOverrides
+        (string) ($invRow['document_number'] ?? '')
     );
 
     $total_paid = invoice_paid_total($invoice_id);
@@ -346,8 +330,17 @@ function booking_payments_sync(string $type, int $booking_id, int $invoice_id, i
     $upB->execute();
     $upB->close();
 
-    $upI = $db->prepare('UPDATE invoices SET modified_user = ?, modified_date = NOW() WHERE id = ? AND company_id = ?');
-    $upI->bind_param('sii', $user, $invoice_id, $company_id);
+    if ($invRow && ($invRow['status'] ?? '') !== 'cancelled') {
+        $invTotalSync = max(0.0, (float) $invRow['total']);
+        $newInvSt = ($total_paid > 0.001 && $total_paid + 0.001 >= $invTotalSync)
+            ? 'paid'
+            : ($total_paid > 0.001 ? 'partial' : 'issued');
+        $upI = $db->prepare('UPDATE invoices SET status = ?, modified_user = ?, modified_date = NOW() WHERE id = ? AND company_id = ?');
+        $upI->bind_param('ssii', $newInvSt, $user, $invoice_id, $company_id);
+    } else {
+        $upI = $db->prepare('UPDATE invoices SET modified_user = ?, modified_date = NOW() WHERE id = ? AND company_id = ?');
+        $upI->bind_param('sii', $user, $invoice_id, $company_id);
+    }
     $upI->execute();
     $upI->close();
 

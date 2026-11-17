@@ -20,6 +20,8 @@ $costs  = $data['cost_types'];
 $ct     = fin_cost_totals($costs);
 $unpaid = $data['unpaid'];
 $ut     = fin_unpaid_totals($unpaid);
+$daily  = $data['daily'] ?? [];
+$dt     = fin_daily_totals($daily);
 $cash   = $data['cash'] ?? ['in_total' => 0, 'out_total' => 0, 'net_cash_flow' => 0];
 
 $table = [];
@@ -47,7 +49,31 @@ foreach ($costs as $r) {
 $table[] = ['TOTAL', (int) $ct['n_lines'], (float) $ct['amount']];
 $table[] = [''];
 
-$table[] = ['Tagihan Belum Lunas', ''];
+$table[] = ['', 'Rekap Harian (Pemasukan & Pengeluaran)'];
+$table[] = ['Tanggal', 'Kas Masuk', 'Kas Keluar', 'Arus Kas Bersih', 'Omzet Booking', 'Biaya Trip', 'Laba Kotor Trip'];
+foreach ($daily as $r) {
+    $table[] = [
+        (string) $r['date'],
+        (float) $r['in_total'],
+        (float) $r['out_total'],
+        (float) $r['net_cash_flow'],
+        (float) $r['booking_total'],
+        (float) $r['trip_cost'],
+        (float) $r['gross_profit'],
+    ];
+}
+$table[] = [
+    'TOTAL',
+    (float) $dt['in_total'],
+    (float) $dt['out_total'],
+    (float) $dt['net_cash_flow'],
+    (float) $dt['booking_total'],
+    (float) $dt['trip_cost'],
+    (float) $dt['gross_profit'],
+];
+$table[] = [''];
+
+$table[] = ['', 'Tagihan Belum Lunas'];
 $table[] = ['No. Dokumen', 'Tanggal', 'Jenis', 'Nilai', 'Terbayar', 'Sisa'];
 foreach ($unpaid as $r) {
     $table[] = [(string) $r['document_number'], (string) $r['date'], (string) $r['booking_type'],
@@ -70,7 +96,7 @@ function send_download_headers(string $base, string $ext, string $mime): void
 
 if ($fmt === 'pdf' || $fmt === 'html') {
     require_once __DIR__ . '/_print.php';
-    rpt_send($table, 'Laporan Keuangan', $base, $sub, null, 'portrait', 'reports.finance.print');
+    rpt_send($table, 'Laporan Keuangan', $base, $sub, null, 'landscape', 'reports.finance.print');
 }
 
 if ($fmt === 'csv') {

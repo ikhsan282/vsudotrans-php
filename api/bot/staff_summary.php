@@ -7,7 +7,7 @@
  * - Penerimaan pembayaran pelanggan hari ini + breakdown metode pembayaran (mengecualikan invoice `cancelled`).
  * - Invoice belum lunas (`issued` dan `partial`, mengecualikan `cancelled`).
  * - Biaya operasional hari ini (di luar `cost_type='payment'`) termasuk BBM Rental.
- * - Penugasan driver aktif & rincian saldo Buku Kas/Bank per akun (`KAS-TUNAI`, `BANK-UTAMA`, dst) + Arus Kas Nyata hari ini.
+ * - Penugasan driver aktif & saldo Buku Kas serta Arus Kas Nyata hari ini.
  */
 require __DIR__ . '/_bootstrap.php';
 require_once __DIR__ . '/../../includes/finance_sync.php';
@@ -133,34 +133,16 @@ $st->execute();
 $activeDispatches = (int) $st->get_result()->fetch_column();
 $st->close();
 
-// 6. Saldo Buku Kas & Bank per Akun Aktif (KAS-TUNAI, BANK-UTAMA, dll)
+// 6. Saldo Berjalan Buku Kas dari `cash_transactions`
 $st = $db->prepare(
-    "SELECT a.id, a.code, a.name, a.type,
-            (a.opening_balance + COALESCE(SUM(CASE WHEN t.direction = 'in' THEN t.amount WHEN t.direction = 'out' THEN -t.amount ELSE 0 END), 0)) AS balance
-       FROM cash_accounts a
-       LEFT JOIN cash_transactions t ON t.cash_account_id = a.id AND t.company_id = a.company_id
-      WHERE a.company_id = ? AND a.is_active = 1
-      GROUP BY a.id, a.code, a.name, a.type, a.opening_balance
-      ORDER BY CASE a.type WHEN 'kas' THEN 0 ELSE 1 END, a.id ASC"
+    "SELECT COALESCE(SUM(CASE WHEN direction = 'in' THEN amount WHEN direction = 'out' THEN -amount ELSE 0 END), 0) AS balance
+       FROM cash_transactions
+      WHERE company_id = ?"
 );
 $st->bind_param('i', $cid);
 $st->execute();
-$accRows = $st->get_result()->fetch_all(MYSQLI_ASSOC);
+$cashBookBalance = (float) ($st->get_result()->fetch_column() ?: 0);
 $st->close();
-
-$cashAccounts = [];
-$cashBookBalance = 0.0;
-foreach ($accRows as $ar) {
-    $bal = (float) $ar['balance'];
-    $cashBookBalance += $bal;
-    $cashAccounts[] = [
-        'id'      => (int) $ar['id'],
-        'code'    => (string) $ar['code'],
-        'name'    => (string) $ar['name'],
-        'type'    => (string) $ar['type'],
-        'balance' => bot_money($bal),
-    ];
-}
 
 // 7. Arus Kas Nyata Hari Ini dari `cash_transactions`
 $st = $db->prepare(
@@ -200,7 +182,6 @@ bot_reply(200, [
     'unpaid_invoices_amount'        => bot_money($unpaidInvSum),
     'active_driver_assignments'     => $activeDispatches,
     'cash_book_balance'             => bot_money($cashBookBalance),
-    'cash_accounts'                 => $cashAccounts,
     'today_cash_flow'               => [
         'in_booking'  => bot_money($inB),
         'in_other'    => bot_money($inO),

@@ -65,7 +65,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     if ($parsedCrew) {
         $in_crew = $parsedCrew;
     }
-    $parsedPayments = booking_parse_payments_post($_POST);
+    $payParseErr    = '';
+    $parsedPayments = [];
+    try {
+        $parsedPayments = booking_parse_payments_post($_POST);
+    } catch (InvalidArgumentException $ex) {
+        $payParseErr = $ex->getMessage();
+    }
     if ($parsedPayments) {
         $in_payments = $parsedPayments;
     }
@@ -80,7 +86,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $dl_dist_resolved = resolve_district_id($in['delivery_point_district_id']);
 
     $err = '';
-    if (!preg_match('/^\d{4}-\d{2}-\d{2}$/', $in['date'])) {
+    if ($payParseErr !== '') {
+        $err = $payParseErr;
+    } elseif (!preg_match('/^\d{4}-\d{2}-\d{2}$/', $in['date'])) {
         $err = 'Tanggal keberangkatan wajib diisi.';
     } elseif (!preg_match('/^([01]\d|2[0-3]):[0-5]\d$/', $in['time'])) {
         $err = 'Jam keberangkatan wajib diisi.';
@@ -90,6 +98,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $err = 'Kecamatan penjemputan dan pengantaran wajib dipilih.';
     } elseif ((float) $in['total_price'] < 0) {
         $err = 'Total harga tidak boleh negatif.';
+    } elseif ((float) $in['total_price'] > 999999999999999.99) {
+        $err = 'Total harga melebihi batas maksimal (Rp 999.999.999.999.999).';
     } else {
         $manualPaySum = array_sum(array_map(static fn($r) => (float) ($r['amount'] ?? 0), $parsedPayments));
         if ($manualPaySum > (float) $in['total_price'] + 0.001) {

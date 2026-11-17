@@ -452,9 +452,7 @@ function gateway_finalize(string $orderId, ?float $paidAmount = null): array
                 $invoiceId,
                 (string) ($inv['invoice_no'] ?? ''),
                 $bType,
-                (string) ($inv['document_number'] ?? ''),
-                [],
-                null
+                (string) ($inv['document_number'] ?? '')
             );
         }
 

@@ -16,6 +16,7 @@ if ($emp_total === 0) { echo "skip: tidak ada karyawan aktif\n"; exit(0); }
 
 // Periode uji: tahun jauh di depan supaya tidak bertabrakan dengan data nyata.
 $YEAR = 2099;
+$c->query("DELETE ct FROM cash_transactions ct JOIN payroll_periods p ON ct.source_type='payroll_period' AND ct.source_id=p.id WHERE p.company_id = $cid AND p.period_year = $YEAR");
 $c->query("DELETE i FROM payroll_items i JOIN payroll_periods p ON p.id = i.payroll_period_id WHERE p.company_id = $cid AND p.period_year = $YEAR");
 $c->query("DELETE FROM payroll_periods WHERE company_id = $cid AND period_year = $YEAR");
 
@@ -76,6 +77,9 @@ payroll_period_set_status($pid, $cid, 'final', 'test');
 ok(payroll_period_find($pid)['status'] === 'final', 'draft -> final OK');
 payroll_period_set_status($pid, $cid, 'paid', 'test');
 ok(payroll_period_find($pid)['status'] === 'paid', 'final -> paid OK');
+$totalNetPaid = (float) $c->query("SELECT COALESCE(SUM(net_salary), 0) FROM payroll_items WHERE payroll_period_id = $pid")->fetch_row()[0];
+$cashSyncCnt = (int) $c->query("SELECT COUNT(*) FROM cash_transactions WHERE company_id = $cid AND source_type = 'payroll_period' AND source_id = $pid AND direction = 'out'")->fetch_row()[0];
+ok($cashSyncCnt === ($totalNetPaid > 0 ? 1 : 0), 'final -> paid sinkron Buku Kas sesuai total gaji bersih (' . $totalNetPaid . ')');
 
 $thrown = false;
 try { payroll_period_set_status($pid, $cid, 'final', 'test'); }
@@ -122,6 +126,7 @@ ok(!$has(5, 'payroll.manage'), 'Viewer (role 5) TIDAK punya payroll.manage');
 ok(!$has(4, 'payroll.view') && !$has(5, 'payroll.view'), 'Staff & Viewer TIDAK punya payroll.view (nominal gaji tertutup)');
 
 // 8. Bersihkan data uji (cascade menghapus item).
+$c->query("DELETE FROM cash_transactions WHERE company_id = $cid AND source_type = 'payroll_period' AND source_id = $pid");
 $c->query("DELETE FROM payroll_periods WHERE company_id = $cid AND period_year = $YEAR");
 $st = $c->prepare('SELECT COUNT(*) FROM payroll_items WHERE payroll_period_id = ?');
 $st->bind_param('i', $pid);

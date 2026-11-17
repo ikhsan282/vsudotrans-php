@@ -670,14 +670,8 @@ if ($canManage) {
                     $activeQrisCount++;
                 }
             }
-            $bankMainSt = db()->prepare("SELECT id, bank_name, account_number FROM cash_accounts WHERE company_id = ? AND type = 'bank' AND is_active = 1 ORDER BY id ASC LIMIT 1");
-            $bankMainSt->bind_param('i', $id);
-            $bankMainSt->execute();
-            $bankMain = $bankMainSt->get_result()->fetch_assoc() ?: null;
-            $bankMainSt->close();
-            $bankReady = $bankMain && trim((string) ($bankMain['bank_name'] ?? '')) !== '' && trim((string) ($bankMain['account_number'] ?? '')) !== '';
             ?>
-            <div class="alert alert-<?= $activeQrisCount > 0 && $bankReady ? 'success' : 'light border' ?> py-2 px-3 small d-flex flex-wrap align-items-center justify-content-between gap-2 mb-3">
+            <div class="alert alert-<?= $activeQrisCount > 0 ? 'success' : 'light border' ?> py-2 px-3 small d-flex flex-wrap align-items-center justify-content-between gap-2 mb-3">
                 <div class="d-flex flex-wrap align-items-center gap-3">
                     <span>
                         <i class="bi bi-qr-code me-1"></i>QRIS Dinamis:
@@ -687,19 +681,8 @@ if ($canManage) {
                             <strong class="text-warning-emphasis">Belum aktif</strong> (pembayaran lewat metode manual / transfer)
                         <?php endif; ?>
                     </span>
-                    <span>
-                        <i class="bi bi-bank me-1"></i>Rekening Utama:
-                        <?php if ($bankReady): ?>
-                            <strong><?= e((string) $bankMain['bank_name']) ?> · <?= e((string) $bankMain['account_number']) ?></strong>
-                        <?php else: ?>
-                            <strong class="text-danger">Belum dilengkapi</strong>
-                        <?php endif; ?>
-                    </span>
                 </div>
                 <div class="d-flex flex-wrap gap-2">
-                    <?php if ($bankMain): ?>
-                        <a href="<?= e(APP_URL) ?>/pages/finance/cash_accounts/form.php?id=<?= (int) $bankMain['id'] ?>" class="btn btn-outline-secondary btn-sm py-0">Atur Rekening Bank</a>
-                    <?php endif; ?>
                     <a href="<?= e(APP_URL) ?>/pages/finance/payment_methods/index.php" class="btn btn-outline-primary btn-sm py-0">Metode Bayar</a>
                 </div>
             </div>

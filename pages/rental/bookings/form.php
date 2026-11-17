@@ -171,22 +171,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     }
 
     // Ambil baris pembayaran dari Tab Pembayaran Sewa
-    $p_types   = (array) ($_POST['pay_type'] ?? []);
-    $p_methods = (array) ($_POST['pay_method'] ?? []);
-    $p_dates   = (array) ($_POST['pay_date'] ?? []);
-    $p_amts    = (array) ($_POST['pay_amount'] ?? []);
+    $payParseErr = '';
     $in_payments = [];
-    foreach ($p_types as $idx => $pt) {
-        $pAmt = parse_rupiah_input($p_amts[$idx] ?? 0);
-        if ($pAmt > 0) {
-            $in_payments[] = [
-                '_file_idx'  => (int) $idx,
-                'pay_type'   => trim((string) $pt) ?: 'Down Payment (DP)',
-                'pay_method' => trim((string) ($p_methods[$idx] ?? 'Transfer')) ?: 'Transfer',
-                'pay_date'   => trim((string) ($p_dates[$idx] ?? date('Y-m-d'))) ?: date('Y-m-d'),
-                'amount'     => $pAmt,
-            ];
-        }
+    try {
+        $in_payments = booking_parse_payments_post($_POST);
+    } catch (InvalidArgumentException $ex) {
+        $payParseErr = $ex->getMessage();
     }
 
     $in_passengers = array_values(array_unique(array_filter(
@@ -196,7 +186,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $in_passengers = array_values(array_diff($in_passengers, [(int) $in['passenger_id']]));
 
     $err = '';
-    if (!preg_match('/^\d{4}-\d{2}-\d{2}$/', $in['start_date']) || !preg_match('/^\d{4}-\d{2}-\d{2}$/', $in['end_date'])) {
+    if ($payParseErr !== '') {
+        $err = $payParseErr;
+    } elseif (!preg_match('/^\d{4}-\d{2}-\d{2}$/', $in['start_date']) || !preg_match('/^\d{4}-\d{2}-\d{2}$/', $in['end_date'])) {
         $err = 'Tanggal keberangkatan (mulai & selesai sewa) wajib diisi.';
     } elseif (!preg_match('/^([01]\d|2[0-3]):[0-5]\d$/', $in['time'])) {
         $err = 'Jam keberangkatan wajib diisi.';
@@ -208,6 +200,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $err = 'Kecamatan penjemputan dan pengantaran wajib dipilih.';
     } elseif ((float) $in['trip'] < 0 || (float) $in['bbm'] < 0 || (float) $in['total_price'] < 0) {
         $err = 'Trip, BBM, dan harga sewa tidak boleh negatif.';
+    } elseif ((float) $in['total_price'] > 999999999999999.99 || (float) $in['bbm'] > 999999999999999.99) {
+        $err = 'Nominal harga sewa atau BBM melebihi batas maksimal (Rp 999.999.999.999.999).';
     } else {
         $manualPaySum = array_sum(array_map(static fn($r) => (float) ($r['amount'] ?? 0), $in_payments));
         if ($manualPaySum > (float) $in['total_price'] + 0.001) {
@@ -930,7 +924,7 @@ require __DIR__ . '/../../../includes/header.php';
                                     </td>
                                     <td>
                                         <input type="text" inputmode="numeric" class="form-control form-control-sm text-end fw-semibold pay-amt-display" value="<?= format_nominal((float) ($pr['amount'] ?? 0)) ?>">
-                                        <input type="hidden" name="pay_amount[]" class="pay-amt-value" value="<?= (float) ($pr['amount'] ?? 0) ?>">
+                                        <input type="hidden" name="pay_amount[]" class="pay-amt-value" value="<?= (int) round((float) ($pr['amount'] ?? 0)) ?>">
                                     </td>
                                     <td class="text-center">
                                         <button type="button" class="btn btn-sm btn-link text-danger p-0 btn-remove-pay" title="Hapus baris"><i class="bi bi-x-lg"></i></button>
@@ -1049,68 +1043,50 @@ require __DIR__ . '/../../../includes/header.php';
 
 <script>
 document.addEventListener('DOMContentLoaded', function () {
-    // Helper format & parse rupiah standar Indonesia
-    function parseRupiah(val) {
-        if (val === null || val === undefined || val === '') return 0;
-        if (typeof val === 'number') return Math.round(val);
-        var str = String(val).trim();
-        if (/^\d+\.(0|00)$/.test(str)) {
-            str = str.replace(/\.(0|00)$/, '');
-        }
-        var digits = str.replace(/[^0-9]/g, '');
-        return digits ? parseInt(digits, 10) : 0;
-    }
+    // Helper format & parse rupiah standar Indonesia (delegasi ke global app.js agar aman dari overflow)
+    var parseRupiah = typeof window.parseRupiah === 'function'
+        ? window.parseRupiah
+        : function (val) {
+            if (val === null || val === undefined || val === '') return 0;
+            if (typeof val === 'number') return Number.isFinite(val) ? Math.max(0, Math.round(val)) : 0;
+            var str = String(val).trim();
+            if (!str || str.charAt(0) === '-') return 0;
+            if (/^\d+\.\d{1,2}$/.test(str)) return Math.max(0, Math.round(parseFloat(str) || 0));
+            var digits = str.replace(/[^0-9]/g, '');
+            return digits ? (Math.max(0, Math.round(Number(digits))) || 0) : 0;
+        };
 
-    function formatRupiah(val) {
-        if (val === null || val === undefined || val === '') return '';
-        var num = parseRupiah(val);
-        if (num === 0) {
-            return String(val).replace(/[^0-9]/g, '') === '' ? '' : '0';
-        }
-        return num.toString().replace(/\B(?=(\d{3})+(?!\d))/g, '.');
-    }
+    var formatRupiah = typeof window.formatRupiah === 'function'
+        ? window.formatRupiah
+        : function (val) {
+            if (val === null || val === undefined || val === '') return '';
+            var num = parseRupiah(val);
+            if (num === 0) return String(val).replace(/[^0-9]/g, '') === '' ? '' : '0';
+            if (typeof Intl !== 'undefined' && typeof Intl.NumberFormat === 'function') {
+                return new Intl.NumberFormat('id-ID', { maximumFractionDigits: 0 }).format(num);
+            }
+            return num.toString().replace(/\B(?=(\d{3})+(?!\d))/g, '.');
+        };
 
-    function attachRupiahMask(inputEl, hiddenEl, onChangeCallback) {
-        if (!inputEl) return;
-        inputEl.addEventListener('input', function () {
-            var oldVal = this.value;
-            var caretPos = this.selectionStart || 0;
-            var digitsBeforeCaret = oldVal.slice(0, caretPos).replace(/[^0-9]/g, '').length;
-
-            var clean = oldVal.replace(/[^0-9]/g, '');
-            var num = parseInt(clean || '0', 10);
-            if (hiddenEl) hiddenEl.value = String(num);
-
-            var formatted = clean === '' ? '' : formatRupiah(num);
-            this.value = formatted;
-
-            if (this.setSelectionRange && formatted) {
-                var newCaret = 0;
-                var digitCount = 0;
-                for (var i = 0; i < formatted.length; i++) {
-                    if (/[0-9]/.test(formatted[i])) {
-                        digitCount++;
-                    }
-                    if (digitCount === digitsBeforeCaret) {
-                        newCaret = i + 1;
-                        break;
-                    }
+    var attachRupiahMask = typeof window.attachRupiahInput === 'function'
+        ? window.attachRupiahInput
+        : function (inputEl, hiddenEl, onChangeCallback) {
+            if (!inputEl) return;
+            inputEl.addEventListener('input', function () {
+                var clean = String(this.value || '').replace(/[^0-9]/g, '').slice(0, 15);
+                var num = clean === '' ? 0 : (Number(clean) || 0);
+                if (hiddenEl) hiddenEl.value = String(num);
+                this.value = clean === '' ? '' : formatRupiah(num);
+                if (typeof onChangeCallback === 'function') onChangeCallback(num);
+            });
+            inputEl.addEventListener('blur', function () {
+                if (this.value.trim() === '') {
+                    this.value = '0';
+                    if (hiddenEl) hiddenEl.value = '0';
+                    if (typeof onChangeCallback === 'function') onChangeCallback(0);
                 }
-                if (digitCount < digitsBeforeCaret) newCaret = formatted.length;
-                try { this.setSelectionRange(newCaret, newCaret); } catch (e) {}
-            }
-
-            if (typeof onChangeCallback === 'function') onChangeCallback(num);
-        });
-
-        inputEl.addEventListener('blur', function () {
-            if (this.value.trim() === '') {
-                this.value = '0';
-                if (hiddenEl) hiddenEl.value = '0';
-                if (typeof onChangeCallback === 'function') onChangeCallback(0);
-            }
-        });
-    }
+            });
+        };
 
     // 1. Format input Harga (2.000.000 <-> 2000000)
     var priceDisplay = document.getElementById('rental_price_display');
@@ -1782,14 +1758,15 @@ document.addEventListener('DOMContentLoaded', function () {
             var hid = tr.querySelector('.pay-amt-value');
             paySum += parseRupiah(hid ? hid.value : '0');
         });
-        if (payTopDisp) payTopDisp.value = formatRupiah(paySum);
-        if (paySubDisp) paySubDisp.value = formatRupiah(paySum);
+        var paySumFmt = formatRupiah(paySum) || '0';
+        if (payTopDisp) payTopDisp.value = paySumFmt;
+        if (paySubDisp) paySubDisp.value = paySumFmt;
         if (payCountEl) payCountEl.textContent = 'Record ' + (rows.length ? 1 : 0) + ' of ' + rows.length;
 
         var st = getPayValidationState(paySum);
         if (payOverAlert && payOverMsg) {
             if (st.exceeded) {
-                payOverMsg.textContent = 'Total pembayaran (Rp ' + formatRupiah(st.paySum) + ') tidak boleh melebihi total harga sewa (Rp ' + formatRupiah(st.targetTotal) + ').';
+                payOverMsg.textContent = 'Total pembayaran (Rp ' + (formatRupiah(st.paySum) || '0') + ') tidak boleh melebihi total harga sewa (Rp ' + (formatRupiah(st.targetTotal) || '0') + ').';
                 payOverAlert.classList.remove('d-none');
             } else {
                 payOverAlert.classList.add('d-none');
@@ -1800,6 +1777,14 @@ document.addEventListener('DOMContentLoaded', function () {
             if (!el) return;
             el.classList.toggle('is-invalid', st.exceeded);
             el.classList.toggle('text-danger', st.exceeded);
+        });
+        rows.forEach(function (tr) {
+            var disp = tr.querySelector('.pay-amt-display');
+            var hid  = tr.querySelector('.pay-amt-value');
+            if (!disp || disp.readOnly) return;
+            var rowOver = st.exceeded && parseRupiah(hid ? hid.value : '0') > 0;
+            disp.classList.toggle('is-invalid', rowOver);
+            disp.classList.toggle('text-danger', rowOver);
         });
     }
 
