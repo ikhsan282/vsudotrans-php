@@ -485,15 +485,21 @@ require __DIR__ . '/../../../includes/header.php';
                                 <div class="rnt-row">
                                     <label class="rnt-label">Tanggal Keberangkatan <span class="text-danger">*</span></label>
                                     <div class="rnt-field">
-                                        <div class="row g-2 align-items-center">
-                                            <div class="col-12 col-sm-5">
-                                                <input type="text" class="form-control form-control-sm bg-white flatpickr-date" id="rental_start_date" name="start_date" required value="<?= e($in['start_date']) ?>" placeholder="dd-MMM-yyyy">
+                                        <div class="row g-2 align-items-end">
+                                            <div class="col-6 col-sm-4">
+                                                <label for="rental_start_date" class="form-label text-body-secondary d-sm-none mb-1" style="font-size:0.72rem;">Tgl Mulai</label>
+                                                <input type="text" class="form-control form-control-sm bg-white flatpickr-date" id="rental_start_date" name="start_date" required value="<?= e($in['start_date']) ?>" placeholder="dd-MMM-yyyy" title="Tanggal Mulai Sewa">
                                             </div>
-                                            <div class="col-12 col-sm-5">
-                                                <input type="text" class="form-control form-control-sm bg-white flatpickr-date" id="rental_end_date" name="end_date" required value="<?= e($in['end_date']) ?>" placeholder="dd-MMM-yyyy">
+                                            <div class="col-6 col-sm-4">
+                                                <label for="rental_end_date" class="form-label text-body-secondary d-sm-none mb-1" style="font-size:0.72rem;">Tgl Selesai</label>
+                                                <input type="text" class="form-control form-control-sm bg-white flatpickr-date" id="rental_end_date" name="end_date" required value="<?= e($in['end_date']) ?>" placeholder="dd-MMM-yyyy" title="Tanggal Selesai Sewa">
                                             </div>
-                                            <div class="col-12 col-sm-2">
-                                                <input type="number" min="1" max="365" class="form-control form-control-sm text-end fw-semibold" id="rental_duration_days" name="duration_days" value="<?= e($in['duration_days']) ?>" title="Durasi Sewa (Hari)">
+                                            <div class="col-12 col-sm-4">
+                                                <label for="rental_duration_days" class="form-label text-body-secondary d-sm-none mb-1" style="font-size:0.72rem;">Durasi Sewa</label>
+                                                <div class="input-group input-group-sm">
+                                                    <input type="number" min="1" max="365" class="form-control form-control-sm text-end fw-semibold" id="rental_duration_days" name="duration_days" value="<?= e($in['duration_days']) ?>" title="Durasi Sewa (Hari)">
+                                                    <span class="input-group-text">Hari</span>
+                                                </div>
                                             </div>
                                         </div>
                                     </div>

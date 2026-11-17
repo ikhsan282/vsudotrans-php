@@ -204,63 +204,163 @@ function render_flash(): string
     return flash_html();
 }
 
-/** Pagination sederhana: kembalikan offset & info halaman. */
-function paginate(int $total, int $page = 1, int $per_page = PER_PAGE): array
+/** Resolve jumlah baris per halaman yang diizinkan (10, 20, 50, 100). */
+function resolve_per_page(int $default = PER_PAGE, array $allowed = [10, 20, 50, 100]): int
 {
+    $req = (int) ($_GET['per_page'] ?? $default);
+    return in_array($req, $allowed, true) ? $req : $default;
+}
+
+/** Pagination sederhana & terstandarisasi: kembalikan offset, rentang from/to, & info halaman. */
+function paginate(int $total, int $page = 1, ?int $per_page = null): array
+{
+    $total = max(0, $total);
+    $per_page = max(1, min(100, $per_page ?? resolve_per_page()));
     $total_pages = max(1, (int) ceil($total / $per_page));
     $page = max(1, min($page, $total_pages));
+    $offset = ($page - 1) * $per_page;
     return [
         'total' => $total,
         'per_page' => $per_page,
         'current' => $page,
         'total_pages' => $total_pages,
-        'offset' => ($page - 1) * $per_page,
+        'offset' => $offset,
+        'from' => $total === 0 ? 0 : $offset + 1,
+        'to' => $total === 0 ? 0 : min($total, $offset + $per_page),
     ];
 }
 
-function pagination_html(array $p, string $query_base): string
+function pagination_html(array $p, string $query_base = '', array $opts = []): string
 {
-    if ($p['total_pages'] <= 1) {
+    $total_rows = (int) ($p['total'] ?? 0);
+    $current = (int) ($p['current'] ?? 1);
+    $total = (int) ($p['total_pages'] ?? 1);
+    $cur_pp = (int) ($p['per_page'] ?? PER_PAGE);
+    $show_per_page = (bool) ($opts['show_per_page'] ?? true);
+    $allowed_sizes = $opts['per_page_options'] ?? [10, 20, 50, 100];
+
+    $need_per_page = $show_per_page && ($total_rows > 10 || $cur_pp !== PER_PAGE);
+    if (!$need_per_page && $total <= 1) {
         return '';
     }
-    $prefix = $query_base !== '' ? rtrim($query_base, '&') . '&' : '';
-    $current = $p['current'];
-    $total = $p['total_pages'];
 
-    $link = static function (int $page, string $text, bool $active = false, bool $disabled = false) use ($prefix): string {
-        $cls = 'page-item' . ($active ? ' active' : '') . ($disabled ? ' disabled' : '');
-        $href = $disabled ? '#' : '?' . e($prefix) . 'page=' . $page;
-        return '<li class="' . $cls . '"><a class="page-link" href="' . $href . '">' . $text . '</a></li>';
-    };
-
-    $html = '<nav aria-label="Navigasi Halaman"><ul class="pagination pagination-sm mb-0">';
-    $html .= $link($current - 1, '&laquo;', false, $current <= 1);
-
-    if ($total <= 9) {
-        for ($i = 1; $i <= $total; $i++) {
-            $html .= $link($i, (string) $i, $i === $current);
-        }
-    } else {
-        $html .= $link(1, '1', 1 === $current);
-        if ($current > 4) {
-            $html .= '<li class="page-item disabled"><span class="page-link">&hellip;</span></li>';
-        }
-
-        $start = max(2, $current - 2);
-        $end = min($total - 1, $current + 2);
-        for ($i = $start; $i <= $end; $i++) {
-            $html .= $link($i, (string) $i, $i === $current);
-        }
-
-        if ($current < $total - 3) {
-            $html .= '<li class="page-item disabled"><span class="page-link">&hellip;</span></li>';
-        }
-        $html .= $link($total, (string) $total, $total === $current);
+    $q_params = [];
+    if ($query_base !== '') {
+        parse_str(ltrim($query_base, '?&'), $q_params);
+    }
+    unset($q_params['page']);
+    if (!isset($q_params['per_page']) && $cur_pp !== PER_PAGE) {
+        $q_params['per_page'] = (string) $cur_pp;
     }
 
-    $html .= $link($current + 1, '&raquo;', false, $current >= $total);
-    $html .= '</ul></nav>';
+    $emit_hidden = static function (array $params): string {
+        $qs = http_build_query($params);
+        if ($qs === '') {
+            return '';
+        }
+        $out = '';
+        foreach (explode('&', $qs) as $pair) {
+            if ($pair === '') {
+                continue;
+            }
+            $parts = explode('=', $pair, 2);
+            $k = urldecode($parts[0]);
+            $v = isset($parts[1]) ? urldecode($parts[1]) : '';
+            $out .= '<input type="hidden" name="' . e($k) . '" value="' . e($v) . '">';
+        }
+        return $out;
+    };
+
+    $html = '<div class="d-flex flex-wrap align-items-center justify-content-end gap-2 vst-pagination-controls no-print">';
+
+    if ($need_per_page) {
+        $pp_params = $q_params;
+        unset($pp_params['per_page']);
+        $html .= '<form method="get" class="d-inline-flex align-items-center gap-1 m-0">';
+        $html .= $emit_hidden($pp_params);
+        $html .= '<input type="hidden" name="page" value="1">';
+        $html .= '<select name="per_page" class="form-select form-select-sm w-auto" aria-label="Jumlah baris per halaman" title="Baris per halaman" onchange="this.form.submit()">';
+        foreach ($allowed_sizes as $sz) {
+            $sz = (int) $sz;
+            $sel = $cur_pp === $sz ? ' selected' : '';
+            $html .= '<option value="' . $sz . '"' . $sel . '>' . $sz . ' / hal</option>';
+        }
+        $html .= '</select></form>';
+    }
+
+    if ($total > 1) {
+        $link = static function (int $page, string $text, bool $active = false, bool $disabled = false) use ($q_params): string {
+            $cls = 'page-item' . ($active ? ' active' : '') . ($disabled ? ' disabled' : '');
+            $params = $q_params;
+            $params['page'] = $page;
+            $href = $disabled ? '#' : '?' . e(http_build_query($params));
+            return '<li class="' . $cls . '"><a class="page-link" href="' . $href . '">' . $text . '</a></li>';
+        };
+
+        $html .= '<nav aria-label="Navigasi Halaman"><ul class="pagination pagination-sm mb-0">';
+        $html .= $link($current - 1, '&laquo;', false, $current <= 1);
+
+        if ($total <= 9) {
+            for ($i = 1; $i <= $total; $i++) {
+                $html .= $link($i, (string) $i, $i === $current);
+            }
+        } else {
+            $html .= $link(1, '1', 1 === $current);
+            if ($current > 4) {
+                $html .= '<li class="page-item disabled"><span class="page-link">&hellip;</span></li>';
+            }
+
+            $start = max(2, $current - 2);
+            $end = min($total - 1, $current + 2);
+            for ($i = $start; $i <= $end; $i++) {
+                $html .= $link($i, (string) $i, $i === $current);
+            }
+
+            if ($current < $total - 3) {
+                $html .= '<li class="page-item disabled"><span class="page-link">&hellip;</span></li>';
+            }
+            $html .= $link($total, (string) $total, $total === $current);
+        }
+
+        $html .= $link($current + 1, '&raquo;', false, $current >= $total);
+        $html .= '</ul></nav>';
+
+        if ($total > 5) {
+            $html .= '<form method="get" class="d-none d-md-inline-flex align-items-center gap-1 m-0">';
+            $html .= $emit_hidden($q_params);
+            $html .= '<input type="number" name="page" min="1" max="' . $total . '" value="' . $current . '" class="form-control form-control-sm" style="width:64px" title="Lompat ke halaman (1–' . $total . ')" aria-label="Lompat halaman">';
+            $html .= '<button type="submit" class="btn btn-outline-secondary btn-sm py-0 px-2" style="height:31px" title="Buka halaman">Go</button>';
+            $html .= '</form>';
+        }
+    }
+
+    $html .= '</div>';
     return $html;
+}
+
+/** Footer grid terstandarisasi: ringkasan rentang data + per-page + paginasi + jump halaman. */
+function grid_footer_html(array $p, string $query_base = '', string $entity_label = 'data', array $opts = []): string
+{
+    $total = (int) ($p['total'] ?? 0);
+    $from = (int) ($p['from'] ?? ($total > 0 ? ((int) ($p['offset'] ?? 0) + 1) : 0));
+    $to = (int) ($p['to'] ?? ($total > 0 ? min($total, (int) ($p['offset'] ?? 0) + (int) ($p['per_page'] ?? PER_PAGE)) : 0));
+    $cur = (int) ($p['current'] ?? 1);
+    $total_pages = (int) ($p['total_pages'] ?? 1);
+
+    $summary = $total > 0
+        ? 'Menampilkan <strong>' . number_format($from, 0, ',', '.') . '&ndash;' . number_format($to, 0, ',', '.') . '</strong> dari <strong>' . number_format($total, 0, ',', '.') . '</strong> ' . e($entity_label)
+        : 'Total <strong>0</strong> ' . e($entity_label);
+    $page_meta = $total > 0
+        ? '<span class="d-none d-sm-inline text-muted">&bull; Hal. ' . number_format($cur, 0, ',', '.') . ' / ' . number_format($total_pages, 0, ',', '.') . '</span>'
+        : '';
+
+    return '<div class="card-footer bg-white d-flex flex-wrap justify-content-between align-items-center gap-2 py-2">'
+        . '<div class="small text-muted d-flex flex-wrap align-items-center gap-2">'
+        . '<span>' . $summary . '</span>'
+        . $page_meta
+        . '</div>'
+        . pagination_html($p, $query_base, $opts)
+        . '</div>';
 }
 
 /**
@@ -435,7 +535,7 @@ function ui_page_header(string $title, array $breadcrumb = [], array $badges = [
     $html .= '</div>';
 
     if (!empty($actions)) {
-        $html .= '<div class="d-flex align-items-center gap-2">';
+        $html .= '<div class="d-flex flex-wrap align-items-center gap-2">';
         foreach ($actions as $act) {
             if (!empty($act['items']) && is_array($act['items'])) {
                 $cls = $act['class'] ?? 'btn btn-sm btn-outline-secondary dropdown-toggle';
@@ -448,7 +548,8 @@ function ui_page_header(string $title, array $breadcrumb = [], array $badges = [
                         ? $item['href']
                         : APP_URL . '/' . ltrim($item['href'], '/');
                     $iicon = !empty($item['icon']) ? '<i class="bi bi-' . e($item['icon']) . ' me-2 ' . e($item['icon_class'] ?? '') . '"></i>' : '';
-                    $html .= '<li><a class="dropdown-item small d-flex align-items-center py-1" href="' . e($ihref) . '">' . $iicon . e($item['label']) . '</a></li>';
+                    $itarget = !empty($item['target']) ? ' target="' . e($item['target']) . '"' . ($item['target'] === '_blank' ? ' rel="noopener"' : '') : '';
+                    $html .= '<li><a class="dropdown-item small d-flex align-items-center py-1" href="' . e($ihref) . '"' . $itarget . '>' . $iicon . e($item['label']) . '</a></li>';
                 }
                 $html .= '</ul></div>';
                 continue;
@@ -462,7 +563,8 @@ function ui_page_header(string $title, array $breadcrumb = [], array $badges = [
                 $href = (str_starts_with($act['href'] ?? '#', 'http') || str_starts_with($act['href'] ?? '#', '?'))
                     ? ($act['href'] ?? '#')
                     : APP_URL . '/' . ltrim($act['href'] ?? '#', '/');
-                $html .= '<a class="' . e($cls) . '" href="' . e($href) . '">' . $icon . e($act['label']) . '</a>';
+                $target = !empty($act['target']) ? ' target="' . e($act['target']) . '"' . ($act['target'] === '_blank' ? ' rel="noopener"' : '') : '';
+                $html .= '<a class="' . e($cls) . '" href="' . e($href) . '"' . $target . '>' . $icon . e($act['label']) . '</a>';
             }
         }
         $html .= '</div>';

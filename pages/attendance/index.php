@@ -66,11 +66,11 @@ require __DIR__ . '/../../includes/header.php';
                 <?php endif; ?>
                 <div class="col-6 col-lg-2">
                     <label class="form-label small mb-1">Dari Tanggal</label>
-                    <input type="date" class="form-control form-control-sm" name="from" value="<?= e($from) ?>">
+                    <input type="text" class="form-control form-control-sm bg-white flatpickr-date" data-flatpickr-auto placeholder="dd-MMM-yyyy" name="from" value="<?= e($from) ?>">
                 </div>
                 <div class="col-6 col-lg-2">
                     <label class="form-label small mb-1">Sampai Tanggal</label>
-                    <input type="date" class="form-control form-control-sm" name="to" value="<?= e($to) ?>">
+                    <input type="text" class="form-control form-control-sm bg-white flatpickr-date" data-flatpickr-auto placeholder="dd-MMM-yyyy" name="to" value="<?= e($to) ?>">
                 </div>
                 <div class="col-6 col-lg-2">
                     <label class="form-label small mb-1">Karyawan</label>
@@ -100,7 +100,7 @@ require __DIR__ . '/../../includes/header.php';
     </div>
 
     <div class="card shadow-sm border-0">
-        <div class="card-header bg-white d-flex justify-content-between align-items-center small text-muted">
+        <div class="card-header bg-white d-flex flex-wrap justify-content-between align-items-center gap-2 small text-muted">
             <span><?= (int) $p['total'] ?> baris absensi ditemukan</span>
             <?= pagination_html($p, $query_base) ?>
         </div>

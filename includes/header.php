@@ -46,11 +46,11 @@ unset($comp);
 <?php require __DIR__ . '/sidebar.php'; ?>
 <div class="content-wrapper">
     <div class="topbar d-flex align-items-center px-3 gap-2">
-        <button class="btn btn-sm btn-outline-secondary" id="sidebarToggler" type="button" aria-label="Toggle menu sidebar" title="Tampilkan/Sembunyikan Sidebar" aria-controls="sidebar" aria-expanded="false">
+        <button class="btn btn-sm btn-outline-secondary flex-shrink-0" id="sidebarToggler" type="button" aria-label="Toggle menu sidebar" title="Tampilkan/Sembunyikan Sidebar" aria-controls="sidebar" aria-expanded="false">
             <i class="bi bi-list fs-5" aria-hidden="true"></i>
         </button>
         <h6 class="mb-0 fw-semibold"><?= e($title) ?></h6>
-        <div class="ms-auto d-flex align-items-center gap-2">
+        <div class="ms-auto d-flex align-items-center gap-2 flex-shrink-0">
             <div class="dropdown">
                 <button class="btn btn-sm btn-outline-secondary dropdown-toggle" type="button" data-bs-toggle="dropdown" aria-expanded="false">
                     <i class="bi bi-building"></i> <span class="d-none d-md-inline"><?= e($activeName) ?></span>

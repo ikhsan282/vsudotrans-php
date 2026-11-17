@@ -71,16 +71,44 @@ function report_export_qs(array $f, string $format = 'csv'): string
     return http_build_query($p);
 }
 
-/** Tombol aksi header standar export CSV/Excel/PDF/Cetak untuk halaman laporan. */
+/** Tombol aksi header standar export (dropdown Excel/CSV/PDF + Cetak) untuk halaman laporan. */
 function report_header_actions(string $export_script, array $f): array
 {
     $csv_qs  = report_export_qs($f, 'csv');
     $xlsx_qs = report_export_qs($f, 'xlsx');
     return [
-        ['label' => 'CSV',   'icon' => 'filetype-csv',       'href' => $export_script . '?' . $csv_qs,  'class' => 'btn btn-outline-success btn-sm'],
-        ['label' => 'Excel', 'icon' => 'file-earmark-excel', 'href' => $export_script . '?' . $xlsx_qs, 'class' => 'btn btn-success btn-sm'],
-        ['label' => 'PDF',   'icon' => 'filetype-pdf',       'href' => $export_script . '?' . $csv_qs . '&format=pdf', 'class' => 'btn btn-danger btn-sm'],
-        ['label' => 'Cetak', 'icon' => 'printer',            'href' => $export_script . '?' . $csv_qs . '&format=html&print=1', 'class' => 'btn btn-outline-secondary btn-sm', 'target' => '_blank'],
+        [
+            'label' => 'Export',
+            'icon'  => 'download',
+            'class' => 'btn btn-outline-secondary btn-sm dropdown-toggle',
+            'items' => [
+                [
+                    'label'      => 'Excel (.xlsx)',
+                    'icon'       => 'file-earmark-excel',
+                    'icon_class' => 'text-success',
+                    'href'       => $export_script . '?' . $xlsx_qs,
+                ],
+                [
+                    'label'      => 'CSV (.csv)',
+                    'icon'       => 'filetype-csv',
+                    'icon_class' => 'text-success',
+                    'href'       => $export_script . '?' . $csv_qs,
+                ],
+                [
+                    'label'      => 'PDF (.pdf)',
+                    'icon'       => 'filetype-pdf',
+                    'icon_class' => 'text-danger',
+                    'href'       => $export_script . '?' . $csv_qs . '&format=pdf',
+                ],
+            ],
+        ],
+        [
+            'label'  => 'Cetak',
+            'icon'   => 'printer',
+            'href'   => $export_script . '?' . $csv_qs . '&format=html&print=1',
+            'class'  => 'btn btn-outline-secondary btn-sm',
+            'target' => '_blank',
+        ],
     ];
 }
 

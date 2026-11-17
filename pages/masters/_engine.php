@@ -812,7 +812,7 @@ function master_list(string $key): void
                     </tbody>
                 </table>
             </div>
-            <div class="card-footer bg-white"><?= pagination_html($p, $query_base) ?></div>
+            <?= grid_footer_html($p, $query_base) ?>
         </div>
     </main>
     <?php

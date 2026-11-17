@@ -190,10 +190,10 @@ require __DIR__ . '/../../includes/header.php';
                 </div>
                 <?php endif; ?>
                 <div class="col-6 col-md-2 erp-filter-date">
-                    <input type="date" name="from" class="form-control form-control-sm" value="<?= e($from) ?>" title="Dari Tanggal">
+                    <input type="text" name="from" class="form-control form-control-sm bg-white flatpickr-date" data-flatpickr-auto placeholder="Dari Tgl" value="<?= e($from) ?>" title="Dari Tanggal">
                 </div>
                 <div class="col-6 col-md-2 erp-filter-date">
-                    <input type="date" name="to" class="form-control form-control-sm" value="<?= e($to) ?>" title="Sampai Tanggal">
+                    <input type="text" name="to" class="form-control form-control-sm bg-white flatpickr-date" data-flatpickr-auto placeholder="Sampai Tgl" value="<?= e($to) ?>" title="Sampai Tanggal">
                 </div>
                 <div class="col-6 col-md-2 erp-filter-item">
                     <input type="text" name="user" class="form-control form-control-sm" placeholder="Username..." value="<?= e($f_user) ?>">

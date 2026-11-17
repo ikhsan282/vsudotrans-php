@@ -133,8 +133,11 @@ require __DIR__ . '/../../includes/header.php';
                                     <div class="rnt-row<?= $id > 0 ? ' rnt-row-top' : '' ?>">
                                         <div class="rnt-label">Tanggal <span class="text-danger">*</span></div>
                                         <div class="rnt-field">
-                                            <input type="date" name="date" class="form-control form-control-sm" required value="<?= e($field('date')) ?>"
-                                                   <?= $id > 0 ? 'disabled' : '' ?>>
+                                            <?php if ($id > 0): ?>
+                                                <input type="text" class="form-control form-control-sm bg-light" value="<?= $field('date') !== '' ? e(date('d-M-Y', strtotime((string) $field('date')))) : '—' ?>" disabled>
+                                            <?php else: ?>
+                                                <input type="text" name="date" class="form-control form-control-sm bg-white flatpickr-date" data-flatpickr-auto placeholder="dd-MMM-yyyy" required value="<?= e($field('date')) ?>">
+                                            <?php endif; ?>
                                             <?php if ($id > 0): ?><div class="form-text small">Tanggal tidak diubah saat mengedit baris.</div><?php endif; ?>
                                         </div>
                                     </div>

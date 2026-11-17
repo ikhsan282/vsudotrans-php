@@ -252,10 +252,61 @@ if ($pdf) {
                 page-break-inside: avoid;
             }
         }
+        @media screen and (max-width: 639.98px) {
+            .tk-card {
+                min-height: auto;
+            }
+            .tk-card > .card-body {
+                padding: 14px;
+            }
+            table.tk-lay,
+            table.tk-lay > tbody,
+            table.tk-lay > tbody > tr,
+            table.tk-lay > tbody > tr > td {
+                display: block;
+                width: 100% !important;
+                padding-left: 0 !important;
+                padding-right: 0 !important;
+            }
+            .tk-head td.text-end {
+                text-align: left !important;
+                margin-top: 8pt;
+            }
+            .tk-eti {
+                font-size: 19pt;
+                text-align: left;
+            }
+            table.tk-lay > tbody > tr > td.tk-split-left {
+                margin-bottom: 12pt;
+            }
+            table.tk-kv td.tk-kv-k {
+                width: 96pt;
+                white-space: normal;
+                vertical-align: top;
+            }
+            table.tk-kv td.tk-kv-v {
+                word-break: normal;
+                overflow-wrap: break-word;
+            }
+            .tk-pickup-cell {
+                margin-bottom: 10pt;
+            }
+            .tk-tbl-wrap {
+                overflow-x: auto;
+                -webkit-overflow-scrolling: touch;
+            }
+            table.tk-tbl {
+                min-width: 440px;
+            }
+            .tk-ver td.text-end {
+                text-align: left !important;
+                margin-top: 6pt;
+            }
+        }
     </style>
 </head>
 <body class="bg-body-tertiary">
-<div class="no-print container py-2 text-end" style="max-width: 860px;">
+<div class="no-print container py-2 px-2 px-sm-0 d-flex flex-wrap justify-content-end gap-1 gap-sm-2" style="max-width: 860px;">
     <?php if ($canPayQris && $row): ?>
         <a class="btn btn-primary btn-sm" href="<?= e(APP_URL . '/pages/finance/invoices/gateway_pay.php?no=' . urlencode($row['document_number'])) ?>">Bayar via QRIS</a>
     <?php endif; ?>
@@ -267,7 +318,7 @@ if ($pdf) {
     <button class="btn btn-dark btn-sm" onclick="window.print()">Cetak / Simpan PDF</button>
     <a class="btn btn-outline-secondary btn-sm" href="<?= e(APP_URL) ?>/index.php">Beranda</a>
 </div>
-<main class="container py-2" style="max-width: 860px;padding-left:0;padding-right:0;">
+<main class="container py-2 px-2 px-sm-0" style="max-width: 860px;">
 <?php if (!$row): ?>
     <div class="alert alert-warning">Tiket tidak ditemukan. Periksa kembali nomor tiket Anda.</div>
 <?php else: ?>
@@ -279,9 +330,13 @@ if ($pdf) {
                     <?php
                     $logoPath = (string) ($row['logo'] ?? '');
                     $logoSrc  = $pdf ? resolve_asset_data_uri($logoPath) : resolve_asset_url($logoPath);
+                    $logoFallback = (strcasecmp((string) ($row['company_code'] ?? ''), 'MTM') === 0 || str_contains($logoPath, 'mtm'))
+                        ? APP_URL . '/assets/brand/logo-mtm.png'
+                        : '';
                     ?>
                     <?php if ($logoSrc !== ''): ?>
-                        <img src="<?= e($logoSrc) ?>" alt="<?= e($row['company_name']) ?>" class="tk-logo">
+                        <img src="<?= e($logoSrc) ?>" alt="<?= e($row['company_name']) ?>" class="tk-logo"<?= $pdf ? '' : ' data-fallback="' . e($logoFallback) . '" onerror="var fb=this.dataset.fallback;if(!this.dataset.fb&&fb){this.dataset.fb=1;this.src=fb;}else{this.style.display=\'none\';var t=this.nextElementSibling;if(t)t.style.display=\'block\';}"' ?>>
+                        <div class="fw-bold" style="font-size:14pt;display:none"><?= e($row['company_name']) ?></div>
                     <?php else: ?>
                         <div class="fw-bold" style="font-size:14pt"><?= e($row['company_name']) ?></div>
                     <?php endif; ?>
@@ -312,6 +367,7 @@ if ($pdf) {
             </tr></table>
 
             <div class="tk-sect mb-1" style="margin-top: 12pt;">Detail Penumpang</div>
+            <div class="table-responsive tk-tbl-wrap">
             <table class="table table-bordered tk-tbl mb-0">
                 <thead><tr><th style="width:35px" class="text-center">#</th><th style="width:150px">Tipe</th><th style="width:320px">Nama</th><th style="width:220px">Nomor Telepon</th></tr></thead>
                 <tbody>
@@ -332,9 +388,10 @@ if ($pdf) {
                 <?php endforeach; endif; ?>
                 </tbody>
             </table>
+            </div>
 
             <table class="tk-lay w-100 mt-4"><tr>
-                <td style="width:50%;padding-right:15px;vertical-align:top">
+                <td class="tk-pickup-cell" style="width:50%;padding-right:15px;vertical-align:top">
                     <div class="tk-doc">Alamat / Titik Penjemputan</div>
                     <div class="tk-addr"><?= e($pickupFull) ?></div>
                 </td>
@@ -363,12 +420,15 @@ if ($pdf) {
                 <?php
                 $stampPath = (string) ($row['stamp'] ?? '');
                 $stampSrc  = $pdf ? resolve_asset_data_uri($stampPath) : resolve_asset_url($stampPath);
+                $stampFallback = (strcasecmp((string) ($row['company_code'] ?? ''), 'MTM') === 0 || str_contains($stampPath, 'mtm'))
+                    ? APP_URL . '/assets/brand/stamp-mtm.png'
+                    : '';
                 ?>
                 <?php if ($stampSrc !== ''): ?>
                 <table class="tk-lay w-100 mb-2"><tr>
                     <td></td>
                     <td class="text-end align-bottom" style="width:170px; vertical-align: bottom !important;">
-                        <img class="tk-stamp" src="<?= e($stampSrc) ?>" alt="Stempel <?= e($row['company_name']) ?>" style="vertical-align: bottom;">
+                        <img class="tk-stamp" src="<?= e($stampSrc) ?>" alt="Stempel <?= e($row['company_name']) ?>" style="vertical-align: bottom;"<?= $pdf ? '' : ' data-fallback="' . e($stampFallback) . '" onerror="var fb=this.dataset.fallback;if(!this.dataset.fb&&fb){this.dataset.fb=1;this.src=fb;}else{var tbl=this.closest(\'table\');if(tbl)tbl.style.display=\'none\';}"' ?>>
                     </td>
                 </tr></table>
                 <?php endif; ?>

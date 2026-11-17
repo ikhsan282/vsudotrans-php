@@ -42,11 +42,11 @@ require __DIR__ . '/../../includes/header.php';
                 <?= report_company_filter_col($f) ?>
                 <div class="col-12 col-sm-4 col-lg-2">
                     <label class="form-label small mb-1">Dari Tanggal</label>
-                    <input type="date" class="form-control form-control-sm" name="from" value="<?= e($f['from']) ?>">
+                    <input type="text" class="form-control form-control-sm bg-white flatpickr-date" data-flatpickr-auto placeholder="dd-MMM-yyyy" name="from" value="<?= e($f['from']) ?>">
                 </div>
                 <div class="col-12 col-sm-4 col-lg-2">
                     <label class="form-label small mb-1">Sampai Tanggal</label>
-                    <input type="date" class="form-control form-control-sm" name="to" value="<?= e($f['to']) ?>">
+                    <input type="text" class="form-control form-control-sm bg-white flatpickr-date" data-flatpickr-auto placeholder="dd-MMM-yyyy" name="to" value="<?= e($f['to']) ?>">
                 </div>
                 <div class="col-12 col-sm-4 col-lg-2">
                     <label class="form-label small mb-1">Jenis Booking</label>

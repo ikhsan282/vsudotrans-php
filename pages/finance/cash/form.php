@@ -137,7 +137,7 @@ require __DIR__ . '/../../../includes/header.php';
                                     <div class="rnt-row">
                                         <div class="rnt-label">Tanggal <span class="text-danger">*</span></div>
                                         <div class="rnt-field">
-                                            <input class="form-control form-control-sm" type="date" id="date" name="date" value="<?= e($form['date']) ?>" required>
+                                            <input class="form-control form-control-sm bg-white flatpickr-date" type="text" id="date" name="date" data-flatpickr-auto placeholder="dd-MMM-yyyy" value="<?= e($form['date']) ?>" required>
                                         </div>
                                     </div>
                                     <div class="rnt-row">

@@ -209,7 +209,7 @@ if ($canManage) {
                                             <label class="rnt-label">Tanggal Masuk <span class="text-danger">*</span></label>
                                             <div class="rnt-field">
                                                 <?php if ($canManage): ?>
-                                                    <input type="date" name="join_date" class="form-control form-control-sm" required value="<?= e($v('join_date')) ?>">
+                                                    <input type="text" name="join_date" class="form-control form-control-sm bg-white flatpickr-date" data-flatpickr-auto placeholder="dd-MMM-yyyy" required value="<?= e($v('join_date')) ?>">
                                                 <?php else: ?>
                                                     <input type="text" class="form-control form-control-sm bg-light" value="<?= $v('join_date') !== '' ? e(date('d-M-Y', strtotime($v('join_date')))) : '—' ?>" readonly>
                                                 <?php endif; ?>
@@ -219,7 +219,7 @@ if ($canManage) {
                                             <label class="rnt-label">Tanggal Resign</label>
                                             <div class="rnt-field">
                                                 <?php if ($canManage): ?>
-                                                    <input type="date" name="resignation_date" class="form-control form-control-sm" value="<?= e($v('resignation_date')) ?>">
+                                                    <input type="text" name="resignation_date" class="form-control form-control-sm bg-white flatpickr-date" data-flatpickr-auto placeholder="dd-MMM-yyyy" value="<?= e($v('resignation_date')) ?>">
                                                 <?php else: ?>
                                                     <input type="text" class="form-control form-control-sm bg-light" value="<?= $v('resignation_date') !== '' ? e(date('d-M-Y', strtotime($v('resignation_date')))) : '—' ?>" readonly>
                                                 <?php endif; ?>
@@ -338,7 +338,7 @@ if ($canManage) {
                                             <label class="rnt-label">Tanggal Lahir</label>
                                             <div class="rnt-field">
                                                 <?php if ($canManage): ?>
-                                                    <input type="date" name="birth_date" class="form-control form-control-sm" value="<?= e($v('birth_date')) ?>">
+                                                    <input type="text" name="birth_date" class="form-control form-control-sm bg-white flatpickr-date" data-flatpickr-auto placeholder="dd-MMM-yyyy" value="<?= e($v('birth_date')) ?>">
                                                 <?php else: ?>
                                                     <input type="text" class="form-control form-control-sm bg-light" value="<?= $v('birth_date') !== '' ? e(date('d-M-Y', strtotime($v('birth_date')))) : '—' ?>" readonly>
                                                 <?php endif; ?>
@@ -384,7 +384,7 @@ if ($canManage) {
                                             <label class="rnt-label pt-1" for="sim_due">Jatuh Tempo SIM</label>
                                             <div class="rnt-field">
                                                 <?php if ($canManage): ?>
-                                                    <input type="date" id="sim_due" name="sim_due" class="form-control form-control-sm" value="<?= e($v('sim_due')) ?>">
+                                                    <input type="text" id="sim_due" name="sim_due" class="form-control form-control-sm bg-white flatpickr-date" data-flatpickr-auto placeholder="dd-MMM-yyyy" value="<?= e($v('sim_due')) ?>">
                                                 <?php else: ?>
                                                     <input type="text" id="sim_due" class="form-control form-control-sm bg-light" value="<?= $v('sim_due') !== '' ? e(date('d-M-Y', strtotime($v('sim_due')))) : '—' ?>" readonly>
                                                 <?php endif; ?>

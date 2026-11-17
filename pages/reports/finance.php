@@ -12,19 +12,6 @@ $f = fin_report_filter($_GET);
 $compScope = company_filter_scope('company_id', $_GET);
 $data = fin_all($f);
 
-/** URL export dengan filter aktif (halaman ini memakai finance_export.php). */
-$export_params = [
-    'format'       => 'csv',
-    'from'         => $f['from'],
-    'to'           => $f['to'],
-    'booking_type' => $f['booking_type'],
-];
-if (is_super_admin()) {
-    $export_params['company_id'] = (int) ($f['filter_company_id'] ?? 0);
-}
-$export_qs = http_build_query($export_params);
-$xlsx_qs = str_replace('format=csv', 'format=xlsx', $export_qs);
-
 $rev    = $data['revenue'];
 $costs  = $data['cost_types'];
 $ct     = fin_cost_totals($costs);
@@ -40,12 +27,7 @@ $cards = [
     ['Piutang Pelanggan',  rupiah($rev['receivable']),   'info', 'hourglass-split'],
 ];
 
-$header_actions = [
-    ['label' => 'CSV',   'icon' => 'filetype-csv',       'href' => 'pages/reports/finance_export.php?' . $export_qs, 'class' => 'btn btn-outline-success btn-sm'],
-    ['label' => 'Excel', 'icon' => 'file-earmark-excel', 'href' => 'pages/reports/finance_export.php?' . $xlsx_qs,   'class' => 'btn btn-success btn-sm'],
-    ['label' => 'PDF',   'icon' => 'filetype-pdf',       'href' => 'pages/reports/finance_export.php?' . $export_qs . '&format=pdf', 'class' => 'btn btn-danger btn-sm'],
-    ['label' => 'Cetak', 'icon' => 'printer',            'href' => 'pages/reports/finance_export.php?' . $export_qs . '&format=html&print=1', 'class' => 'btn btn-outline-secondary btn-sm', 'target' => '_blank'],
-];
+$header_actions = report_header_actions('pages/reports/finance_export.php', $f);
 
 $active = 'reports';
 $title  = 'Laporan Keuangan';
@@ -76,11 +58,11 @@ require __DIR__ . '/../../includes/header.php';
                 <?php endif; ?>
                 <div class="col-12 col-sm-4 col-lg-2">
                     <label class="form-label small mb-1">Dari Tanggal</label>
-                    <input type="date" class="form-control form-control-sm" name="from" value="<?= e($f['from']) ?>">
+                    <input type="text" class="form-control form-control-sm bg-white flatpickr-date" data-flatpickr-auto placeholder="dd-MMM-yyyy" name="from" value="<?= e($f['from']) ?>">
                 </div>
                 <div class="col-12 col-sm-4 col-lg-2">
                     <label class="form-label small mb-1">Sampai Tanggal</label>
-                    <input type="date" class="form-control form-control-sm" name="to" value="<?= e($f['to']) ?>">
+                    <input type="text" class="form-control form-control-sm bg-white flatpickr-date" data-flatpickr-auto placeholder="dd-MMM-yyyy" name="to" value="<?= e($f['to']) ?>">
                 </div>
                 <div class="col-12 col-sm-4 col-lg-2">
                     <label class="form-label small mb-1">Jenis Booking</label>

@@ -548,15 +548,21 @@ require __DIR__ . '/../../../includes/header.php';
                             <div class="rnt-row">
                                 <div class="rnt-label">Tanggal Keberangkatan <span class="text-danger">*</span></div>
                                 <div class="rnt-field">
-                                    <div class="row g-2 align-items-center">
-                                        <div class="col-12 col-sm-5">
-                                            <input type="text" class="form-control form-control-sm bg-white flatpickr-date" name="start_date" id="startDateInput" form="rentalDetailForm" required value="<?= e($b['start_date']) ?>" placeholder="dd-MMM-yyyy" <?= $canManage ? '' : 'disabled' ?>>
+                                    <div class="row g-2 align-items-end">
+                                        <div class="col-6 col-sm-4">
+                                            <label for="startDateInput" class="form-label text-body-secondary d-sm-none mb-1" style="font-size:0.72rem;">Tgl Mulai</label>
+                                            <input type="text" class="form-control form-control-sm bg-white flatpickr-date" name="start_date" id="startDateInput" form="rentalDetailForm" required value="<?= e($b['start_date']) ?>" placeholder="dd-MMM-yyyy" title="Tanggal Mulai Sewa" <?= $canManage ? '' : 'disabled' ?>>
                                         </div>
-                                        <div class="col-12 col-sm-5">
-                                            <input type="text" class="form-control form-control-sm bg-white flatpickr-date" name="end_date" id="endDateInput" form="rentalDetailForm" required value="<?= e($b['end_date']) ?>" placeholder="dd-MMM-yyyy" <?= $canManage ? '' : 'disabled' ?>>
+                                        <div class="col-6 col-sm-4">
+                                            <label for="endDateInput" class="form-label text-body-secondary d-sm-none mb-1" style="font-size:0.72rem;">Tgl Selesai</label>
+                                            <input type="text" class="form-control form-control-sm bg-white flatpickr-date" name="end_date" id="endDateInput" form="rentalDetailForm" required value="<?= e($b['end_date']) ?>" placeholder="dd-MMM-yyyy" title="Tanggal Selesai Sewa" <?= $canManage ? '' : 'disabled' ?>>
                                         </div>
-                                        <div class="col-12 col-sm-2">
-                                            <input type="number" min="1" max="365" class="form-control form-control-sm text-end" id="durationDaysInput" value="<?= $duration_days ?>" title="Durasi Sewa (Hari)" <?= $canManage ? '' : 'readonly' ?>>
+                                        <div class="col-12 col-sm-4">
+                                            <label for="durationDaysInput" class="form-label text-body-secondary d-sm-none mb-1" style="font-size:0.72rem;">Durasi Sewa</label>
+                                            <div class="input-group input-group-sm">
+                                                <input type="number" min="1" max="365" class="form-control form-control-sm text-end" id="durationDaysInput" value="<?= $duration_days ?>" title="Durasi Sewa (Hari)" <?= $canManage ? '' : 'readonly' ?>>
+                                                <span class="input-group-text">Hari</span>
+                                            </div>
                                         </div>
                                     </div>
                                 </div>

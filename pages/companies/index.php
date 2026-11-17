@@ -10,8 +10,7 @@ require_permission('companies.view');
 $q        = trim((string) ($_GET['q'] ?? ''));
 $group_id = (int) ($_GET['group_id'] ?? 0);
 $status   = trim((string) ($_GET['status'] ?? ''));
-$req_per_page = (int) ($_GET['per_page'] ?? PER_PAGE);
-$per_page     = in_array($req_per_page, [20, 50, 100], true) ? $req_per_page : PER_PAGE;
+$per_page = resolve_per_page();
 
 if ($q !== '') {
     $q_like = '%' . $q . '%';
@@ -167,14 +166,7 @@ require __DIR__ . '/../../includes/header.php';
                         <option value="0" <?= $status === '0' ? 'selected' : '' ?>>Nonaktif</option>
                     </select>
                 </div>
-                <div class="col-auto erp-filter-compact">
-                    <select name="per_page" class="form-select form-select-sm" onchange="this.form.submit()" title="Baris per halaman">
-                        <?php foreach ([20, 50, 100] as $pp): ?>
-                            <option value="<?= $pp ?>" <?= $per_page === $pp ? 'selected' : '' ?>><?= $pp ?> / hal</option>
-                        <?php endforeach; ?>
-                    </select>
-                </div>
-                <?= ui_filter_actions(APP_URL . '/pages/companies/index.php', (bool) $has_filter) ?>
+                <?= ui_filter_actions(APP_URL . '/pages/companies/index.php', ($q !== '' || $group_id > 0 || $status !== '')) ?>
             </form>
         </div>
     </div>

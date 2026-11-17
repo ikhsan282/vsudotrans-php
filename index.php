@@ -102,6 +102,9 @@ $fleetIcons = ['bi-bus-front', 'bi-truck-front', 'bi-car-front-fill', 'bi-taxi-f
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title><?= e($title) ?></title>
     <meta name="description" content="<?= e(APP_NAME) ?>: Platform ekosistem digital terpadu untuk Agen Travel, PO Bus Pariwisata, dan Rental Mobil. Reservasi tiket, kalender operasional armada &amp; sopir, peraturan komisi kru, invoice &amp; QRIS, serta e-tiket PDF.">
+    <script>
+      (function(){try{var t=localStorage.getItem('vst_theme');if(!t)t=matchMedia('(prefers-color-scheme: dark)').matches?'dark':'light';document.documentElement.setAttribute('data-bs-theme',t);}catch(e){}})();
+    </script>
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.8/dist/css/bootstrap.min.css" rel="stylesheet">
     <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css" rel="stylesheet">
     <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -113,11 +116,47 @@ $fleetIcons = ['bi-bus-front', 'bi-truck-front', 'bi-car-front-fill', 'bi-taxi-f
             --vs-primary-dark: #072a63;
             --vs-accent: #0284c7;
             --vs-gold: #f59e0b;
+            --vs-body-bg: #f8fafc;
+            --vs-body-color: #1e293b;
+            --vs-surface: #ffffff;
+            --vs-surface-alt: #f8fafc;
+            --vs-nav-bg: rgba(255, 255, 255, 0.95);
+            --vs-border: #e2e8f0;
+            --vs-border-strong: #cbd5e1;
+            --vs-muted: #475569;
+            --vs-icon-bg: #eff6ff;
+            --vs-icon-color: #0d47a1;
+            --vs-hero-fade: #ffffff;
+        }
+        html[data-bs-theme="dark"] {
+            --vs-body-bg: #0b1120;
+            --vs-body-color: #e2e8f0;
+            --vs-surface: #131c2e;
+            --vs-surface-alt: #0f172a;
+            --vs-nav-bg: rgba(15, 23, 42, 0.92);
+            --vs-border: #243248;
+            --vs-border-strong: #334155;
+            --vs-muted: #94a3b8;
+            --vs-icon-bg: rgba(56, 189, 248, 0.14);
+            --vs-icon-color: #60a5fa;
+            --vs-hero-fade: #0f172a;
         }
         body {
             font-family: 'Plus Jakarta Sans', system-ui, -apple-system, sans-serif;
-            background-color: #f8fafc;
-            color: #1e293b;
+            background-color: var(--vs-body-bg);
+            color: var(--vs-body-color);
+        }
+        .landing-nav {
+            background-color: var(--vs-nav-bg) !important;
+            border-color: var(--vs-border) !important;
+            backdrop-filter: blur(10px);
+        }
+        .landing-section-alt {
+            background-color: var(--vs-surface) !important;
+            border-color: var(--vs-border) !important;
+        }
+        html[data-bs-theme="dark"] .landing-section-alt {
+            background-color: var(--vs-surface-alt) !important;
         }
         .navbar-brand-badge {
             font-size: 0.68rem;
@@ -131,6 +170,10 @@ $fleetIcons = ['bi-bus-front', 'bi-truck-front', 'bi-car-front-fill', 'bi-taxi-f
             position: relative;
             overflow: hidden;
         }
+        html[data-bs-theme="dark"] .hero {
+            background: radial-gradient(circle at 80% 20%, rgba(56, 189, 248, 0.2) 0%, transparent 50%),
+                        linear-gradient(135deg, #050d1a 0%, #091e3a 60%, #0f3668 100%);
+        }
         .hero::after {
             content: "";
             position: absolute;
@@ -138,14 +181,24 @@ $fleetIcons = ['bi-bus-front', 'bi-truck-front', 'bi-car-front-fill', 'bi-taxi-f
             left: 0;
             right: 0;
             height: 40px;
-            background: linear-gradient(to top, #ffffff, transparent);
+            background: linear-gradient(to top, var(--vs-hero-fade), transparent);
         }
         .ticket-card {
             border: 1px solid rgba(255, 255, 255, 0.2);
             backdrop-filter: blur(8px);
-            background: #ffffff;
+            background: var(--vs-surface);
+            color: var(--vs-body-color);
             border-radius: 16px;
             box-shadow: 0 20px 40px rgba(0, 0, 0, 0.2);
+        }
+        html[data-bs-theme="dark"] .ticket-card {
+            border-color: var(--vs-border-strong);
+            box-shadow: 0 20px 44px rgba(0, 0, 0, 0.55);
+        }
+        .landing-input-prefix {
+            background-color: var(--vs-surface-alt);
+            color: var(--vs-muted);
+            border-color: var(--vs-border-strong);
         }
         .stat-badge {
             background: rgba(255, 255, 255, 0.1);
@@ -154,8 +207,8 @@ $fleetIcons = ['bi-bus-front', 'bi-truck-front', 'bi-car-front-fill', 'bi-taxi-f
             padding: 12px 16px;
         }
         .feature-card {
-            background: #ffffff;
-            border: 1px solid #e2e8f0;
+            background: var(--vs-surface);
+            border: 1px solid var(--vs-border);
             border-radius: 14px;
             transition: transform 0.2s ease, box-shadow 0.2s ease, border-color 0.2s ease;
         }
@@ -163,6 +216,11 @@ $fleetIcons = ['bi-bus-front', 'bi-truck-front', 'bi-car-front-fill', 'bi-taxi-f
             transform: translateY(-4px);
             box-shadow: 0 12px 24px rgba(13, 71, 161, 0.08);
             border-color: #93c5fd;
+        }
+        html[data-bs-theme="dark"] .feature-card:hover,
+        html[data-bs-theme="dark"] .fleet-card:hover {
+            box-shadow: 0 12px 24px rgba(0, 0, 0, 0.35);
+            border-color: #38bdf8;
         }
         .feature-icon-wrapper {
             width: 52px;
@@ -172,31 +230,38 @@ $fleetIcons = ['bi-bus-front', 'bi-truck-front', 'bi-car-front-fill', 'bi-taxi-f
             align-items: center;
             justify-content: center;
             font-size: 1.5rem;
-            background: #eff6ff;
-            color: var(--vs-primary);
+            background: var(--vs-icon-bg);
+            color: var(--vs-icon-color);
         }
         .fleet-card {
             border-radius: 14px;
             overflow: hidden;
-            background: #ffffff;
-            border: 1px solid #e2e8f0;
-            transition: all 0.2s ease;
+            background: var(--vs-surface);
+            border: 1px solid var(--vs-border);
+            transition: border-color 0.2s ease, box-shadow 0.2s ease;
         }
         .fleet-card:hover {
             border-color: #38bdf8;
             box-shadow: 0 10px 20px rgba(0,0,0,0.06);
         }
         .tenant-logo-badge {
-            background: #ffffff;
-            border: 1px solid #cbd5e1;
+            background: var(--vs-surface);
+            border: 1px solid var(--vs-border-strong);
             border-radius: 10px;
             padding: 14px 20px;
             font-weight: 600;
-            color: #334155;
+            color: var(--vs-body-color);
             display: flex;
             align-items: center;
             gap: 10px;
             box-shadow: 0 2px 6px rgba(0,0,0,0.03);
+        }
+        .route-card {
+            background: var(--vs-surface);
+            border-color: var(--vs-border) !important;
+        }
+        html[data-bs-theme="dark"] .route-card {
+            border-color: rgba(96, 165, 250, 0.28) !important;
         }
         .section-title-tag {
             color: var(--vs-accent);
@@ -205,13 +270,16 @@ $fleetIcons = ['bi-bus-front', 'bi-truck-front', 'bi-car-front-fill', 'bi-taxi-f
             letter-spacing: 0.08em;
             text-transform: uppercase;
         }
+        html[data-bs-theme="dark"] .section-title-tag {
+            color: #38bdf8;
+        }
         .max-w-700 { max-width: 700px; }
         .scroll-mt { scroll-margin-top: 90px; }
         .route-code {
             font-size: 1.35rem;
             font-weight: 800;
             letter-spacing: 0.04em;
-            color: var(--vs-primary);
+            color: var(--vs-icon-color);
         }
         .route-arrow { color: #94a3b8; }
         .route-cat-badge {
@@ -225,7 +293,7 @@ $fleetIcons = ['bi-bus-front', 'bi-truck-front', 'bi-car-front-fill', 'bi-taxi-f
         }
         .feature-list li {
             font-size: 0.8rem;
-            color: #475569;
+            color: var(--vs-muted);
             padding-left: 1.2rem;
             position: relative;
             margin-bottom: 0.25rem;
@@ -237,39 +305,81 @@ $fleetIcons = ['bi-bus-front', 'bi-truck-front', 'bi-car-front-fill', 'bi-taxi-f
             left: 0;
             color: #16a34a;
         }
+        html[data-bs-theme="dark"] .feature-list li::before {
+            color: #4ade80;
+        }
         .ticket-card .form-control:focus { box-shadow: none; }
+        html[data-bs-theme="dark"] .accordion-item {
+            background-color: var(--vs-surface);
+            border-color: var(--vs-border) !important;
+        }
+        html[data-bs-theme="dark"] .accordion-button {
+            background-color: var(--vs-surface);
+            color: var(--vs-body-color);
+        }
+        html[data-bs-theme="dark"] .accordion-button:not(.collapsed) {
+            background-color: rgba(56, 189, 248, 0.1);
+            color: #93c5fd;
+        }
+        html[data-bs-theme="dark"] .text-primary {
+            color: #60a5fa !important;
+        }
+        html[data-bs-theme="dark"] .btn-outline-primary {
+            --bs-btn-color: #60a5fa;
+            --bs-btn-border-color: rgba(96, 165, 250, 0.5);
+            --bs-btn-hover-bg: #2563eb;
+            --bs-btn-hover-border-color: #2563eb;
+            --bs-btn-hover-color: #ffffff;
+        }
+        html[data-bs-theme="dark"] #landingThemeToggle {
+            color: #fbbf24;
+            border-color: rgba(251, 191, 36, 0.45);
+        }
+        html[data-bs-theme="dark"] #landingThemeToggle:hover {
+            background-color: rgba(251, 191, 36, 0.14);
+            border-color: #fbbf24;
+            color: #fde68a;
+        }
+        @media (prefers-reduced-motion: reduce) {
+            .feature-card, .fleet-card { transition: none; }
+        }
     </style>
 </head>
 <body>
 
 <!-- ================= NAVBAR ================= -->
-<nav class="navbar navbar-expand-lg bg-white border-bottom sticky-top py-3">
+<nav class="navbar navbar-expand-lg landing-nav border-bottom sticky-top py-3">
     <div class="container">
-        <a class="navbar-brand d-flex align-items-center gap-2 text-decoration-none" href="<?= e(APP_URL) ?>">
+        <a class="navbar-brand d-flex align-items-center gap-2 text-decoration-none me-2" href="<?= e(APP_URL) ?>">
             <div class="bg-primary text-white rounded-3 p-2 d-flex align-items-center justify-content-center" style="width:38px;height:38px;">
                 <i class="bi bi-diagram-3-fill fs-5"></i>
             </div>
             <div>
-                <span class="fw-bold text-dark fs-5 tracking-tight"><?= e(APP_NAME) ?></span>
-                <span class="badge bg-primary-subtle text-primary border border-primary-subtle ms-1 navbar-brand-badge">ERP Ecosystem</span>
+                <span class="fw-bold text-body fs-5 tracking-tight"><?= e(APP_NAME) ?></span>
+                <span class="badge bg-primary-subtle text-primary border border-primary-subtle ms-1 navbar-brand-badge d-none d-sm-inline">ERP Ecosystem</span>
             </div>
         </a>
 
-        <button class="navbar-toggler border-0" type="button" data-bs-toggle="collapse" data-bs-target="#navMenu">
-            <span class="navbar-toggler-icon"></span>
-        </button>
+        <div class="d-flex align-items-center gap-2 ms-auto order-lg-3">
+            <button type="button" id="landingThemeToggle" class="btn btn-sm btn-outline-secondary rounded-pill px-2 px-sm-3" aria-label="Ganti tema terang atau gelap" title="Beralih ke mode gelap">
+                <i class="bi bi-moon-stars"></i>
+            </button>
+            <button class="navbar-toggler border-0" type="button" data-bs-toggle="collapse" data-bs-target="#navMenu" aria-label="Toggle navigasi">
+                <span class="navbar-toggler-icon"></span>
+            </button>
+        </div>
 
-        <div class="collapse navbar-collapse" id="navMenu">
+        <div class="collapse navbar-collapse order-lg-2" id="navMenu">
             <ul class="navbar-nav mx-auto mb-2 mb-lg-0 fw-medium">
-                <li class="nav-item"><a class="nav-link px-3 text-secondary" href="#layanan">Layanan &amp; Fitur</a></li>
-                <li class="nav-item"><a class="nav-link px-3 text-secondary" href="#armada">Kategori Armada</a></li>
+                <li class="nav-item"><a class="nav-link px-3 text-body-secondary" href="#layanan">Layanan &amp; Fitur</a></li>
+                <li class="nav-item"><a class="nav-link px-3 text-body-secondary" href="#armada">Kategori Armada</a></li>
                 <?php if (!empty($popularRoutes)): ?>
-                <li class="nav-item"><a class="nav-link px-3 text-secondary" href="#rute">Rute Populer</a></li>
+                <li class="nav-item"><a class="nav-link px-3 text-body-secondary" href="#rute">Rute Populer</a></li>
                 <?php endif; ?>
-                <li class="nav-item"><a class="nav-link px-3 text-secondary" href="#mitra">Mitra Operator</a></li>
-                <li class="nav-item"><a class="nav-link px-3 text-secondary" href="#faq">Bantuan / FAQ</a></li>
+                <li class="nav-item"><a class="nav-link px-3 text-body-secondary" href="#mitra">Mitra Operator</a></li>
+                <li class="nav-item"><a class="nav-link px-3 text-body-secondary" href="#faq">Bantuan / FAQ</a></li>
             </ul>
-            <div class="d-flex align-items-center gap-2">
+            <div class="d-flex align-items-center gap-2 me-lg-2">
                 <a class="btn btn-outline-primary btn-sm px-3 fw-semibold rounded-pill" href="#cek-tiket">
                     <i class="bi bi-ticket-perforated me-1"></i>Cek Tiket
                 </a>
@@ -330,24 +440,24 @@ $fleetIcons = ['bi-bus-front', 'bi-truck-front', 'bi-car-front-fill', 'bi-taxi-f
 
             <!-- Card Cek Tiket Instan -->
             <div class="col-lg-5">
-                <div class="ticket-card p-4 p-md-5 text-dark scroll-mt" id="cek-tiket">
+                <div class="ticket-card p-4 p-md-5 scroll-mt" id="cek-tiket">
                     <div class="d-flex align-items-center justify-content-between mb-2">
-                        <h4 class="fw-bold mb-0 text-dark">
+                        <h4 class="fw-bold mb-0 text-body">
                             <i class="bi bi-ticket-perforated text-primary me-2"></i>Cek E-Tiket
                         </h4>
                         <span class="badge bg-primary-subtle text-primary border border-primary-subtle px-2 py-1">Publik</span>
                     </div>
-                    <p class="text-secondary small mb-4">
+                    <p class="text-body-secondary small mb-4">
                         Lihat jadwal keberangkatan, rute jemput &amp; antar, armada, daftar penumpang, dan total harga tiket Anda — lalu cetak atau unduh sebagai PDF.
                     </p>
 
                     <form method="post" action="">
                         <div class="mb-3">
-                            <label class="form-label small fw-semibold text-secondary" for="ticket_no">
+                            <label class="form-label small fw-semibold text-body-secondary" for="ticket_no">
                                 Nomor Tiket (Travel / Rental)
                             </label>
                             <div class="input-group input-group-lg">
-                                <span class="input-group-text bg-light text-muted border-end-0">
+                                <span class="input-group-text landing-input-prefix border-end-0">
                                     <i class="bi bi-hash"></i>
                                 </span>
                                 <input class="form-control text-uppercase fw-bold border-start-0 ps-0" id="ticket_no" name="no"
@@ -384,7 +494,7 @@ $fleetIcons = ['bi-bus-front', 'bi-truck-front', 'bi-car-front-fill', 'bi-taxi-f
 </header>
 
 <!-- ================= FITUR & MODUL UTAMA ================= -->
-<section class="py-5 bg-white border-bottom scroll-mt" id="layanan">
+<section class="py-5 landing-section-alt border-bottom scroll-mt" id="layanan">
     <div class="container py-4">
         <div class="text-center max-w-700 mx-auto mb-5">
             <span class="section-title-tag">Layanan &amp; Modul Operasional</span>
@@ -514,8 +624,8 @@ $fleetIcons = ['bi-bus-front', 'bi-truck-front', 'bi-car-front-fill', 'bi-taxi-f
                         <?php $fcBrands = trim((string) ($fc['brands'] ?? '')); ?>
                         <p class="text-muted small mb-3"><?= $fcBrands !== '' ? 'Merek: ' . e($fcBrands) : 'Kategori armada terdaftar' ?></p>
                         <div class="border-top pt-3 mt-auto d-flex align-items-center justify-content-between">
-                            <span class="text-muted small"><i class="bi bi-truck me-1"></i><?= (int) $fc['unit_count'] ?> unit aktif</span>
-                            <span class="badge bg-light text-dark border"><?= e((string) $fc['company_codes']) ?></span>
+                            <span class="text-body-secondary small"><i class="bi bi-truck me-1"></i><?= (int) $fc['unit_count'] ?> unit aktif</span>
+                            <span class="badge bg-body-tertiary text-body border"><?= e((string) $fc['company_codes']) ?></span>
                         </div>
                     </div>
                 </div>
@@ -534,7 +644,7 @@ $fleetIcons = ['bi-bus-front', 'bi-truck-front', 'bi-car-front-fill', 'bi-taxi-f
 
 <!-- ================= RUTE POPULER ================= -->
 <?php if (!empty($popularRoutes)): ?>
-<section class="py-5 bg-white border-top border-bottom scroll-mt" id="rute">
+<section class="py-5 landing-section-alt border-top border-bottom scroll-mt" id="rute">
     <div class="container py-4">
         <div class="text-center max-w-700 mx-auto mb-4">
             <span class="section-title-tag">Rute Populer</span>
@@ -552,7 +662,7 @@ $fleetIcons = ['bi-bus-front', 'bi-truck-front', 'bi-car-front-fill', 'bi-taxi-f
                 $routeWa = ($compWa && !str_ends_with($compWa, '0000000')) ? $compWa : $phone_wa;
             ?>
             <div class="col-md-6 col-lg-4">
-                <div class="card border border-primary-subtle shadow-sm rounded-4 p-3 h-100">
+                <div class="card route-card border shadow-sm rounded-4 p-3 h-100">
                     <div class="d-flex align-items-start justify-content-between mb-1">
                         <div class="route-code">
                             <?= e($fromCode) ?> <i class="bi bi-arrow-right route-arrow"></i> <?= e($toCode) ?>
@@ -569,7 +679,7 @@ $fleetIcons = ['bi-bus-front', 'bi-truck-front', 'bi-car-front-fill', 'bi-taxi-f
                             <span class="badge bg-primary-subtle text-primary border border-primary-subtle route-cat-badge"><?= e($cat) ?></span>
                         <?php endforeach; ?>
                         <?php if (count($cats) > 3): ?>
-                            <span class="badge bg-light text-secondary border route-cat-badge">+<?= count($cats) - 3 ?></span>
+                            <span class="badge bg-body-tertiary text-body-secondary border route-cat-badge">+<?= count($cats) - 3 ?></span>
                         <?php endif; ?>
                     </div>
                     <div class="mt-auto">
@@ -602,8 +712,8 @@ $fleetIcons = ['bi-bus-front', 'bi-truck-front', 'bi-car-front-fill', 'bi-taxi-f
                         <?= e(substr($comp['code'] ?? 'OP', 0, 3)) ?>
                     </div>
                     <div class="overflow-hidden min-w-0">
-                        <div class="text-truncate fw-bold text-dark" title="<?= e($comp['name']) ?>"><?= e($comp['name']) ?></div>
-                        <div class="small text-muted"><i class="bi bi-geo-alt me-1"></i><?= e($comp['city'] ?: 'Indonesia') ?></div>
+                        <div class="text-truncate fw-bold text-body" title="<?= e($comp['name']) ?>"><?= e($comp['name']) ?></div>
+                        <div class="small text-body-secondary"><i class="bi bi-geo-alt me-1"></i><?= e($comp['city'] ?: 'Indonesia') ?></div>
                     </div>
                 </div>
             </div>
@@ -629,7 +739,7 @@ $fleetIcons = ['bi-bus-front', 'bi-truck-front', 'bi-car-front-fill', 'bi-taxi-f
 </section>
 
 <!-- ================= FAQ SECTION ================= -->
-<section class="py-5 bg-white border-top border-bottom scroll-mt" id="faq">
+<section class="py-5 landing-section-alt border-top border-bottom scroll-mt" id="faq">
     <div class="container py-4">
         <div class="text-center max-w-700 mx-auto mb-5">
             <span class="section-title-tag">Pertanyaan Umum</span>
@@ -697,7 +807,7 @@ $fleetIcons = ['bi-bus-front', 'bi-truck-front', 'bi-car-front-fill', 'bi-taxi-f
 </section>
 
 <!-- ================= FOOTER ================= -->
-<footer class="bg-dark text-white pt-5 pb-4">
+<footer class="bg-dark text-white border-top border-secondary border-opacity-25 pt-5 pb-4">
     <div class="container">
         <div class="row g-4 mb-4">
             <div class="col-lg-4">
@@ -759,5 +869,29 @@ $fleetIcons = ['bi-bus-front', 'bi-truck-front', 'bi-car-front-fill', 'bi-taxi-f
 </footer>
 
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.8/dist/js/bootstrap.bundle.min.js"></script>
+<script>
+  (function () {
+    var btn = document.getElementById('landingThemeToggle');
+    if (!btn) return;
+    function sync() {
+      var dark = document.documentElement.getAttribute('data-bs-theme') === 'dark';
+      var icon = btn.querySelector('i');
+      if (icon) {
+        icon.classList.toggle('bi-moon-stars', !dark);
+        icon.classList.toggle('bi-sun', dark);
+      }
+      var label = dark ? 'Beralih ke mode terang' : 'Beralih ke mode gelap';
+      btn.setAttribute('title', label);
+      btn.setAttribute('aria-label', label);
+    }
+    sync();
+    btn.addEventListener('click', function () {
+      var next = document.documentElement.getAttribute('data-bs-theme') === 'dark' ? 'light' : 'dark';
+      document.documentElement.setAttribute('data-bs-theme', next);
+      try { localStorage.setItem('vst_theme', next); } catch (e) {}
+      sync();
+    });
+  })();
+</script>
 </body>
 </html>

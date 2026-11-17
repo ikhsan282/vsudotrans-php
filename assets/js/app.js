@@ -279,7 +279,11 @@ window.initTsSelect = function (el, overrides) {
   };
   if (el.dataset.tsDropdownParent) {
     opts.dropdownParent = el.dataset.tsDropdownParent;
-  } else if (el.closest && el.closest('.table-responsive')) {
+  } else if (
+    el.closest &&
+    el.closest('.table-responsive, .erp-window-card, .erp-filter-bar, .rutes-filter-bar') &&
+    !el.closest('.modal')
+  ) {
     opts.dropdownParent = 'body';
   }
 

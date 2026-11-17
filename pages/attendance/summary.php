@@ -114,11 +114,11 @@ require __DIR__ . '/../../includes/header.php';
                 <?php endif; ?>
                 <div class="col-6 col-lg-3">
                     <label class="form-label small mb-1">Dari Tanggal</label>
-                    <input type="date" class="form-control form-control-sm" name="from" value="<?= e($from) ?>">
+                    <input type="text" class="form-control form-control-sm bg-white flatpickr-date" data-flatpickr-auto placeholder="dd-MMM-yyyy" name="from" value="<?= e($from) ?>">
                 </div>
                 <div class="col-6 col-lg-3">
                     <label class="form-label small mb-1">Sampai Tanggal</label>
-                    <input type="date" class="form-control form-control-sm" name="to" value="<?= e($to) ?>">
+                    <input type="text" class="form-control form-control-sm bg-white flatpickr-date" data-flatpickr-auto placeholder="dd-MMM-yyyy" name="to" value="<?= e($to) ?>">
                 </div>
                 <?= ui_filter_actions(APP_URL . '/pages/attendance/summary.php', ($from !== date('Y-m-01') || $to !== date('Y-m-t') || (is_super_admin() && $filter_cid > 0))) ?>
             </form>
