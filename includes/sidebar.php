@@ -136,21 +136,27 @@ if (!empty($activeLogo) && !preg_match('#/logo_[a-z]+\.png$#i', (string) $active
         $sidebar_logo_url = $resolved;
     }
 }
+$sbUserName = trim((string) ($user['name'] ?? ($user['full_name'] ?? 'User')));
+$sbParts    = preg_split('/\s+/', $sbUserName) ?: ['U'];
+$sbInitials = strtoupper(substr($sbParts[0], 0, 1) . (isset($sbParts[1]) ? substr($sbParts[1], 0, 1) : ''));
+if ($sbInitials === '') {
+    $sbInitials = 'U';
+}
 ?>
 <nav id="sidebar" class="sidebar d-flex flex-column flex-shrink-0 p-0">
   <a href="<?= e(APP_URL) ?>/pages/dashboard/index.php"
-     class="d-flex flex-column align-items-center justify-content-center px-3 py-2 text-white text-decoration-none sidebar-brand"
+     class="d-flex flex-column align-items-center justify-content-center px-3 py-3 text-white text-decoration-none sidebar-brand"
      title="<?= e($activeName ?? APP_NAME) ?>">
-    <img src="<?= e($sidebar_logo_url) ?>"
-         onerror="this.onerror=null;this.src='<?= e($default_brand_logo) ?>';"
-         alt="<?= e($activeName ?? APP_NAME) ?>" class="sidebar-logo">
-    <?php if (!empty($activeName) && $activeName !== 'Semua Perusahaan'): ?>
-      <div class="sidebar-tenant-badge text-truncate mt-1" title="<?= e($activeName) ?>">
-        <?php if (!empty($activeCode)): ?><span class="fw-bold"><?= e($activeCode) ?></span> &middot; <?php endif; ?><?= e($activeName) ?>
-      </div>
-    <?php endif; ?>
+    <div class="sidebar-logo-frame">
+      <img src="<?= e($sidebar_logo_url) ?>"
+           onerror="this.onerror=null;this.src='<?= e($default_brand_logo) ?>';"
+           alt="<?= e($activeName ?? APP_NAME) ?>" class="sidebar-logo">
+    </div>
+    <div class="sidebar-tenant-badge text-truncate mt-2" title="<?= e($activeName ?? 'Semua Perusahaan') ?>">
+      <span class="sidebar-tenant-dot" aria-hidden="true"></span>
+      <?php if (!empty($activeCode)): ?><span class="fw-bold"><?= e($activeCode) ?></span> &middot; <?php endif; ?><?= e(!empty($activeName) ? $activeName : 'Semua Perusahaan') ?>
+    </div>
   </a>
-  <hr class="text-white m-0">
 
   <div class="nav-scroll">
     <ul class="nav nav-pills flex-column px-2 py-2">
@@ -181,12 +187,15 @@ if (!empty($activeLogo) && !preg_match('#/logo_[a-z]+\.png$#i', (string) $active
             <a class="nav-link text-white d-flex align-items-center<?= $is_open ? ' has-active' : '' ?>"
                data-bs-toggle="collapse" href="#menu-<?= e($m['key']) ?>" role="button"
                aria-expanded="<?= $is_open ? 'true' : 'false' ?>"
-               aria-controls="menu-<?= e($m['key']) ?>">
-              <i class="bi bi-<?= e($m['icon']) ?> me-2"></i><?= e($m['label']) ?>
+               aria-controls="menu-<?= e($m['key']) ?>"
+               data-menu-section="<?= e($sec ?: 'Utama') ?>"
+               data-menu-icon="<?= e($m['icon']) ?>">
+              <span class="sidebar-icon"><i class="bi bi-<?= e($m['icon']) ?>" aria-hidden="true"></i></span>
+              <span class="sidebar-label"><?= e($m['label']) ?></span>
               <i class="bi bi-chevron-down ms-auto small"></i>
             </a>
             <div class="collapse<?= $is_open ? ' show' : '' ?>" id="menu-<?= e($m['key']) ?>">
-              <ul class="nav flex-column ms-3 ps-2 sidebar-tree">
+              <ul class="nav flex-column sidebar-tree">
                 <?php foreach ($visible_sub as $s):
                     $s_href_clean = explode('?', $s['href'])[0];
                     $s_dir = dirname($s_href_clean);
@@ -201,7 +210,9 @@ if (!empty($activeLogo) && !preg_match('#/logo_[a-z]+\.png$#i', (string) $active
                 ?>
                   <li class="nav-item">
                     <a href="<?= e(APP_URL . '/' . $s['href']) ?>"
-                       class="nav-link text-white py-1 ps-2 sidebar-sub<?= $sub_active ? ' active' : '' ?>"><?= e($s['label']) ?></a>
+                       class="nav-link text-white sidebar-sub<?= $sub_active ? ' active' : '' ?>"
+                       data-menu-section="<?= e(($sec ?: 'Utama') . ' › ' . $m['label']) ?>"
+                       data-menu-icon="<?= e($m['icon']) ?>"><?= e($s['label']) ?></a>
                   </li>
                 <?php endforeach; ?>
               </ul>
@@ -210,8 +221,11 @@ if (!empty($activeLogo) && !preg_match('#/logo_[a-z]+\.png$#i', (string) $active
       <?php else: ?>
           <li class="nav-item">
             <a href="<?= e(APP_URL . '/' . $m['href']) ?>"
-               class="nav-link text-white<?= sidebar_is_active($m, $active) ? ' active' : '' ?>">
-              <i class="bi bi-<?= e($m['icon']) ?> me-2"></i><?= e($m['label']) ?>
+               class="nav-link text-white d-flex align-items-center<?= sidebar_is_active($m, $active) ? ' active' : '' ?>"
+               data-menu-section="<?= e($sec ?: 'Utama') ?>"
+               data-menu-icon="<?= e($m['icon']) ?>">
+              <span class="sidebar-icon"><i class="bi bi-<?= e($m['icon']) ?>" aria-hidden="true"></i></span>
+              <span class="sidebar-label"><?= e($m['label']) ?></span>
             </a>
           </li>
       <?php endif; ?>
@@ -219,26 +233,24 @@ if (!empty($activeLogo) && !preg_match('#/logo_[a-z]+\.png$#i', (string) $active
     </ul>
   </div>
 
-  <hr class="text-white m-0">
-  <div class="px-3 py-2 sidebar-footer">
-    <div class="d-flex align-items-center gap-1">
+  <div class="sidebar-footer">
+    <div class="sidebar-footer-card d-flex align-items-center gap-2">
       <a href="<?= e(APP_URL) ?>/pages/profile/index.php"
          class="d-flex align-items-center text-white text-decoration-none flex-grow-1 overflow-hidden sidebar-user-link"
          title="Buka Profil Saya">
-        <div class="avatar-sm me-2 flex-shrink-0 d-flex align-items-center justify-content-center">
-          <i class="bi bi-person-circle fs-4 text-white-50"></i>
+        <div class="sidebar-user-avatar me-2 flex-shrink-0">
+          <?= e($sbInitials) ?>
         </div>
         <div class="text-white lh-1 flex-grow-1 overflow-hidden">
-          <div class="fw-semibold text-truncate" style="font-size:.85rem"><?= e($user['name'] ?? '') ?></div>
-          <small class="text-white-50 text-truncate d-block mt-1"><?= e($_SESSION['role_name'] ?? '') ?></small>
+          <div class="fw-semibold text-truncate" style="font-size:.82rem"><?= e($sbUserName) ?></div>
+          <small class="sidebar-user-role text-truncate d-block mt-1"><?= e($_SESSION['role_name'] ?? '') ?></small>
         </div>
       </a>
       <button type="button" class="dark-toggle sidebar-theme-toggle text-white flex-shrink-0" aria-label="Ganti tema" title="Ganti tema">
         <i class="bi bi-moon-stars"></i>
       </button>
       <a href="<?= e(APP_URL) ?>/pages/auth/logout.php"
-         class="btn btn-sm sidebar-theme-toggle text-white flex-shrink-0"
-         style="border-radius:8px;padding:4px 8px;font-size:.8rem;line-height:1.2;"
+         class="btn btn-sm sidebar-theme-toggle sidebar-logout-btn text-white flex-shrink-0"
          aria-label="Keluar"
          title="Keluar"
          onclick="return confirm('Yakin ingin keluar?')">

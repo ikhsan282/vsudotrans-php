@@ -76,9 +76,6 @@ if ($aiActiveKey === 'finance' && ($aiCanFinance || $aiCanInvoices)) {
     } elseif ($aiCanDispatch) {
         $aiChips[] = 'Driver yang sedang bertugas';
     }
-    if ($aiCanVehicles || $aiCanEmployees) {
-        $aiChips[] = 'Cek STNK, KIR & SIM jatuh tempo';
-    }
 }
 
 if ($aiCanBookings && count($aiChips) < 4) {
@@ -89,9 +86,6 @@ if (($aiCanFinance || $aiCanInvoices) && count($aiChips) < 4) {
 }
 if (($aiCanDispatch || $aiCanBookings) && count($aiChips) < 4) {
     $aiChips[] = 'Driver yang sedang bertugas';
-}
-if (($aiCanVehicles || $aiCanEmployees) && count($aiChips) < 4) {
-    $aiChips[] = 'Cek STNK, KIR & SIM jatuh tempo';
 }
 $aiChips = array_slice(array_values(array_unique($aiChips)), 0, 4);
 if (!$aiChips) {
@@ -114,6 +108,7 @@ if (!$aiChips) {
        role="dialog"
        aria-modal="false"
        aria-hidden="true"
+       inert
        aria-labelledby="vstAiTitle">
     <div class="vst-ai-header">
         <div class="d-flex align-items-center gap-2 min-w-0">
@@ -150,7 +145,7 @@ if (!$aiChips) {
                       class="vst-ai-input"
                       rows="1"
                       maxlength="1000"
-                      placeholder="Tanya ringkasan hari ini, cek TRV/RNT/INV, atau nopol..."
+                      placeholder="Tanya ringkasan, TRV/RNT/INV, atau nopol..."
                       aria-label="Tulis pertanyaan ke asisten AI"></textarea>
             <button type="submit" id="vstAiSendBtn" class="vst-ai-send-btn" title="Kirim pertanyaan" aria-label="Kirim">
                 <i class="bi bi-send-fill" aria-hidden="true"></i>
@@ -187,6 +182,8 @@ if (!$aiChips) {
 
     var busy = false;
     var history = [];
+    var focusTimer = null;
+    var activeCtrl = null;
 
     function escHtml(s) {
         return String(s == null ? '' : s)
@@ -377,17 +374,74 @@ if (!$aiChips) {
         history.forEach(function (m) { appendMessage(m); });
     }
 
-    function setOpen(open) {
-        drawer.classList.toggle('is-open', open);
-        drawer.setAttribute('aria-hidden', open ? 'false' : 'true');
-        fab.setAttribute('aria-expanded', open ? 'true' : 'false');
-        fab.classList.toggle('is-hidden', open);
-        try {
-            sessionStorage.setItem(openKey, open ? '1' : '0');
-        } catch (e) {}
-        if (open) {
+    function syncInputHeight() {
+        inputEl.style.height = 'auto';
+        var sh = inputEl.scrollHeight;
+        inputEl.style.height = Math.min(sh, 96) + 'px';
+        inputEl.style.overflowY = sh > 96 ? 'auto' : 'hidden';
+    }
+
+    function setOpen(open, opts) {
+        opts = opts || {};
+        var isOpen = !!open;
+        if (focusTimer) {
+            clearTimeout(focusTimer);
+            focusTimer = null;
+        }
+        if (opts.instant) {
+            drawer.classList.add('is-instant');
+            fab.classList.add('is-instant');
+        }
+        if (isOpen) {
+            if (fab.contains(document.activeElement) && document.activeElement && typeof document.activeElement.blur === 'function') {
+                document.activeElement.blur();
+            }
+            fab.classList.add('is-hidden');
+            fab.setAttribute('aria-expanded', 'true');
+            fab.setAttribute('aria-hidden', 'true');
+            fab.inert = true;
+            drawer.inert = false;
+            drawer.setAttribute('aria-hidden', 'false');
+            drawer.classList.add('is-open');
             scrollToBottom();
-            setTimeout(function () { inputEl.focus(); }, 120);
+            if (!opts.skipFocus) {
+                focusTimer = setTimeout(function () {
+                    focusTimer = null;
+                    if (drawer.classList.contains('is-open') && !drawer.inert) {
+                        try { inputEl.focus({ preventScroll: true }); } catch (e) { inputEl.focus(); }
+                    }
+                }, 140);
+            }
+        } else {
+            var hadFocus = drawer.contains(document.activeElement);
+            if (hadFocus && document.activeElement && typeof document.activeElement.blur === 'function') {
+                document.activeElement.blur();
+            }
+            drawer.classList.remove('is-open');
+            drawer.inert = true;
+            drawer.setAttribute('aria-hidden', 'true');
+            fab.inert = false;
+            fab.removeAttribute('aria-hidden');
+            fab.classList.remove('is-hidden');
+            fab.setAttribute('aria-expanded', 'false');
+            if (opts.restoreFocus && hadFocus) {
+                try { fab.focus({ preventScroll: true }); } catch (e) { fab.focus(); }
+            }
+        }
+        try {
+            sessionStorage.setItem(openKey, isOpen ? '1' : '0');
+        } catch (e) {}
+        if (opts.instant) {
+            void drawer.offsetWidth;
+            var clearInstant = function () {
+                drawer.classList.remove('is-instant');
+                fab.classList.remove('is-instant');
+            };
+            if (window.requestAnimationFrame) {
+                window.requestAnimationFrame(clearInstant);
+            } else {
+                setTimeout(clearInstant, 0);
+            }
         }
     }
 
@@ -409,6 +463,10 @@ if (!$aiChips) {
         sendBtn.disabled = true;
         inputEl.value = '';
         inputEl.style.height = 'auto';
+        inputEl.style.overflowY = 'hidden';
+
+        var reqCtrl = (typeof AbortController !== 'undefined') ? new AbortController() : null;
+        activeCtrl = reqCtrl;
 
         var userMsg = { role: 'user', content: msgText };
         history.push(userMsg);
@@ -453,8 +511,13 @@ if (!$aiChips) {
             if (finalized) return;
             finalized = true;
             removeTyping();
+            if (activeCtrl === reqCtrl) activeCtrl = null;
             busy = false;
             sendBtn.disabled = false;
+            if (reqCtrl && reqCtrl.signal && reqCtrl.signal.aborted) {
+                if (liveWrap && liveWrap.parentNode) liveWrap.parentNode.removeChild(liveWrap);
+                return;
+            }
 
             if (!data || !data.ok) {
                 if (liveWrap && liveWrap.parentNode) liveWrap.parentNode.removeChild(liveWrap);
@@ -480,7 +543,7 @@ if (!$aiChips) {
             }
         };
 
-        fetch(endpoint, { method: 'POST', body: fd, credentials: 'same-origin' })
+        fetch(endpoint, { method: 'POST', body: fd, credentials: 'same-origin', signal: reqCtrl ? reqCtrl.signal : undefined })
             .then(function (r) {
                 var ctype = (r.headers.get('content-type') || '').toLowerCase();
                 if (!r.ok || ctype.indexOf('text/event-stream') === -1 || !r.body || !r.body.getReader) {
@@ -526,6 +589,10 @@ if (!$aiChips) {
 
                 function pump() {
                     return reader.read().then(function (chunk) {
+                        if (reqCtrl && reqCtrl.signal && reqCtrl.signal.aborted) {
+                            applyFinal({ ok: false });
+                            return;
+                        }
                         if (chunk.done) {
                             if (buf.trim()) handleEventBlock(buf);
                             if (!finalized) {
@@ -551,10 +618,15 @@ if (!$aiChips) {
 
                 return pump();
             })
-            .catch(function () {
+            .catch(function (err) {
                 removeTyping();
+                if (activeCtrl === reqCtrl) activeCtrl = null;
                 busy = false;
                 sendBtn.disabled = false;
+                if (err && err.name === 'AbortError') {
+                    if (liveWrap && liveWrap.parentNode) liveWrap.parentNode.removeChild(liveWrap);
+                    return;
+                }
                 if (!finalized) {
                     if (liveWrap && liveWrap.parentNode) liveWrap.parentNode.removeChild(liveWrap);
                     appendMessage({ role: 'assistant', content: 'Tidak dapat terhubung ke server aplikasi. Periksa koneksi Anda lalu coba lagi.' }, { noTools: true });
@@ -564,10 +636,18 @@ if (!$aiChips) {
 
     fab.addEventListener('click', function () { setOpen(true); });
     if (closeBtn) {
-        closeBtn.addEventListener('click', function () { setOpen(false); });
+        closeBtn.addEventListener('click', function (ev) {
+            setOpen(false, { restoreFocus: ev.detail === 0 });
+        });
     }
     if (resetBtn) {
         resetBtn.addEventListener('click', function () {
+            if (activeCtrl) {
+                try { activeCtrl.abort(); } catch (e) {}
+                activeCtrl = null;
+            }
+            busy = false;
+            sendBtn.disabled = false;
             history = [];
             try { sessionStorage.removeItem(histKey); } catch (e) {}
             renderWelcome();
@@ -593,22 +673,34 @@ if (!$aiChips) {
         ev.preventDefault();
         sendPrompt(inputEl.value);
     });
-    inputEl.addEventListener('input', function () {
-        inputEl.style.height = 'auto';
-        inputEl.style.height = Math.min(inputEl.scrollHeight, 96) + 'px';
-    });
+    inputEl.addEventListener('input', syncInputHeight);
     inputEl.addEventListener('keydown', function (ev) {
         if (ev.key === 'Enter' && !ev.shiftKey) {
             ev.preventDefault();
             sendPrompt(inputEl.value);
         }
     });
+    var sbToggler = document.getElementById('sidebarToggler');
+    if (sbToggler) {
+        sbToggler.addEventListener('click', function () {
+            if (drawer.classList.contains('is-open') && window.innerWidth < 992) {
+                setOpen(false);
+            }
+        });
+    }
+    document.addEventListener('pointerdown', function (ev) {
+        if (drawer.classList.contains('is-open') && window.innerWidth < 576 && !drawer.contains(ev.target) && !fab.contains(ev.target)) {
+            setOpen(false);
+        }
+    });
     document.addEventListener('keydown', function (ev) {
         if (ev.altKey && !ev.ctrlKey && !ev.metaKey && ev.key.toLowerCase() === 'k') {
             ev.preventDefault();
-            setOpen(!drawer.classList.contains('is-open'));
-        } else if (ev.key === 'Escape' && drawer.classList.contains('is-open')) {
-            setOpen(false);
+            var willOpen = !drawer.classList.contains('is-open');
+            setOpen(willOpen, { restoreFocus: !willOpen });
+        } else if (ev.key === 'Escape' && drawer.classList.contains('is-open') && !document.querySelector('.modal.show')) {
+            ev.preventDefault();
+            setOpen(false, { restoreFocus: true });
         }
     });
 
@@ -616,8 +708,12 @@ if (!$aiChips) {
     renderAll();
     try {
         if (sessionStorage.getItem(openKey) === '1') {
-            setOpen(true);
+            setOpen(true, { instant: true, skipFocus: true });
+        } else {
+            drawer.inert = true;
         }
-    } catch (e) {}
+    } catch (e) {
+        drawer.inert = true;
+    }
 })();
 </script>

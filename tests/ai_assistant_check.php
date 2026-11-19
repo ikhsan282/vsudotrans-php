@@ -164,6 +164,26 @@ try {
     foreach (['id="vstAiFab"', 'id="vstAiDrawer"', 'id="vstAiForm"', 'id="vstAiInput"'] as $needle) {
         ai_check(str_contains($dashHtml, $needle), "Dashboard renders {$needle}");
     }
+    $drawerTagOk = preg_match('/<aside[^>]*id="vstAiDrawer"[^>]*>/i', $dashHtml, $drwM)
+        && str_contains($drwM[0], 'aria-hidden="true"')
+        && preg_match('/\binert\b/', $drwM[0]);
+    ai_check(
+        $drawerTagOk
+        && str_contains($dashHtml, 'clearTimeout(focusTimer)')
+        && str_contains($dashHtml, 'AbortController'),
+        'Dashboard AI drawer initializes inert + aria-hidden="true" with focusTimer & AbortController guards'
+    );
+    $styleCss = (string) @file_get_contents(__DIR__ . '/../assets/css/style.css');
+    $drawerRuleOk = preg_match('/\.vst-ai-drawer\s*\{([^}]*)\}/s', $styleCss, $drwCssM)
+        && str_contains($drwCssM[1], 'pointer-events: none')
+        && preg_match('/z-index:\s*(\d+)/', $drwCssM[1], $drwZm)
+        && (int) $drwZm[1] < 1050;
+    $drawerOpenRuleOk = preg_match('/\.vst-ai-drawer\.is-open\s*\{([^}]*)\}/s', $styleCss, $drwOpenM)
+        && str_contains($drwOpenM[1], 'pointer-events: auto');
+    ai_check(
+        $drawerRuleOk && $drawerOpenRuleOk,
+        'CSS sets pointer-events: none on closed .vst-ai-drawer, pointer-events: auto on .is-open, and z-index < 1050'
+    );
     ai_check(!str_contains($dashHtml, 'id="topbarAiBtn"'), 'Dashboard topbar omits #topbarAiBtn button');
     $modelLeak = defined('AI_MODEL') && AI_MODEL !== '' && stripos($dashHtml, (string) AI_MODEL) !== false;
     ai_check(
