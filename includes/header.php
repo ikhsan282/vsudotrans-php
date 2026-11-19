@@ -66,12 +66,6 @@ $roleLabel = trim((string) ($_SESSION['role_name'] ?? 'Pengguna'));
         </div>
 
         <div class="ms-auto d-flex align-items-center gap-2 flex-shrink-0">
-            <button type="button" class="topbar-cmd-btn" id="vstCmdTrigger" aria-label="Cari menu atau halaman (Ctrl+K)" title="Cari menu atau halaman (Ctrl+K)">
-                <i class="bi bi-search topbar-cmd-icon" aria-hidden="true"></i>
-                <span class="topbar-cmd-label d-none d-md-inline">Cari menu...</span>
-                <kbd class="topbar-cmd-kbd d-none d-sm-inline-block">Ctrl K</kbd>
-            </button>
-
             <div class="dropdown">
                 <button class="topbar-pill dropdown-toggle" type="button" data-bs-toggle="dropdown" aria-expanded="false" title="Perusahaan Aktif: <?= e($activeName) ?>">
                     <span class="topbar-company-dot" aria-hidden="true"></span>
@@ -103,10 +97,6 @@ $roleLabel = trim((string) ($_SESSION['role_name'] ?? 'Pengguna'));
                 </ul>
             </div>
 
-            <button type="button" class="dark-toggle topbar-icon-btn d-none d-sm-inline-flex flex-shrink-0" aria-label="Ganti tema" title="Ganti tema">
-                <i class="bi bi-moon-stars" aria-hidden="true"></i>
-            </button>
-
             <div class="dropdown">
                 <button class="topbar-user-btn dropdown-toggle" type="button" data-bs-toggle="dropdown" aria-expanded="false" title="<?= e($userNameRaw) ?> (<?= e($roleLabel) ?>)">
                     <span class="topbar-avatar" aria-hidden="true"><?= e($userInitials) ?></span>
@@ -130,20 +120,5 @@ $roleLabel = trim((string) ($_SESSION['role_name'] ?? 'Pengguna'));
         </div>
     </div>
     <div id="sidebarOverlay" class="sidebar-overlay"></div>
-    <div id="vstCmdBackdrop" class="vst-cmd-backdrop d-print-none" aria-hidden="true" inert>
-        <div class="vst-cmd-dialog" role="dialog" aria-modal="true" aria-labelledby="vstCmdInput">
-            <div class="vst-cmd-header">
-                <i class="bi bi-search vst-cmd-search-icon" aria-hidden="true"></i>
-                <input type="text" id="vstCmdInput" class="vst-cmd-input" placeholder="Cari menu atau modul (mis. Travel, Buku Kas, Kalender, Gaji)..." autocomplete="off" spellcheck="false">
-                <button type="button" id="vstCmdClose" class="vst-cmd-esc" aria-label="Tutup pencarian">ESC</button>
-            </div>
-            <div id="vstCmdList" class="vst-cmd-list" role="listbox"></div>
-            <div class="vst-cmd-footer">
-                <span><kbd>↑</kbd><kbd>↓</kbd> Navigasi</span>
-                <span><kbd>Enter</kbd> Buka</span>
-                <span><kbd>Esc</kbd> Tutup</span>
-            </div>
-        </div>
-    </div>
     <div class="flash-wrap"><?= flash_html() ?></div>
     <div class="content-main-row">

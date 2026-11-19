@@ -187,9 +187,7 @@ if ($sbInitials === '') {
             <a class="nav-link text-white d-flex align-items-center<?= $is_open ? ' has-active' : '' ?>"
                data-bs-toggle="collapse" href="#menu-<?= e($m['key']) ?>" role="button"
                aria-expanded="<?= $is_open ? 'true' : 'false' ?>"
-               aria-controls="menu-<?= e($m['key']) ?>"
-               data-menu-section="<?= e($sec ?: 'Utama') ?>"
-               data-menu-icon="<?= e($m['icon']) ?>">
+               aria-controls="menu-<?= e($m['key']) ?>">
               <span class="sidebar-icon"><i class="bi bi-<?= e($m['icon']) ?>" aria-hidden="true"></i></span>
               <span class="sidebar-label"><?= e($m['label']) ?></span>
               <i class="bi bi-chevron-down ms-auto small"></i>
@@ -210,9 +208,7 @@ if ($sbInitials === '') {
                 ?>
                   <li class="nav-item">
                     <a href="<?= e(APP_URL . '/' . $s['href']) ?>"
-                       class="nav-link text-white sidebar-sub<?= $sub_active ? ' active' : '' ?>"
-                       data-menu-section="<?= e(($sec ?: 'Utama') . ' › ' . $m['label']) ?>"
-                       data-menu-icon="<?= e($m['icon']) ?>"><?= e($s['label']) ?></a>
+                       class="nav-link text-white sidebar-sub<?= $sub_active ? ' active' : '' ?>"><?= e($s['label']) ?></a>
                   </li>
                 <?php endforeach; ?>
               </ul>
@@ -221,9 +217,7 @@ if ($sbInitials === '') {
       <?php else: ?>
           <li class="nav-item">
             <a href="<?= e(APP_URL . '/' . $m['href']) ?>"
-               class="nav-link text-white d-flex align-items-center<?= sidebar_is_active($m, $active) ? ' active' : '' ?>"
-               data-menu-section="<?= e($sec ?: 'Utama') ?>"
-               data-menu-icon="<?= e($m['icon']) ?>">
+               class="nav-link text-white d-flex align-items-center<?= sidebar_is_active($m, $active) ? ' active' : '' ?>">
               <span class="sidebar-icon"><i class="bi bi-<?= e($m['icon']) ?>" aria-hidden="true"></i></span>
               <span class="sidebar-label"><?= e($m['label']) ?></span>
             </a>

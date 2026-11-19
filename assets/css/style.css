@@ -417,50 +417,6 @@ body {
   text-overflow: ellipsis;
 }
 
-.topbar-cmd-btn {
-  height: 36px;
-  padding: 0 .55rem 0 .7rem;
-  border-radius: 10px;
-  border: 1px solid var(--border-color);
-  background: var(--surface-muted);
-  color: var(--muted-color);
-  display: inline-flex;
-  align-items: center;
-  gap: .5rem;
-  font-size: .81rem;
-  font-weight: 500;
-  cursor: pointer;
-  transition: background-color .15s ease, border-color .15s ease, color .15s ease, box-shadow .15s ease;
-}
-
-.topbar-cmd-btn:hover {
-  background: var(--surface);
-  border-color: var(--accent);
-  color: var(--text-heading);
-  box-shadow: 0 4px 12px -4px rgba(29, 78, 216, .18);
-}
-
-.topbar-cmd-icon {
-  font-size: .85rem;
-  color: var(--accent);
-}
-
-.topbar-cmd-label {
-  padding-right: .35rem;
-}
-
-.topbar-cmd-kbd {
-  padding: .1rem .38rem;
-  font-size: .68rem;
-  font-weight: 600;
-  font-family: inherit;
-  border-radius: 6px;
-  background: var(--surface);
-  color: var(--muted-color);
-  border: 1px solid var(--border-color);
-  line-height: 1.3;
-}
-
 .topbar-pill {
   height: 36px;
   padding: 0 .75rem 0 .6rem;
@@ -608,190 +564,6 @@ html[data-bs-theme="dark"] .topbar-dropdown {
 .topbar-company-item.active .topbar-item-code {
   background: rgba(255, 255, 255, .22);
   color: #ffffff;
-}
-
-/* ── Command Search Palette (Ctrl+K) ────────────────────────────────────── */
-.vst-cmd-backdrop {
-  position: fixed;
-  inset: 0;
-  z-index: 1070;
-  background: rgba(15, 23, 42, .48);
-  backdrop-filter: blur(4px);
-  -webkit-backdrop-filter: blur(4px);
-  display: flex;
-  align-items: flex-start;
-  justify-content: center;
-  padding: 10vh 1rem 1rem;
-  opacity: 0;
-  visibility: hidden;
-  pointer-events: none;
-  transition: opacity .16s ease, visibility 0s linear .16s;
-}
-
-.vst-cmd-backdrop.is-open {
-  opacity: 1;
-  visibility: visible;
-  pointer-events: auto;
-  transition: opacity .16s ease, visibility 0s linear 0s;
-}
-
-.vst-cmd-dialog {
-  width: 100%;
-  max-width: 540px;
-  border-radius: 16px;
-  background: var(--surface);
-  border: 1px solid var(--border-strong);
-  box-shadow: 0 26px 64px -12px rgba(15, 23, 42, .32);
-  overflow: hidden;
-  transform: translateY(-10px) scale(.98);
-  transition: transform .16s ease;
-}
-
-.vst-cmd-backdrop.is-open .vst-cmd-dialog {
-  transform: translateY(0) scale(1);
-}
-
-.vst-cmd-header {
-  display: flex;
-  align-items: center;
-  gap: .65rem;
-  padding: .8rem 1rem;
-  border-bottom: 1px solid var(--border-color);
-}
-
-.vst-cmd-search-icon {
-  font-size: 1rem;
-  color: var(--accent);
-}
-
-.vst-cmd-input {
-  flex: 1 1 auto;
-  border: 0;
-  background: transparent;
-  color: var(--text-heading);
-  font-size: .92rem;
-  font-weight: 500;
-  outline: none;
-}
-
-.vst-cmd-esc {
-  border: 1px solid var(--border-color);
-  background: var(--surface-muted);
-  color: var(--muted-color);
-  border-radius: 6px;
-  padding: .15rem .45rem;
-  font-size: .68rem;
-  font-weight: 700;
-  cursor: pointer;
-}
-
-.vst-cmd-list {
-  max-height: 340px;
-  overflow-y: auto;
-  padding: .45rem;
-}
-
-.vst-cmd-item {
-  display: flex;
-  align-items: center;
-  gap: .7rem;
-  width: 100%;
-  text-align: left;
-  border: 0;
-  background: transparent;
-  padding: .52rem .7rem;
-  border-radius: 10px;
-  color: var(--text-color);
-  text-decoration: none;
-  cursor: pointer;
-  transition: background-color .12s ease;
-}
-
-.vst-cmd-item:hover,
-.vst-cmd-item.is-active {
-  background: var(--surface-hover);
-  color: var(--text-heading);
-}
-
-.vst-cmd-item-icon {
-  width: 32px;
-  height: 32px;
-  border-radius: 8px;
-  background: var(--surface-muted);
-  color: var(--accent);
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  font-size: .95rem;
-  flex-shrink: 0;
-}
-
-.vst-cmd-item.is-active .vst-cmd-item-icon {
-  background: linear-gradient(135deg, #1d4ed8 0%, #0284c7 100%);
-  color: #ffffff;
-}
-
-.vst-cmd-item-body {
-  flex: 1 1 auto;
-  min-width: 0;
-}
-
-.vst-cmd-item-title {
-  font-size: .85rem;
-  font-weight: 600;
-  color: var(--text-heading);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
-.vst-cmd-item-sec {
-  font-size: .72rem;
-  color: var(--muted-color);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
-.vst-cmd-item-arrow {
-  font-size: .8rem;
-  color: var(--muted-color);
-  opacity: 0;
-  transition: opacity .12s ease, transform .12s ease;
-}
-
-.vst-cmd-item.is-active .vst-cmd-item-arrow {
-  opacity: 1;
-  transform: translateX(2px);
-  color: var(--accent);
-}
-
-.vst-cmd-empty {
-  padding: 1.75rem 1rem;
-  text-align: center;
-  color: var(--muted-color);
-  font-size: .85rem;
-}
-
-.vst-cmd-footer {
-  display: flex;
-  align-items: center;
-  gap: 1rem;
-  padding: .5rem 1rem;
-  background: var(--surface-muted);
-  border-top: 1px solid var(--border-color);
-  font-size: .72rem;
-  color: var(--muted-color);
-}
-
-.vst-cmd-footer kbd {
-  padding: .06rem .32rem;
-  margin-right: 3px;
-  font-size: .68rem;
-  border-radius: 4px;
-  background: var(--surface);
-  color: var(--text-color);
-  border: 1px solid var(--border-color);
 }
 
 .flash-wrap {
@@ -969,8 +741,6 @@ html[data-bs-theme="dark"] .topbar-dropdown {
   outline-offset: 2px;
 }
 
-.vst-cmd-input:focus,
-.vst-cmd-input:focus-visible,
 .vst-ai-input:focus,
 .vst-ai-input:focus-visible {
   outline: none !important;
@@ -1008,14 +778,6 @@ html[data-bs-theme="dark"] .topbar-dropdown {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-}
-
-@media (max-width: 767.98px) {
-  .topbar-cmd-btn {
-    width: 36px;
-    padding: 0;
-    justify-content: center;
-  }
 }
 
 @media (max-width: 575.98px) {
