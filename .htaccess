@@ -1,8 +1,16 @@
-# VSudoTrans — keamanan & setting shared hosting (cPanel/Apache)
+# VSudoTrans — keamanan & setting shared hosting / VPS (cPanel/Hostinger/Apache)
 Options -Indexes
 ServerSignature Off
 
 # PHP settings for shared hosting
+<IfModule mod_php.c>
+    php_value upload_max_filesize 5M
+    php_value post_max_size 6M
+    php_value max_execution_time 60
+    php_value memory_limit 128M
+    php_flag session.cookie_httponly on
+    php_flag session.use_strict_mode on
+</IfModule>
 <IfModule mod_php8.c>
     php_value upload_max_filesize 5M
     php_value post_max_size 6M
@@ -28,18 +36,25 @@ ServerSignature Off
     Header always set Referrer-Policy "strict-origin-when-cross-origin"
 </IfModule>
 
-# Blokir file sensitif (schema, log, markdown, dokumen)
-<FilesMatch "\.(sql|log|env|md|sh|ini|bak|gitignore)$">
-    Order allow,deny
-    Deny from all
+# Blokir file sensitif (schema, log, env, markdown, script, backup) — Apache 2.4 & 2.2
+<FilesMatch "(?:^\.env(?:\..+)?$|\.(?:sql|log|env|md|sh|ini|bak|gitignore)$)">
+    <IfModule mod_authz_core.c>
+        Require all denied
+    </IfModule>
+    <IfModule !mod_authz_core.c>
+        Order allow,deny
+        Deny from all
+    </IfModule>
 </FilesMatch>
 
-# Blokir akses langsung ke direktori sensitif
-RedirectMatch 403 ^.*/(config|includes|tests)/.*$
-RedirectMatch 403 ^.*/database/.*$
+# Blokir akses langsung ke direktori sensitif & backup
+RedirectMatch 403 ^.*/(config|includes|tests|database|backup|docs)/.*$
 
 <IfModule mod_rewrite.c>
     RewriteEngine On
+
+    # Nonaktifkan buffering gzip pada endpoint SSE AI Assistant
+    RewriteRule ^api/ai_assistant\.php$ - [E=no-gzip:1,E=dont-vary:1]
 
     # Teruskan header Authorization ke PHP (cPanel/CGI/PHP-FPM)
     RewriteCond %{HTTP:Authorization} ^(.+)$

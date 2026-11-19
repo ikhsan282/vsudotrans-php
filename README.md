@@ -32,27 +32,33 @@ mysql -u root -p < database/schema.sql
 
 ### 2. Konfigurasi
 
-`config/config.php` dan `.env` tidak ikut Git (berisi kredensial). Salin dari contoh:
+File `.env` tidak ikut Git (berisi kredensial DB, Azure Blob, dan AI). Salin dari contoh:
 
 ```bash
-cp config/config.php.sample config/config.php
 cp .env.example .env
 ```
 
-Lalu sesuaikan `.env` untuk Azure Blob Storage:
+Lalu sesuaikan `.env` untuk database, Azure Blob Storage, dan AI Assistant (`config/config.php` otomatis membaca `.env` dan menyediakan fallback default XAMPP lokal):
 ```ini
+DB_HOST="localhost"
+DB_USER="root"
+DB_PASS=""
+DB_NAME="vsudotrans"
+
+# Opsional: override base URL di hosting/reverse proxy
+# VSUDO_APP_URL="https://erp.domainanda.com"
+
 BLOB_STORAGE_CONNECTION_STRING="DefaultEndpointsProtocol=https;AccountName=vsudotransstorage;AccountKey=YOUR_KEY;EndpointSuffix=core.windows.net"
 BLOB_STORAGE_CONTAINER="vsudotrans"
+
+# Opsional: endpoint & API key AI (OpenAI-compatible)
+VSUDO_AI_BASE_URL="http://localhost:20128/v1"
+VSUDO_AI_API_KEY=""
+VSUDO_AI_MODEL="ikhsan-reason"
+VSUDO_AI_CHAT_MODEL=""
 ```
 
-Dan `config/config.php` untuk database & URL:
-```php
-define('APP_URL', 'http://localhost:8080/vsudotrans-php'); // tanpa trailing slash
-define('DB_HOST', 'localhost');
-define('DB_NAME', 'vsudotrans');
-define('DB_USER', 'root');
-define('DB_PASS', '');
-```
+Jika tidak memakai `.env`, nilai fallback juga dapat diatur lewat konstanta di [config/config.php](config/config.php) (`APP_URL` terdeteksi otomatis dari host HTTP).
 
 ### 3. Jalankan
 
@@ -74,16 +80,16 @@ Buka `http://localhost:8080/vsudotrans-php/pages/auth/login.php`.
 
 Password semua user: `P@ssw0rd`. **Wajib diganti sebelum production.**
 
-### 5. cPanel
+### 5. cPanel / Hosting (Apache & LiteSpeed)
 
-- Upload semua file ke `public_html/vsudotrans-php/` (**sertakan `.htaccess`** — lihat catatan keamanan di bawah)
+- Upload semua file ke `public_html/vsudotrans-php/` (**sertakan `.htaccess` root dan `uploads/.htaccess`** — lihat catatan keamanan di bawah)
 - Import `database/schema.sql` via phpMyAdmin
-- Sesuaikan `APP_URL` dan kredensial DB di `config/config.php`
+- Salin `.env.example` menjadi `.env` lalu isi `DB_*`, `BLOB_STORAGE_*`, dan `VSUDO_AI_*` (tidak perlu mengubah `config/config.php` saat deploy ulang / `git pull`)
 - Permission: folder `755`, file `644`
 - **Azure Blob Storage**: Berkas unggahan (logo, stempel, QRIS, foto armada, STNK, KIR, foto karyawan, KTP, SIM, dan bukti bayar) tersimpan langsung di Azure Blob Storage private container dengan Service SAS Token URL. Pastikan kredensial Azure diisi di file `.env`.
-- **Ekstensi PHP**: pastikan `mysqli`, `curl`, `dom`, `mbstring`, dan `zip` aktif (cPanel → *Select PHP Version* → *Extensions*). `curl` untuk Azure Storage REST API & integrasi QRIS/Midtrans/WA; `dom`+`mbstring` untuk PDF; bila tidak aktif, tombol ekspor otomatis beralih ke HTML siap-cetak (tidak error).
+- **Ekstensi PHP**: pastikan `mysqli`, `curl`, `dom`, `mbstring`, dan `zip` aktif (cPanel → *Select PHP Version* → *Extensions*). `curl` untuk Azure Storage REST API, AI Assistant, & integrasi QRIS/Midtrans/WA; `dom`+`mbstring` untuk PDF; bila tidak aktif, tombol ekspor otomatis beralih ke HTML siap-cetak (tidak error).
 
-`.htaccess` memblokir akses web ke `config/`, `includes/`, `tests/`, `database/` dan file `.sql`/`.md`, plus menambah security headers. Tanpa file ini, `database/schema.sql` dan source dapat diunduh siapa saja.
+`.htaccess` memblokir akses web ke `config/`, `includes/`, `tests/`, `database/`, `backup/`, `docs/` dan file `.env`/`.sql`/`.md`, menonaktifkan gzip buffering pada endpoint SSE AI (`api/ai_assistant.php`), serta menambah security headers. Di dalam direktori unggahan, `uploads/.htaccess` turut menonaktifkan eksekusi skrip PHP/CGI. Tanpa file-file ini, skema DB dan source dapat terunduh.
 
 ## Status Modul
 
@@ -112,6 +118,7 @@ Password semua user: `P@ssw0rd`. **Wajib diganti sebelum production.**
 | **Buku Kas** | ✅ | ✅ | Buku besar uang masuk/keluar (tanpa konsep akun kas/bank) + rekap harian di Laporan Keuangan; export CSV, XLSX, PDF, cetak |
 | **Backup & Restore** | ✅ | ✅ | Dump/unduh `.sql` + restore dari file; khusus Super Admin |
 | **Import CSV master data** | ✅ | ✅ | Template CSV, all-or-nothing, mode upsert |
+| **vSudo AI Assistant** (`api/ai_assistant.php`) | ✅ | ✅ | Floating chat widget internal ERP (`Alt+K`) dengan streaming SSE, *page-aware context*, smart lookup (pelanggan, unit kosong per tanggal, tarif rute, kode booking/invoice/nopol), analitik perbandingan bulanan, tombol **Salin** & **Kirim via WhatsApp** (`wa.me`), 5 lapis pengaman anti-jailbreak + Audit Trail `ai.*`, serta isolasi RBAC/multi-perusahaan |
 
 ✅ selesai · ⏳ belum
 
@@ -144,9 +151,10 @@ Menu sidebar (`includes/sidebar.php`) dikelompokkan dalam 7 kategori dan difilte
 
 ## Pengujian
 
-Self-check tanpa framework (butuh DB lokal sesuai `config/config.php`). Tersedia **36 file `tests/*_check.php`** dan **1 skrip browser E2E CDP** (`tests/browser_ui_e2e.mjs`):
+Self-check tanpa framework (butuh DB lokal sesuai `config/config.php`). Tersedia **37 file `tests/*_check.php`** dan **1 skrip browser E2E CDP** (`tests/browser_ui_e2e.mjs`):
 
 ```bash
+php tests/ai_assistant_check.php      # AI Assistant: guardrails anti-jailbreak, SSE, lookup, page-aware, WA & RBAC
 php tests/dashboard_chart_check.php   # grafik 6 bulan dashboard, scoping tenant & format rupiah_singkat
 php tests/booking_check.php           # premi/komisi, transisi 5 status, reschedule, cancel
 php tests/calendar_check.php          # kalender operasional: RBAC, scope, filter, tampilan Bulan & Daftar
@@ -183,13 +191,14 @@ PDF server-side memakai Dompdf 3.1.6 yang di-vendor ke `includes/vendor/dompdf` 
 ```
 vsudotrans-php/
 ├── api/
-│   └── bot/           # endpoint WhatsApp Bot API (bookings, qris, dispatch, routes, summary)
-├── config/            # APP_URL + DB + session
+│   ├── ai_assistant.php # endpoint AI Assistant internal ERP (SSE streaming, RBAC & lookup)
+│   └── bot/             # endpoint WhatsApp Bot API (bookings, qris, dispatch, routes, summary)
+├── config/            # APP_URL + DB (dari .env) + session
 ├── database/schema.sql# 59 tabel + seed role/user, satu file
 ├── includes/          # auth.php (RBAC, company scope), booking.php, booking_service.php,
 │                      # invoice_service.php, payroll_service.php, dispatch_service.php,
 │                      # payment_gateway.php, transport_helpers.php, backup.php, wa.php, ai.php,
-│                      # xlsx.php (XLSX native), pdf.php (Dompdf), header/sidebar/footer
+│                      # ai_assistant_widget.php, xlsx.php (XLSX native), pdf.php (Dompdf), header/sidebar/footer
 │   └── vendor/dompdf/ # Dompdf 3.1.6 (vendored, tanpa Composer)
 ├── pages/
 │   ├── auth/ dashboard/ profile/
@@ -198,7 +207,7 @@ vsudotrans-php/
 │   ├── vehicles/      # daftar unit + subfolder brands, categories, models
 │   ├── hr/            # master HR (CRUD + import CSV per folder)
 │   ├── attendance/    # absensi harian + rekap
-│   ├── finance/       # cash, payment_methods, payment_channels, invoices
+│   ├── finance/       # cash, payment_methods
 │   ├── dispatch/      # kalender operasional, penugasan driver, surat jalan (manifest.php)
 │   ├── transport/     # passengers, regulations (master bersama Travel & Rental)
 │   ├── reports/       # 4 laporan: bookings, finance, operations, dispatch
@@ -206,7 +215,7 @@ vsudotrans-php/
 │   ├── settings/      # backup.php (Backup & Restore, khusus Super Admin)
 │   ├── travel/        # rutes, bookings
 │   └── rental/        # bookings
-├── tests/             # 36 file *_check.php + browser_ui_e2e.mjs (+ helper scripts)
+├── tests/             # 37 file *_check.php + browser_ui_e2e.mjs (+ helper scripts)
 ├── index.php          # landing publik platform multi-agen
 └── tiket.php          # halaman tiket publik
 ```

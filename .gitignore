@@ -2,6 +2,7 @@
 .env
 uploads/*
 !uploads/.gitkeep
+!uploads/.htaccess
 database/seeds/data/
 backup/
 

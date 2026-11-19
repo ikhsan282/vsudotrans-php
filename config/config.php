@@ -42,11 +42,11 @@ defined('APP_URL_PATH') || define('APP_URL_PATH', (($p = parse_url(APP_URL, PHP_
 defined('APP_NAME')  || define('APP_NAME', 'VSudoTrans');
 defined('APP_VERSION') || define('APP_VERSION', '0.1.0');
 
-// --- Database --------------------------------------------------------
-defined('DB_HOST') || define('DB_HOST', 'localhost');
-defined('DB_USER') || define('DB_USER', 'root');
-defined('DB_PASS') || define('DB_PASS', '');
-defined('DB_NAME') || define('DB_NAME', 'vsudotrans');
+// --- Database (override lewat .env DB_* untuk production/hosting) ------
+defined('DB_HOST') || define('DB_HOST', getenv('DB_HOST') ?: (getenv('VSUDO_DB_HOST') ?: 'localhost'));
+defined('DB_USER') || define('DB_USER', getenv('DB_USER') ?: (getenv('VSUDO_DB_USER') ?: 'root'));
+defined('DB_PASS') || define('DB_PASS', getenv('DB_PASS') !== false ? getenv('DB_PASS') : (getenv('VSUDO_DB_PASS') !== false ? getenv('VSUDO_DB_PASS') : ''));
+defined('DB_NAME') || define('DB_NAME', getenv('DB_NAME') ?: (getenv('VSUDO_DB_NAME') ?: 'vsudotrans'));
 
 // --- Session & keamanan ---------------------------------------------
 defined('SESSION_LIFETIME') || define('SESSION_LIFETIME', 28800); // 8 jam
