@@ -40,13 +40,15 @@ if (!$inv || $inv['status'] === 'cancelled') {
 
 $companyId = (int) $inv['company_id'];
 $remaining = max(0.0, round((float) $inv['total'] - (float) $inv['paid_total'], 2));
+$bookingPayRel = 'pages/' . (($inv['booking_type'] ?? '') === 'rental' ? 'rental' : 'travel')
+    . '/bookings/detail.php?id=' . (int) ($inv['booking_id'] ?? 0) . '&tab=payment#tab-payment';
 if ($remaining <= 0) {
     if ($no !== '') {
         header('Location: ' . APP_URL . '/tiket.php?no=' . rawurlencode($inv['document_number']));
         exit;
     }
     flash('success', 'Invoice ini sudah lunas.');
-    redirect('pages/finance/invoices/detail.php?id=' . (int) $inv['id']);
+    redirect($bookingPayRel);
 }
 
 $channel = gateway_active_channel($companyId, $provider !== '' ? $provider : null);
@@ -122,7 +124,7 @@ $stComp->close();
 
 $backUrl = $no !== ''
     ? (APP_URL . '/tiket.php?no=' . rawurlencode((string) $inv['document_number']))
-    : (APP_URL . '/pages/finance/invoices/detail.php?id=' . (int) $inv['id']);
+    : (APP_URL . '/' . $bookingPayRel);
 ?><!DOCTYPE html>
 <html lang="id">
 <head>

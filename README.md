@@ -91,7 +91,7 @@ Password semua user: `P@ssw0rd`. **Wajib diganti sebelum production.**
 |-------|-------|-------------|---------|
 | Auth, RBAC, tenant scoping | ✅ | ✅ | CSRF + rate limit login |
 | **Dashboard** | ✅ | ✅ | Query grafik & ringkasan hari/minggu ini dalam 1x `UNION ALL`, bar 5 status operasional, driver aktif + link booking, piutang jatuh tempo (`issued` + `partial`), tabel pemesanan aktif/terjadwal + kolom Sopir, peringatan dokumen STNK/KIR/Pajak/SIM H-30, ringkasan master aktif, & proteksi RBAC per seksi |
-| Perusahaan, Grup, Cabang | ✅ | ✅ | Pengaturan WhatsApp per perusahaan (`pages/companies/wa.php`), logo & stempel Azure SAS |
+| Perusahaan, Grup, Cabang | ✅ | ✅ | Pengaturan WhatsApp per perusahaan (`pages/companies/detail.php?tab=hermes`), logo & stempel Azure SAS |
 | Karyawan | ✅ | ✅ | Berkas KTP/SIM & monitoring jatuh tempo SIM |
 | Pengguna, Role & Hak Akses | ✅ | ✅ | Batas level role (`H1`/`H2`/`M1`) |
 | Audit Trail | ✅ | ✅ | Read-only |
@@ -127,7 +127,7 @@ Menu sidebar (`includes/sidebar.php`) dikelompokkan dalam 7 kategori dan difilte
 | | **Transportasi** ▾ | **Penumpang** (master pelanggan/penumpang bersama Travel & Rental) · **Peraturan Komisi** (aturan biaya/komisi kru & sopir) |
 | | **Kalender Operasional** | Agenda bulanan/mingguan/harian/daftar armada & driver (`pages/dispatch/calendar.php`) dengan tampilan 2 baris (rute singkat, kategori · merk · plat, sopir, tanggal/periode + jam, klik Daftar buka modal detail), papan/penugasan driver aktif, dan cetak surat jalan (`manifest.php`) dari halaman detail booking |
 | | **Kendaraan** ▾ | **Daftar Kendaraan**, **Merek Kendaraan**, **Kategori Kendaraan**, **Model Unit**; lengkap foto unit, STNK, KIR (Azure Blob) |
-| **3. KEUANGAN & AKUNTANSI** | **Keuangan** ▾ | **Buku Kas** · **Metode Pembayaran** · **Saluran QRIS/Gopay** (`pages/finance/payment_channels`, izin `companies.manage`). *(Pembayaran, Detail/Ketentuan Invoice & Cetak/PDF Invoice terintegrasi satu pintu di masing-masing pemesanan Travel & Rental)* |
+| **3. KEUANGAN & AKUNTANSI** | **Keuangan** ▾ | **Buku Kas** · **Metode Pembayaran**. *(Konfigurasi Payment Gateway/QRIS di `pages/companies/detail.php?tab=payment`; Pembayaran, Detail/Ketentuan Invoice & Cetak/PDF Invoice terintegrasi satu pintu di masing-masing pemesanan Travel & Rental)* |
 | **4. SDM & PAYROLL** | **Karyawan** | CRUD karyawan + detail, rekening payroll, foto profil, KTP & SIM (Azure Blob) |
 | | **Absensi** ▾ | **Absensi Harian** · **Rekap Absensi** (sumber hari hadir Payroll, export CSV/XLSX/PDF/Cetak) |
 | | **Payroll** | Periode bulanan (`draft` → `final` → `dibayar`), generate per karyawan aktif, hitung ulang potongan & hari hadir, cetak + export CSV/XLSX/PDF |

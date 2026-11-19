@@ -668,11 +668,19 @@ try {
         ts_check($pg['code'] === 200 && str_contains($pg['body'], $needle), "{$chkLbl} renders remote Tom Select hook ({$needle})");
     }
 
-    // 12. Point 1 — Finance Invoice Detail RBAC POST Guard & attachRupiahInput
-    $adminInvPg = $httpGet('/pages/finance/invoices/detail.php?id=' . $tempTravelInvId);
+    // 12. Point 1 — Booking Single-Door Invoice/Payment Tab & RBAC POST Guard
+    $adminPayPg = $httpGet('/pages/travel/bookings/detail.php?id=' . $tempTravelId . '&tab=payment');
     ts_check(
-        $adminInvPg['code'] === 200 && str_contains($adminInvPg['body'], 'id="invPayAmountValue"') && str_contains($adminInvPg['body'], 'window.attachRupiahInput'),
-        'finance/invoices/detail.php renders #invPayAmountValue hidden input & window.attachRupiahInput'
+        $adminPayPg['code'] === 200
+            && str_contains($adminPayPg['body'], 'Detail &amp; Ketentuan Invoice')
+            && str_contains($adminPayPg['body'], 'id="invoiceNoteInput"')
+            && str_contains($adminPayPg['body'], 'pages/finance/invoices/print.php?id=' . $tempTravelInvId),
+        'travel/bookings/detail.php?tab=payment renders Detail & Ketentuan Invoice, #invoiceNoteInput & print link'
+    );
+    $printInvPg = $httpGet('/pages/finance/invoices/print.php?id=' . $tempTravelInvId);
+    ts_check(
+        $printInvPg['code'] === 200 && str_contains($printInvPg['body'], 'INVOICE'),
+        'finance/invoices/print.php returns HTTP 200 for linked booking invoice'
     );
 
     $vUser = 'zzzviewer_' . random_int(1000, 9999);
@@ -696,32 +704,35 @@ try {
         @unlink($vBodyF);
         $vOk = ($vCode === '302');
     }
-    ts_check($vOk, 'HTTP Viewer (role 5, no invoices.manage) login succeeded');
+    ts_check($vOk, 'HTTP Viewer (role 5, no travel.manage) login succeeded');
 
-    $vGetInv = (string) shell_exec('curl.exe -s -b ' . escapeshellarg($viewerJar) . ' -D ' . escapeshellarg($viewerJar . '.hdr') . ' ' . escapeshellarg($base . '/pages/finance/invoices/detail.php?id=' . $tempTravelInvId));
+    $vGetPay = (string) shell_exec('curl.exe -s -b ' . escapeshellarg($viewerJar) . ' -D ' . escapeshellarg($viewerJar . '.hdr') . ' ' . escapeshellarg($base . '/pages/travel/bookings/detail.php?id=' . $tempTravelId . '&tab=payment'));
     $vGetHdr = (string) @file_get_contents($viewerJar . '.hdr');
     @unlink($viewerJar . '.hdr');
     $vGetCode = preg_match('/HTTP\/\S+\s+(\d{3})/', $vGetHdr, $vhm) ? (int) $vhm[1] : 0;
-    ts_check($vGetCode === 200 && !str_contains($vGetInv, 'id="invPayForm"'), 'Viewer GET finance/invoices/detail.php returns HTTP 200 & hides payment form');
+    ts_check($vGetCode === 200 && !str_contains($vGetPay, 'name="pay_sync_present"'), 'Viewer GET travel/bookings/detail.php?tab=payment returns HTTP 200 & omits pay_sync_present');
 
-    if (preg_match('/name="csrf_token"\s+value="([^"]+)"/', $vGetInv, $vCsrfM)) {
-        $vPost = static function (array $fields) use ($base, $viewerJar, $tempTravelInvId): int {
+    if (preg_match('/name="csrf_token"\s+value="([^"]+)"/', $vGetPay, $vCsrfM)) {
+        $vPost = static function (array $fields) use ($base, $viewerJar, $tempTravelId): int {
             $tmpB = tempnam(sys_get_temp_dir(), 'ts_vp_');
             $tmpH = tempnam(sys_get_temp_dir(), 'ts_vh_');
             file_put_contents($tmpB, http_build_query($fields));
-            shell_exec('curl.exe -s -b ' . escapeshellarg($viewerJar) . ' -D ' . escapeshellarg($tmpH) . ' -o ' . (DIRECTORY_SEPARATOR === '\\' ? 'nul' : '/dev/null') . ' --data-binary @' . escapeshellarg($tmpB) . ' ' . escapeshellarg($base . '/pages/finance/invoices/detail.php?id=' . $tempTravelInvId));
+            shell_exec('curl.exe -s -b ' . escapeshellarg($viewerJar) . ' -D ' . escapeshellarg($tmpH) . ' -o ' . (DIRECTORY_SEPARATOR === '\\' ? 'nul' : '/dev/null') . ' --data-binary @' . escapeshellarg($tmpB) . ' ' . escapeshellarg($base . '/pages/travel/bookings/detail.php?id=' . $tempTravelId));
             $h = (string) @file_get_contents($tmpH);
             @unlink($tmpB);
             @unlink($tmpH);
             return preg_match('/HTTP\/\S+\s+(\d{3})/', $h, $m) ? (int) $m[1] : 0;
         };
         $paidBefore = invoice_paid_total($tempTravelInvId);
-        $codePay = $vPost(['csrf_token' => $vCsrfM[1], 'id' => $tempTravelInvId, 'act' => 'pay', 'amount' => '10000']);
-        $codeCancel = $vPost(['csrf_token' => $vCsrfM[1], 'id' => $tempTravelInvId, 'act' => 'cancel', 'reason' => 'unauthorized']);
-        $invAfterV = invoice_find($tempTravelInvId);
+        $statusBefore = booking_current_status('travel', $tempTravelId);
+        $codePay = $vPost(['csrf_token' => $vCsrfM[1], 'id' => $tempTravelId, 'act' => 'pay_manual', 'amount' => '10000']);
+        $codeUpd = $vPost(['csrf_token' => $vCsrfM[1], 'id' => $tempTravelId, 'act' => 'update_detail', 'total_price' => '100000']);
         ts_check(
-            $codePay === 403 && $codeCancel === 403 && abs(invoice_paid_total($tempTravelInvId) - $paidBefore) < 0.01 && ($invAfterV['status'] ?? '') !== 'cancelled',
-            'Viewer POST act=pay & act=cancel rejected with HTTP 403 and zero state mutation'
+            in_array($codePay, [302, 403], true)
+                && in_array($codeUpd, [302, 403], true)
+                && abs(invoice_paid_total($tempTravelInvId) - $paidBefore) < 0.01
+                && booking_current_status('travel', $tempTravelId) === $statusBefore,
+            'Viewer POST act=pay_manual & act=update_detail blocked with zero payment or status mutation'
         );
     } else {
         ts_check(false, 'Viewer header CSRF token extracted for RBAC POST test');
@@ -1041,7 +1052,6 @@ try {
         '/pages/attendance/index.php?company_id=1',
         '/pages/payroll/periods/index.php?company_id=1',
         '/pages/finance/cash/index.php?company_id=1',
-        '/pages/finance/invoices/index.php?company_id=1',
         '/pages/masters/countries/index.php',
         '/pages/users/index.php',
         '/pages/branches/index.php',
