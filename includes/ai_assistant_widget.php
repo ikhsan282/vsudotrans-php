@@ -25,6 +25,7 @@ $aiCanInvoices = can('invoices.view') || $aiCanFinance;
 $aiCanVehicles = can('vehicles.view');
 $aiCanEmployees = can('employees.view');
 $aiCanDispatch = can('dispatch.view');
+$aiCanReports  = can('reports.view');
 
 // Deteksi halaman detail yang sedang dibuka (page-aware context)
 $aiScript     = str_replace('\\', '/', (string) ($_SERVER['SCRIPT_NAME'] ?? ''));
@@ -66,6 +67,9 @@ if ($aiActiveKey === 'finance' && ($aiCanFinance || $aiCanInvoices)) {
 } elseif ($aiActiveKey === 'rental' && $aiCanRental) {
     $aiChips[] = 'Ringkasan sewa rental hari ini';
     $aiChips[] = 'Unit apa yang kosong besok?';
+} elseif ($aiActiveKey === 'reports' && ($aiCanReports || $aiCanFinance)) {
+    $aiChips[] = 'Bandingkan omzet & booking bulan ini vs bulan lalu';
+    $aiChips[] = 'Rute, armada & driver paling laris bulan ini';
 } elseif (in_array($aiActiveKey, ['vehicles', 'employees', 'dispatch'], true)) {
     if ($aiCanVehicles) {
         $aiChips[] = 'Unit apa yang kosong besok?';
@@ -243,6 +247,12 @@ if (!$aiChips) {
             .trim();
     }
 
+    function formatWaSendText(raw) {
+        return formatWaCopy(raw)
+            .replace(/^\*?Draft\s+Pesan\s+WhatsApp[^:\n]*:\*?\s*\n+/i, '')
+            .trim();
+    }
+
     function copyTextToClipboard(text, btn) {
         var done = function () {
             if (!btn) return;
@@ -293,7 +303,7 @@ if (!$aiChips) {
         }
     }
 
-    function renderCopyTool(wrap, rawText) {
+    function renderCopyTool(wrap, rawText, waTarget) {
         if (!rawText) return;
         var tools = document.createElement('div');
         tools.className = 'vst-ai-msg-tools';
@@ -306,6 +316,19 @@ if (!$aiChips) {
             copyTextToClipboard(formatWaCopy(rawText), copyBtn);
         });
         tools.appendChild(copyBtn);
+
+        if (waTarget && waTarget.phone && /^[1-9]\d{8,14}$/.test(String(waTarget.phone))) {
+            var waBtn = document.createElement('a');
+            waBtn.className = 'vst-ai-wa-btn';
+            waBtn.href = 'https://wa.me/' + encodeURIComponent(String(waTarget.phone))
+                       + '?text=' + encodeURIComponent(formatWaSendText(rawText));
+            waBtn.target = '_blank';
+            waBtn.rel = 'noopener noreferrer';
+            waBtn.title = 'Buka chat WhatsApp' + (waTarget.name ? ' ke ' + waTarget.name : '');
+            waBtn.innerHTML = '<i class="bi bi-whatsapp me-1" aria-hidden="true"></i>Kirim via WhatsApp';
+            tools.appendChild(waBtn);
+        }
+
         wrap.appendChild(tools);
     }
 
@@ -327,7 +350,7 @@ if (!$aiChips) {
         if (role === 'assistant') {
             renderActionChips(wrap, msg.actions);
             if (!opts.noTools) {
-                renderCopyTool(wrap, msg.content || '');
+                renderCopyTool(wrap, msg.content || '', msg.wa_target || null);
             }
         }
 
@@ -442,14 +465,15 @@ if (!$aiChips) {
 
             var finalReply = data.reply || liveText || '';
             var finalActions = Array.isArray(data.actions) ? data.actions : [];
-            var botMsg = { role: 'assistant', content: finalReply, actions: finalActions };
+            var finalWaTarget = (data.wa_target && data.wa_target.phone) ? data.wa_target : null;
+            var botMsg = { role: 'assistant', content: finalReply, actions: finalActions, wa_target: finalWaTarget };
             history.push(botMsg);
             saveHistory();
 
             if (liveWrap && liveBubble) {
                 liveBubble.innerHTML = formatAiText(finalReply);
                 renderActionChips(liveWrap, finalActions);
-                renderCopyTool(liveWrap, finalReply);
+                renderCopyTool(liveWrap, finalReply, finalWaTarget);
                 scrollToBottom();
             } else {
                 appendMessage(botMsg);

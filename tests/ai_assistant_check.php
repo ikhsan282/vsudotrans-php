@@ -93,6 +93,36 @@ ai_check(
     'ai_extract_action_marker() extracts URLs and removes marker from reply cleanly'
 );
 
+// 1c. Unit tests: WhatsApp phone normalization & comparative analytics helper
+ai_check(ai_normalize_wa_phone('0812-3456-7890') === '6281234567890', 'ai_normalize_wa_phone() converts 08xx to 628xx');
+ai_check(ai_normalize_wa_phone('+62 813 9988 7766') === '6281399887766', 'ai_normalize_wa_phone() normalizes +62 8xx');
+ai_check(ai_normalize_wa_phone('8123456789') === '628123456789', 'ai_normalize_wa_phone() converts leading 8 to 628');
+ai_check(ai_normalize_wa_phone('123') === '', 'ai_normalize_wa_phone() rejects too-short phone numbers');
+
+$prevSessRole = $_SESSION['role_name'] ?? null;
+$prevSessCid  = $_SESSION['company_id'] ?? null;
+$_SESSION['role_name'] = 'Super Admin';
+$_SESSION['company_id'] = 1;
+$anPerm = ['travel' => true, 'rental' => true, 'reports' => true, 'finance' => true];
+$anUnit = ai_lookup_analytics('Bandingkan omzet dan rute terlaris bulan ini vs bulan lalu', $anPerm);
+ai_check(
+    is_array($anUnit)
+    && isset($anUnit['current_month']['bookings'], $anUnit['previous_month']['bookings'], $anUnit['comparison']['bookings_delta'], $anUnit['top_routes'], $anUnit['top_vehicles'], $anUnit['top_drivers']),
+    'ai_lookup_analytics() computes current vs previous month & top routes/vehicles/drivers'
+);
+$anDeny = ai_lookup_analytics('Bandingkan omzet bulan ini vs bulan lalu', ['travel' => true, 'rental' => true, 'reports' => false, 'finance' => false]);
+ai_check($anDeny === null, 'ai_lookup_analytics() returns null when user lacks reports.view and finance.view');
+if ($prevSessRole === null) {
+    unset($_SESSION['role_name']);
+} else {
+    $_SESSION['role_name'] = $prevSessRole;
+}
+if ($prevSessCid === null) {
+    unset($_SESSION['company_id']);
+} else {
+    $_SESSION['company_id'] = $prevSessCid;
+}
+
 $base = 'http://127.0.0.1:8080/vsudotrans-php';
 $adminJar = tempnam(sys_get_temp_dir(), 'ai_adm_');
 $viewerJar = tempnam(sys_get_temp_dir(), 'ai_vwr_');
@@ -298,16 +328,40 @@ try {
         );
     }
 
-    // 6g. Page-Aware Context + WhatsApp Draft + Copy button helper in Detail page HTML + SSE streaming (stream=1)
-    if ($sampleBook) {
-        $docNo = (string) $sampleBook['document_number'];
-        $bType = (string) $sampleBook['tp'];
-        $bId   = (int) $sampleBook['id'];
+    // 6g. Comparative analytics HTTP test
+    $analyticsRes = $httpPostApi($adminJar, [
+        'csrf_token'  => $adminCsrf,
+        'message'     => 'Bandingkan omzet & booking bulan ini vs bulan lalu beserta rute terlaris',
+        'page_active' => 'reports',
+        'page_title'  => 'Laporan Booking',
+    ]);
+    $anJson = $analyticsRes['json'] ?? [];
+    ai_check(
+        $analyticsRes['code'] === 200
+        && ($anJson['ok'] ?? false) === true
+        && trim((string) ($anJson['reply'] ?? '')) !== ''
+        && is_array($anJson['actions'] ?? null),
+        'Comparative analytics HTTP query returns HTTP 200 valid reply & actions'
+    );
+
+    // 6h. Page-Aware Context + One-Click WA Target + Copy button helper in Detail page HTML + SSE streaming (stream=1)
+    $waBook = $db->query(
+        "SELECT 'travel' AS tp, b.id, b.document_number, p.phone_number
+           FROM travel_ticket_bookings b
+           JOIN passengers p ON p.id = b.passenger_id
+          WHERE b.company_id = 1 AND p.phone_number IS NOT NULL AND p.phone_number <> ''
+          ORDER BY b.id DESC LIMIT 1"
+    )->fetch_assoc() ?: $sampleBook;
+
+    if ($waBook) {
+        $docNo = (string) $waBook['document_number'];
+        $bType = (string) $waBook['tp'];
+        $bId   = (int) $waBook['id'];
 
         $detailPageHtml = (string) shell_exec('curl.exe -s -b ' . escapeshellarg($adminJar) . ' ' . escapeshellarg($base . "/pages/{$bType}/bookings/detail.php?id={$bId}"));
         ai_check(
-            str_contains($detailPageHtml, 'vst-ai-copy-btn') && str_contains($detailPageHtml, "{$bType}:{$bId}"),
-            "Booking detail page renders pageEntity '{$bType}:{$bId}' and Salin button helper"
+            str_contains($detailPageHtml, 'vst-ai-copy-btn') && str_contains($detailPageHtml, 'vst-ai-wa-btn') && str_contains($detailPageHtml, "{$bType}:{$bId}"),
+            "Booking detail page renders pageEntity '{$bType}:{$bId}', Salin & WhatsApp button helpers"
         );
 
         $sseRes = $httpPostApi($adminJar, [
@@ -324,15 +378,18 @@ try {
             $doneData = json_decode($dm[1], true);
         }
         $sseReply = (string) ($doneData['reply'] ?? '');
+        $hasPhoneInDb = !empty($waBook['phone_number']) && ai_normalize_wa_phone((string) $waBook['phone_number']) !== '';
+        $waTargetOk = !$hasPhoneInDb || (!empty($doneData['wa_target']['phone']) && str_starts_with((string) $doneData['wa_target']['phone'], '62'));
         ai_check(
             $sseRes['code'] === 200
             && $isSse
             && is_array($doneData)
             && ($doneData['ok'] ?? false) === true
             && str_contains($sseReply, $docNo)
+            && $waTargetOk
             && !str_contains($sseReply, '<think>')
             && !str_contains($sseReply, '[[ACTIONS:'),
-            "SSE streaming + Page-Aware WA Draft references active booking {$docNo} without tag/prompt leaks"
+            "SSE streaming + Page-Aware WA Draft references {$docNo} and resolves wa_target.phone without leaks"
         );
     }
 

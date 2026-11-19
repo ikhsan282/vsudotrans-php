@@ -2555,6 +2555,38 @@ html[data-bs-theme="dark"] .vst-ai-copy-btn.is-copied {
   border-color: #2fb87d;
 }
 
+.vst-ai-wa-btn {
+  display: inline-flex;
+  align-items: center;
+  padding: .16rem .52rem;
+  border: 1px solid rgba(25, 135, 84, .45);
+  border-radius: 6px;
+  background: rgba(25, 135, 84, .1);
+  color: #157347;
+  font-size: .71rem;
+  font-weight: 600;
+  text-decoration: none;
+  transition: color .15s ease, border-color .15s ease, background-color .15s ease;
+}
+
+.vst-ai-wa-btn:hover {
+  background: #198754;
+  border-color: #198754;
+  color: #ffffff;
+}
+
+html[data-bs-theme="dark"] .vst-ai-wa-btn {
+  border-color: rgba(74, 210, 149, .42);
+  background: rgba(25, 135, 84, .2);
+  color: #4ad295;
+}
+
+html[data-bs-theme="dark"] .vst-ai-wa-btn:hover {
+  background: #198754;
+  border-color: #2fb87d;
+  color: #ffffff;
+}
+
 .vst-ai-streaming-cursor {
   display: inline-block;
   width: 7px;
