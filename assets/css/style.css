@@ -2517,3 +2517,56 @@ html[data-bs-theme="dark"] .vst-ai-action-chip {
     border-radius: 16px 16px 0 0;
   }
 }
+
+.vst-ai-msg-tools {
+  display: flex;
+  align-items: center;
+  gap: .4rem;
+  margin-top: .28rem;
+}
+
+.vst-ai-copy-btn {
+  display: inline-flex;
+  align-items: center;
+  padding: .16rem .48rem;
+  border: 1px solid var(--border-strong);
+  border-radius: 6px;
+  background: transparent;
+  color: var(--muted-color);
+  font-size: .71rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: color .15s ease, border-color .15s ease, background-color .15s ease;
+}
+
+.vst-ai-copy-btn:hover {
+  color: var(--accent);
+  border-color: var(--accent);
+  background: var(--surface-hover);
+}
+
+.vst-ai-copy-btn.is-copied {
+  color: #198754;
+  border-color: #198754;
+}
+
+html[data-bs-theme="dark"] .vst-ai-copy-btn.is-copied {
+  color: #4ad295;
+  border-color: #2fb87d;
+}
+
+.vst-ai-streaming-cursor {
+  display: inline-block;
+  width: 7px;
+  height: .95em;
+  margin-left: 3px;
+  vertical-align: text-bottom;
+  background: var(--accent);
+  border-radius: 1px;
+  animation: vstAiCursorBlink .75s steps(1) infinite;
+}
+
+@keyframes vstAiCursorBlink {
+  0%, 49% { opacity: 1; }
+  50%, 100% { opacity: 0; }
+}

@@ -75,11 +75,31 @@ ai_check(
 );
 $_SESSION['vst_ai_rate'] = [];
 
+// 1b. Unit tests: date extraction, action marker parsing, AI_CHAT_MODEL constant
+$fixedNow = strtotime('2026-11-19 10:00:00');
+ai_check(ai_extract_target_date('Unit kosong hari ini?', $fixedNow) === '2026-11-19', 'ai_extract_target_date() parses hari ini');
+ai_check(ai_extract_target_date('Armada ready besok?', $fixedNow) === '2026-11-20', 'ai_extract_target_date() parses besok');
+ai_check(ai_extract_target_date('Unit tersedia lusa', $fixedNow) === '2026-11-21', 'ai_extract_target_date() parses lusa');
+ai_check(ai_extract_target_date('Cek armada 25/12/2026', $fixedNow) === '2026-12-25', 'ai_extract_target_date() parses DD/MM/YYYY');
+ai_check(ai_extract_target_date('Unit kosong tanggal 5', $fixedNow) === '2026-12-05', 'ai_extract_target_date() rolls past day-of-month to next month');
+ai_check(defined('AI_CHAT_MODEL') && AI_CHAT_MODEL !== '', 'AI_CHAT_MODEL constant defined');
+
+$extAct = ai_extract_action_marker("Jawaban singkat.\n[[ACTIONS:pages/vehicles/index.php, pages/travel/rutes/index.php]]");
+ai_check(
+    $extAct['reply'] === 'Jawaban singkat.'
+    && count($extAct['actions']) === 2
+    && $extAct['actions'][0]['url'] === 'pages/vehicles/index.php'
+    && $extAct['actions'][1]['url'] === 'pages/travel/rutes/index.php',
+    'ai_extract_action_marker() extracts URLs and removes marker from reply cleanly'
+);
+
 $base = 'http://127.0.0.1:8080/vsudotrans-php';
 $adminJar = tempnam(sys_get_temp_dir(), 'ai_adm_');
 $viewerJar = tempnam(sys_get_temp_dir(), 'ai_vwr_');
 $tempViewerId = 0;
+$testAuditMinId = 0;
 $db = db();
+$testAuditMinId = (int) ($db->query('SELECT COALESCE(MAX(id), 0) FROM audit_trails')->fetch_column() ?: 0);
 
 $httpPostApi = static function (string $jarPath, array $fields) use ($base): array {
     $tmpB = tempnam(sys_get_temp_dir(), 'ai_post_');
@@ -95,7 +115,7 @@ $httpPostApi = static function (string $jarPath, array $fields) use ($base): arr
     @unlink($tmpB);
     @unlink($tmpH);
     $code = preg_match('/HTTP\/\S+\s+(\d{3})/', $hdrs, $m) ? (int) $m[1] : 0;
-    return ['code' => $code, 'body' => $body, 'json' => json_decode($body, true)];
+    return ['code' => $code, 'headers' => $hdrs, 'body' => $body, 'json' => json_decode($body, true)];
 };
 
 try {
@@ -231,6 +251,95 @@ try {
         'HTTP POST act=reset clears server session chat history cleanly'
     );
 
+    // 6e. Audit Trail logging verification for jailbreak attempt
+    $jbAuditCnt = (int) ($db->query(
+        "SELECT COUNT(*) FROM audit_trails WHERE id > {$testAuditMinId} AND action = 'ai.jailbreak_blocked'"
+    )->fetch_column() ?: 0);
+    ai_check($jbAuditCnt >= 1, 'Jailbreak attempt recorded in audit_trails (ai.jailbreak_blocked)');
+
+    // 6f. Smart lookups: Vehicle availability for besok & Route tariff lookup
+    $availRes = $httpPostApi($adminJar, [
+        'csrf_token'  => $adminCsrf,
+        'message'     => 'Unit armada apa saja yang kosong besok?',
+        'page_active' => 'vehicles',
+        'page_title'  => 'Daftar Kendaraan',
+    ]);
+    $availJson = $availRes['json'] ?? [];
+    ai_check(
+        $availRes['code'] === 200 && ($availJson['ok'] ?? false) === true && trim((string) ($availJson['reply'] ?? '')) !== '',
+        'Vehicle availability query ("Unit armada apa saja yang kosong besok?") returns HTTP 200 valid reply'
+    );
+
+    $routeRes = $httpPostApi($adminJar, [
+        'csrf_token'  => $adminCsrf,
+        'message'     => 'Daftar tarif rute travel aktif saat ini berapa?',
+        'page_active' => 'travel',
+        'page_title'  => 'Pemesanan Travel',
+    ]);
+    $routeJson = $routeRes['json'] ?? [];
+    ai_check(
+        $routeRes['code'] === 200 && ($routeJson['ok'] ?? false) === true && trim((string) ($routeJson['reply'] ?? '')) !== '',
+        'Route tariff query returns HTTP 200 valid reply'
+    );
+
+    $samplePax = $db->query("SELECT name FROM passengers WHERE company_id = 1 AND name <> '' ORDER BY id DESC LIMIT 1")->fetch_assoc();
+    if ($samplePax) {
+        $paxName = (string) $samplePax['name'];
+        $paxRes = $httpPostApi($adminJar, [
+            'csrf_token'  => $adminCsrf,
+            'message'     => "Cek riwayat booking atas nama {$paxName}",
+            'page_active' => 'travel',
+            'page_title'  => 'Pemesanan Travel',
+        ]);
+        $paxJson = $paxRes['json'] ?? [];
+        ai_check(
+            $paxRes['code'] === 200 && ($paxJson['ok'] ?? false) === true && trim((string) ($paxJson['reply'] ?? '')) !== '',
+            "Customer name lookup ({$paxName}) returns HTTP 200 valid reply"
+        );
+    }
+
+    // 6g. Page-Aware Context + WhatsApp Draft + Copy button helper in Detail page HTML + SSE streaming (stream=1)
+    if ($sampleBook) {
+        $docNo = (string) $sampleBook['document_number'];
+        $bType = (string) $sampleBook['tp'];
+        $bId   = (int) $sampleBook['id'];
+
+        $detailPageHtml = (string) shell_exec('curl.exe -s -b ' . escapeshellarg($adminJar) . ' ' . escapeshellarg($base . "/pages/{$bType}/bookings/detail.php?id={$bId}"));
+        ai_check(
+            str_contains($detailPageHtml, 'vst-ai-copy-btn') && str_contains($detailPageHtml, "{$bType}:{$bId}"),
+            "Booking detail page renders pageEntity '{$bType}:{$bId}' and Salin button helper"
+        );
+
+        $sseRes = $httpPostApi($adminJar, [
+            'csrf_token'  => $adminCsrf,
+            'message'     => 'Buatkan pesan WA ringkasan & status pembayaran booking ini',
+            'page_active' => $bType,
+            'page_title'  => 'Detail Pemesanan',
+            'page_entity' => "{$bType}:{$bId}",
+            'stream'      => '1',
+        ]);
+        $isSse = str_contains(strtolower($sseRes['headers']), 'text/event-stream');
+        $doneData = null;
+        if (preg_match('/event:\s*done\s*\Rdata:\s*(\{[^\r\n]+\})/', $sseRes['body'], $dm)) {
+            $doneData = json_decode($dm[1], true);
+        }
+        $sseReply = (string) ($doneData['reply'] ?? '');
+        ai_check(
+            $sseRes['code'] === 200
+            && $isSse
+            && is_array($doneData)
+            && ($doneData['ok'] ?? false) === true
+            && str_contains($sseReply, $docNo)
+            && !str_contains($sseReply, '<think>')
+            && !str_contains($sseReply, '[[ACTIONS:'),
+            "SSE streaming + Page-Aware WA Draft references active booking {$docNo} without tag/prompt leaks"
+        );
+    }
+
+    // Cross-company/invalid page_entity must fail closed
+    $badPe = ai_load_page_entity('travel:999999999', ['travel' => true, 'rental' => true, 'invoices' => true, 'vehicles' => true, 'employees' => true]);
+    ai_check($badPe === null, 'ai_load_page_entity() returns null for non-existent/inaccessible entity ID');
+
     // 7. RBAC enforcement untuk Viewer (role_id = 5)
     $vUser  = 'zzzaivwr_' . random_int(1000, 9999);
     $vPass  = 'ViewerPass123!';
@@ -286,6 +395,9 @@ try {
         ai_check(false, 'Extracted CSRF token from #vstAiForm for Viewer');
     }
 } finally {
+    if ($testAuditMinId > 0) {
+        $db->query("DELETE FROM audit_trails WHERE id > {$testAuditMinId} AND action LIKE 'ai.%'");
+    }
     if ($tempViewerId > 0) {
         $db->query("DELETE FROM user_companies WHERE user_id = {$tempViewerId}");
         $db->query("DELETE FROM users WHERE id = {$tempViewerId}");

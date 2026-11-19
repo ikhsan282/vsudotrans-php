@@ -62,6 +62,7 @@ defined('AI_BASE_URL') || define('AI_BASE_URL', getenv('VSUDO_AI_BASE_URL') ?: '
 // Kosong = fitur "Isi Cepat" mati (panel tidak muncul), bukan error.
 defined('AI_API_KEY')  || define('AI_API_KEY', getenv('VSUDO_AI_API_KEY') ?: (getenv('HERMES_CUSTOM_9ROUTER_API_KEY') ?: ''));
 defined('AI_MODEL')    || define('AI_MODEL', getenv('VSUDO_AI_MODEL') ?: 'ikhsan-reason');
+defined('AI_CHAT_MODEL') || define('AI_CHAT_MODEL', getenv('VSUDO_AI_CHAT_MODEL') ?: AI_MODEL);
 
 // --- Azure Blob Storage ----------------------------------------------
 defined('BLOB_STORAGE_CONNECTION_STRING') || define('BLOB_STORAGE_CONNECTION_STRING', getenv('BLOB_STORAGE_CONNECTION_STRING') ?: '');

@@ -26,8 +26,33 @@ $aiCanVehicles = can('vehicles.view');
 $aiCanEmployees = can('employees.view');
 $aiCanDispatch = can('dispatch.view');
 
-// Contextual quick prompts disesuaikan modul aktif & hak akses RBAC
+// Deteksi halaman detail yang sedang dibuka (page-aware context)
+$aiScript     = str_replace('\\', '/', (string) ($_SERVER['SCRIPT_NAME'] ?? ''));
+$aiDetailId   = (int) ($_GET['id'] ?? 0);
+$aiPageEntity = '';
+if ($aiDetailId > 0) {
+    if (str_ends_with($aiScript, '/pages/travel/bookings/detail.php') && $aiCanTravel) {
+        $aiPageEntity = 'travel:' . $aiDetailId;
+    } elseif (str_ends_with($aiScript, '/pages/rental/bookings/detail.php') && $aiCanRental) {
+        $aiPageEntity = 'rental:' . $aiDetailId;
+    } elseif (str_ends_with($aiScript, '/pages/vehicles/detail.php') && $aiCanVehicles) {
+        $aiPageEntity = 'vehicle:' . $aiDetailId;
+    } elseif (str_ends_with($aiScript, '/pages/employees/detail.php') && $aiCanEmployees) {
+        $aiPageEntity = 'employee:' . $aiDetailId;
+    }
+}
+
+// Contextual quick prompts disesuaikan modul aktif, halaman detail, & hak akses RBAC
 $aiChips = [];
+if (str_starts_with($aiPageEntity, 'travel:') || str_starts_with($aiPageEntity, 'rental:')) {
+    $aiChips[] = $aiCanInvoices ? 'Ringkasan & sisa tagihan booking ini' : 'Ringkasan & status booking ini';
+    $aiChips[] = 'Buatkan pesan WA untuk booking ini';
+} elseif (str_starts_with($aiPageEntity, 'vehicle:')) {
+    $aiChips[] = 'Cek legalitas STNK, KIR & status unit ini';
+} elseif (str_starts_with($aiPageEntity, 'employee:')) {
+    $aiChips[] = 'Cek detail & jatuh tempo SIM karyawan ini';
+}
+
 if ($aiActiveKey === 'finance' && ($aiCanFinance || $aiCanInvoices)) {
     if ($aiCanFinance) {
         $aiChips[] = 'Ringkasan kas & omzet hari ini';
@@ -37,13 +62,15 @@ if ($aiActiveKey === 'finance' && ($aiCanFinance || $aiCanInvoices)) {
     }
 } elseif ($aiActiveKey === 'travel' && $aiCanTravel) {
     $aiChips[] = 'Jadwal travel terdekat hari ini';
-    $aiChips[] = 'Ringkasan booking travel hari ini';
+    $aiChips[] = 'Cek tarif rute travel aktif';
 } elseif ($aiActiveKey === 'rental' && $aiCanRental) {
     $aiChips[] = 'Ringkasan sewa rental hari ini';
-    $aiChips[] = 'Armada yang sedang standby';
+    $aiChips[] = 'Unit apa yang kosong besok?';
 } elseif (in_array($aiActiveKey, ['vehicles', 'employees', 'dispatch'], true)) {
-    if ($aiCanVehicles || $aiCanDispatch) {
-        $aiChips[] = 'Status armada & penugasan driver';
+    if ($aiCanVehicles) {
+        $aiChips[] = 'Unit apa yang kosong besok?';
+    } elseif ($aiCanDispatch) {
+        $aiChips[] = 'Driver yang sedang bertugas';
     }
     if ($aiCanVehicles || $aiCanEmployees) {
         $aiChips[] = 'Cek STNK, KIR & SIM jatuh tempo';
@@ -148,6 +175,7 @@ if (!$aiChips) {
     var endpoint   = <?= json_encode(APP_URL . '/api/ai_assistant.php') ?>;
     var pageActive = <?= json_encode($aiActiveKey) ?>;
     var pageTitle  = <?= json_encode($aiPageTitle) ?>;
+    var pageEntity = <?= json_encode($aiPageEntity) ?>;
     var userFirst  = <?= json_encode($aiFirstName) ?>;
     var compLabel  = <?= json_encode($aiCompLabel) ?>;
     var histKey    = <?= json_encode("vst_ai_hist_u{$aiUid}_c{$aiCompKey}") ?>;
@@ -207,7 +235,82 @@ if (!$aiChips) {
         bodyEl.scrollTop = bodyEl.scrollHeight;
     }
 
-    function appendMessage(msg) {
+    function formatWaCopy(raw) {
+        return String(raw || '')
+            .replace(/\*\*([^*\n]+)\*\*/g, '*$1*')
+            .replace(/`([^`\n]+)`/g, '$1')
+            .replace(/^_([^_\n]+)_$/gm, '$1')
+            .trim();
+    }
+
+    function copyTextToClipboard(text, btn) {
+        var done = function () {
+            if (!btn) return;
+            btn.classList.add('is-copied');
+            btn.innerHTML = '<i class="bi bi-check2 me-1" aria-hidden="true"></i>Tersalin';
+            setTimeout(function () {
+                btn.classList.remove('is-copied');
+                btn.innerHTML = '<i class="bi bi-clipboard me-1" aria-hidden="true"></i>Salin';
+            }, 1800);
+        };
+        if (navigator.clipboard && navigator.clipboard.writeText) {
+            navigator.clipboard.writeText(text).then(done).catch(function () {
+                fallbackCopy(text);
+                done();
+            });
+            return;
+        }
+        fallbackCopy(text);
+        done();
+    }
+
+    function fallbackCopy(text) {
+        var ta = document.createElement('textarea');
+        ta.value = text;
+        ta.setAttribute('readonly', '');
+        ta.style.position = 'fixed';
+        ta.style.left = '-9999px';
+        document.body.appendChild(ta);
+        ta.select();
+        try { document.execCommand('copy'); } catch (e) {}
+        document.body.removeChild(ta);
+    }
+
+    function renderActionChips(wrap, actions) {
+        if (!Array.isArray(actions) || !actions.length) return;
+        var actWrap = document.createElement('div');
+        actWrap.className = 'vst-ai-actions';
+        actions.forEach(function (act) {
+            if (!act || !act.url || !act.label) return;
+            var a = document.createElement('a');
+            a.className = 'vst-ai-action-chip';
+            a.href = act.url;
+            a.innerHTML = '<i class="bi bi-arrow-up-right-circle me-1" aria-hidden="true"></i>' + escHtml(act.label);
+            actWrap.appendChild(a);
+        });
+        if (actWrap.children.length) {
+            wrap.appendChild(actWrap);
+        }
+    }
+
+    function renderCopyTool(wrap, rawText) {
+        if (!rawText) return;
+        var tools = document.createElement('div');
+        tools.className = 'vst-ai-msg-tools';
+        var copyBtn = document.createElement('button');
+        copyBtn.type = 'button';
+        copyBtn.className = 'vst-ai-copy-btn';
+        copyBtn.title = 'Salin teks ke clipboard (siap tempel ke WhatsApp)';
+        copyBtn.innerHTML = '<i class="bi bi-clipboard me-1" aria-hidden="true"></i>Salin';
+        copyBtn.addEventListener('click', function () {
+            copyTextToClipboard(formatWaCopy(rawText), copyBtn);
+        });
+        tools.appendChild(copyBtn);
+        wrap.appendChild(tools);
+    }
+
+    function appendMessage(msg, opts) {
+        opts = opts || {};
         var role = msg.role === 'user' ? 'user' : 'assistant';
         var wrap = document.createElement('div');
         wrap.className = 'vst-ai-msg vst-ai-msg-' + role;
@@ -221,19 +324,10 @@ if (!$aiChips) {
         }
         wrap.appendChild(bubble);
 
-        if (role === 'assistant' && Array.isArray(msg.actions) && msg.actions.length) {
-            var actWrap = document.createElement('div');
-            actWrap.className = 'vst-ai-actions';
-            msg.actions.forEach(function (act) {
-                if (!act || !act.url || !act.label) return;
-                var a = document.createElement('a');
-                a.className = 'vst-ai-action-chip';
-                a.href = act.url;
-                a.innerHTML = '<i class="bi bi-arrow-up-right-circle me-1" aria-hidden="true"></i>' + escHtml(act.label);
-                actWrap.appendChild(a);
-            });
-            if (actWrap.children.length) {
-                wrap.appendChild(actWrap);
+        if (role === 'assistant') {
+            renderActionChips(wrap, msg.actions);
+            if (!opts.noTools) {
+                renderCopyTool(wrap, msg.content || '');
             }
         }
 
@@ -247,8 +341,8 @@ if (!$aiChips) {
             role: 'assistant',
             content: 'Halo **' + userFirst + '**! Saya siap membantu memantau operasional **' + compLabel + '**.\n'
                    + '- Klik topik cepat di atas untuk ringkasan langsung.\n'
-                   + '- Atau ketik kode booking (`TRV-...`/`RNT-...`), nomor invoice (`INV/...`), maupun nomor polisi armada.'
-        });
+                   + '- Tanya unit kosong besok, tarif rute, cek nama/HP pelanggan, kode booking (`TRV-...`/`RNT-...`), atau invoice (`INV/...`).'
+        }, { noTools: true });
     }
 
     function renderAll() {
@@ -257,7 +351,7 @@ if (!$aiChips) {
             return;
         }
         bodyEl.innerHTML = '';
-        history.forEach(appendMessage);
+        history.forEach(function (m) { appendMessage(m); });
     }
 
     function setOpen(open) {
@@ -304,41 +398,143 @@ if (!$aiChips) {
         fd.append('message', msgText);
         fd.append('page_active', pageActive);
         fd.append('page_title', pageTitle);
+        fd.append('stream', '1');
+        if (pageEntity) fd.append('page_entity', pageEntity);
         if (csrfInp) fd.append('csrf_token', csrfInp.value);
+
+        var liveWrap = null;
+        var liveBubble = null;
+        var liveText = '';
+        var finalized = false;
+
+        var removeTyping = function () {
+            if (typingEl && typingEl.parentNode) {
+                typingEl.parentNode.removeChild(typingEl);
+                typingEl = null;
+            }
+        };
+
+        var ensureLiveBubble = function () {
+            removeTyping();
+            if (!liveWrap) {
+                liveWrap = document.createElement('div');
+                liveWrap.className = 'vst-ai-msg vst-ai-msg-assistant';
+                liveBubble = document.createElement('div');
+                liveBubble.className = 'vst-ai-bubble';
+                liveWrap.appendChild(liveBubble);
+                bodyEl.appendChild(liveWrap);
+            }
+        };
+
+        var applyFinal = function (data) {
+            if (finalized) return;
+            finalized = true;
+            removeTyping();
+            busy = false;
+            sendBtn.disabled = false;
+
+            if (!data || !data.ok) {
+                if (liveWrap && liveWrap.parentNode) liveWrap.parentNode.removeChild(liveWrap);
+                var errTxt = (data && data.error) ? data.error : 'Gagal memproses permintaan.';
+                appendMessage({ role: 'assistant', content: 'Maaf, terjadi kendala: ' + errTxt }, { noTools: true });
+                return;
+            }
+
+            var finalReply = data.reply || liveText || '';
+            var finalActions = Array.isArray(data.actions) ? data.actions : [];
+            var botMsg = { role: 'assistant', content: finalReply, actions: finalActions };
+            history.push(botMsg);
+            saveHistory();
+
+            if (liveWrap && liveBubble) {
+                liveBubble.innerHTML = formatAiText(finalReply);
+                renderActionChips(liveWrap, finalActions);
+                renderCopyTool(liveWrap, finalReply);
+                scrollToBottom();
+            } else {
+                appendMessage(botMsg);
+            }
+        };
 
         fetch(endpoint, { method: 'POST', body: fd, credentials: 'same-origin' })
             .then(function (r) {
-                return r.text().then(function (raw) {
-                    var parsed = null;
-                    try { parsed = JSON.parse(raw); } catch (e) {}
-                    return { ok: r.ok, status: r.status, json: parsed };
-                });
-            })
-            .then(function (res) {
-                if (typingEl && typingEl.parentNode) typingEl.parentNode.removeChild(typingEl);
-                busy = false;
-                sendBtn.disabled = false;
-
-                if (!res.ok || !res.json || !res.json.ok) {
-                    var errText = (res.json && res.json.error) ? res.json.error : 'Gagal memproses permintaan (HTTP ' + res.status + ').';
-                    appendMessage({ role: 'assistant', content: 'Maaf, terjadi kendala: ' + errText });
-                    return;
+                var ctype = (r.headers.get('content-type') || '').toLowerCase();
+                if (!r.ok || ctype.indexOf('text/event-stream') === -1 || !r.body || !r.body.getReader) {
+                    return r.text().then(function (raw) {
+                        var parsed = null;
+                        try { parsed = JSON.parse(raw); } catch (e) {}
+                        if (!r.ok) {
+                            applyFinal({ ok: false, error: (parsed && parsed.error) ? parsed.error : ('Gagal (HTTP ' + r.status + ')') });
+                        } else {
+                            applyFinal(parsed);
+                        }
+                    });
                 }
 
-                var botMsg = {
-                    role: 'assistant',
-                    content: res.json.reply || '',
-                    actions: Array.isArray(res.json.actions) ? res.json.actions : []
-                };
-                history.push(botMsg);
-                appendMessage(botMsg);
-                saveHistory();
+                var reader = r.body.getReader();
+                var decoder = new TextDecoder('utf-8');
+                var buf = '';
+
+                function handleEventBlock(block) {
+                    var lines = block.split(/\r?\n/);
+                    var evName = 'message';
+                    var dataParts = [];
+                    for (var i = 0; i < lines.length; i++) {
+                        var ln = lines[i];
+                        if (ln.indexOf('event:') === 0) {
+                            evName = ln.slice(6).trim();
+                        } else if (ln.indexOf('data:') === 0) {
+                            dataParts.push(ln.slice(5).trim());
+                        }
+                    }
+                    if (!dataParts.length) return;
+                    var payload = null;
+                    try { payload = JSON.parse(dataParts.join('\n')); } catch (e) { return; }
+                    if (evName === 'delta' && payload && typeof payload.text === 'string') {
+                        ensureLiveBubble();
+                        liveText += payload.text;
+                        liveBubble.innerHTML = formatAiText(liveText) + '<span class="vst-ai-streaming-cursor" aria-hidden="true"></span>';
+                        scrollToBottom();
+                    } else if (evName === 'done') {
+                        applyFinal(payload);
+                    }
+                }
+
+                function pump() {
+                    return reader.read().then(function (chunk) {
+                        if (chunk.done) {
+                            if (buf.trim()) handleEventBlock(buf);
+                            if (!finalized) {
+                                if (liveText) {
+                                    applyFinal({ ok: true, reply: liveText, actions: [] });
+                                } else {
+                                    applyFinal({ ok: false, error: 'Koneksi stream terputus sebelum selesai.' });
+                                }
+                            }
+                            return;
+                        }
+                        buf += decoder.decode(chunk.value, { stream: true });
+                        var sepIdx;
+                        while ((sepIdx = buf.search(/\r?\n\r?\n/)) !== -1) {
+                            var match = buf.match(/\r?\n\r?\n/);
+                            var block = buf.slice(0, sepIdx);
+                            buf = buf.slice(sepIdx + match[0].length);
+                            if (block.trim()) handleEventBlock(block);
+                        }
+                        return pump();
+                    });
+                }
+
+                return pump();
             })
             .catch(function () {
-                if (typingEl && typingEl.parentNode) typingEl.parentNode.removeChild(typingEl);
+                removeTyping();
                 busy = false;
                 sendBtn.disabled = false;
-                appendMessage({ role: 'assistant', content: 'Tidak dapat terhubung ke server aplikasi. Periksa koneksi Anda lalu coba lagi.' });
+                if (!finalized) {
+                    if (liveWrap && liveWrap.parentNode) liveWrap.parentNode.removeChild(liveWrap);
+                    appendMessage({ role: 'assistant', content: 'Tidak dapat terhubung ke server aplikasi. Periksa koneksi Anda lalu coba lagi.' }, { noTools: true });
+                }
             });
     }
 

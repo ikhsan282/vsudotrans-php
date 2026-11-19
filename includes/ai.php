@@ -153,8 +153,59 @@ function ai_chat_json(array $messages, array $extra = []): array
     return ['ok' => true, 'data' => $data];
 }
 
+/** Model aktif untuk chat AI Assistant (pakai AI_CHAT_MODEL bila ada, fallback AI_MODEL). */
+function _ai_active_chat_model(): string
+{
+    if (defined('AI_CHAT_MODEL') && trim((string) AI_CHAT_MODEL) !== '') {
+        return trim((string) AI_CHAT_MODEL);
+    }
+    return defined('AI_MODEL') ? trim((string) AI_MODEL) : '';
+}
+
 /**
- * Panggil model 9router untuk AI Assistant multi-turn (tahan model reasoning & text/JSON fleksibel).
+ * Ekstrak marker opsional `[[ACTIONS:url1,url2]]` di ekor jawaban Markdown asisten.
+ * @return array{reply:string,actions:array<int,array{label:string,url:string}>}
+ */
+function ai_extract_action_marker(string $text): array
+{
+    $actions = [];
+    $clean = preg_replace_callback('/\[\[\s*ACTIONS\s*:\s*([^\]]*)\]\]/i', static function (array $m) use (&$actions): string {
+        foreach (explode(',', (string) $m[1]) as $rawUrl) {
+            $u = trim($rawUrl, " \t\n\r\0\x0B`'\"");
+            if ($u !== '') {
+                $actions[] = ['label' => '', 'url' => $u];
+            }
+        }
+        return '';
+    }, $text);
+
+    if (!is_string($clean)) {
+        $clean = $text;
+    }
+    return [
+        'reply'   => trim($clean),
+        'actions' => $actions,
+    ];
+}
+
+/** Cek apakah potongan teks mengandung penanda internal yang tidak boleh tampil saat streaming. */
+function _ai_contains_internal_marker(string $text): bool
+{
+    foreach (['SNAPSHOT ERP', 'AKSI DIIZINKAN', '9router', 'VSUDO_AI_API_KEY', 'AI_API_KEY', 'AI_BASE_URL'] as $marker) {
+        if (stripos($text, $marker) !== false) {
+            return true;
+        }
+    }
+    foreach (['AI_MODEL', 'AI_CHAT_MODEL'] as $constName) {
+        if (defined($constName) && strlen((string) constant($constName)) >= 4 && stripos($text, (string) constant($constName)) !== false) {
+            return true;
+        }
+    }
+    return false;
+}
+
+/**
+ * Panggil model 9router untuk AI Assistant multi-turn (mendukung Markdown + [[ACTIONS:...]] maupun JSON).
  *
  * @param array<int,array{role:string,content:string}> $messages
  * @param array<string,mixed> $extra
@@ -162,7 +213,7 @@ function ai_chat_json(array $messages, array $extra = []): array
  */
 function ai_chat_assistant(array $messages, array $extra = []): array
 {
-    $model = defined('AI_MODEL') ? (string) AI_MODEL : '';
+    $model = _ai_active_chat_model();
     $body  = array_merge([
         'model'       => $model,
         'messages'    => $messages,
@@ -200,6 +251,251 @@ function ai_chat_assistant(array $messages, array $extra = []): array
                 }
             }
         }
+    } else {
+        $ext = ai_extract_action_marker($cleaned);
+        $reply   = $ext['reply'];
+        $actions = $ext['actions'];
+    }
+
+    if ($reply === '') {
+        return ['ok' => false, 'code' => 'EMPTY_REPLY', 'error' => 'Model mengembalikan balasan kosong.'];
+    }
+
+    return [
+        'ok'      => true,
+        'reply'   => $reply,
+        'actions' => $actions,
+        'model'   => $model,
+    ];
+}
+
+/**
+ * Streaming SSE dari endpoint OpenAI-compatible / 9router.
+ * Menyaring <think>...</think>, [[ACTIONS:...]], serta penanda sensitif secara inkremental
+ * sebelum memanggil $onDelta(string $chunk).
+ *
+ * @param array<int,array{role:string,content:string}> $messages
+ * @param callable(string):void $onDelta
+ * @param array<string,mixed> $extra
+ * @return array{ok:bool,reply?:string,actions?:array<int,array{label:string,url:string}>,code?:string,error?:string}
+ */
+function ai_chat_assistant_stream(array $messages, callable $onDelta, array $extra = []): array
+{
+    $key   = defined('AI_API_KEY') ? (string) AI_API_KEY : '';
+    $base  = defined('AI_BASE_URL') ? rtrim((string) AI_BASE_URL, '/') : '';
+    $model = _ai_active_chat_model();
+    if ($key === '' || $base === '' || $model === '') {
+        return ['ok' => false, 'code' => 'NOT_CONFIGURED', 'error' => 'AI belum dikonfigurasi.'];
+    }
+    if (!function_exists('curl_init')) {
+        return ['ok' => false, 'code' => 'NO_CURL', 'error' => 'Ekstensi curl tidak tersedia.'];
+    }
+
+    $body = array_merge([
+        'model'       => $model,
+        'messages'    => $messages,
+        'temperature' => 0.2,
+        'stream'      => true,
+    ], $extra);
+    $payload = json_encode($body, JSON_UNESCAPED_UNICODE);
+
+    $httpCode  = 0;
+    $sseBuf    = '';
+    $errBody   = '';
+    $fullRaw   = '';
+    $pending   = '';
+    $inThink   = false;
+    $inActions = false;
+    $emittedAny = false;
+    $suppressStream = false;
+
+    $emitSafe = static function (string $chunk) use (&$emittedAny, &$suppressStream, $onDelta): void {
+        if ($chunk === '' || $suppressStream) {
+            return;
+        }
+        if (_ai_contains_internal_marker($chunk)) {
+            $suppressStream = true;
+            return;
+        }
+        $emittedAny = true;
+        $onDelta($chunk);
+    };
+
+    $processToken = static function (string $tok) use (&$pending, &$inThink, &$inActions, &$emittedAny, &$suppressStream, $emitSafe): void {
+        if ($tok === '' || $inActions) {
+            return;
+        }
+        $pending .= $tok;
+
+        while ($pending !== '') {
+            if ($inThink) {
+                $endPos = stripos($pending, '</think>');
+                if ($endPos !== false) {
+                    $pending = ltrim((string) substr($pending, $endPos + 8));
+                    $inThink = false;
+                    continue;
+                }
+                if (strlen($pending) > 12) {
+                    $pending = substr($pending, -12);
+                }
+                break;
+            }
+
+            if (!$emittedAny && str_starts_with(ltrim($pending), '{')) {
+                // Model membalas JSON: tahan sampai akhir agar kurung kurawal mentah tidak tampil
+                $suppressStream = true;
+                break;
+            }
+
+            $thinkPos = stripos($pending, '<think');
+            $actPos   = stripos($pending, '[[actions');
+            $cutPos   = false;
+            $hitType  = '';
+            if ($thinkPos !== false && ($actPos === false || $thinkPos < $actPos)) {
+                $cutPos  = $thinkPos;
+                $hitType = 'think';
+            } elseif ($actPos !== false) {
+                $cutPos  = $actPos;
+                $hitType = 'actions';
+            }
+
+            if ($cutPos !== false) {
+                if ($cutPos > 0) {
+                    $emitSafe(substr($pending, 0, $cutPos));
+                }
+                if ($hitType === 'think') {
+                    $gt = strpos($pending, '>', $cutPos);
+                    if ($gt === false) {
+                        $pending = substr($pending, $cutPos);
+                        break;
+                    }
+                    $pending = substr($pending, $gt + 1);
+                    $inThink = true;
+                    continue;
+                }
+                $inActions = true;
+                $pending   = '';
+                break;
+            }
+
+            // Tahan lookahead 20 karakter untuk mencegah tag terbelah atau penanda sensitif bocor saat stream
+            $len = mb_strlen($pending, 'UTF-8');
+            if ($len <= 20) {
+                break;
+            }
+            $safe = mb_substr($pending, 0, $len - 20, 'UTF-8');
+            $pending = mb_substr($pending, $len - 20, null, 'UTF-8');
+            $emitSafe($safe);
+            break;
+        }
+    };
+
+    $ch = curl_init($base . '/chat/completions');
+    curl_setopt_array($ch, [
+        CURLOPT_RETURNTRANSFER => false,
+        CURLOPT_POST           => true,
+        CURLOPT_HTTPHEADER     => [
+            'Content-Type: application/json',
+            'Accept: text/event-stream',
+            'Authorization: Bearer ' . $key,
+        ],
+        CURLOPT_POSTFIELDS     => $payload,
+        CURLOPT_TIMEOUT        => 60,
+        CURLOPT_CONNECTTIMEOUT => 10,
+        CURLOPT_HEADERFUNCTION => static function ($ch, string $hdr) use (&$httpCode): int {
+            if (preg_match('#^HTTP/\S+\s+(\d{3})#', $hdr, $m)) {
+                $httpCode = (int) $m[1];
+            }
+            return strlen($hdr);
+        },
+        CURLOPT_WRITEFUNCTION  => static function ($ch, string $data) use (&$httpCode, &$sseBuf, &$errBody, &$fullRaw, $processToken): int {
+            $len = strlen($data);
+            if ($httpCode >= 400) {
+                $errBody .= $data;
+                return $len;
+            }
+            $sseBuf .= $data;
+            while (($nl = strpos($sseBuf, "\n")) !== false) {
+                $line = trim(substr($sseBuf, 0, $nl));
+                $sseBuf = substr($sseBuf, $nl + 1);
+                if ($line === '' || !str_starts_with($line, 'data:')) {
+                    continue;
+                }
+                $jsonStr = trim(substr($line, 5));
+                if ($jsonStr === '' || $jsonStr === '[DONE]') {
+                    continue;
+                }
+                $chunk = json_decode($jsonStr, true);
+                if (!is_array($chunk)) {
+                    continue;
+                }
+                $delta = $chunk['choices'][0]['delta']['content'] ?? ($chunk['choices'][0]['message']['content'] ?? null);
+                if (is_string($delta) && $delta !== '') {
+                    $fullRaw .= $delta;
+                    $processToken($delta);
+                }
+            }
+            return $len;
+        },
+    ]);
+
+    $ok = curl_exec($ch);
+    $curlErr = curl_error($ch);
+    $finalCode = (int) curl_getinfo($ch, CURLINFO_RESPONSE_CODE);
+    curl_close($ch);
+    if ($finalCode > 0) {
+        $httpCode = $finalCode;
+    }
+
+    if ($ok === false && $fullRaw === '') {
+        error_log('ai_chat_stream: curl error: ' . $curlErr);
+        return ['ok' => false, 'code' => 'UNREACHABLE', 'error' => 'Tidak dapat menghubungi server AI.'];
+    }
+    if ($httpCode !== 200) {
+        error_log('ai_chat_stream: HTTP ' . $httpCode . ' body: ' . substr($errBody, 0, 300));
+        return ['ok' => false, 'code' => 'HTTP_' . $httpCode, 'error' => 'Server AI balas HTTP ' . $httpCode . '.'];
+    }
+
+    // Proses sisa buffer SSE jika ada tanpa trailing newline
+    if (trim($sseBuf) !== '' && str_starts_with(trim($sseBuf), 'data:')) {
+        $jsonStr = trim(substr(trim($sseBuf), 5));
+        if ($jsonStr !== '' && $jsonStr !== '[DONE]') {
+            $chunk = json_decode($jsonStr, true);
+            $delta = is_array($chunk) ? ($chunk['choices'][0]['delta']['content'] ?? null) : null;
+            if (is_string($delta) && $delta !== '') {
+                $fullRaw .= $delta;
+                $processToken($delta);
+            }
+        }
+    }
+
+    if (!$inThink && !$inActions && $pending !== '') {
+        $emitSafe($pending);
+        $pending = '';
+    }
+
+    // Parse hasil lengkap akhir secara ketat
+    $cleaned = ai_strip_reasoning($fullRaw);
+    $parsed  = json_decode(preg_replace('/^```(?:json)?\s*|\s*```$/', '', $cleaned), true);
+    $reply   = $cleaned;
+    $actions = [];
+
+    if (is_array($parsed) && isset($parsed['reply']) && is_string($parsed['reply'])) {
+        $reply = trim($parsed['reply']);
+        if (!empty($parsed['actions']) && is_array($parsed['actions'])) {
+            foreach ($parsed['actions'] as $act) {
+                if (is_array($act) && !empty($act['url'])) {
+                    $actions[] = [
+                        'label' => trim((string) ($act['label'] ?? '')),
+                        'url'   => trim((string) $act['url']),
+                    ];
+                }
+            }
+        }
+    } else {
+        $ext     = ai_extract_action_marker($cleaned);
+        $reply   = $ext['reply'];
+        $actions = $ext['actions'];
     }
 
     if ($reply === '') {
