@@ -2070,6 +2070,28 @@ document.addEventListener('DOMContentLoaded', () => {
             isDetailMode: true
         });
     }
+    if (typeof BookingErp !== 'undefined') {
+        if (typeof BookingErp.initAvailabilityChecker === 'function') {
+            BookingErp.initAvailabilityChecker({
+                appUrl: appUrl,
+                companyId: <?= (int) ($b['company_id'] ?? $cid ?? 0) ?>,
+                bookingType: 'rental',
+                excludeBookingId: <?= (int) $id ?>,
+                startDateEl: document.querySelector('#rentalDetailForm input[name="start_date"]'),
+                endDateEl: document.querySelector('#rentalDetailForm input[name="end_date"]'),
+                durationEl: document.querySelector('#rentalDetailForm input[name="duration_days"]'),
+                vehicleSelectEl: document.querySelector('#rentalDetailForm select[name="vehicle_id"]'),
+                crewTableBodyId: 'crewTableBody'
+            });
+        }
+        if (typeof BookingErp.initQuickNoteChips === 'function') {
+            BookingErp.initQuickNoteChips({
+                formId: 'rentalDetailForm',
+                textareaEl: document.getElementById('visibleNote'),
+                bookingType: 'rental'
+            });
+        }
+    }
 
     // ==================== QRIS OTOMATIS & AUTO-APPEND ROW ====================
     const qrisBookingId   = <?= (int) $id ?>;

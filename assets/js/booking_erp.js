@@ -1836,6 +1836,329 @@
     }
   }
 
+  function initAvailabilityChecker(opts) {
+    const cfg = opts || {};
+    const vehEl = cfg.vehicleSelectEl;
+    const crewTbody = cfg.crewTableBodyId
+      ? document.getElementById(cfg.crewTableBodyId)
+      : document.getElementById('crewTableBody');
+
+    let vehHintEl = null;
+    if (vehEl) {
+      const wrap = vehEl.closest('.rnt-field') || vehEl.parentNode;
+      if (wrap) {
+        vehHintEl = wrap.querySelector('.vst-veh-avail-hint');
+        if (!vehHintEl) {
+          vehHintEl = document.createElement('div');
+          vehHintEl.className = 'vst-veh-avail-hint form-text small mt-1 d-none';
+          const previewBox = wrap.querySelector('#vehicleDetailPreview');
+          if (previewBox) {
+            wrap.insertBefore(vehHintEl, previewBox);
+          } else {
+            wrap.appendChild(vehHintEl);
+          }
+        }
+      }
+    }
+
+    let busyVehicles = {};
+    let busyEmployees = {};
+    let lastRangeKey = '';
+    let reqSeq = 0;
+
+    function getDates() {
+      if (cfg.startDateEl) {
+        const s = String(cfg.startDateEl.value || '').trim();
+        const e = cfg.endDateEl ? String(cfg.endDateEl.value || '').trim() : s;
+        return { start: s, end: e || s };
+      }
+      if (cfg.dateEl) {
+        const d = String(cfg.dateEl.value || '').trim();
+        return { start: d, end: d };
+      }
+      return { start: '', end: '' };
+    }
+
+    function stripAvailSuffix(txt) {
+      return String(txt || '').replace(/\s+—\s+\[(?:Tersedia|Terpakai:[^\]]*)\]$/, '');
+    }
+
+    function decorateSelectOptions(sel, busyMap, isVehicle) {
+      if (!sel) return;
+      Array.from(sel.options || []).forEach(function (opt) {
+        const val = String(opt.value || '');
+        if (!val || Number(val) <= 0) return;
+        const base = opt.dataset.baseText || stripAvailSuffix(opt.textContent);
+        opt.dataset.baseText = base;
+        const conflict = busyMap[val];
+        const suffix = conflict
+          ? (' — [Terpakai: ' + conflict.doc_no + (isVehicle && conflict.period ? ' (' + conflict.period + ')' : '') + ']')
+          : ' — [Tersedia]';
+        opt.textContent = base + suffix;
+      });
+
+      if (sel.tomselect && sel.tomselect.options) {
+        const ts = sel.tomselect;
+        Object.keys(ts.options).forEach(function (k) {
+          if (!k || Number(k) <= 0) return;
+          const o = ts.options[k];
+          if (!o) return;
+          const base = o._baseText || stripAvailSuffix(o.text || o.name || '');
+          const conflict = busyMap[String(k)];
+          const suffix = conflict
+            ? (' — [Terpakai: ' + conflict.doc_no + (isVehicle && conflict.period ? ' (' + conflict.period + ')' : '') + ']')
+            : ' — [Tersedia]';
+          const nextText = base + suffix;
+          const updated = Object.assign({}, o, {
+            _baseText: base,
+            text: nextText
+          });
+          if (updated.name !== undefined) updated.name = nextText;
+          if (typeof ts.updateOption === 'function') {
+            try {
+              ts.updateOption(k, updated);
+            } catch (e) {
+              o._baseText = base;
+              o.text = nextText;
+              if (o.name !== undefined) o.name = nextText;
+            }
+          } else {
+            o._baseText = base;
+            o.text = nextText;
+            if (o.name !== undefined) o.name = nextText;
+          }
+        });
+        try {
+          ts.refreshOptions(false);
+        } catch (e) { }
+      }
+    }
+
+    function renderVehicleStatus() {
+      if (!vehHintEl) return;
+      const dates = getDates();
+      if (!dates.start) {
+        vehHintEl.classList.add('d-none');
+        return;
+      }
+      const curVid = vehEl ? String(getFieldVal(vehEl) || '') : '';
+      const busyVehCount = Object.keys(busyVehicles).length;
+      const busyEmpCount = Object.keys(busyEmployees).length;
+
+      if (curVid && Number(curVid) > 0) {
+        const conflict = busyVehicles[curVid];
+        if (conflict) {
+          vehHintEl.className = 'vst-veh-avail-hint alert alert-warning py-1 px-2 small mt-2 mb-0';
+          vehHintEl.innerHTML = '<i class="bi bi-exclamation-triangle-fill me-1"></i><strong>Jadwal Armada Bentrok:</strong> ' +
+            'Terjadwal pada <code>' + escHtml(conflict.doc_no) + '</code> (' + escHtml(conflict.type_label || '') +
+            ', ' + escHtml(conflict.period || '') +
+            (conflict.passenger ? ' a.n ' + escHtml(conflict.passenger) : '') + ').';
+          return;
+        }
+        vehHintEl.className = 'vst-veh-avail-hint form-text text-success small mt-1';
+        vehHintEl.innerHTML = '<i class="bi bi-check-circle-fill me-1"></i>Armada tersedia pada tanggal terpilih' +
+          (busyVehCount > 0 ? ' <span class="text-muted">(' + busyVehCount + ' unit lain sedang terjadwal)</span>' : '') + '.';
+        return;
+      }
+
+      vehHintEl.className = 'vst-veh-avail-hint form-text text-muted small mt-1';
+      vehHintEl.innerHTML = '<i class="bi bi-calendar2-check text-primary me-1"></i>Ketersediaan jadwal (' +
+        escHtml(dates.start) + (dates.end && dates.end !== dates.start ? ' s/d ' + escHtml(dates.end) : '') + '): ' +
+        (busyVehCount > 0
+          ? ('<strong>' + busyVehCount + '</strong> armada &amp; <strong>' + busyEmpCount + '</strong> kru sudah terjadwal, unit lain <strong>[Tersedia]</strong>.')
+          : '<span class="text-success fw-semibold">Seluruh armada &amp; kru tersedia.</span>');
+    }
+
+    function renderCrewRowStatus(sel) {
+      if (!sel) return;
+      const cell = sel.closest('td') || sel.parentNode;
+      if (!cell) return;
+      let warnEl = cell.querySelector('.vst-crew-avail-warn');
+      const eid = String(getFieldVal(sel) || '');
+      const conflict = (eid && Number(eid) > 0) ? busyEmployees[eid] : null;
+      if (!conflict) {
+        if (warnEl) warnEl.classList.add('d-none');
+        return;
+      }
+      if (!warnEl) {
+        warnEl = document.createElement('div');
+        warnEl.className = 'vst-crew-avail-warn text-warning-emphasis small mt-1';
+        cell.appendChild(warnEl);
+      }
+      warnEl.innerHTML = '<i class="bi bi-exclamation-triangle-fill text-warning me-1"></i>Terjadwal di <code>' +
+        escHtml(conflict.doc_no) + '</code> (' + escHtml(conflict.type_label || '') + ' ' + escHtml(conflict.period || '') + ')';
+      warnEl.classList.remove('d-none');
+    }
+
+    function syncAllCrewSelects() {
+      if (!crewTbody) return;
+      crewTbody.querySelectorAll('.crew-emp-select').forEach(function (sel) {
+        decorateSelectOptions(sel, busyEmployees, false);
+        renderCrewRowStatus(sel);
+        if (sel.dataset.availBound !== '1') {
+          sel.dataset.availBound = '1';
+          if (typeof window.bindTsChange === 'function') {
+            window.bindTsChange(sel, function () {
+              decorateSelectOptions(sel, busyEmployees, false);
+              renderCrewRowStatus(sel);
+            });
+          } else {
+            sel.addEventListener('change', function () { renderCrewRowStatus(sel); });
+          }
+        }
+        if (sel.tomselect && sel.dataset.availLoadBound !== '1') {
+          sel.dataset.availLoadBound = '1';
+          sel.tomselect.on('load', function () {
+            decorateSelectOptions(sel, busyEmployees, false);
+          });
+        }
+      });
+    }
+
+    async function refreshAvailability(force) {
+      const dates = getDates();
+      if (!dates.start || !/^\d{4}-\d{2}-\d{2}$/.test(dates.start)) return;
+      const end = (dates.end && /^\d{4}-\d{2}-\d{2}$/.test(dates.end) && dates.end >= dates.start) ? dates.end : dates.start;
+      const key = dates.start + ':' + end;
+      if (!force && key === lastRangeKey) {
+        renderVehicleStatus();
+        syncAllCrewSelects();
+        return;
+      }
+      lastRangeKey = key;
+      const seq = ++reqSeq;
+      try {
+        const url = (cfg.appUrl || '') + '/pages/transport/availability_check.php?company_id=' + Number(cfg.companyId || 0) +
+          '&booking_type=' + encodeURIComponent(cfg.bookingType || 'travel') +
+          '&exclude_booking_id=' + Number(cfg.excludeBookingId || 0) +
+          '&start_date=' + encodeURIComponent(dates.start) +
+          '&end_date=' + encodeURIComponent(end);
+        const res = await fetch(url, { credentials: 'same-origin' });
+        if (!res.ok) return;
+        const json = await res.json();
+        if (seq !== reqSeq || !json || !json.ok) return;
+        busyVehicles = json.busy_vehicles || {};
+        busyEmployees = json.busy_employees || {};
+        decorateSelectOptions(vehEl, busyVehicles, true);
+        renderVehicleStatus();
+        syncAllCrewSelects();
+      } catch (e) { }
+    }
+
+    [cfg.dateEl, cfg.startDateEl, cfg.endDateEl, cfg.durationEl].forEach(function (el) {
+      if (!el) return;
+      el.addEventListener('change', function () { setTimeout(function () { refreshAvailability(false); }, 40); });
+      el.addEventListener('input', function () { setTimeout(function () { refreshAvailability(false); }, 40); });
+    });
+
+    if (vehEl) {
+      if (typeof window.bindTsChange === 'function') {
+        window.bindTsChange(vehEl, function () {
+          decorateSelectOptions(vehEl, busyVehicles, true);
+          renderVehicleStatus();
+        });
+      } else {
+        vehEl.addEventListener('change', renderVehicleStatus);
+      }
+      if (vehEl.tomselect) {
+        vehEl.tomselect.on('load', function () {
+          decorateSelectOptions(vehEl, busyVehicles, true);
+        });
+      }
+    }
+
+    if (crewTbody && typeof MutationObserver !== 'undefined') {
+      const obs = new MutationObserver(function () {
+        syncAllCrewSelects();
+        setTimeout(syncAllCrewSelects, 60);
+      });
+      obs.observe(crewTbody, { childList: true, subtree: false });
+    }
+
+    setTimeout(function () { refreshAvailability(true); }, 120);
+    return { refresh: function () { refreshAvailability(true); } };
+  }
+
+  function initQuickNoteChips(opts) {
+    const cfg = opts || {};
+    const noteEl = cfg.textareaEl ||
+      (cfg.formId ? document.querySelector('#' + cfg.formId + ' textarea[name="note"]') : null) ||
+      document.querySelector('textarea[name="note"]');
+    if (!noteEl || noteEl.readOnly || noteEl.disabled) return;
+    if (noteEl.parentNode && noteEl.parentNode.querySelector('.vst-quick-note-chips')) return;
+
+    const presets = cfg.bookingType === 'rental'
+      ? [
+          { label: '+ All-In (BBM, Tol, Parkir)', text: 'Harga sewa All-In termasuk BBM, tol, dan parkir.' },
+          { label: '+ Belum Termasuk BBM & Tol', text: 'Harga sewa belum termasuk BBM, tol, parkir, dan makan sopir.' },
+          { label: '+ Dengan Sopir (Include Driver)', text: 'Layanan sewa dengan sopir (Include Driver).' },
+          { label: '+ Lepas Kunci', text: 'Layanan sewa lepas kunci (syarat & dokumen lengkap).' },
+          { label: '+ Standby Tepat Waktu', text: 'Unit mohon bersih & standby 30 menit sebelum jam penjemputan.' },
+          { label: '+ Tagihan Invoice Korporat', text: 'Pembayaran tagihan via Invoice Korporat.' }
+        ]
+      : [
+          { label: '+ Jemput Tepat Waktu', text: 'Mohon jemput tepat waktu sesuai titik penjemputan.' },
+          { label: '+ Bagasi Besar / Kardus', text: 'Penumpang membawa bagasi besar/kardus tambahan.' },
+          { label: '+ Request Kursi Depan/Tengah', text: 'Request posisi duduk kursi depan/tengah.' },
+          { label: '+ Anak / Lansia', text: 'Ada penumpang anak-anak/lansia, mohon dibantu saat naik-turun.' },
+          { label: '+ Titip Paket / Dokumen', text: 'Sekalian titip paket/dokumen.' },
+          { label: '+ Tagihan Invoice Korporat', text: 'Pembayaran tagihan via Invoice Korporat.' }
+        ];
+
+    const bar = document.createElement('div');
+    bar.className = 'vst-quick-note-chips d-flex flex-wrap align-items-center gap-1 mb-2';
+    bar.innerHTML = '<span class="small text-muted me-1"><i class="bi bi-lightning-charge-fill text-warning me-1"></i>Template Cepat:</span>' +
+      presets.map(function (p, idx) {
+        return '<button type="button" class="btn btn-sm btn-outline-secondary py-0 px-2 vst-note-chip" data-chip-idx="' + idx + '" data-note-snippet="' + escHtml(p.text) + '">' +
+          escHtml(p.label) + '</button>';
+      }).join('') +
+      '<button type="button" class="btn btn-sm btn-link text-muted text-decoration-none py-0 px-1 ms-auto vst-note-clear" title="Kosongkan catatan">Bersihkan</button>';
+
+    noteEl.parentNode.insertBefore(bar, noteEl);
+
+    function syncChipStates() {
+      const cur = String(noteEl.value || '');
+      bar.querySelectorAll('.vst-note-chip').forEach(function (btn) {
+        const snip = btn.getAttribute('data-note-snippet') || '';
+        const active = snip !== '' && cur.indexOf(snip) !== -1;
+        btn.classList.toggle('btn-primary', active);
+        btn.classList.toggle('text-white', active);
+        btn.classList.toggle('btn-outline-secondary', !active);
+      });
+    }
+
+    bar.addEventListener('click', function (ev) {
+      const chip = ev.target.closest('.vst-note-chip');
+      if (chip) {
+        const snip = chip.getAttribute('data-note-snippet') || '';
+        if (!snip) return;
+        const cur = String(noteEl.value || '').trim();
+        if (cur.indexOf(snip) === -1) {
+          noteEl.value = cur ? (cur + '\n' + snip) : snip;
+        } else {
+          // Klik ulang chip yang sudah aktif akan melepas kalimat tersebut
+          const lines = cur.split(/\r?\n/).filter(function (line) { return line.trim() !== snip.trim(); });
+          noteEl.value = lines.join('\n').trim();
+        }
+        noteEl.dispatchEvent(new Event('input', { bubbles: true }));
+        noteEl.dispatchEvent(new Event('change', { bubbles: true }));
+        syncChipStates();
+        return;
+      }
+      const clr = ev.target.closest('.vst-note-clear');
+      if (clr) {
+        noteEl.value = '';
+        noteEl.dispatchEvent(new Event('input', { bubbles: true }));
+        noteEl.dispatchEvent(new Event('change', { bubbles: true }));
+        syncChipStates();
+      }
+    });
+
+    noteEl.addEventListener('input', syncChipStates);
+    noteEl.addEventListener('change', syncChipStates);
+    syncChipStates();
+  }
+
   window.BookingErp = {
     escHtml: escHtml,
     parseRp: parseRp,
@@ -1853,6 +2176,8 @@
     initGeoCascade: initGeoCascade,
     initTravelRouteLookup: initTravelRouteLookup,
     initPassengerLastLocation: initPassengerLastLocation,
+    initAvailabilityChecker: initAvailabilityChecker,
+    initQuickNoteChips: initQuickNoteChips,
     initQuickPassengerModal: initQuickPassengerModal
   };
 })(window, document);

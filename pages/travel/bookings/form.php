@@ -923,6 +923,21 @@ document.addEventListener('DOMContentLoaded', function () {
         onApplied: function () { routeCtrl.lookup(false); }
     });
 
+    BookingErp.initAvailabilityChecker({
+        appUrl: appUrl,
+        companyId: companyId,
+        bookingType: 'travel',
+        excludeBookingId: 0,
+        dateEl: dateEl,
+        vehicleSelectEl: vehSelect,
+        crewTableBodyId: 'crewTableBody'
+    });
+
+    BookingErp.initQuickNoteChips({
+        formId: 'formTravelBooking',
+        bookingType: 'travel'
+    });
+
     routeCtrl.lookup(false);
 
     // Quick-Add Pelanggan Baru

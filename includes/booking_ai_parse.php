@@ -55,6 +55,63 @@ function _booking_ai_parse_amount_expr(string $numStr, string $unit = ''): float
 }
 
 /**
+ * Ekstrak kandidat nama & nomor telepon pelanggan baru dari teks bebas (misal hasil copy-paste chat WA)
+ * bila pelanggan tersebut belum ditemukan di daftar master passengers.
+ *
+ * @return array{name:string,phone:string}
+ */
+function _booking_ai_extract_new_passenger(string $raw): array
+{
+    $phone = '';
+    if (preg_match('/(?:(?:\+62|62|0)8[0-9]{1,3}[\s.-]?[0-9]{3,4}[\s.-]?[0-9]{3,5})\b/', $raw, $pm)) {
+        $norm = normalize_phone_62($pm[0]);
+        if ($norm !== null && strlen($norm) >= 10 && strlen($norm) <= 20) {
+            $phone = $norm;
+        }
+    }
+
+    $name = '';
+    $stopBoundary = '(?=\s*(?:[,;|\n\/()]|\b(?:no|nomor|hp|wa|whatsapp|telp|telepon|08\d|\+62|628|jemput|dari|asal|ke|tujuan|antar|jam|pukul|pkl|tgl|tanggal|besok|lusa|hari|mulai|selesai|harga|tarif|total|biaya|sewa|travel|rental|catatan|note|rp|\d{2,})\b|$))';
+    if (preg_match('/\b(?:pelanggan|penumpang|a\.?\s*n\.?|atas\s+nama|nama(?:\s+pelanggan|\s+penumpang|\s+penyewa)?|penyewa|pemesan)\s*(?:baru)?\s*:?\s*(?:pak|bapak|ibu|bu|mas|mbak|kak|bang|sdr\.?|tn\.?|ny\.?)?\s*([a-zA-Z][a-zA-Z0-9 .\'-]{1,42}?)' . $stopBoundary . '/iu', $raw, $nm)) {
+        $name = trim($nm[1]);
+    } elseif ($phone !== '' && preg_match('/\b(?:pak|bapak|ibu|bu|mas|mbak|kak|bang)\s+([a-zA-Z][a-zA-Z0-9 .\'-]{1,35}?)' . $stopBoundary . '/iu', $raw, $nm2)) {
+        $name = trim($nm2[1]);
+    } elseif ($phone !== '' && preg_match('/([A-Z][a-zA-Z0-9]{1,}(?:\s+[A-Z][a-zA-Z0-9]{1,}){0,3})\s*[-–(,]?\s*(?:\+62|62|0)8\d/u', $raw, $nm3)) {
+        $name = trim($nm3[1]);
+    }
+
+    if ($name !== '') {
+        $badWords = ['besok', 'lusa', 'hari', 'pagi', 'siang', 'sore', 'malam', 'jemput', 'antar', 'tujuan', 'asal', 'sewa', 'travel', 'rental', 'mobil', 'harga', 'tarif', 'total', 'baru'];
+        $words = preg_split('/\s+/', $name) ?: [];
+        $cleanWords = [];
+        foreach ($words as $w) {
+            $wClean = trim($w, " \t\n\r\0\x0B.,;:-_()");
+            if ($wClean === '' || ctype_digit($wClean) || in_array(mb_strtolower($wClean, 'UTF-8'), $badWords, true)) {
+                if (empty($cleanWords)) {
+                    continue;
+                }
+                break;
+            }
+            $cleanWords[] = $wClean;
+            if (count($cleanWords) >= 4) {
+                break;
+            }
+        }
+        $name = implode(' ', $cleanWords);
+        if (mb_strlen($name, 'UTF-8') < 2) {
+            $name = '';
+        } else {
+            $name = mb_convert_case($name, MB_CASE_TITLE, 'UTF-8');
+        }
+    }
+
+    return [
+        'name'  => $name,
+        'phone' => $phone,
+    ];
+}
+
+/**
  * Fallback parser lokal deterministik berbasis regex + pencocokan DB perusahaan.
  * Dipakai otomatis bila LLM offline/timeout atau belum menghasilkan kandidat valid.
  */
@@ -652,10 +709,54 @@ function booking_ai_parse_handle(string $mode = 'travel'): void
     $resolveGeoSide('pickup');
     $resolveGeoSide('delivery');
 
+    // Deteksi pelanggan baru jika passenger_id belum ditemukan di daftar master
+    $newPassenger = null;
+    if (empty($candidate['passenger_id'])) {
+        $extractedPax = _booking_ai_extract_new_passenger($raw);
+        $candName     = $extractedPax['name'];
+        $candPhone    = $extractedPax['phone'];
+
+        // Cek sekali lagi di DB apakah nomor HP atau nama persis sudah ada di perusahaan ini
+        if ($candPhone !== '' || $candName !== '') {
+            if ($candPhone !== '') {
+                $stFind = $db->prepare(
+                    "SELECT id, CONCAT(name, IF(phone_number IS NOT NULL AND phone_number <> '', CONCAT(' - ', phone_number), '')) AS label
+                       FROM passengers
+                      WHERE company_id = ? AND (phone_number = ? OR LOWER(name) = LOWER(?))
+                      ORDER BY (phone_number = ?) DESC, id DESC LIMIT 1"
+                );
+                $stFind->bind_param('isss', $cid, $candPhone, $candName, $candPhone);
+            } else {
+                $stFind = $db->prepare(
+                    "SELECT id, CONCAT(name, IF(phone_number IS NOT NULL AND phone_number <> '', CONCAT(' - ', phone_number), '')) AS label
+                       FROM passengers
+                      WHERE company_id = ? AND LOWER(name) = LOWER(?)
+                      ORDER BY id DESC LIMIT 1"
+                );
+                $stFind->bind_param('is', $cid, $candName);
+            }
+            $stFind->execute();
+            $foundPax = $stFind->get_result()->fetch_assoc();
+            $stFind->close();
+
+            if ($foundPax) {
+                $foundPid = (int) $foundPax['id'];
+                $candidate['passenger_id'] = $foundPid;
+                $peta['passenger_id'][$foundPid] = (string) $foundPax['label'];
+            } elseif ($candName !== '') {
+                $newPassenger = [
+                    'name'  => $candName,
+                    'phone' => $candPhone,
+                ];
+            }
+        }
+    }
+
     echo json_encode([
-        'ok'        => true,
-        'candidate' => $candidate,
-        'peta'      => $peta,
-        'fallback'  => !$usedAi,
+        'ok'            => true,
+        'candidate'     => $candidate,
+        'peta'          => $peta,
+        'new_passenger' => $newPassenger,
+        'fallback'      => !$usedAi,
     ], JSON_UNESCAPED_UNICODE);
 }

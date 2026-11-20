@@ -1270,6 +1270,22 @@ document.addEventListener('DOMContentLoaded', function () {
 
     routeCtrl.lookup(false);
 
+    BookingErp.initAvailabilityChecker({
+        appUrl: appUrl,
+        companyId: bookingCid,
+        bookingType: 'travel',
+        excludeBookingId: <?= (int) $id ?>,
+        dateEl: travelDateEl,
+        vehicleSelectEl: vehSelect,
+        crewTableBodyId: 'crewTableBody'
+    });
+
+    BookingErp.initQuickNoteChips({
+        formId: 'travelDetailForm',
+        textareaEl: document.getElementById('noteInput'),
+        bookingType: 'travel'
+    });
+
     BookingErp.initQuickPassengerModal({
         formId: 'formQuickPassenger',
         modalId: 'quickPassengerModal',

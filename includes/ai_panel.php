@@ -42,6 +42,7 @@ if ($ai_endpoint === '') {
     var apply = document.getElementById('ai-apply');
     var cancel = document.getElementById('ai-cancel');
     var labels = null; // id -> label dari server
+    var detectedNewPax = null; // { name, phone } jika pelanggan belum terdaftar
     var geoFields = {
         pickup_point_province_id: true,
         pickup_point_city_id: true,
@@ -66,9 +67,29 @@ if ($ai_endpoint === '') {
             total_price: 'Total Harga', trip: 'Trip (km)', bbm: 'BBM', note: 'Catatan'
         };
         var keys = Object.keys(fields).filter(function (k) { return fields[k] !== '' && fields[k] != null; });
-        if (!keys.length) {
+        var hasNewPax = Boolean(detectedNewPax && detectedNewPax.name && !fields.passenger_id);
+        if (!keys.length && !hasNewPax) {
             st.textContent = 'Tidak ada field yang bisa dipastikan — isi manual atau tambahkan detail.';
             return;
+        }
+        if (hasNewPax) {
+            var np = detectedNewPax;
+            var liPax = document.createElement('li');
+            liPax.className = 'list-group-item py-1 d-flex flex-wrap align-items-center justify-content-between gap-2 bg-warning-subtle';
+            liPax.id = 'ai-new-pax-item';
+            var paxInfo = '<div><strong>Pelanggan Baru Terdeteksi:</strong> ' + esc(np.name) +
+                (np.phone ? ' <span class="text-muted">(' + esc(np.phone) + ')</span>' : '') + '</div>';
+            var paxBtn = '<button type="button" class="btn btn-sm btn-success py-0 px-2" id="ai-create-pax-btn">' +
+                '<i class="bi bi-person-plus-fill me-1"></i>+ Buat &amp; Pilih Pelanggan Baru</button>';
+            liPax.innerHTML = paxInfo + paxBtn;
+            list.appendChild(liPax);
+
+            var createBtn = liPax.querySelector('#ai-create-pax-btn');
+            if (createBtn) {
+                createBtn.addEventListener('click', function () {
+                    createAndSelectNewPassenger(np, liPax, createBtn, fields);
+                });
+            }
         }
         keys.forEach(function (k) {
             var v = fields[k];
@@ -83,6 +104,70 @@ if ($ai_endpoint === '') {
         });
         prev.classList.remove('d-none');
         apply.__fields = fields;
+    }
+
+    function createAndSelectNewPassenger(np, liEl, btnEl, fieldsObj) {
+        if (!np || !np.name) return Promise.resolve(null);
+        if (btnEl) {
+            btnEl.disabled = true;
+            btnEl.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span>Menyimpan...';
+        }
+        var csrfT = document.querySelector('input[name="csrf_token"]');
+        var compEl = document.querySelector('[data-ts-company]') || document.querySelector('input[name="company_id"]');
+        var compId = compEl ? (compEl.getAttribute('data-ts-company') || compEl.value || '') : '';
+        var fd = new FormData();
+        fd.append('name', np.name);
+        fd.append('phone_number', np.phone || '');
+        if (csrfT) fd.append('csrf_token', csrfT.value);
+        if (compId) fd.append('company_id', compId);
+
+        return fetch('<?= e(APP_URL) ?>/pages/transport/passengers/quick_create.php', {
+            method: 'POST',
+            body: fd,
+            credentials: 'same-origin'
+        })
+            .then(function (r) { return r.json(); })
+            .then(function (res) {
+                if (!res || !res.ok || !res.data || !res.data.id) {
+                    throw new Error((res && res.error) || 'Gagal membuat pelanggan baru.');
+                }
+                var pd = res.data;
+                var sId = String(pd.id);
+                var lbl = pd.label || (pd.name + (pd.phone_number ? ' - ' + pd.phone_number : ''));
+                [document.querySelector('[name="passenger_id"]'), document.querySelector('[name="passenger_ids[]"]')].forEach(function (sel) {
+                    if (!sel) return;
+                    if (sel.tomselect) {
+                        sel.tomselect.addOption({ value: sId, id: pd.id, text: lbl });
+                    } else if (sel.tagName === 'SELECT') {
+                        sel.add(new Option(lbl, sId));
+                    }
+                });
+                var prim = document.querySelector('[name="passenger_id"]');
+                if (prim) {
+                    if (prim.tomselect) prim.tomselect.setValue(sId);
+                    else prim.value = sId;
+                    prim.dispatchEvent(new Event('change', { bubbles: true }));
+                }
+                if (fieldsObj) fieldsObj.passenger_id = pd.id;
+                if (!labels) labels = {};
+                if (!labels.passenger_id) labels.passenger_id = {};
+                labels.passenger_id[pd.id] = lbl;
+                detectedNewPax = null;
+                if (liEl) {
+                    liEl.className = 'list-group-item py-1 d-flex flex-wrap align-items-center justify-content-between gap-2 bg-success-subtle';
+                    liEl.innerHTML = '<div><strong>Pelanggan:</strong> ' + esc(lbl) + '</div>' +
+                        '<span class="badge bg-success text-white"><i class="bi bi-check2-circle me-1"></i>Pelanggan Baru Tersimpan &amp; Terpilih</span>';
+                }
+                return pd;
+            })
+            .catch(function (err) {
+                if (btnEl) {
+                    btnEl.disabled = false;
+                    btnEl.innerHTML = '<i class="bi bi-person-plus-fill me-1"></i>+ Buat &amp; Pilih Pelanggan Baru';
+                }
+                st.textContent = err.message || 'Gagal menambah pelanggan baru.';
+                return null;
+            });
     }
 
     btn.addEventListener('click', function () {
@@ -100,6 +185,7 @@ if ($ai_endpoint === '') {
                 btn.disabled = false;
                 if (!o.j.ok) { st.textContent = o.j.error || ('Gagal (HTTP ' + o.s + ')'); return; }
                 labels = o.j.peta || {};
+                detectedNewPax = o.j.new_passenger || null;
                 st.textContent = '';
                 tampil(o.j.candidate || {});
             })
@@ -108,8 +194,13 @@ if ($ai_endpoint === '') {
 
     inp.addEventListener('keydown', function (e) { if (e.key === 'Enter') { e.preventDefault(); btn.click(); } });
 
-    apply.addEventListener('click', function () {
+    apply.addEventListener('click', async function () {
         var f = apply.__fields || {};
+        if (detectedNewPax && detectedNewPax.name && !f.passenger_id) {
+            var liPax = document.getElementById('ai-new-pax-item');
+            var btnPax = document.getElementById('ai-create-pax-btn');
+            await createAndSelectNewPassenger(detectedNewPax, liPax, btnPax, f);
+        }
         var map = labels || {};
         var order = [
             'branch_id', 'passenger_id', 'category_vehicle_id', 'vehicle_id',

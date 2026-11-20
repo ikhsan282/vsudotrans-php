@@ -1926,6 +1926,25 @@ document.addEventListener('DOMContentLoaded', function () {
                 deliveryAddressEl: document.querySelector('#formRentalBooking textarea[name="delivery_address"]')
             });
         }
+        if (typeof BookingErp.initAvailabilityChecker === 'function') {
+            BookingErp.initAvailabilityChecker({
+                appUrl: <?= json_encode(APP_URL) ?>,
+                companyId: <?= (int) $cid ?>,
+                bookingType: 'rental',
+                excludeBookingId: 0,
+                startDateEl: document.querySelector('#formRentalBooking input[name="start_date"]'),
+                endDateEl: document.querySelector('#formRentalBooking input[name="end_date"]'),
+                durationEl: document.querySelector('#formRentalBooking input[name="duration_days"]'),
+                vehicleSelectEl: document.getElementById('rental_vehicle_select'),
+                crewTableBodyId: 'crewTableBody'
+            });
+        }
+        if (typeof BookingErp.initQuickNoteChips === 'function') {
+            BookingErp.initQuickNoteChips({
+                formId: 'formRentalBooking',
+                bookingType: 'rental'
+            });
+        }
     }
     var btnSaveQris = document.getElementById('btnSaveAndPayQris');
     if (btnSaveQris) {
