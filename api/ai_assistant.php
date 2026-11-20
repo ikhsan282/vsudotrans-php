@@ -123,7 +123,7 @@ function ai_detect_jailbreak(string $message): bool
         '/\b(show|reveal|print|dump|repeat|display|expose|leak|tell\s+me|what\s+is|tampilkan|sebutkan|bocorkan|cetak|tunjukkan|lihat|berikan|salin)\b.{0,40}\b(system\s+prompt|hidden\s+prompt|initial\s+prompt|internal\s+prompt|instruksi\s+sistem|aturan\s+sistem|prompt\s+awal|prompt\s+sistem|snapshot\s+erp|aksi\s+diizinkan|raw\s+json|api[\s_-]*key|\.env|konfigurasi\s+server|password\s+db|nama\s+model|provider\s+ai|kode\s+sumber|source\s+code)\b/i',
         // Delimiter spoofing & direct secret variable probing
         '/<\s*\/?\s*(system|user_query|developer|instructions?|assistant|prompt)\s*>/i',
-        '/\b(9router|system_prompt|vsudo_ai_api_key|ai_api_key|hermes_custom_9router_api_key|blob_storage_connection_string)\b/i',
+        '/\b(9router|deepseek|system_prompt|vsudo_ai_api_key|vsudo_ai_fallback_api_key|deepseek_api_key|ai_api_key|ai_fallback_api_key|hermes_custom_9router_api_key|blob_storage_connection_string)\b/i',
         // SQL probing against assistant
         '/\b(drop\s+table|delete\s+from|truncate\s+table|union\s+select|information_schema|select\s+\*\s+from)\b/i',
     ];
@@ -163,21 +163,28 @@ function ai_sanitize_output(string $reply): array
         '</user_query>',
         'Aturan keamanan wajib:',
         '9router',
+        'deepseek',
         'VSUDO_AI_API_KEY',
         'HERMES_CUSTOM_9ROUTER_API_KEY',
+        'VSUDO_AI_FALLBACK_API_KEY',
+        'DEEPSEEK_API_KEY',
         'AI_API_KEY',
         'AI_BASE_URL',
+        'AI_FALLBACK_API_KEY',
+        'AI_FALLBACK_BASE_URL',
         'BLOB_STORAGE_CONNECTION_STRING',
         'config/config.php',
     ];
-    if (defined('AI_MODEL') && strlen((string) AI_MODEL) >= 4) {
-        $forbidden[] = (string) AI_MODEL;
-    }
-    if (defined('AI_CHAT_MODEL') && strlen((string) AI_CHAT_MODEL) >= 4) {
-        $forbidden[] = (string) AI_CHAT_MODEL;
+    foreach (['AI_MODEL', 'AI_CHAT_MODEL', 'AI_FALLBACK_MODEL', 'AI_FALLBACK_CHAT_MODEL'] as $constName) {
+        if (defined($constName) && strlen((string) constant($constName)) >= 4) {
+            $forbidden[] = (string) constant($constName);
+        }
     }
     if (defined('AI_API_KEY') && strlen((string) AI_API_KEY) >= 8) {
         $forbidden[] = (string) AI_API_KEY;
+    }
+    if (defined('AI_FALLBACK_API_KEY') && strlen((string) AI_FALLBACK_API_KEY) >= 8) {
+        $forbidden[] = (string) AI_FALLBACK_API_KEY;
     }
 
     foreach ($forbidden as $marker) {
@@ -1861,6 +1868,7 @@ function ai_handle_http_request(): void
         exit;
     }
 
+    @set_time_limit(90);
     $aiRes = ai_chat_assistant($messages);
     if ($aiRes['ok']) {
         $payload = _ai_finalize_reply(

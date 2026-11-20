@@ -1,23 +1,106 @@
 <?php
 /**
- * Klien AI untuk bantu input transaksi (9router, OpenAI-compatible).
- * Prinsip: model HANYA menghasilkan kandidat JSON. Semua field divalidasi
- * ulang di PHP terhadap daftar asli sebelum dipakai mengisi form.
- * Key/base/model ada di config/config.php (gitignored) AI_*.
+ * Klien AI untuk bantu input transaksi & AI Assistant (OpenAI-compatible).
+ * Mendukung provider utama (9router) dengan failover otomatis ke DeepSeek
+ * API cadangan saat provider utama mati/timeout/gagal merespons.
+ * Prinsip: model HANYA menghasilkan kandidat JSON/jawaban. Semua field divalidasi
+ * ulang di PHP sebelum dipakai. Konfigurasi key/base/model di config/config.php.
  */
 
+/** Normalisasi base URL endpoint OpenAI-compatible tanpa trailing /chat/completions. */
+function _ai_normalize_base_url(string $base): string
+{
+    $clean = rtrim(trim($base), '/');
+    if ($clean === '') {
+        return '';
+    }
+    return (string) preg_replace('#/chat/completions/?$#i', '', $clean);
+}
+
+/** Model aktif untuk chat AI Assistant (pakai AI_CHAT_MODEL bila ada, fallback AI_MODEL). */
+function _ai_active_chat_model(): string
+{
+    if (defined('AI_CHAT_MODEL') && trim((string) AI_CHAT_MODEL) !== '') {
+        return trim((string) AI_CHAT_MODEL);
+    }
+    return defined('AI_MODEL') ? trim((string) AI_MODEL) : '';
+}
+
 /**
- * Kirim request chat/completions ke endpoint OpenAI-compatible (9router) dan
- * kembalikan isi `choices[0].message.content` yang sudah dibersihkan dari artefak SSE.
+ * Daftar konfigurasi provider AI berurutan: [0] utama (9router), [1] cadangan (DeepSeek).
+ * @param 'chat'|'json' $purpose
+ * @return array<int,array{name:string,base:string,key:string,model:string}>
+ */
+function _ai_provider_configs(string $purpose = 'chat'): array
+{
+    $providers = [];
+
+    $pKey   = defined('AI_API_KEY') ? trim((string) AI_API_KEY) : '';
+    $pBase  = defined('AI_BASE_URL') ? _ai_normalize_base_url((string) AI_BASE_URL) : '';
+    $pModel = $purpose === 'chat'
+        ? _ai_active_chat_model()
+        : (defined('AI_MODEL') ? trim((string) AI_MODEL) : '');
+    if ($pKey !== '' && $pBase !== '' && $pModel !== '') {
+        $providers[] = [
+            'name'  => 'primary',
+            'base'  => $pBase,
+            'key'   => $pKey,
+            'model' => $pModel,
+        ];
+    }
+
+    $fKey   = defined('AI_FALLBACK_API_KEY') ? trim((string) AI_FALLBACK_API_KEY) : '';
+    $fBase  = defined('AI_FALLBACK_BASE_URL') ? _ai_normalize_base_url((string) AI_FALLBACK_BASE_URL) : '';
+    $fModel = $purpose === 'chat'
+        ? (defined('AI_FALLBACK_CHAT_MODEL') && trim((string) AI_FALLBACK_CHAT_MODEL) !== ''
+            ? trim((string) AI_FALLBACK_CHAT_MODEL)
+            : (defined('AI_FALLBACK_MODEL') ? trim((string) AI_FALLBACK_MODEL) : ''))
+        : (defined('AI_FALLBACK_MODEL') ? trim((string) AI_FALLBACK_MODEL) : '');
+    if ($fKey !== '' && $fBase !== '' && $fModel !== '') {
+        $isSameAsPrimary = !empty($providers)
+            && $providers[0]['base'] === $fBase
+            && $providers[0]['key'] === $fKey
+            && $providers[0]['model'] === $fModel;
+        if (!$isSameAsPrimary) {
+            $providers[] = [
+                'name'  => 'fallback',
+                'base'  => $fBase,
+                'key'   => $fKey,
+                'model' => $fModel,
+            ];
+        }
+    }
+
+    return $providers;
+}
+
+/** Cek apakah minimal 1 provider AI (utama atau cadangan DeepSeek) terkonfigurasi lengkap. */
+function ai_has_configured_provider(string $purpose = 'chat'): bool
+{
+    return !empty(_ai_provider_configs($purpose));
+}
+
+/**
+ * Kirim request chat/completions ke 1 endpoint OpenAI-compatible dan
+ * kembalikan isi `choices[0].message.content` (termasuk reassembly SSE bila server mengirim chunk).
  *
  * @param array<string,mixed> $body
+ * @param array{name?:string,base?:string,key?:string,model?:string}|null $provider
  * @return array{ok:bool,content?:string,code?:string,error?:string}
  */
-function _ai_post_chat_completions(array $body, int $timeout = 90, int $connectTimeout = 15): array
+function _ai_post_chat_completions(array $body, int $timeout = 90, int $connectTimeout = 15, ?array $provider = null): array
 {
-    $key   = defined('AI_API_KEY') ? (string) AI_API_KEY : '';
-    $base  = defined('AI_BASE_URL') ? rtrim((string) AI_BASE_URL, '/') : '';
-    $model = defined('AI_MODEL') ? (string) AI_MODEL : '';
+    if ($provider !== null) {
+        $key      = trim((string) ($provider['key'] ?? ''));
+        $base     = _ai_normalize_base_url((string) ($provider['base'] ?? ''));
+        $model    = trim((string) ($provider['model'] ?? ''));
+        $provTag  = (string) ($provider['name'] ?? 'provider');
+    } else {
+        $key      = defined('AI_API_KEY') ? trim((string) AI_API_KEY) : '';
+        $base     = defined('AI_BASE_URL') ? _ai_normalize_base_url((string) AI_BASE_URL) : '';
+        $model    = defined('AI_MODEL') ? trim((string) AI_MODEL) : '';
+        $provTag  = 'primary';
+    }
     if ($key === '' || $base === '' || $model === '') {
         return [
             'ok'    => false,
@@ -26,7 +109,7 @@ function _ai_post_chat_completions(array $body, int $timeout = 90, int $connectT
         ];
     }
 
-    if (empty($body['model'])) {
+    if ($provider !== null || empty($body['model'])) {
         $body['model'] = $model;
     }
     $payload = json_encode($body, JSON_UNESCAPED_UNICODE);
@@ -49,13 +132,13 @@ function _ai_post_chat_completions(array $body, int $timeout = 90, int $connectT
         if ($raw === false) {
             $err = curl_error($ch);
             curl_close($ch);
-            error_log('ai_chat: curl error: ' . $err);
+            error_log("ai_chat [{$provTag}]: curl error: " . $err);
             return ['ok' => false, 'code' => 'UNREACHABLE', 'error' => 'Tidak dapat menghubungi server AI.'];
         }
         $http = (int) curl_getinfo($ch, CURLINFO_RESPONSE_CODE);
         curl_close($ch);
         if ($http !== 200) {
-            error_log('ai_chat: HTTP ' . $http . ' body: ' . substr((string) $raw, 0, 500));
+            error_log("ai_chat [{$provTag}]: HTTP " . $http . ' body: ' . substr((string) $raw, 0, 500));
             return ['ok' => false, 'code' => 'HTTP_' . $http, 'error' => 'Server AI balas HTTP ' . $http . '.'];
         }
     } else {
@@ -69,7 +152,7 @@ function _ai_post_chat_completions(array $body, int $timeout = 90, int $connectT
         ]]);
         $raw = @file_get_contents($base . '/chat/completions', false, $ctx);
         if ($raw === false) {
-            error_log('ai_chat: stream gagal menghubungi ' . $base);
+            error_log("ai_chat [{$provTag}]: stream gagal menghubungi " . $base);
             return ['ok' => false, 'code' => 'UNREACHABLE', 'error' => 'Tidak dapat menghubungi server AI.'];
         }
         $http = 0;
@@ -79,14 +162,13 @@ function _ai_post_chat_completions(array $body, int $timeout = 90, int $connectT
             }
         }
         if ($http !== 200) {
-            error_log('ai_chat: HTTP ' . $http . ' body: ' . substr((string) $raw, 0, 500));
+            error_log("ai_chat [{$provTag}]: HTTP " . $http . ' body: ' . substr((string) $raw, 0, 500));
             return ['ok' => false, 'code' => 'HTTP_' . $http, 'error' => 'Server AI balas HTTP ' . $http . '.'];
         }
     }
 
     $rawStr = (string) $raw;
-    // 9router kadang mengirim respons dalam bentuk SSE chunk (`data: {"object":"chat.completion.chunk",...}`)
-    // walaupun `stream` false/tidak dikirim. Rangkai ulang delta sebelum fallback ke JSON tunggal.
+    // Endpoint OpenAI-compatible kadang mengirim SSE chunk walaupun stream false/tidak diset.
     if (str_starts_with(ltrim($rawStr), 'data:')) {
         $assembled  = '';
         $parsedAny  = false;
@@ -113,7 +195,6 @@ function _ai_post_chat_completions(array $body, int $timeout = 90, int $connectT
         }
     }
 
-    // 9router menempel 'data: [DONE]' di ekor respons non-streaming (artefak SSE).
     $i = strpos($rawStr, 'data: [DONE]');
     if ($i !== false) {
         $rawStr = substr($rawStr, 0, $i);
@@ -121,11 +202,11 @@ function _ai_post_chat_completions(array $body, int $timeout = 90, int $connectT
 
     $json = json_decode($rawStr, true);
     if (!is_array($json)) {
-        error_log('ai_chat: respons bukan JSON: ' . substr($rawStr, 0, 300));
+        error_log("ai_chat [{$provTag}]: respons bukan JSON: " . substr($rawStr, 0, 300));
         return ['ok' => false, 'code' => 'BAD_RESPONSE', 'error' => 'Respons server AI tidak valid.'];
     }
     if (!isset($json['choices'][0]['message']['content'])) {
-        error_log('ai_chat: struktur respons tak terduga: ' . substr((string) json_encode($json), 0, 300));
+        error_log("ai_chat [{$provTag}]: struktur respons tak terduga: " . substr((string) json_encode($json), 0, 300));
         return ['ok' => false, 'code' => 'BAD_RESPONSE', 'error' => 'Respons server AI tidak lengkap.'];
     }
 
@@ -134,7 +215,7 @@ function _ai_post_chat_completions(array $body, int $timeout = 90, int $connectT
 
 /**
  * Bersihkan blok <think>...</think> (termasuk tag <think> menggantung)
- * yang sering dikeluarkan oleh model reasoning pada 9router.
+ * yang sering dikeluarkan oleh model reasoning.
  */
 function ai_strip_reasoning(string $text): string
 {
@@ -150,45 +231,54 @@ function ai_strip_reasoning(string $text): string
 }
 
 /**
- * Panggil model, paksa JSON mode, buang artefak SSE, kembalikan array.
+ * Panggil model (utama 9router -> cadangan DeepSeek), paksa JSON mode, kembalikan array.
  * @param array<int,array{role:string,content:string}> $messages
  * @param array<string,mixed> $extra
  * @return array{ok:bool,data?:array,error?:string}
  */
 function ai_chat_json(array $messages, array $extra = [], int $timeout = 90, int $connectTimeout = 15): array
 {
-    $body = array_merge([
-        'model'           => defined('AI_MODEL') ? (string) AI_MODEL : '',
-        'messages'        => $messages,
-        'temperature'     => 0,
-        'response_format' => ['type' => 'json_object'],
-    ], $extra);
-
-    $res = _ai_post_chat_completions($body, $timeout, $connectTimeout);
-    if (!$res['ok']) {
-        return ['ok' => false, 'error' => $res['error'] ?? 'Gagal memanggil AI.'];
+    $providers = _ai_provider_configs('json');
+    if (!$providers) {
+        return ['ok' => false, 'error' => 'AI belum dikonfigurasi (AI_BASE_URL / AI_API_KEY / AI_MODEL).'];
     }
 
-    $content = ai_strip_reasoning((string) $res['content']);
-    // Lepas code-fence bila model tetap membungkus.
-    if (str_starts_with($content, '```')) {
-        $content = trim((string) preg_replace('/^```(?:json)?\s*|\s*```$/', '', $content));
-    }
-    $data = json_decode($content, true);
-    if (!is_array($data)) {
-        error_log('ai_chat_json: konten model bukan JSON: ' . substr($content, 0, 300));
-        return ['ok' => false, 'error' => 'Model tidak membalas JSON valid.'];
-    }
-    return ['ok' => true, 'data' => $data];
-}
+    $lastErr = 'Gagal memanggil AI.';
+    $total   = count($providers);
+    foreach ($providers as $idx => $prov) {
+        $isLast   = ($idx === $total - 1);
+        $curConn  = $isLast ? $connectTimeout : min($connectTimeout, 5);
+        $curTime  = $isLast ? $timeout : min($timeout, 12);
+        $body = array_merge([
+            'model'           => $prov['model'],
+            'messages'        => $messages,
+            'temperature'     => 0,
+            'response_format' => ['type' => 'json_object'],
+        ], $extra, ['model' => $prov['model']]);
 
-/** Model aktif untuk chat AI Assistant (pakai AI_CHAT_MODEL bila ada, fallback AI_MODEL). */
-function _ai_active_chat_model(): string
-{
-    if (defined('AI_CHAT_MODEL') && trim((string) AI_CHAT_MODEL) !== '') {
-        return trim((string) AI_CHAT_MODEL);
+        $res = _ai_post_chat_completions($body, $curTime, $curConn, $prov);
+        if (!$res['ok']) {
+            $lastErr = $res['error'] ?? $lastErr;
+            if (!$isLast) {
+                error_log("ai_chat_json: failover dari {$prov['name']} ({$lastErr}) ke provider cadangan.");
+            }
+            continue;
+        }
+
+        $content = ai_strip_reasoning((string) $res['content']);
+        if (str_starts_with($content, '```')) {
+            $content = trim((string) preg_replace('/^```(?:json)?\s*|\s*```$/', '', $content));
+        }
+        $data = json_decode($content, true);
+        if (!is_array($data)) {
+            error_log("ai_chat_json [{$prov['name']}]: konten model bukan JSON: " . substr($content, 0, 300));
+            $lastErr = 'Model tidak membalas JSON valid.';
+            continue;
+        }
+        return ['ok' => true, 'data' => $data];
     }
-    return defined('AI_MODEL') ? trim((string) AI_MODEL) : '';
+
+    return ['ok' => false, 'error' => $lastErr];
 }
 
 /**
@@ -220,12 +310,16 @@ function ai_extract_action_marker(string $text): array
 /** Cek apakah potongan teks mengandung penanda internal yang tidak boleh tampil saat streaming. */
 function _ai_contains_internal_marker(string $text): bool
 {
-    foreach (['SNAPSHOT ERP', 'AKSI DIIZINKAN', '9router', 'VSUDO_AI_API_KEY', 'AI_API_KEY', 'AI_BASE_URL'] as $marker) {
+    foreach ([
+        'SNAPSHOT ERP', 'AKSI DIIZINKAN', '9router', 'deepseek',
+        'VSUDO_AI_API_KEY', 'VSUDO_AI_FALLBACK_API_KEY', 'DEEPSEEK_API_KEY',
+        'AI_API_KEY', 'AI_BASE_URL', 'AI_FALLBACK_API_KEY', 'AI_FALLBACK_BASE_URL',
+    ] as $marker) {
         if (stripos($text, $marker) !== false) {
             return true;
         }
     }
-    foreach (['AI_MODEL', 'AI_CHAT_MODEL'] as $constName) {
+    foreach (['AI_MODEL', 'AI_CHAT_MODEL', 'AI_FALLBACK_MODEL', 'AI_FALLBACK_CHAT_MODEL'] as $constName) {
         if (defined($constName) && strlen((string) constant($constName)) >= 4 && stripos($text, (string) constant($constName)) !== false) {
             return true;
         }
@@ -233,28 +327,10 @@ function _ai_contains_internal_marker(string $text): bool
     return false;
 }
 
-/**
- * Panggil model 9router untuk AI Assistant multi-turn (mendukung Markdown + [[ACTIONS:...]] maupun JSON).
- *
- * @param array<int,array{role:string,content:string}> $messages
- * @param array<string,mixed> $extra
- * @return array{ok:bool,reply?:string,actions?:array<int,array{label:string,url:string}>,model?:string,code?:string,error?:string}
- */
-function ai_chat_assistant(array $messages, array $extra = []): array
+/** Parse respons teks mentah asisten (strip <think>, ekstrak JSON opsional atau [[ACTIONS:...]]). */
+function _ai_parse_assistant_reply(string $rawContent, string $model): array
 {
-    $model = _ai_active_chat_model();
-    $body  = array_merge([
-        'model'       => $model,
-        'messages'    => $messages,
-        'temperature' => 0.2,
-    ], $extra);
-
-    $res = _ai_post_chat_completions($body, 45, 10);
-    if (!$res['ok']) {
-        return $res;
-    }
-
-    $cleaned = ai_strip_reasoning((string) $res['content']);
+    $cleaned = ai_strip_reasoning($rawContent);
     $jsonCandidate = $cleaned;
     if (preg_match('/```(?:json)?\s*(\{[\s\S]*\})\s*```/i', $cleaned, $m)) {
         $jsonCandidate = trim($m[1]);
@@ -270,18 +346,15 @@ function ai_chat_assistant(array $messages, array $extra = []): array
         $reply = trim($parsed['reply']);
         if (!empty($parsed['actions']) && is_array($parsed['actions'])) {
             foreach ($parsed['actions'] as $act) {
-                if (!is_array($act)) {
-                    continue;
-                }
-                $lbl = trim((string) ($act['label'] ?? ''));
-                $url = trim((string) ($act['url'] ?? ''));
-                if ($lbl !== '' && $url !== '') {
+                if (is_array($act) && !empty($act['url'])) {
+                    $lbl = trim((string) ($act['label'] ?? ''));
+                    $url = trim((string) $act['url']);
                     $actions[] = ['label' => $lbl, 'url' => $url];
                 }
             }
         }
     } else {
-        $ext = ai_extract_action_marker($cleaned);
+        $ext     = ai_extract_action_marker($cleaned);
         $reply   = $ext['reply'];
         $actions = $ext['actions'];
     }
@@ -299,25 +372,87 @@ function ai_chat_assistant(array $messages, array $extra = []): array
 }
 
 /**
- * Streaming SSE dari endpoint OpenAI-compatible / 9router.
- * Menyaring <think>...</think>, [[ACTIONS:...]], serta penanda sensitif secara inkremental
- * sebelum memanggil $onDelta(string $chunk).
+ * Panggil AI Assistant multi-turn (utama 9router -> cadangan DeepSeek bila gagal/timeout).
  *
+ * @param array<int,array{role:string,content:string}> $messages
+ * @param array<string,mixed> $extra
+ * @return array{ok:bool,reply?:string,actions?:array<int,array{label:string,url:string}>,model?:string,code?:string,error?:string}
+ */
+function ai_chat_assistant(array $messages, array $extra = []): array
+{
+    $providers = _ai_provider_configs('chat');
+    if (!$providers) {
+        return [
+            'ok'    => false,
+            'code'  => 'NOT_CONFIGURED',
+            'error' => 'AI belum dikonfigurasi (AI_BASE_URL / AI_API_KEY / AI_MODEL).',
+        ];
+    }
+
+    $lastErr = ['ok' => false, 'code' => 'UNREACHABLE', 'error' => 'Tidak dapat menghubungi server AI.'];
+    $total   = count($providers);
+
+    foreach ($providers as $idx => $prov) {
+        $isLast  = ($idx === $total - 1);
+        $connSec = $isLast ? 10 : 5;
+        $readSec = $isLast ? 45 : 25;
+
+        $body = array_merge([
+            'model'       => $prov['model'],
+            'messages'    => $messages,
+            'temperature' => 0.2,
+        ], $extra, ['model' => $prov['model']]);
+
+        $res = _ai_post_chat_completions($body, $readSec, $connSec, $prov);
+        if (!$res['ok']) {
+            $lastErr = $res;
+            if (!$isLast) {
+                error_log("ai_chat_assistant: failover dari {$prov['name']} ({$res['code']}) ke provider cadangan.");
+            }
+            continue;
+        }
+
+        $parsedRes = _ai_parse_assistant_reply((string) $res['content'], $prov['model']);
+        if ($parsedRes['ok']) {
+            return $parsedRes;
+        }
+        $lastErr = $parsedRes;
+        if (!$isLast) {
+            error_log("ai_chat_assistant: failover dari {$prov['name']} ({$parsedRes['code']}) ke provider cadangan.");
+        }
+    }
+
+    return $lastErr;
+}
+
+/**
+ * Eksekusi SSE stream terhadap 1 provider; mengembalikan flag `emitted` agar caller
+ * tahu aman melakukan failover atau sudah ada token terkirim ke client.
+ *
+ * @param array{name:string,base:string,key:string,model:string} $provider
  * @param array<int,array{role:string,content:string}> $messages
  * @param callable(string):void $onDelta
  * @param array<string,mixed> $extra
- * @return array{ok:bool,reply?:string,actions?:array<int,array{label:string,url:string}>,code?:string,error?:string}
+ * @return array{ok:bool,emitted?:bool,reply?:string,actions?:array<int,array{label:string,url:string}>,model?:string,code?:string,error?:string}
  */
-function ai_chat_assistant_stream(array $messages, callable $onDelta, array $extra = []): array
-{
-    $key   = defined('AI_API_KEY') ? (string) AI_API_KEY : '';
-    $base  = defined('AI_BASE_URL') ? rtrim((string) AI_BASE_URL, '/') : '';
-    $model = _ai_active_chat_model();
+function _ai_stream_single_provider(
+    array $provider,
+    array $messages,
+    callable $onDelta,
+    array $extra = [],
+    int $timeout = 60,
+    int $connectTimeout = 10
+): array {
+    $key     = (string) ($provider['key'] ?? '');
+    $base    = _ai_normalize_base_url((string) ($provider['base'] ?? ''));
+    $model   = (string) ($provider['model'] ?? '');
+    $provTag = (string) ($provider['name'] ?? 'provider');
+
     if ($key === '' || $base === '' || $model === '') {
-        return ['ok' => false, 'code' => 'NOT_CONFIGURED', 'error' => 'AI belum dikonfigurasi.'];
+        return ['ok' => false, 'emitted' => false, 'code' => 'NOT_CONFIGURED', 'error' => 'AI belum dikonfigurasi.'];
     }
     if (!function_exists('curl_init')) {
-        return ['ok' => false, 'code' => 'NO_CURL', 'error' => 'Ekstensi curl tidak tersedia.'];
+        return ['ok' => false, 'emitted' => false, 'code' => 'NO_CURL', 'error' => 'Ekstensi curl tidak tersedia.'];
     }
 
     $body = array_merge([
@@ -325,17 +460,17 @@ function ai_chat_assistant_stream(array $messages, callable $onDelta, array $ext
         'messages'    => $messages,
         'temperature' => 0.2,
         'stream'      => true,
-    ], $extra);
+    ], $extra, ['model' => $model, 'stream' => true]);
     $payload = json_encode($body, JSON_UNESCAPED_UNICODE);
 
-    $httpCode  = 0;
-    $sseBuf    = '';
-    $errBody   = '';
-    $fullRaw   = '';
-    $pending   = '';
-    $inThink   = false;
-    $inActions = false;
-    $emittedAny = false;
+    $httpCode       = 0;
+    $sseBuf         = '';
+    $errBody        = '';
+    $fullRaw        = '';
+    $pending        = '';
+    $inThink        = false;
+    $inActions      = false;
+    $emittedAny     = false;
     $suppressStream = false;
 
     $emitSafe = static function (string $chunk) use (&$emittedAny, &$suppressStream, $onDelta): void {
@@ -371,7 +506,6 @@ function ai_chat_assistant_stream(array $messages, callable $onDelta, array $ext
             }
 
             if (!$emittedAny && str_starts_with(ltrim($pending), '{')) {
-                // Model membalas JSON: tahan sampai akhir agar kurung kurawal mentah tidak tampil
                 $suppressStream = true;
                 break;
             }
@@ -407,12 +541,11 @@ function ai_chat_assistant_stream(array $messages, callable $onDelta, array $ext
                 break;
             }
 
-            // Tahan lookahead 20 karakter untuk mencegah tag terbelah atau penanda sensitif bocor saat stream
             $len = mb_strlen($pending, 'UTF-8');
             if ($len <= 20) {
                 break;
             }
-            $safe = mb_substr($pending, 0, $len - 20, 'UTF-8');
+            $safe    = mb_substr($pending, 0, $len - 20, 'UTF-8');
             $pending = mb_substr($pending, $len - 20, null, 'UTF-8');
             $emitSafe($safe);
             break;
@@ -429,8 +562,8 @@ function ai_chat_assistant_stream(array $messages, callable $onDelta, array $ext
             'Authorization: Bearer ' . $key,
         ],
         CURLOPT_POSTFIELDS     => $payload,
-        CURLOPT_TIMEOUT        => 60,
-        CURLOPT_CONNECTTIMEOUT => 10,
+        CURLOPT_TIMEOUT        => $timeout,
+        CURLOPT_CONNECTTIMEOUT => $connectTimeout,
         CURLOPT_HEADERFUNCTION => static function ($ch, string $hdr) use (&$httpCode): int {
             if (preg_match('#^HTTP/\S+\s+(\d{3})#', $hdr, $m)) {
                 $httpCode = (int) $m[1];
@@ -445,7 +578,7 @@ function ai_chat_assistant_stream(array $messages, callable $onDelta, array $ext
             }
             $sseBuf .= $data;
             while (($nl = strpos($sseBuf, "\n")) !== false) {
-                $line = trim(substr($sseBuf, 0, $nl));
+                $line   = trim(substr($sseBuf, 0, $nl));
                 $sseBuf = substr($sseBuf, $nl + 1);
                 if ($line === '' || !str_starts_with($line, 'data:')) {
                     continue;
@@ -468,8 +601,8 @@ function ai_chat_assistant_stream(array $messages, callable $onDelta, array $ext
         },
     ]);
 
-    $ok = curl_exec($ch);
-    $curlErr = curl_error($ch);
+    $ok        = curl_exec($ch);
+    $curlErr   = curl_error($ch);
     $finalCode = (int) curl_getinfo($ch, CURLINFO_RESPONSE_CODE);
     curl_close($ch);
     if ($finalCode > 0) {
@@ -477,20 +610,19 @@ function ai_chat_assistant_stream(array $messages, callable $onDelta, array $ext
     }
 
     if ($ok === false && $fullRaw === '') {
-        error_log('ai_chat_stream: curl error: ' . $curlErr);
-        return ['ok' => false, 'code' => 'UNREACHABLE', 'error' => 'Tidak dapat menghubungi server AI.'];
+        error_log("ai_chat_stream [{$provTag}]: curl error: " . $curlErr);
+        return ['ok' => false, 'emitted' => $emittedAny, 'code' => 'UNREACHABLE', 'error' => 'Tidak dapat menghubungi server AI.'];
     }
     if ($httpCode !== 200) {
-        error_log('ai_chat_stream: HTTP ' . $httpCode . ' body: ' . substr($errBody, 0, 300));
-        return ['ok' => false, 'code' => 'HTTP_' . $httpCode, 'error' => 'Server AI balas HTTP ' . $httpCode . '.'];
+        error_log("ai_chat_stream [{$provTag}]: HTTP " . $httpCode . ' body: ' . substr($errBody, 0, 300));
+        return ['ok' => false, 'emitted' => $emittedAny, 'code' => 'HTTP_' . $httpCode, 'error' => 'Server AI balas HTTP ' . $httpCode . '.'];
     }
 
-    // Proses sisa buffer SSE jika ada tanpa trailing newline
     if (trim($sseBuf) !== '' && str_starts_with(trim($sseBuf), 'data:')) {
         $jsonStr = trim(substr(trim($sseBuf), 5));
         if ($jsonStr !== '' && $jsonStr !== '[DONE]') {
             $chunk = json_decode($jsonStr, true);
-            $delta = is_array($chunk) ? ($chunk['choices'][0]['delta']['content'] ?? null) : null;
+            $delta = is_array($chunk) ? ($chunk['choices'][0]['delta']['content'] ?? ($chunk['choices'][0]['message']['content'] ?? null)) : null;
             if (is_string($delta) && $delta !== '') {
                 $fullRaw .= $delta;
                 $processToken($delta);
@@ -503,40 +635,50 @@ function ai_chat_assistant_stream(array $messages, callable $onDelta, array $ext
         $pending = '';
     }
 
-    // Parse hasil lengkap akhir secara ketat
-    $cleaned = ai_strip_reasoning($fullRaw);
-    $parsed  = json_decode(preg_replace('/^```(?:json)?\s*|\s*```$/', '', $cleaned), true);
-    $reply   = $cleaned;
-    $actions = [];
+    $parsed = _ai_parse_assistant_reply($fullRaw, $model);
+    $parsed['emitted'] = $emittedAny;
+    return $parsed;
+}
 
-    if (is_array($parsed) && isset($parsed['reply']) && is_string($parsed['reply'])) {
-        $reply = trim($parsed['reply']);
-        if (!empty($parsed['actions']) && is_array($parsed['actions'])) {
-            foreach ($parsed['actions'] as $act) {
-                if (is_array($act) && !empty($act['url'])) {
-                    $actions[] = [
-                        'label' => trim((string) ($act['label'] ?? '')),
-                        'url'   => trim((string) $act['url']),
-                    ];
-                }
-            }
+/**
+ * Streaming SSE dari endpoint OpenAI-compatible (utama 9router -> cadangan DeepSeek).
+ * Menyaring <think>...</think>, [[ACTIONS:...]], serta penanda sensitif secara inkremental
+ * sebelum memanggil $onDelta(string $chunk).
+ *
+ * @param array<int,array{role:string,content:string}> $messages
+ * @param callable(string):void $onDelta
+ * @param array<string,mixed> $extra
+ * @return array{ok:bool,reply?:string,actions?:array<int,array{label:string,url:string}>,model?:string,code?:string,error?:string}
+ */
+function ai_chat_assistant_stream(array $messages, callable $onDelta, array $extra = []): array
+{
+    $providers = _ai_provider_configs('chat');
+    if (!$providers) {
+        return ['ok' => false, 'code' => 'NOT_CONFIGURED', 'error' => 'AI belum dikonfigurasi.'];
+    }
+
+    $lastErr = ['ok' => false, 'code' => 'UNREACHABLE', 'error' => 'Tidak dapat menghubungi server AI.'];
+    $total   = count($providers);
+
+    foreach ($providers as $idx => $prov) {
+        $isLast  = ($idx === $total - 1);
+        $connSec = $isLast ? 10 : 5;
+        $readSec = $isLast ? 60 : 35;
+
+        $res = _ai_stream_single_provider($prov, $messages, $onDelta, $extra, $readSec, $connSec);
+        if (!empty($res['ok'])) {
+            unset($res['emitted']);
+            return $res;
         }
-    } else {
-        $ext     = ai_extract_action_marker($cleaned);
-        $reply   = $ext['reply'];
-        $actions = $ext['actions'];
+        $lastErr = $res;
+        if (!empty($res['emitted']) || $isLast) {
+            break;
+        }
+        error_log("ai_chat_assistant_stream: failover dari {$prov['name']} ({$res['code']}) ke provider cadangan.");
     }
 
-    if ($reply === '') {
-        return ['ok' => false, 'code' => 'EMPTY_REPLY', 'error' => 'Model mengembalikan balasan kosong.'];
-    }
-
-    return [
-        'ok'      => true,
-        'reply'   => $reply,
-        'actions' => $actions,
-        'model'   => $model,
-    ];
+    unset($lastErr['emitted']);
+    return $lastErr;
 }
 
 /**

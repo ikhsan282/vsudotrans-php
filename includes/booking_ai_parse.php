@@ -539,7 +539,7 @@ function booking_ai_parse_handle(string $mode = 'travel'): void
             'pickup_address' => 500, 'delivery_address' => 500, 'total_price' => 15, 'note' => 500,
         ];
 
-    $aiConfigured = defined('AI_API_KEY') && AI_API_KEY !== '' && defined('AI_BASE_URL') && AI_BASE_URL !== '' && defined('AI_MODEL') && AI_MODEL !== '';
+    $aiConfigured = ai_has_configured_provider('json');
     $rawCandidate = [];
     $usedAi = false;
 

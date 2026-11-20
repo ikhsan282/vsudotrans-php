@@ -64,6 +64,14 @@ defined('AI_API_KEY')  || define('AI_API_KEY', getenv('VSUDO_AI_API_KEY') ?: (ge
 defined('AI_MODEL')    || define('AI_MODEL', getenv('VSUDO_AI_MODEL') ?: 'ikhsan-reason');
 defined('AI_CHAT_MODEL') || define('AI_CHAT_MODEL', getenv('VSUDO_AI_CHAT_MODEL') ?: AI_MODEL);
 
+// --- AI Cadangan (DeepSeek Official API, OpenAI-compatible) -----------
+// Aktif otomatis saat 9router utama gagal/timeout/tidak merespons.
+// Isi key di .env: VSUDO_AI_FALLBACK_API_KEY (atau DEEPSEEK_API_KEY).
+defined('AI_FALLBACK_BASE_URL')   || define('AI_FALLBACK_BASE_URL', getenv('VSUDO_AI_FALLBACK_BASE_URL') ?: (getenv('DEEPSEEK_BASE_URL') ?: 'https://api.deepseek.com/v1'));
+defined('AI_FALLBACK_API_KEY')    || define('AI_FALLBACK_API_KEY', getenv('VSUDO_AI_FALLBACK_API_KEY') ?: (getenv('DEEPSEEK_API_KEY') ?: ''));
+defined('AI_FALLBACK_MODEL')      || define('AI_FALLBACK_MODEL', getenv('VSUDO_AI_FALLBACK_MODEL') ?: (getenv('DEEPSEEK_MODEL') ?: 'deepseek-flash'));
+defined('AI_FALLBACK_CHAT_MODEL') || define('AI_FALLBACK_CHAT_MODEL', getenv('VSUDO_AI_FALLBACK_CHAT_MODEL') ?: AI_FALLBACK_MODEL);
+
 // --- Azure Blob Storage ----------------------------------------------
 defined('BLOB_STORAGE_CONNECTION_STRING') || define('BLOB_STORAGE_CONNECTION_STRING', getenv('BLOB_STORAGE_CONNECTION_STRING') ?: '');
 defined('BLOB_STORAGE_CONTAINER')         || define('BLOB_STORAGE_CONTAINER', getenv('BLOB_STORAGE_CONTAINER') ?: 'vsudotrans');
