@@ -152,10 +152,6 @@ if ($sbInitials === '') {
            onerror="this.onerror=null;this.src='<?= e($default_brand_logo) ?>';"
            alt="<?= e($activeName ?? APP_NAME) ?>" class="sidebar-logo">
     </div>
-    <div class="sidebar-tenant-badge text-truncate mt-2" title="<?= e($activeName ?? 'Semua Perusahaan') ?>">
-      <span class="sidebar-tenant-dot" aria-hidden="true"></span>
-      <?php if (!empty($activeCode)): ?><span class="fw-bold"><?= e($activeCode) ?></span> &middot; <?php endif; ?><?= e(!empty($activeName) ? $activeName : 'Semua Perusahaan') ?>
-    </div>
   </a>
 
   <div class="nav-scroll">
