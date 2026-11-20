@@ -907,6 +907,22 @@ document.addEventListener('DOMContentLoaded', function () {
         onCityChange: function () { routeCtrl.lookup(false); }
     });
 
+    BookingErp.initPassengerLastLocation({
+        appUrl: appUrl,
+        companyId: companyId,
+        bookingType: 'travel',
+        passengerSelectEl: passEl,
+        pickupProvinceEl: pProvEl,
+        pickupCityEl: pCityEl,
+        pickupDistrictEl: pDistEl,
+        pickupAddressEl: document.querySelector('#formTravelBooking textarea[name="pickup_address"]'),
+        deliveryProvinceEl: dProvEl,
+        deliveryCityEl: dCityEl,
+        deliveryDistrictEl: dDistEl,
+        deliveryAddressEl: document.querySelector('#formTravelBooking textarea[name="delivery_address"]'),
+        onApplied: function () { routeCtrl.lookup(false); }
+    });
+
     routeCtrl.lookup(false);
 
     // Quick-Add Pelanggan Baru

@@ -143,6 +143,12 @@ $isPayActive   = ($activeTab === 'payment');
                             <i class="bi bi-qr-code-scan me-1"></i>Simpan &amp; Bayar QRIS
                         </button>
                     <?php endif; ?>
+                    <button type="button" class="rnt-header-action" id="btnQuickPayDp50" title="Isi otomatis nominal Down Payment 50% dari total harga">
+                        <i class="bi bi-percent me-1"></i>Isi DP 50%
+                    </button>
+                    <button type="button" class="rnt-header-action" id="btnQuickPayFull" title="Isi otomatis sisa tagihan lunas (100%)">
+                        <i class="bi bi-cash-coin me-1"></i>Isi Lunas
+                    </button>
                     <button type="button" class="rnt-header-action" id="btnAddPayRow">
                         <i class="bi bi-plus-lg me-1"></i>Tambah Pembayaran Manual
                     </button>

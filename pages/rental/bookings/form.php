@@ -400,6 +400,12 @@ require __DIR__ . '/../../../includes/header.php';
         </div>
     </div>
 
+    <?php
+    $ai_endpoint    = APP_URL . '/pages/rental/bookings/ai_parse.php';
+    $ai_placeholder = 'Contoh: sewa 2 hari mulai besok jam 07:00 jemput Cipondoh ke Bandung, pelanggan Budi, harga 2,5jt';
+    require __DIR__ . '/../../../includes/ai_panel.php';
+    ?>
+
     <!-- ERP Window Container -->
     <div class="erp-window-card">
         <!-- 5 SUB-TABS -->
@@ -871,6 +877,12 @@ require __DIR__ . '/../../../includes/header.php';
                                     <i class="bi bi-qr-code-scan me-1"></i>Simpan &amp; Bayar QRIS
                                 </button>
                             <?php endif; ?>
+                            <button type="button" class="rnt-header-action" id="btnQuickPayDp50" title="Isi nominal 50% dari total harga sewa sebagai DP">
+                                <i class="bi bi-percent me-1"></i>Isi DP 50%
+                            </button>
+                            <button type="button" class="rnt-header-action" id="btnQuickPayFull" title="Isi penuh sisa tagihan">
+                                <i class="bi bi-cash-coin me-1"></i>Isi Lunas
+                            </button>
                             <button type="button" class="rnt-header-action" id="btnAddPayRow">
                                 <i class="bi bi-plus-lg me-1"></i>Tambah Pembayaran Manual
                             </button>
@@ -1041,6 +1053,7 @@ require __DIR__ . '/../../../includes/header.php';
     </div>
 </div>
 
+<script src="<?= e(APP_URL) ?>/assets/js/booking_erp.js?v=<?= @filemtime(__DIR__ . '/../../../assets/js/booking_erp.js') ?: time() ?>"></script>
 <script>
 document.addEventListener('DOMContentLoaded', function () {
     // Helper format & parse rupiah standar Indonesia (delegasi ke global app.js agar aman dari overflow)
@@ -1867,6 +1880,7 @@ document.addEventListener('DOMContentLoaded', function () {
         if (newDateInp && typeof initFlatpickr === 'function') initFlatpickr(newDateInp);
         bindPayRow(tr);
         recalcPayTotals();
+        return tr;
     }
 
     if (payTbody) {
@@ -1885,6 +1899,33 @@ document.addEventListener('DOMContentLoaded', function () {
                 recalcPayTotals();
             }
         });
+    }
+    if (typeof BookingErp !== 'undefined') {
+        if (typeof BookingErp.bindQuickPayButtons === 'function') {
+            BookingErp.bindQuickPayButtons({
+                tbody: payTbody,
+                getBillTotal: function () { return parseRupiah(priceHidden ? priceHidden.value : '0'); },
+                recalc: recalcPayTotals,
+                addRow: addPayRow,
+                isDetailMode: false
+            });
+        }
+        if (typeof BookingErp.initPassengerLastLocation === 'function') {
+            BookingErp.initPassengerLastLocation({
+                appUrl: <?= json_encode(APP_URL) ?>,
+                companyId: <?= (int) $cid ?>,
+                bookingType: 'rental',
+                passengerSelectEl: document.getElementById('select_passenger_id'),
+                pickupProvinceEl: document.getElementById('rental_pickup_province'),
+                pickupCityEl: document.getElementById('rental_pickup_city'),
+                pickupDistrictEl: document.getElementById('rental_pickup_district'),
+                pickupAddressEl: document.querySelector('#formRentalBooking textarea[name="pickup_address"]'),
+                deliveryProvinceEl: document.getElementById('rental_delivery_province'),
+                deliveryCityEl: document.getElementById('rental_delivery_city'),
+                deliveryDistrictEl: document.getElementById('rental_delivery_district'),
+                deliveryAddressEl: document.querySelector('#formRentalBooking textarea[name="delivery_address"]')
+            });
+        }
     }
     var btnSaveQris = document.getElementById('btnSaveAndPayQris');
     if (btnSaveQris) {

@@ -773,6 +773,14 @@
       });
     }
 
+    bindQuickPayButtons({
+      tbody: tbody,
+      getBillTotal: getExpectedBillTotal,
+      recalc: recalcPayTotals,
+      addRow: function () { return addPayRow('Down Payment (DP)', 'Transfer', todayIso, 0); },
+      isDetailMode: isDetailMode
+    });
+
     return {
       recalcPayTotals: recalcPayTotals,
       addPayRow: addPayRow,
@@ -782,6 +790,81 @@
       getValidationState: getValidationState,
       setInvoiceTotal: setInvoiceTotal
     };
+  }
+
+  function bindQuickPayButtons(opts) {
+    const cfg = opts || {};
+    const dpBtn = document.getElementById('btnQuickPayDp50');
+    const fullBtn = document.getElementById('btnQuickPayFull');
+    if (!dpBtn && !fullBtn) return;
+
+    function applyPreset(kind) {
+      const tbody = cfg.tbody || document.getElementById('payTableBody');
+      if (!tbody) return;
+      const billTotal = Math.max(0, Math.round(typeof cfg.getBillTotal === 'function' ? cfg.getBillTotal() : 0));
+      if (billTotal <= 0) {
+        const priceEl = document.getElementById('totalPriceDisplay') || document.getElementById('rental_price_display');
+        if (priceEl && typeof priceEl.focus === 'function') priceEl.focus();
+        return;
+      }
+
+      const allRows = Array.from(tbody.querySelectorAll('tr.pay-row'));
+      let targetRow = null;
+      for (let i = allRows.length - 1; i >= 0; i--) {
+        const disp = allRows[i].querySelector('.pay-amt-display');
+        if (disp && !disp.readOnly) {
+          targetRow = allRows[i];
+          break;
+        }
+      }
+
+      if (targetRow) {
+        const curVal = parseRp((targetRow.querySelector('.pay-amt-value') || {}).value || '0');
+        let allSum = 0;
+        allRows.forEach(function (tr) {
+          allSum += parseRp((tr.querySelector('.pay-amt-value') || {}).value || '0');
+        });
+        if (cfg.isDetailMode && curVal > 0 && kind === 'full' && allSum < billTotal && typeof cfg.addRow === 'function') {
+          targetRow = cfg.addRow();
+        }
+      } else if (typeof cfg.addRow === 'function') {
+        targetRow = cfg.addRow();
+      }
+      if (!targetRow) return;
+
+      let otherPaid = 0;
+      tbody.querySelectorAll('tr.pay-row').forEach(function (tr) {
+        if (tr === targetRow) return;
+        otherPaid += parseRp((tr.querySelector('.pay-amt-value') || {}).value || '0');
+      });
+
+      const remaining = Math.max(0, Math.round(billTotal - otherPaid));
+      const nextAmt = kind === 'dp50'
+        ? Math.max(0, Math.min(Math.round(billTotal * 0.5), remaining))
+        : remaining;
+
+      const typeSel = targetRow.querySelector('.pay-type-select');
+      if (typeSel) {
+        typeSel.value = kind === 'dp50'
+          ? 'Down Payment (DP)'
+          : (otherPaid > 0 ? 'Pelunasan' : 'Pembayaran Penuh (Full)');
+      }
+
+      const hid = targetRow.querySelector('.pay-amt-value');
+      const disp = targetRow.querySelector('.pay-amt-display');
+      if (hid) hid.value = String(nextAmt);
+      if (disp) disp.value = fmtRp(nextAmt) || '0';
+      if (typeof cfg.recalc === 'function') cfg.recalc();
+    }
+
+    if (dpBtn && dpBtn.dataset.qpBound !== '1') {
+      dpBtn.dataset.qpBound = '1';
+      dpBtn.addEventListener('click', function () { applyPreset('dp50'); });
+    }
+    if (fullBtn && fullBtn.dataset.qpBound !== '1') {
+      fullBtn.dataset.qpBound = '1';
+      fullBtn.addEventListener('click', function () { applyPreset('full'); });
+    }
   }
 
   function initQrisController(opts) {
@@ -1617,6 +1700,142 @@
     });
   }
 
+  function initPassengerLastLocation(opts) {
+    const cfg = opts || {};
+    const passEl = cfg.passengerSelectEl;
+    if (!passEl) return;
+
+    const fieldWrap = passEl.closest('.rnt-field') || passEl.parentNode;
+    let hintEl = fieldWrap ? fieldWrap.querySelector('.vst-pax-last-loc') : null;
+    if (!hintEl && fieldWrap) {
+      hintEl = document.createElement('div');
+      hintEl.className = 'vst-pax-last-loc form-text small mt-1 d-none';
+      fieldWrap.appendChild(hintEl);
+    }
+
+    let lastData = null;
+    let lastPid = '';
+    let reqSeq = 0;
+
+    function setGeoField(el, val, label) {
+      if (!el || !val) return;
+      const sVal = String(val);
+      if (el.tomselect) {
+        if (!el.tomselect.options[sVal]) {
+          el.tomselect.addOption({ value: sVal, id: sVal, text: label || sVal });
+        }
+        if (typeof window.setTsValueSilent === 'function') {
+          window.setTsValueSilent(el, sVal);
+        } else {
+          el.tomselect.setValue(sVal, true);
+        }
+      } else {
+        if (!Array.from(el.options || []).some(function (o) { return String(o.value) === sVal; })) {
+          el.add(new Option(label || sVal, sVal));
+        }
+        el.value = sVal;
+      }
+    }
+
+    function applySide(sideData, side) {
+      if (!sideData) return;
+      const provEl = side === 'pickup' ? cfg.pickupProvinceEl : cfg.deliveryProvinceEl;
+      const cityEl = side === 'pickup' ? cfg.pickupCityEl : cfg.deliveryCityEl;
+      const distEl = side === 'pickup' ? cfg.pickupDistrictEl : cfg.deliveryDistrictEl;
+      const addrEl = side === 'pickup' ? cfg.pickupAddressEl : cfg.deliveryAddressEl;
+      setGeoField(provEl, sideData.province_id, sideData.province_name);
+      setGeoField(cityEl, sideData.city_id, sideData.city_name);
+      setGeoField(distEl, sideData.district_id, sideData.district_name);
+      if (addrEl && sideData.address) {
+        addrEl.value = sideData.address;
+      }
+      if (typeof cfg.onApplied === 'function') cfg.onApplied();
+    }
+
+    function renderHint(autoFilledPickup) {
+      if (!hintEl || !lastData || !lastData.found) return;
+      const doc = escHtml(lastData.doc_no || '-');
+      const pkOk = lastData.pickup && (lastData.pickup.district_id > 0 || lastData.pickup.address);
+      const dlOk = lastData.delivery && (lastData.delivery.district_id > 0 || lastData.delivery.address);
+      const parts = [];
+      if (autoFilledPickup) {
+        parts.push('<i class="bi bi-magic text-primary me-1"></i>Jemput diisi otomatis dari riwayat (<code>' + doc + '</code>)');
+        if (dlOk) {
+          parts.push('<button type="button" class="btn btn-link btn-sm p-0 align-baseline text-decoration-none" data-pax-act="fill-delivery">Isi Tujuan Juga</button>');
+        }
+        if (pkOk || dlOk) {
+          parts.push('<button type="button" class="btn btn-link btn-sm p-0 align-baseline text-decoration-none" data-pax-act="swap">Tukar Jemput↔Tujuan</button>');
+        }
+      } else {
+        parts.push('<i class="bi bi-clock-history text-secondary me-1"></i>Riwayat terakhir (<code>' + doc + '</code>):');
+        if (pkOk) {
+          parts.push('<button type="button" class="btn btn-link btn-sm p-0 align-baseline text-decoration-none" data-pax-act="fill-pickup">Isi Jemput</button>');
+        }
+        if (dlOk) {
+          parts.push('<button type="button" class="btn btn-link btn-sm p-0 align-baseline text-decoration-none" data-pax-act="fill-delivery">Isi Tujuan</button>');
+        }
+      }
+      hintEl.innerHTML = parts.join(' &middot; ');
+      hintEl.classList.remove('d-none');
+    }
+
+    if (hintEl) {
+      hintEl.addEventListener('click', function (ev) {
+        const btn = ev.target.closest('[data-pax-act]');
+        if (!btn || !lastData || !lastData.found) return;
+        const act = btn.getAttribute('data-pax-act');
+        if (act === 'fill-pickup') {
+          applySide(lastData.pickup, 'pickup');
+        } else if (act === 'fill-delivery') {
+          applySide(lastData.delivery, 'delivery');
+        } else if (act === 'swap') {
+          applySide(lastData.delivery, 'pickup');
+          applySide(lastData.pickup, 'delivery');
+        }
+      });
+    }
+
+    async function onPassengerChanged() {
+      const pid = String(getFieldVal(passEl) || '');
+      if (pid === lastPid) return;
+      lastPid = pid;
+      lastData = null;
+      if (hintEl) {
+        hintEl.classList.add('d-none');
+        hintEl.innerHTML = '';
+      }
+      if (!pid || Number(pid) <= 0) return;
+
+      const seq = ++reqSeq;
+      try {
+        const url = (cfg.appUrl || '') + '/pages/transport/passengers/last_booking.php?passenger_id=' +
+          encodeURIComponent(pid) + '&company_id=' + Number(cfg.companyId || 0) +
+          '&type=' + encodeURIComponent(cfg.bookingType || 'travel');
+        const res = await fetch(url, { credentials: 'same-origin' });
+        if (!res.ok) return;
+        const json = await res.json();
+        if (seq !== reqSeq || !json || !json.found) return;
+        lastData = json;
+
+        const curPkDist = cfg.pickupDistrictEl ? String(getFieldVal(cfg.pickupDistrictEl) || '') : '';
+        const curPkAddr = cfg.pickupAddressEl ? String(cfg.pickupAddressEl.value || '').trim() : '';
+        const pkAvail = json.pickup && (json.pickup.district_id > 0 || json.pickup.city_id > 0 || json.pickup.address);
+        let autoFilled = false;
+        if (!curPkDist && !curPkAddr && pkAvail) {
+          applySide(json.pickup, 'pickup');
+          autoFilled = true;
+        }
+        renderHint(autoFilled);
+      } catch (e) { }
+    }
+
+    if (typeof window.bindTsChange === 'function') {
+      window.bindTsChange(passEl, onPassengerChanged);
+    } else {
+      passEl.addEventListener('change', onPassengerChanged);
+    }
+  }
+
   window.BookingErp = {
     escHtml: escHtml,
     parseRp: parseRp,
@@ -1627,11 +1846,13 @@
     initVehiclePreview: initVehiclePreview,
     initCrewTab: initCrewTab,
     initPaymentTab: initPaymentTab,
+    bindQuickPayButtons: bindQuickPayButtons,
     initQrisController: initQrisController,
     initFormTabValidation: initFormTabValidation,
     initCategoryVehicleFilter: initCategoryVehicleFilter,
     initGeoCascade: initGeoCascade,
     initTravelRouteLookup: initTravelRouteLookup,
+    initPassengerLastLocation: initPassengerLastLocation,
     initQuickPassengerModal: initQuickPassengerModal
   };
 })(window, document);

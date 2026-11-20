@@ -1,13 +1,11 @@
 <?php
 /**
- * Panel "Isi Cepat dengan AI" — include di dalam <form> booking.
- * Harus di-include SETELAH $csrf_token tersedia (header.php me-render csrf_field dengan form).
- * Aman tanpa AI: panel hanya tampil bila AI_API_KEY & AI_BASE_URL terisi.
+ * Panel "Isi Cepat dengan AI" — include di dalam atau tepat di atas <form> booking.
+ * Tersedia otomatis dengan fallback parser lokal bila LLM server belum dikonfigurasi/offline.
  */
-$ai_enabled = defined('AI_API_KEY') && AI_API_KEY !== '' && defined('AI_BASE_URL') && AI_BASE_URL !== ''
-    && defined('AI_MODEL') && AI_MODEL !== '';
-$ai_endpoint = $ai_endpoint ?? ''; // wajib diset sebelum include
-if (!$ai_enabled || $ai_endpoint === '') {
+$ai_endpoint    = $ai_endpoint ?? ''; // wajib diset sebelum include
+$ai_placeholder = $ai_placeholder ?? 'Contoh: besok jam 08:00 jemput Cipondoh ke Bandung, pelanggan Budi, harga 250rb';
+if ($ai_endpoint === '') {
     return;
 }
 ?>
@@ -20,7 +18,7 @@ if (!$ai_enabled || $ai_endpoint === '') {
         <div class="row g-2">
             <div class="col">
                 <input type="text" class="form-control" id="ai-input"
-                       placeholder="Contoh: besok jam 8 pagi ke Bandung, 2 penumpang, jemput Cip fondu" maxlength="1000">
+                       placeholder="<?= e($ai_placeholder) ?>" maxlength="1000">
             </div>
             <div class="col-auto">
                 <button type="button" class="btn btn-outline-primary" id="ai-btn">Proses</button>
@@ -43,8 +41,15 @@ if (!$ai_enabled || $ai_endpoint === '') {
     var list = document.getElementById('ai-preview-list');
     var apply = document.getElementById('ai-apply');
     var cancel = document.getElementById('ai-cancel');
-    var csrfT = document.querySelector('input[name="csrf_token"]');
     var labels = null; // id -> label dari server
+    var geoFields = {
+        pickup_point_province_id: true,
+        pickup_point_city_id: true,
+        pickup_point_district_id: true,
+        delivery_point_province_id: true,
+        delivery_point_city_id: true,
+        delivery_point_district_id: true
+    };
 
     function esc(s) { var d = document.createElement('div'); d.textContent = s == null ? '' : String(s); return d.innerHTML; }
 
@@ -53,10 +58,12 @@ if (!$ai_enabled || $ai_endpoint === '') {
         var map = labels || {};
         var namaF = {
             branch_id: 'Cabang', passenger_id: 'Pelanggan', category_vehicle_id: 'Kategori',
-            vehicle_id: 'Kendaraan', pickup_point_district_id: 'Kecamatan Asal',
-            delivery_point_district_id: 'Kecamatan Tujuan', date: 'Tanggal', start_date: 'Mulai Sewa',
-            end_date: 'Selesai Sewa', time: 'Jam', pickup_address: 'Alamat Jemput',
-            delivery_address: 'Alamat Tujuan', total_price: 'Total Harga', trip: 'Trip (km)', bbm: 'BBM', note: 'Catatan'
+            vehicle_id: 'Kendaraan',
+            pickup_point_province_id: 'Provinsi Asal', pickup_point_city_id: 'Kota/Kab Asal', pickup_point_district_id: 'Kecamatan Asal',
+            delivery_point_province_id: 'Provinsi Tujuan', delivery_point_city_id: 'Kota/Kab Tujuan', delivery_point_district_id: 'Kecamatan Tujuan',
+            date: 'Tanggal', start_date: 'Mulai Sewa', end_date: 'Selesai Sewa', duration_days: 'Durasi (Hari)',
+            time: 'Jam', pickup_address: 'Alamat Jemput', delivery_address: 'Alamat Tujuan',
+            total_price: 'Total Harga', trip: 'Trip (km)', bbm: 'BBM', note: 'Catatan'
         };
         var keys = Object.keys(fields).filter(function (k) { return fields[k] !== '' && fields[k] != null; });
         if (!keys.length) {
@@ -66,6 +73,9 @@ if (!$ai_enabled || $ai_endpoint === '') {
         keys.forEach(function (k) {
             var v = fields[k];
             if (map[k] && map[k][v] !== undefined) v = map[k][v];
+            if ((k === 'total_price' || k === 'bbm') && window.formatRupiah) {
+                v = 'Rp ' + (window.formatRupiah(v) || v);
+            }
             var li = document.createElement('li');
             li.className = 'list-group-item py-1';
             li.innerHTML = '<strong>' + esc(namaF[k] || k) + ':</strong> ' + esc(v);
@@ -80,6 +90,7 @@ if (!$ai_enabled || $ai_endpoint === '') {
         if (!teks) { st.textContent = 'Tulis dulu permintaannya.'; return; }
         btn.disabled = true; prev.classList.add('d-none');
         st.textContent = 'Memproses…';
+        var csrfT = document.querySelector('input[name="csrf_token"]');
         var fd = new FormData();
         fd.append('text', teks);
         if (csrfT) fd.append('csrf_token', csrfT.value);
@@ -99,29 +110,70 @@ if (!$ai_enabled || $ai_endpoint === '') {
 
     apply.addEventListener('click', function () {
         var f = apply.__fields || {};
+        var map = labels || {};
+        var order = [
+            'branch_id', 'passenger_id', 'category_vehicle_id', 'vehicle_id',
+            'pickup_point_province_id', 'pickup_point_city_id', 'pickup_point_district_id',
+            'delivery_point_province_id', 'delivery_point_city_id', 'delivery_point_district_id',
+            'date', 'start_date', 'end_date', 'duration_days', 'time',
+            'trip', 'bbm', 'total_price', 'pickup_address', 'delivery_address', 'note'
+        ];
         Object.keys(f).forEach(function (k) {
+            if (order.indexOf(k) === -1) order.push(k);
+        });
+
+        order.forEach(function (k) {
+            if (!(k in f) || f[k] === '' || f[k] == null) return;
             var el = document.querySelector('[name="' + k + '"]');
-            if (el && f[k] !== '' && f[k] != null) {
-                el.value = f[k];
+            if (!el) return;
+            var sVal = String(f[k]);
+            var label = (map[k] && map[k][f[k]] !== undefined) ? String(map[k][f[k]]) : '';
+
+            if (el.tomselect) {
+                if (!el.tomselect.options[sVal]) {
+                    el.tomselect.addOption({ value: sVal, id: sVal, text: label || sVal });
+                }
+                if (geoFields[k] && typeof window.setTsValueSilent === 'function') {
+                    window.setTsValueSilent(el, sVal);
+                } else {
+                    el.tomselect.setValue(sVal);
+                }
+            } else {
+                if (el.tagName === 'SELECT' && !Array.from(el.options || []).some(function (o) { return String(o.value) === sVal; })) {
+                    el.add(new Option(label || sVal, sVal));
+                }
+                el.value = sVal;
                 if (el._flatpickr) {
-                    el._flatpickr.setDate(String(f[k]), true);
-                } else if (el.tomselect) {
-                    el.tomselect.setValue(String(f[k]));
+                    el._flatpickr.setDate(sVal, true);
                 }
-                if (k === 'total_price') {
-                    var pDisp = document.getElementById('rental_price_display') || document.getElementById('totalPriceDisplay');
-                    if (pDisp) pDisp.value = window.formatRupiah ? window.formatRupiah(f[k]) : f[k];
+            }
+
+            if (k === 'total_price') {
+                var pDisp = document.getElementById('rental_price_display') || document.getElementById('totalPriceDisplay');
+                if (pDisp) {
+                    pDisp.value = window.formatRupiah ? window.formatRupiah(f[k]) : sVal;
+                    pDisp.dispatchEvent(new Event('input', { bubbles: true }));
                 }
-                if (k === 'bbm') {
-                    var bDisp = document.getElementById('crew_bbm_display');
-                    if (bDisp) {
-                        bDisp.value = window.formatRupiah ? window.formatRupiah(f[k]) : f[k];
-                        bDisp.dispatchEvent(new Event('input', { bubbles: true }));
-                    }
+            }
+            if (k === 'bbm') {
+                var bDisp = document.getElementById('crew_bbm_display');
+                if (bDisp) {
+                    bDisp.value = window.formatRupiah ? window.formatRupiah(f[k]) : sVal;
+                    bDisp.dispatchEvent(new Event('input', { bubbles: true }));
                 }
+            }
+            if (!geoFields[k]) {
                 el.dispatchEvent(new Event('change', { bubbles: true }));
             }
         });
+
+        ['pickup_point_district_id', 'delivery_point_district_id'].forEach(function (dk) {
+            var de = document.querySelector('[name="' + dk + '"]');
+            if (de && f[dk]) {
+                de.dispatchEvent(new Event('change', { bubbles: true }));
+            }
+        });
+
         prev.classList.add('d-none');
         st.textContent = 'Form terisi — periksa lalu klik Simpan.';
         window.scrollTo({ top: 0, behavior: 'smooth' });

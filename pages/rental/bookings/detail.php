@@ -1024,6 +1024,12 @@ require __DIR__ . '/../../../includes/header.php';
                                     <i class="bi bi-qr-code me-1"></i>QRIS Belum Aktif
                                 </button>
                                 <?php endif; ?>
+                                <button type="button" class="rnt-header-action" id="btnQuickPayDp50" title="Isi nominal 50% dari total tagihan sebagai DP">
+                                    <i class="bi bi-percent me-1"></i>Isi DP 50%
+                                </button>
+                                <button type="button" class="rnt-header-action" id="btnQuickPayFull" title="Isi penuh sisa tagihan">
+                                    <i class="bi bi-cash-coin me-1"></i>Isi Lunas
+                                </button>
                                 <button type="button" class="rnt-header-action" id="btnAddPayRow">
                                     <i class="bi bi-plus-lg me-1"></i>Tambah Pembayaran Manual
                                 </button>
@@ -1243,6 +1249,7 @@ require __DIR__ . '/../../../includes/header.php';
 
 <?php require __DIR__ . '/../../../includes/qris_modal.php'; ?>
 
+<script src="<?= e(APP_URL) ?>/assets/js/booking_erp.js?v=<?= @filemtime(__DIR__ . '/../../../assets/js/booking_erp.js') ?: time() ?>"></script>
 <script>
 document.addEventListener('DOMContentLoaded', () => {
     const appUrl   = <?= json_encode(APP_URL) ?>;
@@ -2030,6 +2037,7 @@ document.addEventListener('DOMContentLoaded', () => {
         if (newDateInp) initFlatpickr(newDateInp);
         bindPayRow(tr);
         recalcPayTotals();
+        return tr;
     }
 
     if (payTbody) {
@@ -2053,6 +2061,15 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     }
     recalcPayTotals();
+    if (typeof BookingErp !== 'undefined' && typeof BookingErp.bindQuickPayButtons === 'function') {
+        BookingErp.bindQuickPayButtons({
+            tbody: payTbody,
+            getBillTotal: getExpectedInvoiceTotal,
+            recalc: recalcPayTotals,
+            addRow: addPayRow,
+            isDetailMode: true
+        });
+    }
 
     // ==================== QRIS OTOMATIS & AUTO-APPEND ROW ====================
     const qrisBookingId   = <?= (int) $id ?>;

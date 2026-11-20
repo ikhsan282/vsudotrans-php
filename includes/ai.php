@@ -84,15 +84,44 @@ function _ai_post_chat_completions(array $body, int $timeout = 90, int $connectT
         }
     }
 
-    // 9router menempel 'data: [DONE]' di ekor respons non-streaming (artefak SSE).
-    $i = strpos($raw, 'data: [DONE]');
-    if ($i !== false) {
-        $raw = substr($raw, 0, $i);
+    $rawStr = (string) $raw;
+    // 9router kadang mengirim respons dalam bentuk SSE chunk (`data: {"object":"chat.completion.chunk",...}`)
+    // walaupun `stream` false/tidak dikirim. Rangkai ulang delta sebelum fallback ke JSON tunggal.
+    if (str_starts_with(ltrim($rawStr), 'data:')) {
+        $assembled  = '';
+        $parsedAny  = false;
+        foreach (preg_split('/\r?\n/', $rawStr) as $sseLine) {
+            $sseLine = trim($sseLine);
+            if ($sseLine === '' || !str_starts_with($sseLine, 'data:')) {
+                continue;
+            }
+            $dataPayload = trim(substr($sseLine, 5));
+            if ($dataPayload === '' || $dataPayload === '[DONE]') {
+                continue;
+            }
+            $chunk = json_decode($dataPayload, true);
+            if (is_array($chunk)) {
+                $parsedAny = true;
+                $part = $chunk['choices'][0]['delta']['content'] ?? $chunk['choices'][0]['message']['content'] ?? '';
+                if (is_string($part) && $part !== '') {
+                    $assembled .= $part;
+                }
+            }
+        }
+        if ($parsedAny && trim($assembled) !== '') {
+            return ['ok' => true, 'content' => trim($assembled)];
+        }
     }
 
-    $json = json_decode($raw, true);
+    // 9router menempel 'data: [DONE]' di ekor respons non-streaming (artefak SSE).
+    $i = strpos($rawStr, 'data: [DONE]');
+    if ($i !== false) {
+        $rawStr = substr($rawStr, 0, $i);
+    }
+
+    $json = json_decode($rawStr, true);
     if (!is_array($json)) {
-        error_log('ai_chat: respons bukan JSON: ' . substr($raw, 0, 300));
+        error_log('ai_chat: respons bukan JSON: ' . substr($rawStr, 0, 300));
         return ['ok' => false, 'code' => 'BAD_RESPONSE', 'error' => 'Respons server AI tidak valid.'];
     }
     if (!isset($json['choices'][0]['message']['content'])) {
@@ -126,7 +155,7 @@ function ai_strip_reasoning(string $text): string
  * @param array<string,mixed> $extra
  * @return array{ok:bool,data?:array,error?:string}
  */
-function ai_chat_json(array $messages, array $extra = []): array
+function ai_chat_json(array $messages, array $extra = [], int $timeout = 90, int $connectTimeout = 15): array
 {
     $body = array_merge([
         'model'           => defined('AI_MODEL') ? (string) AI_MODEL : '',
@@ -135,7 +164,7 @@ function ai_chat_json(array $messages, array $extra = []): array
         'response_format' => ['type' => 'json_object'],
     ], $extra);
 
-    $res = _ai_post_chat_completions($body, 90, 15);
+    $res = _ai_post_chat_completions($body, $timeout, $connectTimeout);
     if (!$res['ok']) {
         return ['ok' => false, 'error' => $res['error'] ?? 'Gagal memanggil AI.'];
     }
