@@ -33,12 +33,16 @@ function bot_reply(int $status, array $data): never
 }
 
 /** Kirim respons error dan akhiri request. */
-function bot_error(int $status, string $code, string $message): never
+function bot_error(int $status, string $code, string $message, array $details = []): never
 {
     bot_log_request($status);
     http_response_code($status);
+    $err = ['code' => $code, 'message' => $message];
+    if ($details) {
+        $err['details'] = $details;
+    }
     echo json_encode(
-        ['ok' => false, 'error' => ['code' => $code, 'message' => $message]],
+        ['ok' => false, 'error' => $err],
         JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES
     );
     exit;

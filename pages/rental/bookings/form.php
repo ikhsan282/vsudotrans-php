@@ -224,9 +224,27 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $in_passengers,
                 $cat_id_post,
                 $veh_id_post,
-                $crew_emp_ids
+                $crew_emp_ids,
+                'rental'
             );
             $in['category_vehicle_id'] = (string) ($cat_id_post ?? '');
+            $pk_dist_v = resolve_district_id($in['pickup_point_district_id']);
+            $dl_dist_v = resolve_district_id($in['delivery_point_district_id']);
+            $pk_loc_v  = $pk_dist_v > 0 ? (resolve_district_info($pk_dist_v) ?: []) : [];
+            $dl_loc_v  = $dl_dist_v > 0 ? (resolve_district_info($dl_dist_v) ?: []) : [];
+            $pk_city_v = (int) ($pk_loc_v['city_id'] ?? $in['pickup_point_city_id']);
+            $dl_city_v = (int) ($dl_loc_v['city_id'] ?? $in['delivery_point_city_id']);
+            travel_validate_route_price_bounds(
+                $cid,
+                $pk_city_v,
+                $dl_city_v,
+                (int) ($cat_id_post ?? 0),
+                rental_duration_days((string) $in['start_date'], (string) $in['end_date']),
+                (float) $in['total_price'],
+                $pk_dist_v,
+                $dl_dist_v,
+                'rental'
+            );
         } catch (InvalidArgumentException $ex) {
             $err = $ex->getMessage();
         }
@@ -345,7 +363,7 @@ if ($in['branch_id'] === '' && !empty($branches[0]['id'])) {
 }
 $selected_p_ids = array_filter(array_merge([(int) ($in['passenger_id'] ?? 0)], $in_passengers));
 $passengers = opts_passengers($cid, $selected_p_ids, 50);
-$cats = opts_categories($cid, [(int) ($in['category_vehicle_id'] ?? 0)], 200);
+$cats = opts_categories($cid, [(int) ($in['category_vehicle_id'] ?? 0)], 200, 'rental');
 $vehicles = opts_vehicles_detailed(
     $cid,
     [$cid],
@@ -517,9 +535,15 @@ require __DIR__ . '/../../../includes/header.php';
                                 <div class="rnt-row">
                                     <label class="rnt-label">Harga <span class="text-danger">*</span></label>
                                     <div class="rnt-field">
-                                        <input type="text" inputmode="numeric" class="form-control form-control-sm fw-semibold" id="rental_price_display" placeholder="0" value="<?= format_nominal((float) $in['total_price']) ?>">
+                                        <div class="input-group input-group-sm">
+                                            <input type="text" inputmode="numeric" class="form-control form-control-sm fw-semibold" id="rental_price_display" placeholder="0" value="<?= format_nominal((float) $in['total_price']) ?>">
+                                            <button type="button" class="btn btn-outline-primary d-none" id="btn_apply_rental_route_price" title="Terapkan tarif rute &amp; radius kecamatan ke Harga">
+                                                <i class="bi bi-magic"></i>
+                                            </button>
+                                        </div>
                                         <input type="hidden" id="rental_total_price" name="total_price" value="<?= e($in['total_price']) ?>">
                                         <div id="rental_calc_hint" class="form-text small" style="display: none;"></div>
+                                        <div id="rental_route_price_hint" class="small text-muted mt-1" style="line-height: 1.35;"></div>
                                     </div>
                                 </div>
                             </div>
@@ -1124,6 +1148,7 @@ document.addEventListener('DOMContentLoaded', function () {
     var dailyRateInput = document.getElementById('rental_daily_rate');
     var rentalCalcHint = document.getElementById('rental_calc_hint');
     var btnApplyRental = document.getElementById('btn_apply_rental_calc');
+    var rentalRouteCtrl = null;
 
     function formatDateIso(d) {
         var yyyy = d.getFullYear();
@@ -1168,6 +1193,7 @@ document.addEventListener('DOMContentLoaded', function () {
         if (durBadge) durBadge.textContent = diffDays + ' Hari Sewa';
         updateRateHint(diffDays, false);
         checkVehicleAvailability();
+        if (rentalRouteCtrl) rentalRouteCtrl.lookup(false);
     }
 
     function updateEndDateFromDays() {
@@ -1188,6 +1214,7 @@ document.addEventListener('DOMContentLoaded', function () {
         if (durBadge) durBadge.textContent = days + ' Hari Sewa';
         updateRateHint(days, false);
         checkVehicleAvailability();
+        if (rentalRouteCtrl) rentalRouteCtrl.lookup(false);
     }
 
     function initFlatpickr(el, onDateChange) {
@@ -1343,6 +1370,7 @@ document.addEventListener('DOMContentLoaded', function () {
             setTsValueSilent(pProv, String(opt.province_id));
         }
         reloadDistrictOptions(val, 'rental_pickup_district', '');
+        if (rentalRouteCtrl) rentalRouteCtrl.lookup(false);
     });
 
     var dProv = document.getElementById('rental_delivery_province');
@@ -1355,6 +1383,7 @@ document.addEventListener('DOMContentLoaded', function () {
             setTsValueSilent(dProv, String(opt.province_id));
         }
         reloadDistrictOptions(val, 'rental_delivery_district', '');
+        if (rentalRouteCtrl) rentalRouteCtrl.lookup(false);
     });
 
     // 5. Quick-Add Pelanggan Baru
@@ -1799,6 +1828,12 @@ document.addEventListener('DOMContentLoaded', function () {
             disp.classList.toggle('is-invalid', rowOver);
             disp.classList.toggle('text-danger', rowOver);
         });
+        if (typeof BookingErp !== 'undefined' && typeof BookingErp.syncPayActionButtons === 'function') {
+            BookingErp.syncPayActionButtons({
+                billTotal: st.targetTotal,
+                paySum: st.paySum
+            });
+        }
     }
 
     function bindPayRow(tr) {
@@ -1923,8 +1958,32 @@ document.addEventListener('DOMContentLoaded', function () {
                 deliveryProvinceEl: document.getElementById('rental_delivery_province'),
                 deliveryCityEl: document.getElementById('rental_delivery_city'),
                 deliveryDistrictEl: document.getElementById('rental_delivery_district'),
-                deliveryAddressEl: document.querySelector('#formRentalBooking textarea[name="delivery_address"]')
+                deliveryAddressEl: document.querySelector('#formRentalBooking textarea[name="delivery_address"]'),
+                onApplied: function () { if (rentalRouteCtrl) rentalRouteCtrl.lookup(false); }
             });
+        }
+        if (typeof BookingErp.initTravelRouteLookup === 'function') {
+            rentalRouteCtrl = BookingErp.initTravelRouteLookup({
+                appUrl: <?= json_encode(APP_URL) ?>,
+                serviceType: 'rental',
+                lookupUrl: <?= json_encode(APP_URL) ?> + '/pages/travel/rutes/lookup.php',
+                companyId: <?= (int) $cid ?>,
+                pickupCityEl: pCity,
+                deliveryCityEl: dCity,
+                pickupDistrictEl: document.getElementById('rental_pickup_district'),
+                deliveryDistrictEl: document.getElementById('rental_delivery_district'),
+                categoryEl: catSelect,
+                startDateEl: sInput,
+                endDateEl: eInput,
+                durationEl: durInput,
+                hintEl: document.getElementById('rental_route_price_hint'),
+                applyBtnEl: document.getElementById('btn_apply_rental_route_price'),
+                priceDisplayEl: priceDisplay,
+                priceValueEl: priceHidden,
+                autoFillZero: true,
+                onPriceApplied: function () { recalcPayTotals(); }
+            });
+            rentalRouteCtrl.lookup(false);
         }
         if (typeof BookingErp.initAvailabilityChecker === 'function') {
             BookingErp.initAvailabilityChecker({
@@ -1980,6 +2039,18 @@ document.addEventListener('DOMContentLoaded', function () {
                     if (payOverAlert) payOverAlert.scrollIntoView({ behavior: 'smooth', block: 'center' });
                 }, 150);
                 return false;
+            }
+            if (rentalRouteCtrl && typeof rentalRouteCtrl.validateBounds === 'function') {
+                var rRes = rentalRouteCtrl.validateBounds();
+                if (!rRes.valid) {
+                    e.preventDefault();
+                    var detTabBtn = document.querySelector('[data-bs-target="#tab-detail"]');
+                    if (detTabBtn && typeof bootstrap !== 'undefined' && bootstrap.Tab) {
+                        bootstrap.Tab.getOrCreateInstance(detTabBtn).show();
+                    }
+                    setTimeout(function () { if (rRes.focusEl) rRes.focusEl.focus(); }, 150);
+                    return false;
+                }
             }
             if (!this.checkValidity()) {
                 e.preventDefault();

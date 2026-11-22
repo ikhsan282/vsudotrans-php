@@ -12,6 +12,7 @@
  */
 require __DIR__ . '/_bootstrap.php';
 require_once __DIR__ . '/../../includes/payment_gateway.php';
+require_once __DIR__ . '/../../includes/transport_helpers.php';
 
 $ctx     = bot_boot(['POST']);
 $db      = $ctx['db'];
@@ -119,7 +120,13 @@ if (!empty($body['rute_id'])) {
 
 $pickupCityId   = (int) ($body['pickup_city_id'] ?? ($rute['pickup_point_city_id'] ?? 0));
 $deliveryCityId = (int) ($body['delivery_city_id'] ?? ($rute['delivery_point_city_id'] ?? 0));
-$catVehicleId   = !empty($body['category_vehicle_id']) ? (int) $body['category_vehicle_id'] : (!empty($rute['category_vehicle_id']) ? (int) $rute['category_vehicle_id'] : null);
+$catVehicleId   = !empty($body['category_vehicle_id']) ? (int) $body['category_vehicle_id'] : null;
+if ($catVehicleId === null && !empty($rute['category_vehicle_id'])) {
+    $candCat = (int) $rute['category_vehicle_id'];
+    if (category_service_type_for_id($cid, $candCat) === $bType) {
+        $catVehicleId = $candCat;
+    }
+}
 
 // Cari district_id dari city_id bila tidak dikirim eksplisit
 $resolveDistrict = static function (mysqli $db, int $cityId, int $explicitDistId): int {
@@ -147,28 +154,45 @@ if ($pickupDistId <= 0 || $deliveryDistId <= 0) {
     bot_error(422, 'MISSING_LOCATION', 'Data kota/kecamatan jemput & tujuan belum tersedia.');
 }
 
-// Hitung harga total (perhatikan tarif kategori kendaraan & biaya tambahan kecamatan radius)
+$startDate = trim((string) ($body['start_date'] ?? $date));
+$endDate   = trim((string) ($body['end_date'] ?? ($startDate !== '' ? $startDate : $date)));
+if ($startDate !== '' && !preg_match('/^\d{4}-\d{2}-\d{2}$/', $startDate)) {
+    bot_error(400, 'INVALID_DATE', 'Format start_date harus YYYY-MM-DD.');
+}
+if ($endDate !== '' && !preg_match('/^\d{4}-\d{2}-\d{2}$/', $endDate)) {
+    bot_error(400, 'INVALID_DATE', 'Format end_date harus YYYY-MM-DD.');
+}
+$rentalDays = $bType === 'rental'
+    ? rental_duration_days($startDate !== '' ? $startDate : $date, $endDate !== '' ? $endDate : ($startDate !== '' ? $startDate : $date))
+    : 0;
+
+// Hitung harga total (perhatikan tarif kategori, satuan tarif per_seat/per_vehicle/per_package/per_day & biaya radius)
 $ruteTariffPrice = (float) ($rute['price'] ?? 0);
 $radiusExtra     = 0.0;
+$quote           = null;
 if ($rute) {
-    require_once __DIR__ . '/../../includes/transport_helpers.php';
     $quote = rute_calculate_travel_quote(
         $cid,
         $rute,
         $catVehicleId,
         $seats,
-        $bType === 'travel' ? $pickupDistId : 0,
-        $bType === 'travel' ? $deliveryDistId : 0
+        $pickupDistId,
+        $deliveryDistId,
+        $rentalDays
     );
     $ruteTariffPrice = $quote['unit_price'];
-    $radiusExtra     = $bType === 'travel' ? $quote['radius_extra'] : 0.0;
+    $radiusExtra     = (float) ($quote['radius_extra'] ?? 0.0);
 }
+$qtyFactor = $bType === 'rental' ? $rentalDays : $seats;
+$billQty = isset($quote['billable_qty'])
+    ? (int) $quote['billable_qty']
+    : category_pricing_unit_multiplier(category_pricing_unit_for_id($cid, $catVehicleId), $qtyFactor);
 $unitPrice = isset($body['price']) && is_numeric($body['price'])
     ? (float) $body['price']
     : $ruteTariffPrice;
 $totalPrice = isset($body['total_price']) && is_numeric($body['total_price'])
     ? (float) $body['total_price']
-    : round(($unitPrice * $seats) + $radiusExtra, 2);
+    : round(($unitPrice * $billQty) + $radiusExtra, 2);
 
 if ($totalPrice <= 0) {
     bot_error(400, 'INVALID_PRICE', 'Harga rute/booking harus lebih dari Rp 0. Pilih rute yang valid.');
@@ -184,8 +208,8 @@ try {
         'branch_id'                  => $branchId,
         'date'                       => $date,
         'time'                       => $time,
-        'start_date'                 => trim((string) ($body['start_date'] ?? $date)),
-        'end_date'                   => trim((string) ($body['end_date'] ?? $date)),
+        'start_date'                 => $startDate !== '' ? $startDate : $date,
+        'end_date'                   => $endDate !== '' ? $endDate : ($startDate !== '' ? $startDate : $date),
         'trip'                       => (float) ($body['trip'] ?? 1),
         'bbm'                        => 0.0,
         'pickup_address'             => $pickupAddr,

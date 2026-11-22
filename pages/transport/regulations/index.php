@@ -82,10 +82,12 @@ $total = (int) $st->get_result()->fetch_row()[0];
 $st->close();
 
 $p = paginate($total, (int) ($_GET['page'] ?? 1));
+category_service_ensure_schema();
 $st = db()->prepare(
     "SELECT r.*,
             c.code AS company_code, c.name AS company_name,
-            cv.code AS category_code, cv.name AS category_name
+            cv.code AS category_code, cv.name AS category_name,
+            cv.service_type AS category_service_type
        FROM rental_car_regulation_employees r
        JOIN companies c ON c.id = r.company_id
        JOIN category_vehicles cv ON cv.id = r.category_vehicle_id
@@ -118,7 +120,10 @@ if ($rows) {
 $categories = [];
 if ($filter_company_id > 0) {
     $categories = array_map(
-        static fn(array $cv): array => ['id' => (int) $cv['id'], 'label' => (string) ($cv['label'] ?? $cv['name'] ?? '')],
+        static fn(array $cv): array => [
+            'id'    => (int) $cv['id'],
+            'label' => (string) ($cv['name'] ?? '') . ' [' . category_service_type_label((string) ($cv['service_type'] ?? 'travel')) . ']',
+        ],
         opts_categories($filter_company_id, $filter_category_id > 0 ? [$filter_category_id] : [], 200)
     );
 } else {
@@ -126,7 +131,7 @@ if ($filter_company_id > 0) {
     if ($allowedCids) {
         $ph = implode(',', array_fill(0, count($allowedCids), '?'));
         $stCat = db()->prepare(
-            "SELECT cv.id, CONCAT(c.code, ' | ', cv.code, ' - ', cv.name) AS label
+            "SELECT cv.id, CONCAT(c.code, ' | ', cv.code, ' - ', cv.name, ' [', IF(cv.service_type = 'rental', 'Rental', 'Travel'), ']') AS label
                FROM category_vehicles cv
                LEFT JOIN companies c ON c.id = cv.company_id
               WHERE cv.company_id IN ({$ph})
@@ -230,6 +235,8 @@ require __DIR__ . '/../../../includes/header.php';
                             <a class="fw-semibold text-decoration-none" href="<?= e(APP_URL) ?>/pages/transport/regulations/form.php?id=<?= $rid ?>">
                                 <?= e($r['category_code'] . ' - ' . $r['category_name']) ?>
                             </a>
+                            <?php $catSvc = (string) ($r['category_service_type'] ?? 'travel'); ?>
+                            <span class="badge ms-1 <?= $catSvc === 'rental' ? 'bg-warning-subtle text-warning-emphasis border' : 'bg-primary-subtle text-primary border' ?>"><?= e(category_service_type_label($catSvc)) ?></span>
                         </td>
                         <td class="text-center">
                             <span class="badge bg-primary-subtle text-primary border"><?= (int) $r['trip'] ?></span>

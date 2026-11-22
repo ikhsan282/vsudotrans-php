@@ -1,7 +1,7 @@
 <?php
 require_once __DIR__ . '/../../../config/config.php';
-require_permission('travel.view');
-require_once __DIR__ . '/../_helpers.php';
+require_once __DIR__ . '/../../transport/_helpers.php';
+transport_require_view();
 
 $scope = company_filter_scope('r.company_id');
 $filter_company_id = $scope['filter_company_id'];
@@ -12,12 +12,15 @@ $companies         = $scope['companies'];
 $active_cid        = $scope['active_cid'];
 
 rute_ensure_schema();
+category_service_ensure_schema();
 
-$q                  = trim((string) ($_GET['q'] ?? ''));
-$status             = trim((string) ($_GET['status'] ?? ''));
-$filter_pickup_city = max(0, (int) ($_GET['pickup_city_id'] ?? 0));
-$filter_deliv_city  = max(0, (int) ($_GET['delivery_city_id'] ?? 0));
-$filter_category_id = max(0, (int) ($_GET['category_vehicle_id'] ?? 0));
+$q                   = trim((string) ($_GET['q'] ?? ''));
+$status              = trim((string) ($_GET['status'] ?? ''));
+$filter_service_raw  = trim((string) ($_GET['service_type'] ?? ''));
+$filter_service_type = in_array($filter_service_raw, ['travel', 'rental'], true) ? $filter_service_raw : '';
+$filter_pickup_city  = max(0, (int) ($_GET['pickup_city_id'] ?? 0));
+$filter_deliv_city   = max(0, (int) ($_GET['delivery_city_id'] ?? 0));
+$filter_category_id  = max(0, (int) ($_GET['category_vehicle_id'] ?? 0));
 
 if ($q !== '') {
     $q_like = '%' . $q . '%';
@@ -33,6 +36,11 @@ if ($status === '1' || $status === '0') {
     $where .= ' AND r.is_active = ?';
     $types .= 'i';
     $params[] = (int) $status;
+}
+if ($filter_service_type !== '') {
+    $where .= ' AND (EXISTS (SELECT 1 FROM rute_tariffs rt_st JOIN category_vehicles cv_st ON cv_st.id = rt_st.category_vehicle_id WHERE rt_st.rute_id = r.id AND cv_st.service_type = ?) OR EXISTS (SELECT 1 FROM category_vehicles cv_rf WHERE cv_rf.id = r.category_vehicle_id AND cv_rf.service_type = ?))';
+    $types .= 'ss';
+    array_push($params, $filter_service_type, $filter_service_type);
 }
 if ($filter_pickup_city > 0) {
     $where .= ' AND r.pickup_point_city_id = ?';
@@ -150,7 +158,7 @@ if (in_array($export_format, ['xlsx', 'pdf'], true)) {
         ? ['Kode', 'Asal', 'Tujuan', 'Jadwal Keberangkatan', 'Radius Jemput / Antar', 'Daftar Harga', 'Status']
         : ['Kode', 'Asal', 'Tujuan', 'Jadwal Keberangkatan', 'Radius Jemput', 'Radius Antar', 'Daftar Harga', 'Status'];
     grid_export_send(
-        'Daftar Rute Travel',
+        'Daftar Rute & Tarif',
         $headers,
         $row_stream,
         $export_format,
@@ -189,31 +197,41 @@ $delivCityOpts  = opts_cities(null, $filter_deliv_city > 0 ? [$filter_deliv_city
 $catFilterOpts = [];
 if ($filter_company_id > 0) {
     $catFilterOpts = array_map(
-        static fn (array $cv): array => ['id' => (int) $cv['id'], 'label' => (string) ($cv['name'] ?? '')],
-        opts_categories($filter_company_id, $filter_category_id > 0 ? [$filter_category_id] : [], 200)
+        static fn (array $cv): array => [
+            'id'    => (int) $cv['id'],
+            'label' => (string) ($cv['name'] ?? '') . ' [' . category_service_type_label((string) ($cv['service_type'] ?? 'travel')) . ']',
+        ],
+        opts_categories($filter_company_id, $filter_category_id > 0 ? [$filter_category_id] : [], 200, $filter_service_type !== '' ? $filter_service_type : null)
     );
 } else {
     $allowedCids = accessible_company_ids($active_cid ?? 0);
     if ($allowedCids) {
         $phCat = implode(',', array_fill(0, count($allowedCids), '?'));
+        $svcSql = $filter_service_type !== '' ? ' AND (cv.service_type = ? OR cv.id = ?)' : '';
         $stCat = db()->prepare(
-            "SELECT cv.id, CONCAT(c.code, ' | ', cv.code, ' - ', cv.name) AS label
+            "SELECT cv.id, CONCAT(c.code, ' | ', cv.code, ' - ', cv.name, ' [', IF(cv.service_type = 'rental', 'Rental', 'Travel'), ']') AS label
                FROM category_vehicles cv
                LEFT JOIN companies c ON c.id = cv.company_id
               WHERE cv.company_id IN ({$phCat})
+                {$svcSql}
                 AND (cv.is_active = 1 OR cv.id = ?)
-              ORDER BY c.code, cv.code, cv.name
+              ORDER BY c.code, cv.service_type, cv.code, cv.name
               LIMIT 200"
         );
-        $stCat->bind_param(str_repeat('i', count($allowedCids)) . 'i', ...[...$allowedCids, $filter_category_id]);
+        if ($filter_service_type !== '') {
+            $stCat->bind_param(str_repeat('i', count($allowedCids)) . 'sii', ...[...$allowedCids, $filter_service_type, $filter_category_id, $filter_category_id]);
+        } else {
+            $stCat->bind_param(str_repeat('i', count($allowedCids)) . 'i', ...[...$allowedCids, $filter_category_id]);
+        }
         $stCat->execute();
         $catFilterOpts = $stCat->get_result()->fetch_all(MYSQLI_ASSOC);
         $stCat->close();
     }
 }
 
+$canManageRutes = transport_can_manage();
 $header_actions = ui_export_actions();
-if (can('travel.manage') && active_company_id() !== null) {
+if ($canManageRutes && active_company_id() !== null) {
     $header_actions[] = ['label' => 'Tambah', 'icon' => 'plus-lg', 'href' => 'pages/travel/rutes/form.php', 'class' => 'btn btn-primary btn-sm'];
 }
 
@@ -222,6 +240,7 @@ $query_base = http_build_query(array_filter(
     [
         'q'                   => $q,
         'status'              => $status,
+        'service_type'        => $filter_service_type,
         'pickup_city_id'      => $filter_pickup_city > 0 ? (string) $filter_pickup_city : null,
         'delivery_city_id'    => $filter_deliv_city > 0 ? (string) $filter_deliv_city : null,
         'category_vehicle_id' => $filter_category_id > 0 ? (string) $filter_category_id : null,
@@ -230,16 +249,16 @@ $query_base = http_build_query(array_filter(
     static fn($v) => $v !== null && $v !== ''
 ));
 $return_query = $query_base . ($p['current'] > 1 ? (($query_base !== '' ? '&' : '') . 'page=' . $p['current']) : '');
-$has_active_filter = ($q !== '' || $status !== '' || $filter_pickup_city > 0 || $filter_deliv_city > 0 || $filter_category_id > 0 || ($has_explicit_company && $filter_company_id !== ($active_cid ?? 0)));
+$has_active_filter = ($q !== '' || $status !== '' || $filter_service_type !== '' || $filter_pickup_city > 0 || $filter_deliv_city > 0 || $filter_category_id > 0 || ($has_explicit_company && $filter_company_id !== ($active_cid ?? 0)));
 
-$active = 'travel';
-$title  = 'Rute';
+$active = 'rutes';
+$title  = 'Rute & Tarif';
 require __DIR__ . '/../../../includes/header.php';
 ?>
 <main class="col-12 col-md-9 col-lg-10 p-3 p-lg-4">
     <?= ui_page_header(
-        'Rute Travel',
-        ['Dashboard' => 'pages/dashboard/index.php', 'Travel' => null, 'Rute' => null],
+        'Rute & Tarif',
+        ['Dashboard' => 'pages/dashboard/index.php', 'Transportasi' => null, 'Rute & Tarif' => null],
         [['text' => number_format($total, 0, ',', '.') . ' Rute', 'class' => 'bg-light text-secondary border']],
         $header_actions
     ) ?>
@@ -287,6 +306,13 @@ require __DIR__ . '/../../../includes/header.php';
                         <?php foreach ($delivCityOpts as $ct): ?>
                             <option value="<?= (int) $ct['id'] ?>" <?= ((int) $ct['id'] === $filter_deliv_city) ? 'selected' : '' ?>><?= e($ct['name']) ?></option>
                         <?php endforeach; ?>
+                    </select>
+                </div>
+                <div class="col-6 col-sm-6 col-md-2 rutes-filter-item">
+                    <select name="service_type" class="form-select form-select-sm" onchange="this.form.submit()" title="Filter Lingkup Layanan">
+                        <option value="">Semua Layanan</option>
+                        <option value="travel" <?= $filter_service_type === 'travel' ? 'selected' : '' ?>>Travel</option>
+                        <option value="rental" <?= $filter_service_type === 'rental' ? 'selected' : '' ?>>Rental</option>
                     </select>
                 </div>
                 <div class="col-6 col-sm-6 col-md-2 rutes-filter-status">
@@ -372,9 +398,10 @@ require __DIR__ . '/../../../includes/header.php';
                                         <div class="d-flex justify-content-between align-items-baseline gap-2">
                                             <span>
                                                 <span class="fw-medium"><?= e($tf['category_name']) ?></span>
+                                                <?php if (($tf['category_service_type'] ?? 'travel') === 'rental'): ?><span class="badge bg-warning-subtle text-warning-emphasis border ms-1" style="font-size:0.68rem;">Rental</span><?php endif; ?>
                                                 <?php if ($seatCap > 0): ?><span class="text-muted">(<?= $seatCap ?> seat)</span><?php endif; ?>
                                             </span>
-                                            <span class="fw-semibold text-nowrap"><?= e(format_nominal((float) $tf['price'])) ?></span>
+                                            <span class="fw-semibold text-nowrap"><?= e(format_nominal((float) $tf['price'])) ?><span class="text-muted fw-normal"><?= e($tf['pricing_unit_short'] ?? '') ?></span></span>
                                         </div>
                                     <?php endforeach; ?>
                                 </div>
@@ -384,7 +411,7 @@ require __DIR__ . '/../../../includes/header.php';
                         </td>
                         <td class="text-center">
                             <?php $isAct = !empty($r['is_active']); ?>
-                            <?php if (can('travel.manage')): ?>
+                            <?php if ($canManageRutes): ?>
                                 <form method="post" action="<?= e(APP_URL) ?>/pages/travel/rutes/toggle_status.php" class="d-inline rute-status-form">
                                     <?= csrf_field() ?>
                                     <input type="hidden" name="id" value="<?= (int) $r['id'] ?>">
@@ -402,7 +429,7 @@ require __DIR__ . '/../../../includes/header.php';
                             <?php endif; ?>
                         </td>
                         <td class="text-end text-nowrap">
-                            <?php if (can('travel.manage')): ?>
+                            <?php if ($canManageRutes): ?>
                                 <a class="btn btn-sm btn-outline-primary" href="<?= e(APP_URL) ?>/pages/travel/rutes/form.php?id=<?= (int) $r['id'] ?>" title="Ubah" aria-label="Ubah"><i class="bi bi-pencil-square"></i></a>
                                 <form method="post" action="<?= e(APP_URL) ?>/pages/travel/rutes/delete.php" class="d-inline" onsubmit="return confirm('Hapus rute ini?')">
                                     <?= csrf_field() ?>

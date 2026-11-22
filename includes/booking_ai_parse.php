@@ -419,7 +419,7 @@ function booking_ai_parse_handle(string $mode = 'travel'): void
 
     $tokens     = _booking_ai_extract_tokens($raw);
     $branches   = opts_branches($cid);
-    $cats       = opts_categories($cid);
+    $cats       = opts_categories($cid, [], 200, $mode);
     $vehicles   = opts_vehicles($cid, [], 100);
     $passengers = opts_passengers($cid, [], 40);
 

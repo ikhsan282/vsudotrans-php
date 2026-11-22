@@ -5,25 +5,12 @@ require_once __DIR__ . '/finance_sync.php';
  * Payroll service — gaji karyawan per periode bulanan.
  *
  * Alur: draft (generate) -> final (dikunci angkanya) -> paid (sudah dibayar).
- * Nilai gaji diambil dari master `job_grades` (basic_salary + daily_allowance)
- * lewat penghubung teks `employees.job_grade` = `job_grades.name`, lalu DISALIN
- * ke payroll_items saat generate supaya perubahan master tidak mengubah periode
- * yang sudah dibuat.
+ * Nilai gaji pokok, uang harian, hari hadir, dan potongan disimpan per item
+ * di payroll_items.
  *
  * Kontrak: sukses -> return array, error -> throw. Semua fungsi company-scoped
  * (is_super_admin() boleh lintas perusahaan).
- *
- * ponytail: tanpa tabel komponen gaji, BPJS, PPh21, atau prorata hari kerja —
- * potongan diisi manual oleh operator. Tambah tabel komponen bila rumusnya
- * mulai beda per perusahaan.
  */
-
-/**
- * Hari yang dihitung sebagai "hadir" per status absensi (kebijakan satu tempat).
- * Ubah di sini bila aturan perusahaan berubah; status yang tidak terdaftar = 0,
- * sama seperti hari tanpa catatan absensi.
- */
-const PAYROLL_ATTENDANCE_DAYS = ['hadir' => 1, 'izin' => 1, 'sakit' => 1, 'cuti' => 1, 'alpa' => 0];
 
 /** Nama bulan Indonesia, 1-12. */
 function payroll_month_name(int $m): string
@@ -80,39 +67,55 @@ function payroll_items(int $period_id): array
     return $rows;
 }
 
-/** Karyawan aktif perusahaan (scoped). */
+/** Karyawan aktif perusahaan (scoped) beserta gaji pokok & uang harian (atau fallback dari master job_titles). */
 function payroll_active_employees(int $company_id): array
 {
-    $st = db()->prepare("SELECT id, name, job_grade FROM employees
-        WHERE company_id = ? AND status = 'aktif' ORDER BY name");
-    $st->bind_param('i', $company_id);
-    $st->execute();
-    $rows = $st->get_result()->fetch_all(MYSQLI_ASSOC);
-    $st->close();
-    return $rows;
-}
-
-/** Gaji master per nama grade (company-scoped). */
-function payroll_grade_map(int $company_id): array
-{
-    $st = db()->prepare('SELECT name, basic_salary, daily_allowance FROM job_grades WHERE company_id = ?');
-    $st->bind_param('i', $company_id);
-    $st->execute();
-    $rows = $st->get_result()->fetch_all(MYSQLI_ASSOC);
-    $st->close();
-    $map = [];
-    foreach ($rows as $r) {
-        $map[$r['name']] = $r;
+    $db = db();
+    $hasEmpBasic = false;
+    $resCol = $db->query("SHOW COLUMNS FROM `employees` LIKE 'basic_salary'");
+    if ($resCol && $resCol->num_rows > 0) {
+        $hasEmpBasic = true;
     }
-    return $map;
+    $hasTitleBasic = false;
+    $resJtCol = $db->query("SHOW COLUMNS FROM `job_titles` LIKE 'basic_salary'");
+    if ($resJtCol && $resJtCol->num_rows > 0) {
+        $hasTitleBasic = true;
+    }
+
+    $titleMap = [];
+    if ($hasTitleBasic) {
+        $stJt = $db->prepare('SELECT name, basic_salary, daily_allowance FROM job_titles WHERE is_active = 1 AND (company_id = ? OR company_id IS NULL)');
+        $stJt->bind_param('i', $company_id);
+        $stJt->execute();
+        foreach ($stJt->get_result()->fetch_all(MYSQLI_ASSOC) as $jt) {
+            $titleMap[$jt['name']] = $jt;
+        }
+        $stJt->close();
+    }
+
+    $cols = $hasEmpBasic ? 'id, name, job_title, basic_salary, daily_allowance' : 'id, name, job_title';
+    $st = $db->prepare("SELECT {$cols} FROM employees WHERE company_id = ? AND status = 'aktif' ORDER BY name");
+    $st->bind_param('i', $company_id);
+    $st->execute();
+    $rows = $st->get_result()->fetch_all(MYSQLI_ASSOC);
+    $st->close();
+
+    foreach ($rows as &$r) {
+        $empBasic = (float) ($r['basic_salary'] ?? 0);
+        $empDaily = (float) ($r['daily_allowance'] ?? 0);
+        $jt = $titleMap[$r['job_title'] ?? ''] ?? null;
+        $r['eff_basic_salary']    = $empBasic > 0 ? $empBasic : (float) ($jt['basic_salary'] ?? 0);
+        $r['eff_daily_allowance'] = $empDaily > 0 ? $empDaily : (float) ($jt['daily_allowance'] ?? 0);
+    }
+    unset($r);
+
+    return $rows;
 }
 
 /**
  * Buat periode + satu item per karyawan aktif. Semua dalam satu transaksi.
- * Gaji tanpa grade terpasang dicatat 0 (operator menyesuaikan di detail);
- * jumlahnya dilaporkan di 'grade_missing'.
  *
- * @return array{period_id:int, items:int, grade_missing:array<int,string>}
+ * @return array{period_id:int, items:int}
  */
 function payroll_generate(int $company_id, int $year, int $month, ?string $user): array
 {
@@ -142,24 +145,18 @@ function payroll_generate(int $company_id, int $year, int $month, ?string $user)
         $period_id = (int) $st->insert_id;
         $st->close();
 
-        $grades = payroll_grade_map($company_id);
         $employees = payroll_active_employees($company_id);
 
         $st = $db->prepare('INSERT INTO payroll_items
             (payroll_period_id, employee_id, company_id, basic_salary, daily_allowance, days_present, deductions, net_salary, created_user)
             VALUES (?, ?, ?, ?, ?, 0, 0, ?, ?)');
-        $missing = [];
         foreach ($employees as $e) {
-            $grade = $grades[$e['job_grade'] ?? ''] ?? null;
-            $basic = (float) ($grade['basic_salary'] ?? 0);
-            $daily = (float) ($grade['daily_allowance'] ?? 0);
+            $basic = (float) ($e['eff_basic_salary'] ?? 0);
+            $daily = (float) ($e['eff_daily_allowance'] ?? 0);
             $net = payroll_net($basic, $daily, 0, 0.0);
             $eid = (int) $e['id'];
             $st->bind_param('iiiddds', $period_id, $eid, $company_id, $basic, $daily, $net, $user);
             $st->execute();
-            if ($grade === null) {
-                $missing[] = $e['name'];
-            }
         }
         $st->close();
 
@@ -169,7 +166,7 @@ function payroll_generate(int $company_id, int $year, int $month, ?string $user)
         throw $ex;
     }
 
-    return ['period_id' => $period_id, 'items' => count($employees), 'grade_missing' => $missing];
+    return ['period_id' => $period_id, 'items' => count($employees)];
 }
 
 /** Periode milik perusahaan ini? throw bila bukan. */
@@ -186,16 +183,22 @@ function payroll_period_assert(int $period_id, int $company_id): array
 }
 
 /**
- * Ubah hari hadir & potongan satu item, lalu hitung ulang gaji bersih.
+ * Ubah komponen gaji satu item, lalu hitung ulang gaji bersih.
  * Ditolak bila periode sudah 'paid'.
  */
-function payroll_item_update(int $period_id, int $company_id, int $item_id, int $days_present, float $deductions, ?string $note, ?string $user): array
+function payroll_item_update(int $period_id, int $company_id, int $item_id, int $days_present, float $deductions, ?string $note, ?string $user, ?float $basic_salary = null, ?float $daily_allowance = null): array
 {
     if ($days_present < 0 || $days_present > 31) {
         throw new InvalidArgumentException('Hari hadir harus 0-31.');
     }
     if ($deductions < 0) {
         throw new InvalidArgumentException('Potongan tidak boleh negatif.');
+    }
+    if ($basic_salary !== null && $basic_salary < 0) {
+        throw new InvalidArgumentException('Gaji pokok tidak boleh negatif.');
+    }
+    if ($daily_allowance !== null && $daily_allowance < 0) {
+        throw new InvalidArgumentException('Uang harian tidak boleh negatif.');
     }
 
     $db = db();
@@ -215,9 +218,12 @@ function payroll_item_update(int $period_id, int $company_id, int $item_id, int 
             throw new RuntimeException('Item gaji tidak ditemukan pada periode ini.');
         }
 
-        $net = payroll_net((float) $item['basic_salary'], (float) $item['daily_allowance'], $days_present, $deductions);
-        $st = $db->prepare('UPDATE payroll_items SET days_present = ?, deductions = ?, net_salary = ?, note = ?, modified_user = ?, modified_date = NOW() WHERE id = ?');
-        $st->bind_param('iddssi', $days_present, $deductions, $net, $note, $user, $item_id);
+        $eff_basic = $basic_salary !== null ? $basic_salary : (float) $item['basic_salary'];
+        $eff_daily = $daily_allowance !== null ? $daily_allowance : (float) $item['daily_allowance'];
+
+        $net = payroll_net($eff_basic, $eff_daily, $days_present, $deductions);
+        $st = $db->prepare('UPDATE payroll_items SET basic_salary = ?, daily_allowance = ?, days_present = ?, deductions = ?, net_salary = ?, note = ?, modified_user = ?, modified_date = NOW() WHERE id = ?');
+        $st->bind_param('ddiddssi', $eff_basic, $eff_daily, $days_present, $deductions, $net, $note, $user, $item_id);
         $st->execute();
         $st->close();
 
@@ -227,79 +233,7 @@ function payroll_item_update(int $period_id, int $company_id, int $item_id, int 
         throw $ex;
     }
 
-    return ['item_id' => $item_id, 'days_present' => $days_present, 'deductions' => $deductions, 'net_salary' => $net];
-}
-
-/**
- * Tarik hari hadir tiap item payroll periode $period_id dari tabel
- * employee_attendances, untuk bulan periode. Skema pemetaan status via
- * PAYROLL_ATTENDANCE_DAYS; hari tanpa catatan = 0. Net dihitung ulang
- * via payroll_net(); deductions & note item dibiarkan apa adanya.
- *
- * @return array{updated:int} jumlah item yang days_present-nya berubah
- */
-function payroll_pull_attendance(int $period_id, int $company_id, ?string $user): array
-{
-    $db = db();
-    $db->begin_transaction();
-    try {
-        $period = payroll_period_assert($period_id, $company_id);
-        $year  = (int) $period['period_year'];
-        $month = (int) $period['period_month'];
-        if ($period['status'] !== 'draft') {
-            throw new RuntimeException('Periode tidak berstatus draft — angka sudah dikunci.');
-        }
-        $from = sprintf('%04d-%02d-01', $year, $month);
-        $to   = date('Y-m-t', strtotime($from . ' last day of this month'));
-
-        $st = $db->prepare('SELECT id, employee_id, basic_salary, daily_allowance, days_present, deductions, net_salary
-            FROM payroll_items WHERE payroll_period_id = ? AND company_id = ? FOR UPDATE');
-        $st->bind_param('ii', $period_id, $company_id);
-        $st->execute();
-        $rows = $st->get_result()->fetch_all(MYSQLI_ASSOC);
-        $st->close();
-
-        // Hari terhitung per karyawan, dari absensi bulan periode. Hari tanpa
-        // catatan absensi tidak pernah muncul di sini — nilainya tetap 0.
-        $days = [];
-        if ($rows) {
-            $ids = array_map(static fn(array $r) => (int) $r['employee_id'], $rows);
-            $in  = implode(',', array_fill(0, count($ids), '?'));
-            $st = $db->prepare("SELECT employee_id, status FROM employee_attendances
-                WHERE company_id = ? AND date BETWEEN ? AND ? AND employee_id IN ($in)");
-            $st->bind_param('iss' . str_repeat('i', count($ids)), ...array_merge([$company_id, $from, $to], $ids));
-            $st->execute();
-            foreach ($st->get_result()->fetch_all(MYSQLI_ASSOC) as $a) {
-                $eid = (int) $a['employee_id'];
-                $days[$eid] = ($days[$eid] ?? 0) + (PAYROLL_ATTENDANCE_DAYS[$a['status']] ?? 0);
-            }
-            $st->close();
-        }
-
-        $st = $db->prepare('UPDATE payroll_items
-            SET days_present = ?, net_salary = ?, modified_user = ?, modified_date = NOW()
-            WHERE id = ?');
-        $updated = 0;
-        foreach ($rows as $r) {
-            $d = $days[(int) $r['employee_id']] ?? 0;
-            $net = payroll_net((float) $r['basic_salary'], (float) $r['daily_allowance'], $d, (float) $r['deductions']);
-            $changed = (int) $r['days_present'] !== $d || abs((float) $r['net_salary'] - $net) >= 0.005;
-            if (!$changed) {
-                continue; // idempoten: angka sudah sesuai, tidak perlu ditulis
-            }
-            $st->bind_param('idsi', $d, $net, $user, $r['id']);
-            $st->execute();
-            $updated++;
-        }
-        $st->close();
-
-        $db->commit();
-    } catch (Throwable $ex) {
-        $db->rollback();
-        throw $ex;
-    }
-
-    return ['updated' => $updated];
+    return ['item_id' => $item_id, 'basic_salary' => $eff_basic, 'daily_allowance' => $eff_daily, 'days_present' => $days_present, 'deductions' => $deductions, 'net_salary' => $net];
 }
 
 /**

@@ -101,17 +101,47 @@ $partialBkId = 0;
 $partialInvId = 0;
 $orderId = '';
 $eventId = '';
+$tempCatId = 0;
+$tempRuteId = 0;
 
 try {
 
-// Ensure city, district, category_vehicle, and rute exist for Company 1
-$db->query("INSERT IGNORE INTO countries (id, code, name) VALUES (1, 'ID', 'Indonesia')");
-$db->query("INSERT IGNORE INTO provinces (id, country_id, code, name) VALUES (1, 1, 'BT', 'Banten')");
-$db->query("INSERT IGNORE INTO cities (id, country_id, province_id, code, name) VALUES (1, 1, 1, 'TNG', 'Tangerang'), (2, 1, 1, 'BDG', 'Bandung')");
-$db->query("INSERT IGNORE INTO districts (id, country_id, province_id, city_id, code, name) VALUES (1, 1, 1, 1, 'CPT', 'Cipondoh'), (2, 1, 1, 2, 'DGO', 'Dago')");
-$db->query("INSERT IGNORE INTO category_vehicles (id, company_id, code, name, is_active) VALUES (1, 1, 'HIACE', 'Toyota HiAce Executive', 1)");
-$db->query("INSERT IGNORE INTO rutes (id, company_id, code, name, pickup_point_city_id, delivery_point_city_id, category_vehicle_id, min_price, price, max_price, start_capacity_seat, end_capacity_seat, is_active) VALUES (1, 1, 'TNG-BDG', 'Tangerang - Bandung', 1, 2, 1, 150000, 175000, 200000, 1, 10, 1)");
-$rute1Row = $db->query('SELECT price FROM rutes WHERE id = 1 LIMIT 1')->fetch_assoc();
+// Gunakan rute & kategori Travel eksisting Perusahaan 1; hanya buat baris uji sementara bila kosong
+$rute1Row = $db->query(
+    "SELECT r.id, r.price
+       FROM rutes r
+       LEFT JOIN category_vehicles cv ON cv.id = r.category_vehicle_id
+      WHERE r.company_id = 1 AND r.is_active = 1
+      ORDER BY (CASE WHEN COALESCE(cv.pricing_unit, 'per_seat') = 'per_seat' THEN 0 ELSE 1 END), r.id ASC
+      LIMIT 1"
+)->fetch_assoc();
+if (!$rute1Row) {
+    $catTmpRow = $db->query("SELECT id FROM category_vehicles WHERE company_id = 1 AND service_type = 'travel' AND is_active = 1 ORDER BY id ASC LIMIT 1")->fetch_assoc();
+    if ($catTmpRow) {
+        $useCatId = (int) $catTmpRow['id'];
+    } else {
+        $db->query("INSERT INTO category_vehicles (company_id, code, name, service_type, pricing_unit, is_active, created_user) VALUES (1, 'BOT-TMP', 'Travel Test Bot', 'travel', 'per_seat', 1, 'bot_api_check')");
+        $tempCatId = (int) $db->insert_id;
+        $useCatId  = $tempCatId;
+    }
+    $cityRows = $db->query("SELECT id FROM cities ORDER BY id ASC LIMIT 2")->fetch_all(MYSQLI_ASSOC);
+    if (count($cityRows) < 2) {
+        $db->query("INSERT IGNORE INTO countries (id, code, name) VALUES (1, 'ID', 'Indonesia')");
+        $db->query("INSERT IGNORE INTO provinces (id, country_id, code, name) VALUES (1, 1, 'BT', 'Banten')");
+        $db->query("INSERT IGNORE INTO cities (id, country_id, province_id, code, name) VALUES (1, 1, 1, 'TNG', 'Tangerang'), (2, 1, 1, 'BDG', 'Bandung')");
+        $db->query("INSERT IGNORE INTO districts (id, country_id, province_id, city_id, code, name) VALUES (1, 1, 1, 1, 'CPT', 'Cipondoh'), (2, 1, 1, 2, 'DGO', 'Dago')");
+        $cityRows = [['id' => 1], ['id' => 2]];
+    }
+    $c1Id = (int) $cityRows[0]['id'];
+    $c2Id = (int) $cityRows[1]['id'];
+    $stTmpR = $db->prepare("INSERT INTO rutes (company_id, code, name, pickup_point_city_id, delivery_point_city_id, category_vehicle_id, min_price, price, max_price, start_capacity_seat, end_capacity_seat, is_active, created_user) VALUES (1, 'BOT-RT', 'Rute Test Bot', ?, ?, ?, 150000, 175000, 200000, 1, 10, 1, 'bot_api_check')");
+    $stTmpR->bind_param('iii', $c1Id, $c2Id, $useCatId);
+    $stTmpR->execute();
+    $tempRuteId = (int) $db->insert_id;
+    $stTmpR->close();
+    $rute1Row = ['id' => $tempRuteId, 'price' => 175000];
+}
+$testRuteId     = (int) $rute1Row['id'];
 $rute1UnitPrice = (int) round((float) ($rute1Row['price'] ?? 175000));
 
 // 2. Test GET /api/bot/me.php
@@ -121,11 +151,11 @@ check_bot(($meRes['ok'] ?? false) === true && ($meRes['data']['company']['code']
 check_bot(isset($meRes['data']['company']['dynamic_qris_enabled']) && in_array('TUNAI', $mePmCodes, true) && in_array('TRANSFER', $mePmCodes, true), 'GET /api/bot/me.php exposes dynamic_qris_enabled & global payment_methods');
 
 // 3. Test GET /api/bot/routes.php (+ simulasi harga ?quote=1)
-$rtRes = call_bot_endpoint('routes.php', 'GET', ['secret' => $secret, 'phone' => $testPhone, 'company' => 'MTM', 'quote' => 1, 'rute_id' => 1, 'seats' => 2]);
+$rtRes = call_bot_endpoint('routes.php', 'GET', ['secret' => $secret, 'phone' => $testPhone, 'company' => 'MTM', 'quote' => 1, 'rute_id' => $testRuteId, 'seats' => 2]);
 $rtPmCodes = array_column($rtRes['data']['payment_methods'] ?? [], 'code');
 check_bot(($rtRes['ok'] ?? false) === true && count($rtRes['data']['routes'] ?? []) >= 1, 'GET /api/bot/routes.php returns active routes for MTM');
 check_bot(isset($rtRes['data']['dynamic_qris_available']) && in_array('TRANSFER', $rtPmCodes, true), 'GET /api/bot/routes.php exposes dynamic_qris_available & payment_methods');
-check_bot(($rtRes['data']['quote']['rute_id'] ?? 0) === 1 && ($rtRes['data']['quote']['total']['raw'] ?? 0) >= ($rute1UnitPrice * 2), 'GET /api/bot/routes.php?quote=1 returns exact travel price quote');
+check_bot(($rtRes['data']['quote']['rute_id'] ?? 0) === $testRuteId && ($rtRes['data']['quote']['total']['raw'] ?? 0) >= ($rute1UnitPrice * 2), 'GET /api/bot/routes.php?quote=1 returns exact travel price quote');
 
 // 4. Test POST /api/bot/booking_create.php (Auto-Order + Auto Dynamic QRIS)
 $bkRes = call_bot_endpoint('booking_create.php', 'POST', [
@@ -135,7 +165,7 @@ $bkRes = call_bot_endpoint('booking_create.php', 'POST', [
 ], [
     'booking_type'     => 'travel',
     'passenger_name'   => 'Ikhsan Test Bot',
-    'rute_id'          => 1,
+    'rute_id'          => $testRuteId,
     'date'             => date('Y-m-d', strtotime('+1 day')),
     'time'             => '09:00',
     'seats'            => 2,
@@ -222,7 +252,7 @@ $pBkRes = call_bot_endpoint('booking_create.php', 'POST', [
 ], [
     'booking_type'     => 'travel',
     'passenger_name'   => 'Partial Invoice Bot Test',
-    'rute_id'          => 1,
+    'rute_id'          => $testRuteId,
     'date'             => date('Y-m-d'),
     'time'             => '10:00',
     'seats'            => 1,
@@ -290,6 +320,12 @@ check_bot(
     }
     $db->query("DELETE FROM passengers WHERE phone_number IN ('6281377778888', '081377778888')");
     $db->query("DELETE FROM bot_request_logs WHERE phone IN ('6281377778888', '6281399990000', '6281200000002')");
+    if ($tempRuteId > 0) {
+        $db->query("DELETE FROM rutes WHERE id = {$tempRuteId}");
+    }
+    if ($tempCatId > 0) {
+        $db->query("DELETE FROM category_vehicles WHERE id = {$tempCatId}");
+    }
     if ($origCh1 !== null) {
         $stRestore = $db->prepare("UPDATE payment_channels SET merchant_id = ?, api_key = ?, is_active = ? WHERE company_id = 1 AND provider = 'gopay'");
         $origAct = (int) $origCh1['is_active'];

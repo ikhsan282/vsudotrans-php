@@ -39,9 +39,11 @@ if (in_array($export_format, ['xlsx', 'pdf'], true)) {
     }
     $where_sql = implode(' AND ', $where);
 
-    $sql_export = 'SELECT e.code, e.name, b.name AS branch_name, e.phone_number, e.email, e.job_title, e.join_date, e.status
+    employee_ensure_hr_schema();
+    $sql_export = 'SELECT e.code, e.name, co.code AS company_code, b.name AS branch_name, e.phone_number, e.email, e.job_title, e.job_position, e.organization_structure, e.join_date, e.status
                    FROM employees e
                    LEFT JOIN branches b ON b.id = e.branch_id
+                   LEFT JOIN companies co ON co.id = e.company_id
                    WHERE ' . $where_sql . '
                    ORDER BY e.code ASC';
 
@@ -51,23 +53,31 @@ if (in_array($export_format, ['xlsx', 'pdf'], true)) {
         $sql_export,
         $types,
         $params,
-        static function (array $r) use ($isPdf): array {
-            $base = [
-                $r['code'],
-                $r['name'],
-                $r['branch_name'] ?: '-',
-            ];
+        static function (array $r) use ($isPdf, $show_comp_col): array {
+            $base = [$r['code'], $r['name']];
+            if ($show_comp_col) {
+                $base[] = $r['company_code'] ?: '-';
+            }
+            $base[] = $r['branch_name'] ?: '-';
             if ($isPdf) {
                 $kontak = implode("\n", array_filter([
                     trim((string) ($r['email'] ?? '')),
                     trim((string) ($r['phone_number'] ?? '')),
                 ]));
                 $base[] = $kontak !== '' ? $kontak : '-';
+                $jabPos = implode("\n", array_filter([
+                    trim((string) ($r['job_title'] ?? '')),
+                    trim((string) ($r['job_position'] ?? '')),
+                    trim((string) ($r['organization_structure'] ?? '')),
+                ]));
+                $base[] = $jabPos !== '' ? $jabPos : '-';
             } else {
                 $base[] = $r['phone_number'] ?: '-';
                 $base[] = $r['email'] ?: '-';
+                $base[] = $r['job_title'] ?: '-';
+                $base[] = $r['job_position'] ?: '-';
+                $base[] = $r['organization_structure'] ?: '-';
             }
-            $base[] = $r['job_title'] ?: '-';
             $base[] = $r['join_date'] ?: '-';
             $base[] = ucfirst($r['status']);
             return $base;
@@ -93,9 +103,16 @@ if (in_array($export_format, ['xlsx', 'pdf'], true)) {
     $tot_cnt = (int) $st_cnt->get_result()->fetch_row()[0];
     $st_cnt->close();
 
-    $headers = $isPdf
-        ? ['Kode', 'Nama', 'Cabang', 'Kontak', 'Jabatan', 'Masuk', 'Status']
-        : ['Kode', 'Nama', 'Cabang', 'Telepon', 'Email', 'Jabatan', 'Masuk', 'Status'];
+    $headers = ['Kode', 'Nama'];
+    if ($show_comp_col) {
+        $headers[] = 'Perusahaan';
+    }
+    $headers[] = 'Cabang';
+    if ($isPdf) {
+        array_push($headers, 'Kontak', 'Jabatan & Posisi', 'Masuk', 'Status');
+    } else {
+        array_push($headers, 'Telepon', 'Email', 'Jabatan', 'Posisi', 'Struktur Organisasi', 'Masuk', 'Status');
+    }
     grid_export_send(
         'Daftar Karyawan',
         $headers,
@@ -174,7 +191,7 @@ require __DIR__ . '/../../includes/header.php';
                 <th>Nama</th>
                 <th>Cabang</th>
                 <th>Kontak</th>
-                <th>Jabatan</th>
+                <th>Jabatan &amp; Posisi</th>
                 <th>Masuk</th>
                 <th>Status</th>
                 <th class="text-end">Aksi</th>
@@ -192,7 +209,15 @@ require __DIR__ . '/../../includes/header.php';
                         <?php if ($r['email']): ?><div class="small"><?= e($r['email']) ?></div><?php endif; ?>
                         <?php if ($r['phone_number']): ?><div class="small text-muted"><?= e($r['phone_number']) ?></div><?php endif; ?>
                     </td>
-                    <td><?= e($r['job_title'] ?? '') ?: '<span class="text-muted">—</span>' ?></td>
+                    <td>
+                        <?php if (!empty($r['job_title']) || !empty($r['job_position']) || !empty($r['organization_structure'])): ?>
+                            <?php if (!empty($r['job_title'])): ?><div class="fw-medium small"><?= e($r['job_title']) ?></div><?php endif; ?>
+                            <?php if (!empty($r['job_position'])): ?><span class="badge bg-light text-dark border"><?= e($r['job_position']) ?></span><?php endif; ?>
+                            <?php if (!empty($r['organization_structure'])): ?><div class="small text-muted mt-1"><i class="bi bi-diagram-3 me-1"></i><?= e($r['organization_structure']) ?></div><?php endif; ?>
+                        <?php else: ?>
+                            <span class="text-muted">—</span>
+                        <?php endif; ?>
+                    </td>
                     <td class="small text-nowrap"><?= !empty($r['join_date']) ? e(date('d-M-Y', strtotime((string) $r['join_date']))) : '-' ?></td>
                     <td>
                         <span class="badge bg-<?= $r['status'] === 'aktif' ? 'success' : 'secondary' ?>">

@@ -15,7 +15,7 @@ if (empty($_SESSION['user_id'])) {
     exit;
 }
 
-if (!can('travel.view')) {
+if (!can('travel.view') && !can('rental.view')) {
     http_response_code(403);
     echo json_encode(['ok' => false, 'error' => 'Forbidden']);
     exit;
@@ -36,7 +36,9 @@ $deliveryCityId = (int) ($_GET['delivery_point_city_id'] ?? $_GET['delivery_city
 $pickupDistId   = (int) ($_GET['pickup_point_district_id'] ?? $_GET['pickup_district_id'] ?? 0);
 $deliveryDistId = (int) ($_GET['delivery_point_district_id'] ?? $_GET['delivery_district_id'] ?? 0);
 $catId          = (int) ($_GET['category_vehicle_id'] ?? 0);
+$rawSvcType     = strtolower(trim((string) ($_GET['service_type'] ?? '')));
+$serviceType    = in_array($rawSvcType, ['travel', 'rental'], true) ? $rawSvcType : null;
 
-$route = travel_lookup_route_tariff($companyId, $pickupCityId, $deliveryCityId, $catId, $pickupDistId, $deliveryDistId);
+$route = travel_lookup_route_tariff($companyId, $pickupCityId, $deliveryCityId, $catId, $pickupDistId, $deliveryDistId, $serviceType);
 
 echo json_encode(['ok' => true, 'route' => $route], JSON_UNESCAPED_UNICODE);

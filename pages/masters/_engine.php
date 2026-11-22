@@ -80,7 +80,7 @@ function mf_note(): array
 }
 function mf_active(): array
 {
-    return ['col' => 'is_active', 'label' => 'Aktif', 'type' => 'checkbox'];
+    return ['col' => 'is_active', 'label' => 'Aktif', 'list_label' => 'Status', 'type' => 'checkbox'];
 }
 function mf_level(): array
 {
@@ -196,39 +196,41 @@ function master_tables(): array
         ]),
 
         // ---------------- MASTER HR (dengan company_id) ----------------
-        'job_grades' => $hr([
-            'table' => 'job_grades', 'title' => 'Golongan Jabatan',
-            'fields' => [
-                mf_code(), mf_name(),
-                ['col' => 'basic_salary', 'label' => 'Gaji Pokok', 'type' => 'money', 'required' => false],
-                ['col' => 'daily_allowance', 'label' => 'Uang Harian', 'type' => 'money', 'required' => false],
-                mf_note(), mf_active(),
-            ],
-            'blockers' => [
-                ['table' => 'employees', 'col' => 'job_grade', 'match' => 'name', 'label' => 'karyawan'],
-            ],
-        ]),
         'job_titles' => $hr([
             'table' => 'job_titles', 'title' => 'Jabatan',
             'unique' => 'company_or_null', // company_id NULL = berlaku semua perusahaan
-            'fields' => [mf_code(), mf_name(), mf_level(), mf_note(), mf_active()],
+            'fields' => [
+                mf_code(), mf_name(), mf_level(),
+                ['col' => 'basic_salary', 'label' => 'Standar Gaji Pokok', 'list_label' => 'Gaji Pokok', 'type' => 'money', 'required' => false, 'perm' => 'payroll.view'],
+                ['col' => 'daily_allowance', 'label' => 'Standar Uang Harian', 'list_label' => 'Uang Harian', 'type' => 'money', 'required' => false, 'perm' => 'payroll.view'],
+                mf_note(), mf_active(),
+            ],
             'blockers' => [
                 ['table' => 'job_positions', 'col' => 'job_title_id', 'label' => 'posisi'],
+                ['table' => 'employees', 'col' => 'job_title', 'match' => 'name', 'label' => 'karyawan'],
             ],
         ]),
         'job_positions' => $hr([
             'table' => 'job_positions', 'title' => 'Posisi',
             'fields' => [
+                mf_code(), mf_name(),
                 mf_select('job_title_id', 'Jabatan', 'job_titles'),
                 mf_select('parent_id', 'Posisi Induk', 'job_positions', ['required' => false, 'nullable' => true]),
-                mf_code(), mf_name(), mf_level(), mf_note(), mf_active(),
+                mf_level(), mf_note(), mf_active(),
+            ],
+            'blockers' => [
+                ['table' => 'employees', 'col' => 'job_position', 'match' => 'name', 'label' => 'karyawan'],
             ],
         ]),
         'organization_structures' => $hr([
             'table' => 'organization_structures', 'title' => 'Struktur Organisasi',
             'fields' => [
+                mf_code(), mf_name(),
                 mf_select('parent_id', 'Induk', 'organization_structures', ['required' => false, 'nullable' => true]),
-                mf_code(), mf_name(), mf_level(), mf_note(), mf_active(),
+                mf_level(), mf_note(), mf_active(),
+            ],
+            'blockers' => [
+                ['table' => 'employees', 'col' => 'organization_structure', 'match' => 'name', 'label' => 'karyawan'],
             ],
         ]),
 
@@ -244,12 +246,14 @@ function master_tables(): array
                 mf_blob('qr_blob_path', 'Gambar QR (opsional)', ['module' => 'finance', 'sub' => 'qris', 'max_mb' => 2]),
                 ['col' => 'instructions', 'label' => 'Instruksi Pembayaran', 'type' => 'textarea', 'max' => 2000, 'required' => false, 'nullable' => true],
                 ['col' => 'sort_order', 'label' => 'Urutan', 'type' => 'number', 'int' => true, 'required' => false],
-                ['col' => 'is_cash', 'label' => 'Masuk Kas Tunai (centang = Kas, kosong = Bank)', 'type' => 'checkbox'],
+                ['col' => 'is_cash', 'label' => 'Masuk Kas Tunai (centang = Kas, kosong = Bank)', 'list_label' => 'Alokasi Kas', 'type' => 'checkbox'],
                 mf_active(),
                 mf_note(),
             ],
             'blockers' => [
                 ['table' => 'invoices', 'col' => 'payment_method_id', 'label' => 'invoice'],
+                ['table' => 'booking_cost_lines', 'col' => 'payment_method_id', 'label' => 'pembayaran pesanan'],
+                ['table' => 'cash_transactions', 'col' => 'payment_method_id', 'label' => 'transaksi buku kas'],
             ],
         ],
     ];
@@ -580,6 +584,40 @@ function master_list(string $key): void
     [$where, $types, $params] = master_scope($spec);
     $table = $spec['table'];
     $order = $spec['order'] === 'index_no' ? 'index_no, id' : '`' . $spec['order'] . '`';
+    $has_company = !empty($spec['company']);
+    $has_status_col = column_exists($table, 'is_active');
+
+    $companies_list = [];
+    $filter_cid = 0;
+    $has_explicit_company = array_key_exists('company_id', $_GET);
+    if ($has_company && is_super_admin()) {
+        $companies_list = db()->query('SELECT id, code, name FROM companies WHERE is_active = 1 ORDER BY name')->fetch_all(MYSQLI_ASSOC);
+        $filter_cid = $has_explicit_company ? (int) $_GET['company_id'] : (int) ($cid ?? 0);
+        if ($filter_cid > 0) {
+            if (($spec['unique'] ?? '') === 'company_or_null') {
+                $where .= ' AND (company_id = ? OR company_id IS NULL)';
+            } else {
+                $where .= ' AND company_id = ?';
+            }
+            $types .= 'i';
+            $params[] = $filter_cid;
+        }
+    }
+    $show_comp_col = $has_company && is_super_admin() && $filter_cid === 0;
+    $company_map = [];
+    if ($show_comp_col) {
+        foreach ($companies_list as $co) {
+            $company_map[(int) $co['id']] = (string) $co['code'];
+        }
+    }
+
+    $statusRaw = trim((string) ($_GET['status'] ?? ''));
+    $status = ($has_status_col && ($statusRaw === '1' || $statusRaw === '0')) ? $statusRaw : '';
+    if ($status !== '') {
+        $where .= ' AND `is_active` = ?';
+        $types .= 'i';
+        $params[] = (int) $status;
+    }
 
     $q = trim((string) ($_GET['q'] ?? ''));
     if ($q !== '') {
@@ -616,7 +654,8 @@ function master_list(string $key): void
     $total = (int) $st->get_result()->fetch_row()[0];
     $st->close();
 
-    $list_cols = array_values(array_filter($spec['fields'], fn ($f) => !in_array($f['type'] ?? '', ['textarea', 'money', 'blob', 'file', 'hidden'], true)));
+    $can_field = static fn (array $f): bool => empty($f['perm']) || (function_exists('can') && can((string) $f['perm']));
+    $list_cols = array_values(array_filter($spec['fields'], fn ($f) => $can_field($f) && !in_array($f['type'] ?? '', ['textarea', 'blob', 'file', 'hidden'], true)));
 
     // -----------------------------------------------------------------
     // Export Grid (Excel .xlsx & PDF .pdf)
@@ -626,7 +665,7 @@ function master_list(string $key): void
         $isPdf = $export_format === 'pdf';
         $export_cols = $isPdf
             ? $list_cols
-            : array_values(array_filter($spec['fields'], fn ($f) => !in_array($f['type'] ?? '', ['blob', 'file', 'hidden'], true)));
+            : array_values(array_filter($spec['fields'], fn ($f) => $can_field($f) && !in_array($f['type'] ?? '', ['blob', 'file', 'hidden'], true)));
         $export_headers = array_map(fn ($f) => $f['label'], $export_cols);
 
         $lookup_maps = [];
@@ -650,7 +689,11 @@ function master_list(string $key): void
                     $t = $f['type'] ?? '';
                     $val = $r[$c] ?? null;
                     if ($t === 'checkbox') {
-                        $line[] = $val ? 'Aktif' : 'Nonaktif';
+                        if ($c === 'is_cash') {
+                            $line[] = $val ? 'Kas Tunai' : 'Bank / Non-Tunai';
+                        } else {
+                            $line[] = $val ? 'Aktif' : 'Nonaktif';
+                        }
                     } elseif ($t === 'select') {
                         $line[] = master_label($lookup_maps[$f['source']] ?? [], $val);
                     } elseif ($t === 'money') {
@@ -714,7 +757,11 @@ function master_list(string $key): void
         }
     }
 
-    $header_actions = ui_export_actions();
+    $export_params = array_filter([
+        'company_id' => ($has_company && is_super_admin() && $has_explicit_company) ? (string) $filter_cid : null,
+        'status'     => $status !== '' ? $status : null,
+    ], static fn ($v) => $v !== null && $v !== '');
+    $header_actions = ui_export_actions($export_params);
     if (can($spec['perm_manage'])) {
         $header_actions[] = ['label' => 'Import CSV', 'icon' => 'upload', 'href' => master_base_url($spec) . '/import.php', 'class' => 'btn btn-outline-primary btn-sm'];
         $header_actions[] = ['label' => 'Tambah', 'icon' => 'plus-lg', 'href' => master_base_url($spec) . '/form.php', 'class' => 'btn btn-primary btn-sm'];
@@ -722,63 +769,105 @@ function master_list(string $key): void
 
     $active = $spec['module'];
     $title  = $spec['title'];
-    $query_base = $q !== '' ? 'q=' . urlencode($q) : '';
+    $query_base = http_build_query(array_filter([
+        'company_id' => ($has_company && is_super_admin() && $has_explicit_company) ? (string) $filter_cid : '',
+        'q'          => $q,
+        'status'     => $status,
+    ], static fn ($v) => $v !== ''));
+    $has_active_filter = ($q !== '' || $status !== '' || ($has_company && is_super_admin() && $filter_cid !== (int) ($cid ?? 0)));
     require __DIR__ . '/../../includes/header.php';
     ?>
     <main class="p-3 p-lg-4 w-100 flex-grow-1">
         <?= ui_page_header(
             $spec['title'],
-            ['Dashboard' => 'pages/dashboard/index.php', ($spec['module'] === 'hr' ? 'Master HR' : 'Master Data') => null, $spec['title'] => null],
+            ['Dashboard' => 'pages/dashboard/index.php', ($spec['module'] === 'hr' ? 'Master HR' : ($spec['module'] === 'finance' ? 'Keuangan' : 'Referensi Umum')) => null, $spec['title'] => null],
             [['text' => number_format($total, 0, ',', '.') . ' Data', 'class' => 'bg-light text-secondary border']],
             $header_actions
         ) ?>
-        <?= master_tabs($key) ?>
         <div class="card shadow-sm border-0 mb-3">
-            <div class="card-body py-2">
+            <div class="card-body py-2 px-3">
                 <form method="get" class="row g-2 align-items-center erp-filter-bar">
-                    <div class="col-12 col-md-4 erp-filter-q">
+                    <div class="col-12 col-sm-6 col-md-4 erp-filter-q">
                         <div class="input-group input-group-sm">
                             <span class="input-group-text bg-white text-muted"><i class="bi bi-search"></i></span>
                             <input type="text" name="q" class="form-control" placeholder="Cari kode atau nama..." value="<?= e($q) ?>">
                         </div>
                     </div>
-                    <?php if ($q !== ''): ?>
-                        <div class="col-auto">
-                            <span class="small text-muted">Menampilkan hasil untuk: <strong><?= e($q) ?></strong> (<?= $total ?> data)</span>
+                    <?php if ($has_company && is_super_admin()): ?>
+                        <div class="col-6 col-sm-4 col-md-3 erp-filter-item">
+                            <select name="company_id" class="form-select form-select-sm" onchange="this.form.submit()" title="Pilih Perusahaan">
+                                <option value="0"<?= $filter_cid === 0 ? ' selected' : '' ?>>Semua Perusahaan</option>
+                                <?php foreach ($companies_list as $co): ?>
+                                    <option value="<?= (int) $co['id'] ?>"<?= $filter_cid === (int) $co['id'] ? ' selected' : '' ?>>
+                                        <?= e(($co['code'] ?? '') . ' - ' . ($co['name'] ?? '')) ?>
+                                    </option>
+                                <?php endforeach; ?>
+                            </select>
                         </div>
                     <?php endif; ?>
-                    <?= ui_filter_actions(master_base_url($spec) . '/index.php', $q !== '') ?>
+                    <?php if ($has_status_col): ?>
+                        <div class="col-6 col-sm-4 col-md-2 erp-filter-status">
+                            <select name="status" class="form-select form-select-sm" onchange="this.form.submit()" title="Filter Status">
+                                <option value="">Semua Status</option>
+                                <option value="1" <?= $status === '1' ? 'selected' : '' ?>>Aktif</option>
+                                <option value="0" <?= $status === '0' ? 'selected' : '' ?>>Nonaktif</option>
+                            </select>
+                        </div>
+                    <?php endif; ?>
+                    <?= ui_filter_actions(master_base_url($spec) . '/index.php', $has_active_filter) ?>
                 </form>
             </div>
         </div>
         <div class="card shadow-sm border-0">
             <div class="table-responsive">
                 <table class="table table-hover mb-0 align-middle">
-                    <thead><tr>
-                        <?php foreach ($list_cols as $f): ?><th><?= e($f['label']) ?></th><?php endforeach; ?>
-                        <th class="text-end">Aksi</th>
+                    <thead class="table-light"><tr>
+                        <th class="text-center" style="width: 52px;">#</th>
+                        <?php if ($show_comp_col): ?><th>Perusahaan</th><?php endif; ?>
+                        <?php foreach ($list_cols as $f): ?><th<?= (($f['type'] ?? '') === 'money') ? ' class="text-end"' : '' ?>><?= e($f['list_label'] ?? $f['label']) ?></th><?php endforeach; ?>
+                        <th class="text-end" style="width: 120px;">Aksi</th>
                     </tr></thead>
                     <tbody>
-                    <?php foreach ($rows as $r):
+                    <?php foreach ($rows as $idx => $r):
                         $is_global = !empty($spec['company']) && ($r['company_id'] === null);
                         $can_edit_this = $can_manage && (!$is_global || is_super_admin());
                     ?>
                         <tr>
-                            <?php foreach ($list_cols as $idx_c => $f): $col = $f['col']; ?>
+                            <td class="text-center text-muted small"><?= number_format($p['offset'] + $idx + 1, 0, ',', '.') ?></td>
+                            <?php if ($show_comp_col): ?>
                                 <td>
-                                <?php if (($f['type'] ?? '') === 'checkbox'): ?>
+                                    <?php if ($is_global): ?>
+                                        <span class="badge bg-light text-secondary border">Global</span>
+                                    <?php else: ?>
+                                        <span class="badge bg-light text-dark border"><?= e($company_map[(int) $r['company_id']] ?? ('#' . (int) $r['company_id'])) ?></span>
+                                    <?php endif; ?>
+                                </td>
+                            <?php endif; ?>
+                            <?php foreach ($list_cols as $idx_c => $f): $col = $f['col']; $ftype = $f['type'] ?? ''; ?>
+                                <td<?= $col === 'name' ? ' class="fw-medium"' : ($ftype === 'money' ? ' class="text-end font-monospace small"' : '') ?>>
+                                <?php if ($ftype === 'checkbox'): ?>
                                     <?php if ($col === 'is_cash'): ?>
                                         <span class="badge bg-<?= $r[$col] ? 'success' : 'info' ?>"><?= $r[$col] ? 'Kas Tunai' : 'Bank / Non-Tunai' ?></span>
                                     <?php else: ?>
                                         <span class="badge bg-<?= $r[$col] ? 'success' : 'secondary' ?>"><?= $r[$col] ? 'Aktif' : 'Nonaktif' ?></span>
                                     <?php endif; ?>
-                                <?php elseif (($f['type'] ?? '') === 'select'): ?>
+                                <?php elseif ($ftype === 'select'): ?>
                                     <?= e(master_label($maps[$f['source']], $r[$col])) ?>
+                                <?php elseif ($ftype === 'money'): ?>
+                                    <?= e(rupiah((float) ($r[$col] ?? 0))) ?>
+                                <?php elseif ($col === 'code'): ?>
+                                    <span class="badge bg-light text-dark border font-monospace"><?= e((string) $r[$col]) ?></span>
                                 <?php else: ?>
-                                    <?= e((string) $r[$col]) ?>
+                                    <?= e((string) $r[$col]) !== '' ? e((string) $r[$col]) : '<span class="text-muted">—</span>' ?>
                                 <?php endif; ?>
-                                <?php if ($idx_c === 0 && $is_global): ?>
+                                <?php if ($idx_c === 0 && $is_global && !$show_comp_col): ?>
                                     <span class="badge bg-light text-secondary border ms-1" title="Data bawaan sistem / berlaku semua perusahaan">Global</span>
+                                <?php endif; ?>
+                                <?php if ($idx_c === 0 && $table === 'payment_methods' && !empty($r['auto_verify'])): ?>
+                                    <span class="badge bg-primary-subtle text-primary border ms-1" title="Verifikasi pembayaran otomatis">Auto-Verify</span>
+                                <?php endif; ?>
+                                <?php if ($idx_c === 0 && $table === 'payment_methods' && !empty($r['qr_blob_path'])): ?>
+                                    <a href="<?= e(APP_URL . '/pages/finance/payment_methods/qr.php?id=' . (int) $r['id']) ?>" target="_blank" class="badge bg-light text-primary border ms-1 text-decoration-none" title="Lihat Gambar QR"><i class="bi bi-qr-code me-1"></i>QR</a>
                                 <?php endif; ?>
                                 </td>
                             <?php endforeach; ?>
@@ -807,7 +896,7 @@ function master_list(string $key): void
                         </tr>
                     <?php endforeach; ?>
                     <?php if (!$rows): ?>
-                        <tr><td colspan="<?= count($list_cols) + 1 ?>" class="text-center text-muted py-4">Belum ada data<?= $q !== '' ? ' yang sesuai pencarian' : '' ?>.</td></tr>
+                        <tr><td colspan="<?= count($list_cols) + 2 + ($show_comp_col ? 1 : 0) ?>" class="text-center text-muted py-4">Belum ada data<?= $q !== '' ? ' yang sesuai pencarian' : '' ?>.</td></tr>
                     <?php endif; ?>
                     </tbody>
                 </table>
@@ -965,7 +1054,9 @@ function master_form(string $key): void
                                 <div class="rnt-panel mb-0">
                                     <div class="rnt-panel-header"><i class="bi bi-card-list"></i> Detail <?= e($spec['title']) ?></div>
                                     <div class="rnt-panel-body">
-                                        <?php foreach ($spec['fields'] as $f): $col = $f['col']; $val = $row[$col] ?? null; ?>
+                                        <?php foreach ($spec['fields'] as $f):
+                                            if (!empty($f['perm']) && function_exists('can') && !can((string) $f['perm'])) continue;
+                                            $col = $f['col']; $val = $row[$col] ?? null; ?>
                                             <?php if (($f['type'] ?? '') === 'hidden') continue; ?>
                                             <?php $ftype = $f['type'] ?? ''; ?>
                                             <?php $isTop = in_array($ftype, ['textarea', 'blob'], true); ?>
@@ -983,11 +1074,15 @@ function master_form(string $key): void
                                                         </div>
                                                     <?php elseif ($ftype === 'blob'): ?>
                                                         <input class="form-control form-control-sm" type="file" id="<?= e($col) ?>" name="<?= e($col) ?>" accept="image/*">
-                                                        <?php if ($id > 0 && !empty($val)): ?>
+                                                        <?php if ($id > 0 && !empty($val)):
+                                                            $blob_preview_url = ($table === 'payment_methods' && $col === 'qr_blob_path')
+                                                                ? (APP_URL . '/pages/finance/payment_methods/qr.php?id=' . $id)
+                                                                : azure_blob_url((string) $val);
+                                                        ?>
                                                             <div class="form-text small d-flex align-items-center gap-2 mt-1">
-                                                                <img src="<?= e(azure_blob_url((string) $val)) ?>" alt="" style="height:40px;width:40px;object-fit:contain" class="border rounded bg-white">
+                                                                <img src="<?= e($blob_preview_url) ?>" alt="" style="height:40px;width:40px;object-fit:contain" class="border rounded bg-white">
                                                                 <span>Azure Blob (<code><?= e((string) $val) ?></code>)</span>
-                                                                <a href="<?= e(azure_blob_url((string) $val)) ?>" target="_blank" class="btn btn-outline-primary btn-sm py-0 px-2">Lihat</a>
+                                                                <a href="<?= e($blob_preview_url) ?>" target="_blank" class="btn btn-outline-primary btn-sm py-0 px-2">Lihat</a>
                                                             </div>
                                                         <?php endif; ?>
                                                     <?php elseif ($ftype === 'textarea'): ?>
@@ -1225,6 +1320,9 @@ function master_map_input(array $spec, array $post): array
 {
     $out = [];
     foreach ($spec['fields'] as $f) {
+        if (!empty($f['perm']) && function_exists('can') && !can((string) $f['perm'])) {
+            continue;
+        }
         $col = $f['col'];
         $type = $f['type'] ?? 'text';
         if ($type === 'checkbox') {
@@ -1327,6 +1425,9 @@ function master_validate(array $spec, array $in, int $id, ?int $cid): array
 {
     $errors = [];
     foreach ($spec['fields'] as $f) {
+        if (!empty($f['perm']) && function_exists('can') && !can((string) $f['perm'])) {
+            continue;
+        }
         $col = $f['col'];
         $type = $f['type'] ?? 'text';
         if ($type === 'blob' || $type === 'hidden') {
@@ -1604,16 +1705,23 @@ function master_save(array $spec, int $id, array $in, ?int $cid): int
         $sql = "INSERT INTO `{$table}` (`" . implode('`,`', $cols_sql) . '`) VALUES ('
             . implode(',', array_fill(0, count($cols_sql), '?')) . ')';
     } else {
+        $hr_sync_map = [
+            'job_titles'              => 'job_title',
+            'job_positions'           => 'job_position',
+            'organization_structures' => 'organization_structure',
+        ];
         $old_name = null;
-        if ($table === 'job_grades' && isset($in['name'])) {
-            $st_old = db()->prepare('SELECT name, company_id FROM job_grades WHERE id = ?');
+        $old_cid  = null;
+        if (isset($hr_sync_map[$table], $in['name'])) {
+            $st_old = db()->prepare("SELECT name, company_id FROM `{$table}` WHERE id = ?");
             $st_old->bind_param('i', $id);
             $st_old->execute();
             $r_old = $st_old->get_result()->fetch_assoc();
             $st_old->close();
             if ($r_old) {
-                $old_name = $r_old['name'];
-                $cid = $cid ?? ($r_old['company_id'] !== null ? (int) $r_old['company_id'] : null);
+                $old_name = (string) $r_old['name'];
+                $old_cid  = $r_old['company_id'] !== null ? (int) $r_old['company_id'] : null;
+                $cid      = $cid ?? $old_cid;
             }
         }
 
@@ -1634,12 +1742,20 @@ function master_save(array $spec, int $id, array $in, ?int $cid): int
     $new_id = $id === 0 ? $st->insert_id : $id;
     $st->close();
 
-    // Sinkronisasi nama grade pada employees jika grade diubah namanya
-    if ($id > 0 && isset($old_name) && $old_name !== '' && $old_name !== $in['name'] && $cid !== null) {
-        $st_sync = db()->prepare('UPDATE employees SET job_grade = ? WHERE job_grade = ? AND company_id = ?');
-        $st_sync->bind_param('ssi', $in['name'], $old_name, $cid);
-        $st_sync->execute();
-        $st_sync->close();
+    // Sinkronisasi nama master HR (Jabatan / Posisi / Struktur Organisasi) pada employees jika diubah namanya
+    if ($id > 0 && isset($hr_sync_map[$table], $old_name) && $old_name !== '' && $old_name !== $in['name']) {
+        $emp_col = $hr_sync_map[$table];
+        if (column_exists('employees', $emp_col)) {
+            if ($old_cid !== null) {
+                $st_sync = db()->prepare("UPDATE employees SET `{$emp_col}` = ? WHERE `{$emp_col}` = ? AND company_id = ?");
+                $st_sync->bind_param('ssi', $in['name'], $old_name, $old_cid);
+            } else {
+                $st_sync = db()->prepare("UPDATE employees SET `{$emp_col}` = ? WHERE `{$emp_col}` = ?");
+                $st_sync->bind_param('ss', $in['name'], $old_name);
+            }
+            $st_sync->execute();
+            $st_sync->close();
+        }
     }
 
     return $new_id;
@@ -1736,7 +1852,18 @@ function master_move(string $key, int $id, int $dir): void
     $row_cid = $row['company_id'] ?? null;
     $table = $spec['table'];
     if (!empty($spec['company'])) {
-        if ($row_cid !== null) {
+        if (($spec['unique'] ?? '') === 'company_or_null') {
+            $eff_cid = $row_cid !== null ? (int) $row_cid : active_company_id();
+            if ($eff_cid !== null) {
+                $where = "(company_id = ? OR company_id IS NULL)";
+                $types = "i";
+                $params = [(int) $eff_cid];
+            } else {
+                $where = "company_id IS NULL";
+                $types = "";
+                $params = [];
+            }
+        } elseif ($row_cid !== null) {
             $where = "company_id = ?";
             $types = "i";
             $params = [(int) $row_cid];

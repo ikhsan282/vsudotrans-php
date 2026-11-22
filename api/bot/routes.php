@@ -13,6 +13,7 @@ $ctx     = bot_boot(['GET'], false);
 $db      = $ctx['db'];
 $company = $ctx['company'];
 $cid     = (int) $company['id'];
+category_service_ensure_schema();
 rute_ensure_schema();
 
 // 1. Rute Travel Aktif
@@ -63,6 +64,9 @@ foreach ($rawRoutes as $r) {
             'category_vehicle_id' => (int) $tf['category_vehicle_id'],
             'category_code'       => $tf['category_code'],
             'vehicle_category'    => $tf['category_name'],
+            'service_type'        => $tf['category_service_type'] ?? 'travel',
+            'pricing_unit'        => $tf['pricing_unit'] ?? 'per_seat',
+            'pricing_unit_short'  => $tf['pricing_unit_short'] ?? '/kursi',
             'price'               => bot_money((float) $tf['price']),
             'min_price'           => bot_money((float) $tf['min_price']),
             'max_price'           => bot_money((float) $tf['max_price']),
@@ -135,16 +139,26 @@ foreach ($routes as &$routeRow) {
 }
 unset($routeRow);
 
-// 3. Kategori Kendaraan (untuk Travel & Rental)
-$st = $db->prepare('SELECT id, code, name, note FROM category_vehicles WHERE company_id = ? AND is_active = 1 ORDER BY name ASC');
-$st->bind_param('i', $cid);
+// 3. Kategori Layanan (dipisahkan menurut lingkup Travel / Rental & satuan tarif)
+$reqSvcType = strtolower(trim((string) ($_GET['service_type'] ?? '')));
+if (isset(CATEGORY_SERVICE_TYPES[$reqSvcType])) {
+    $st = db()->prepare('SELECT id, code, name, service_type, pricing_unit, note FROM category_vehicles WHERE company_id = ? AND is_active = 1 AND service_type = ? ORDER BY name ASC');
+    $st->bind_param('is', $cid, $reqSvcType);
+} else {
+    $st = db()->prepare('SELECT id, code, name, service_type, pricing_unit, note FROM category_vehicles WHERE company_id = ? AND is_active = 1 ORDER BY service_type ASC, name ASC');
+    $st->bind_param('i', $cid);
+}
 $st->execute();
 $categories = [];
 foreach ($st->get_result()->fetch_all(MYSQLI_ASSOC) as $c) {
+    $pUnit = (string) ($c['pricing_unit'] ?? 'per_seat');
     $categories[] = [
         'category_vehicle_id' => (int) $c['id'],
         'code'                => $c['code'],
         'name'                => $c['name'],
+        'service_type'        => (string) ($c['service_type'] ?? 'travel'),
+        'pricing_unit'        => $pUnit,
+        'pricing_unit_short'  => category_pricing_unit_short($pUnit),
         'note'                => $c['note'],
     ];
 }
@@ -163,6 +177,7 @@ if (!empty($_GET['quote'])) {
     $qCode  = strtoupper(trim((string) ($_GET['rute_code'] ?? '')));
     $qCatId = !empty($_GET['category_vehicle_id']) ? (int) $_GET['category_vehicle_id'] : null;
     $qSeats = max(1, min(20, (int) ($_GET['seats'] ?? 1)));
+    $qDays  = !empty($_GET['days']) ? max(1, min(365, (int) $_GET['days'])) : ((!empty($_GET['start_date']) && !empty($_GET['end_date'])) ? rental_duration_days((string) $_GET['start_date'], (string) $_GET['end_date']) : 0);
     $qPickD = (int) ($_GET['pickup_district_id'] ?? 0);
     $qDelivD = (int) ($_GET['delivery_district_id'] ?? 0);
 
@@ -174,13 +189,17 @@ if (!empty($_GET['quote'])) {
         }
     }
     if ($qRute) {
-        $calc = rute_calculate_travel_quote($cid, $qRute, $qCatId ?: (!empty($qRute['category_vehicle_id']) ? (int) $qRute['category_vehicle_id'] : null), $qSeats, $qPickD, $qDelivD);
+        $calc = rute_calculate_travel_quote($cid, $qRute, $qCatId ?: (!empty($qRute['category_vehicle_id']) ? (int) $qRute['category_vehicle_id'] : null), $qSeats, $qPickD, $qDelivD, $qDays);
         $quoteResult = [
             'rute_id'             => (int) $qRute['id'],
             'rute_code'           => $qRute['code'],
             'rute_name'           => $qRute['name'],
             'category_vehicle_id' => $qCatId ?: (!empty($qRute['category_vehicle_id']) ? (int) $qRute['category_vehicle_id'] : null),
+            'pricing_unit'        => $calc['pricing_unit'] ?? 'per_seat',
+            'pricing_unit_short'  => $calc['pricing_unit_short'] ?? '/kursi',
             'seats'               => $calc['seats'],
+            'rental_days'         => $calc['rental_days'] ?? ($qDays > 0 ? $qDays : $calc['seats']),
+            'billable_qty'        => $calc['billable_qty'] ?? $calc['seats'],
             'unit_price'          => bot_money($calc['unit_price']),
             'subtotal'            => bot_money($calc['subtotal']),
             'pickup_extra'        => bot_money($calc['pickup_extra']),

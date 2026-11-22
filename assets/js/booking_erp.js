@@ -615,6 +615,10 @@
         disp.classList.toggle('is-invalid', rowOver);
         disp.classList.toggle('text-danger', rowOver);
       });
+      syncPayActionButtons({
+        billTotal: billTotal,
+        paySum: sum
+      });
       if (typeof cfg.onChange === 'function') cfg.onChange(sum, billTotal);
       return sum;
     }
@@ -790,6 +794,36 @@
       getValidationState: getValidationState,
       setInvoiceTotal: setInvoiceTotal
     };
+  }
+
+  let lastPayActionState = { billTotal: 0, paySum: 0 };
+  function syncPayActionButtons(opts) {
+    const cfg = opts || lastPayActionState;
+    const billTotal = Math.max(0, Math.round(parseFloat(cfg.billTotal) || 0));
+    const paySum = Math.max(0, Math.round(parseFloat(cfg.paySum) || 0));
+    lastPayActionState = { billTotal: billTotal, paySum: paySum };
+
+    const statusSel = document.getElementById('bookingStatusSelect') || document.querySelector('select[name="booking_status"]');
+    if (statusSel && statusSel.dataset.payActBound !== '1') {
+      statusSel.dataset.payActBound = '1';
+      statusSel.addEventListener('change', function () {
+        syncPayActionButtons(lastPayActionState);
+      });
+    }
+    const isCancelled = Boolean(cfg.isCancelled || (statusSel && statusSel.value === 'cancelled'));
+    const isPaidFull = billTotal > 0 && (billTotal - paySum) <= 0;
+    const shouldDisable = isCancelled || isPaidFull;
+
+    ['btnQuickPayDp50', 'btnQuickPayFull', 'btnAddPayRow', 'btnPayFooterAdd', 'btnFooterAddPay'].forEach(function (id) {
+      const el = document.getElementById(id);
+      if (el) {
+        el.disabled = shouldDisable;
+      }
+    });
+    const btnQris = document.getElementById('btnPayQrisAuto');
+    if (btnQris) {
+      btnQris.disabled = isCancelled || billTotal <= 0 || (billTotal - paySum) <= 0;
+    }
   }
 
   function bindQuickPayButtons(opts) {
@@ -1397,13 +1431,17 @@
 
   function initTravelRouteLookup(opts) {
     const cfg = opts || {};
+    const serviceType = (cfg.serviceType === 'rental' || cfg.serviceType === 'travel') ? cfg.serviceType : 'travel';
+    const startDateEl = cfg.startDateEl || null;
+    const endDateEl = cfg.endDateEl || null;
+    const durationEl = cfg.durationEl || null;
     const pCityEl = cfg.pickupCityEl;
     const dCityEl = cfg.deliveryCityEl;
     const pDistEl = cfg.pickupDistrictEl || null;
     const dDistEl = cfg.deliveryDistrictEl || null;
     const catEl = cfg.categoryEl;
-    const primEl = cfg.primaryPassengerEl;
-    const extraEl = cfg.extraPassengersEl;
+    const primEl = cfg.primaryPassengerEl || null;
+    const extraEl = cfg.extraPassengersEl || null;
     const priceHint = cfg.hintEl;
     const btnApply = cfg.applyBtnEl;
     const priceDisp = cfg.priceDisplayEl;
@@ -1472,6 +1510,40 @@
       return Math.max(1, (primVal ? 1 : 0) + extCnt);
     }
 
+    function getRentalDays() {
+      const sRaw = startDateEl ? String(startDateEl.value || '').trim() : '';
+      const eRaw = endDateEl ? String(endDateEl.value || '').trim() : '';
+      if (/^\d{4}-\d{2}-\d{2}$/.test(sRaw) && /^\d{4}-\d{2}-\d{2}$/.test(eRaw)) {
+        const sp = sRaw.split('-').map(Number);
+        const ep = eRaw.split('-').map(Number);
+        const sUtc = Date.UTC(sp[0], sp[1] - 1, sp[2]);
+        const eUtc = Date.UTC(ep[0], ep[1] - 1, ep[2]);
+        const diff = Math.floor((eUtc - sUtc) / 86400000) + 1;
+        return Math.max(1, diff);
+      }
+      const dv = durationEl ? parseInt(durationEl.value || '1', 10) : 1;
+      return (!isNaN(dv) && dv > 0) ? dv : 1;
+    }
+
+    function getPricingUnit(routeObj) {
+      return (routeObj && routeObj.pricing_unit) ? String(routeObj.pricing_unit) : (serviceType === 'rental' ? 'per_day' : 'per_seat');
+    }
+
+    function getBillableQty(routeObj, passCount) {
+      const u = getPricingUnit(routeObj);
+      if (u === 'per_vehicle') return 1;
+      if (u === 'per_day') return (startDateEl || endDateEl || durationEl) ? getRentalDays() : passCount;
+      return passCount;
+    }
+
+    function getUnitQtyLabel(routeObj) {
+      const u = getPricingUnit(routeObj);
+      if (u === 'per_vehicle') return 'mobil';
+      if (u === 'per_package') return 'paket';
+      if (u === 'per_day') return 'hari';
+      return 'penumpang';
+    }
+
     function getRadiusExtra(routeObj) {
       if (!routeObj) return { pickup: 0, delivery: 0, total: 0 };
       const pExtra = Math.round(parseFloat(routeObj.pickup_district_extra) || 0);
@@ -1485,17 +1557,19 @@
       let msg = '';
       if (applicable && priceVal && (!priceDisp || !priceDisp.readOnly)) {
         const passCount = getPassengerCount();
+        const billQty = getBillableQty(lastMatchedRoute, passCount);
+        const qtyLbl = getUnitQtyLabel(lastMatchedRoute);
         const curVal = parseRp(priceVal.value);
         const minUnit = parseFloat(lastMatchedRoute.min_price) || 0;
         const maxUnit = parseFloat(lastMatchedRoute.max_price) || 0;
         const radEx = getRadiusExtra(lastMatchedRoute);
-        const minTotal = minUnit > 0 ? (Math.round(passCount * minUnit) + radEx.total) : 0;
-        const maxTotal = maxUnit > 0 ? (Math.round(passCount * maxUnit) + radEx.total) : 0;
+        const minTotal = minUnit > 0 ? (Math.round(billQty * minUnit) + radEx.total) : 0;
+        const maxTotal = maxUnit > 0 ? (Math.round(billQty * maxUnit) + radEx.total) : 0;
         const radNote = radEx.total > 0 ? (' + radius Rp ' + (fmtRp(radEx.total) || '0')) : '';
         if (minTotal > 0 && curVal < minTotal) {
-          msg = 'Di bawah Harga Min rute (' + passCount + ' x Rp ' + (fmtRp(Math.round(minUnit)) || '0') + radNote + ' = Rp ' + (fmtRp(minTotal) || '0') + ').';
+          msg = 'Di bawah Harga Min rute (' + billQty + ' ' + qtyLbl + ' x Rp ' + (fmtRp(Math.round(minUnit)) || '0') + radNote + ' = Rp ' + (fmtRp(minTotal) || '0') + ').';
         } else if (maxTotal > 0 && curVal > maxTotal) {
-          msg = 'Melebihi Harga Maks rute (' + passCount + ' x Rp ' + (fmtRp(Math.round(maxUnit)) || '0') + radNote + ' = Rp ' + (fmtRp(maxTotal) || '0') + ').';
+          msg = 'Melebihi Harga Maks rute (' + billQty + ' ' + qtyLbl + ' x Rp ' + (fmtRp(Math.round(maxUnit)) || '0') + radNote + ' = Rp ' + (fmtRp(maxTotal) || '0') + ').';
         }
       }
       if (priceDisp) priceDisp.classList.toggle('is-invalid', msg !== '');
@@ -1524,13 +1598,15 @@
         return;
       }
       const passCount = getPassengerCount();
+      const billQty = getBillableQty(matched, passCount);
+      const qtyLbl = getUnitQtyLabel(matched);
       const unitPrice = parseFloat(matched.price) || 0;
       const minUnit = parseFloat(matched.min_price) || 0;
       const maxUnit = parseFloat(matched.max_price) || 0;
       const radEx = getRadiusExtra(matched);
-      const estTotal = Math.round(passCount * unitPrice) + radEx.total;
-      const minTotal = minUnit > 0 ? (Math.round(passCount * minUnit) + radEx.total) : 0;
-      const maxTotal = maxUnit > 0 ? (Math.round(passCount * maxUnit) + radEx.total) : 0;
+      const estTotal = Math.round(billQty * unitPrice) + radEx.total;
+      const minTotal = minUnit > 0 ? (Math.round(billQty * minUnit) + radEx.total) : 0;
+      const maxTotal = maxUnit > 0 ? (Math.round(billQty * maxUnit) + radEx.total) : 0;
 
       const radParts = [];
       if (radEx.pickup > 0) radParts.push('Jemput +Rp ' + escHtml(fmtRp(radEx.pickup) || '0'));
@@ -1563,7 +1639,7 @@
 
       priceHint.className = 'form-text small mt-1';
       priceHint.innerHTML = '<span class="text-primary fw-semibold"><i class="bi bi-calculator me-1"></i>Estimasi (' +
-        escHtml(matched.name) + '): ' + passCount + ' penumpang &times; Rp ' + escHtml(fmtRp(Math.round(unitPrice)) || '0') +
+        escHtml(matched.name) + '): ' + billQty + ' ' + escHtml(qtyLbl) + ' &times; Rp ' + escHtml(fmtRp(Math.round(unitPrice)) || '0') +
         radiusExpr + ' = Rp ' + escHtml(fmtRp(estTotal) || '0') + '</span>' + radiusDetail + boundsHtml + uncatNote + outZoneNote;
       priceHint.style.display = 'block';
       if (btnApply) btnApply.style.display = 'inline-block';
@@ -1585,7 +1661,7 @@
       const pdVal = pDistEl ? (parseInt(getFieldVal(pDistEl) || '0', 10) || 0) : 0;
       const ddVal = dDistEl ? (parseInt(getFieldVal(dDistEl) || '0', 10) || 0) : 0;
       const catVal = catEl ? (parseInt(getFieldVal(catEl) || '0', 10) || 0) : 0;
-      if (!pcVal || !dcVal) {
+      if (!pcVal || !dcVal || (serviceType === 'rental' && !catVal)) {
         lastMatchedRoute = null;
         renderSchedules(null);
         if (priceHint) priceHint.style.display = 'none';
@@ -1593,7 +1669,7 @@
         validatePriceBounds();
         return;
       }
-      const key = pcVal + '-' + dcVal + '-' + pdVal + '-' + ddVal + '-' + catVal;
+      const key = serviceType + '-' + pcVal + '-' + dcVal + '-' + pdVal + '-' + ddVal + '-' + catVal;
       if (Object.prototype.hasOwnProperty.call(routeCache, key)) {
         renderEstimate(routeCache[key], forceApply);
         return;
@@ -1601,6 +1677,7 @@
       const seq = ++routeReqSeq;
       const baseLookup = cfg.lookupUrl || ((cfg.appUrl || '') + '/pages/travel/rutes/lookup.php');
       const url = baseLookup + '?company_id=' + Number(cfg.companyId || 0) +
+        '&service_type=' + encodeURIComponent(serviceType) +
         '&pickup_point_city_id=' + pcVal + '&delivery_point_city_id=' + dcVal +
         (pdVal > 0 ? '&pickup_point_district_id=' + pdVal : '') +
         (ddVal > 0 ? '&delivery_point_district_id=' + ddVal : '') +
@@ -1616,8 +1693,17 @@
         .catch(function () { });
     }
 
-    if (pDistEl) pDistEl.addEventListener('change', function () { lookup(false); });
-    if (dDistEl) dDistEl.addEventListener('change', function () { lookup(false); });
+    if (pDistEl) bindTsChange(pDistEl, function () { lookup(false); });
+    if (dDistEl) bindTsChange(dDistEl, function () { lookup(false); });
+    if (serviceType === 'rental' && catEl) {
+      bindTsChange(catEl, function () { lookup(false); });
+    }
+    if (startDateEl) startDateEl.addEventListener('change', function () { lookup(false); });
+    if (endDateEl) endDateEl.addEventListener('change', function () { lookup(false); });
+    if (durationEl) {
+      durationEl.addEventListener('input', function () { lookup(false); });
+      durationEl.addEventListener('change', function () { lookup(false); });
+    }
 
     if (priceDisp) priceDisp.addEventListener('input', validatePriceBounds);
     if (priceVal) priceVal.addEventListener('change', validatePriceBounds);
@@ -2169,6 +2255,7 @@
     initVehiclePreview: initVehiclePreview,
     initCrewTab: initCrewTab,
     initPaymentTab: initPaymentTab,
+    syncPayActionButtons: syncPayActionButtons,
     bindQuickPayButtons: bindQuickPayButtons,
     initQrisController: initQrisController,
     initFormTabValidation: initFormTabValidation,

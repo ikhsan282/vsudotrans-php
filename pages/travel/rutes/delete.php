@@ -1,6 +1,7 @@
 <?php
 require_once __DIR__ . '/../../../config/config.php';
-require_permission('travel.manage');
+require_once __DIR__ . '/../../transport/_helpers.php';
+transport_require_manage();
 
 if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
     redirect('pages/travel/rutes/index.php');

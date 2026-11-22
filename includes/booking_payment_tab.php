@@ -103,13 +103,7 @@ $isPayActive   = ($activeTab === 'payment');
                         <?php if ($payBadgeHtml !== ''): ?>
                             <span><?= $payBadgeHtml ?></span>
                         <?php endif; ?>
-                        <span id="qrisLiveSyncBadge" class="badge bg-info-subtle text-info-emphasis border <?= $hasPendingQris ? '' : 'd-none' ?>">
-                            <i class="bi bi-arrow-repeat me-1"></i>Pantau QRIS Otomatis Aktif
-                        </span>
                     <?php endif; ?>
-                    <span class="badge bg-light text-secondary border fw-normal" title="Setiap pembayaran otomatis disinkronkan ke Buku Kas">
-                        <i class="bi bi-arrow-left-right me-1 text-primary"></i>Auto-Sinkron Buku Kas
-                    </span>
                 </div>
             </div>
         </div>
@@ -126,7 +120,9 @@ $isPayActive   = ($activeTab === 'payment');
     <div class="rnt-panel mb-0">
         <div class="rnt-panel-header">
             <span><?= e($tabTitle) ?></span>
-            <?php if ($canManage): ?>
+            <?php if ($canManage):
+                $payActionsDisabled = $isDetailMode && ($bookingStatus === 'cancelled' || ($invoiceTotal > 0 && $remainingVal <= 0));
+            ?>
                 <div class="d-flex flex-wrap align-items-center gap-3">
                     <?php if ($isDetailMode): ?>
                         <?php if (!empty($qrisChannels)): ?>
@@ -143,13 +139,13 @@ $isPayActive   = ($activeTab === 'payment');
                             <i class="bi bi-qr-code-scan me-1"></i>Simpan &amp; Bayar QRIS
                         </button>
                     <?php endif; ?>
-                    <button type="button" class="rnt-header-action" id="btnQuickPayDp50" title="Isi otomatis nominal Down Payment 50% dari total harga">
+                    <button type="button" class="rnt-header-action" id="btnQuickPayDp50" title="Isi otomatis nominal Down Payment 50% dari total harga" <?= $payActionsDisabled ? 'disabled' : '' ?>>
                         <i class="bi bi-percent me-1"></i>Isi DP 50%
                     </button>
-                    <button type="button" class="rnt-header-action" id="btnQuickPayFull" title="Isi otomatis sisa tagihan lunas (100%)">
+                    <button type="button" class="rnt-header-action" id="btnQuickPayFull" title="Isi otomatis sisa tagihan lunas (100%)" <?= $payActionsDisabled ? 'disabled' : '' ?>>
                         <i class="bi bi-cash-coin me-1"></i>Isi Lunas
                     </button>
-                    <button type="button" class="rnt-header-action" id="btnAddPayRow">
+                    <button type="button" class="rnt-header-action" id="btnAddPayRow" <?= $payActionsDisabled ? 'disabled' : '' ?>>
                         <i class="bi bi-plus-lg me-1"></i>Tambah Pembayaran Manual
                     </button>
                 </div>
@@ -277,7 +273,7 @@ $isPayActive   = ($activeTab === 'payment');
                                 <span id="payRecordCount">Record <?= count($payRowsIn) ? 1 : 0 ?> of <?= count($payRowsIn) ?></span>
                                 <?php if ($canManage): ?>
                                     <div class="btn-group btn-group-sm ms-2">
-                                        <button type="button" class="btn btn-outline-secondary py-0 px-2" id="btnPayFooterAdd" title="Tambah Baris">+</button>
+                                        <button type="button" class="btn btn-outline-secondary py-0 px-2" id="btnPayFooterAdd" title="Tambah Baris" <?= !empty($payActionsDisabled) ? 'disabled' : '' ?>>+</button>
                                         <button type="button" class="btn btn-outline-secondary py-0 px-2" id="btnPayFooterRemove" title="Hapus Baris Terakhir">&minus;</button>
                                     </div>
                                 <?php endif; ?>

@@ -166,3 +166,79 @@ Data yang tersedia untuk diringkas kepada pengurus:
 
 ### 5.8 `GET` & `POST /api/bot/outbox.php` — Antrean Notifikasi WhatsApp Otomatis
 Digunakan worker Hermes untuk menarik notifikasi bukti bayar/booking (`GET /api/bot/outbox.php?secret=$SECRET&phone=628000000000`) dan menandai terkirim (`POST` dengan `{"event_id":"...","status":"sent"}`).
+
+### 5.9 `POST /api/bot/staff_booking_ingest.php` — Input Form Pesanan Grup WA Admin (`travel.manage` / `rental.manage`)
+Khusus nomor WA Admin/Staff (`is_staff = true`). Menerima teks form pesanan bebas/acak (`raw_text`) maupun field JSON terstruktur (`passenger_name`, `passenger_phone`, `date`, `time`, `seats`, `pickup_address`, `delivery_address`, `total_price`, `baggage`, `note`, opsional `vehicle_plate`/`driver_name`/`payment`), lalu mem-parsing, mencocokkan kota/kecamatan/rute, mengecek duplikat, dan menyimpan booking + invoice secara otomatis (mencatat `audit_trails` atas nama `wa:<username>`).
+
+- `dry_run: true`: simulasi parsing & cek duplikat tanpa menyimpan ke database.
+- `allow_duplicate: true` / `update_if_duplicate: true`: perilaku saat ditemukan pesanan aktif atas penumpang, tanggal, dan jam yang sama (`409 DUPLICATE_BOOKING`).
+
+```bash
+curl -sS -X POST "$BASE/api/bot/staff_booking_ingest.php" \
+  -H "Authorization: Bearer $SECRET" \
+  -H "X-Bot-Phone: $ADMIN_PHONE" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "raw_text": "Form Pemesanan Tiket Travel Door to door\n👱♂️Nama : Bryan M. W\n📱No Hp : 085889611974\n🏠 Alamat Penjemputan : Jl. Batu Tulis IX no. 26A, Kebon Kelapa, Gambir, Jakarta Pusat\n🚘 Alamat Tujuan : Panyileukan Regency Blok C no. 2, Cipadung Kidul, Panyileukan, Kota Bandung\n👨👦👦 Jumlah Tiket/Kursi : 1\n📆 Hari & Tanggal : Jum'\''at, 20 November 2026\n⏰ Jam Berangkat : 19.00\n💰 Tarif : 250rb"
+  }'
+```
+
+### 5.10 `POST` / `PATCH /api/bot/staff_booking_update.php` — Edit Pesanan (`travel.manage` / `rental.manage`)
+Mengubah pesanan existing berdasarkan `document_number`, `invoice_no`, atau `booking_id`. Mendukung perubahan parsial (`date`, `time`, `seats`, `pickup_address`, `delivery_address`, `total_price` [otomatis snapshot & sinkron invoice], `append_note`/`note`, `baggage`, `vehicle_plate`/`vehicle_id`, `driver_name`/`driver_employee_id`, `status`, maupun catat `payment: {"amount":..., "method":"TRANSFER"}`).
+
+```bash
+curl -sS -X POST "$BASE/api/bot/staff_booking_update.php" \
+  -H "Authorization: Bearer $SECRET" \
+  -H "X-Bot-Phone: $ADMIN_PHONE" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "document_number": "100120261120",
+    "time": "20:00",
+    "total_price": 500000,
+    "append_note": "Bawa 2 koper",
+    "payment": {"amount": 200000, "method": "TRANSFER"}
+  }'
+```
+
+### 5.11 `POST` / `DELETE /api/bot/staff_booking_cancel.php` — Batalkan atau Hapus Pesanan
+- `mode: "cancel"` *(default)*: mengubah status pesanan ke `cancelled` dan membatalkan invoice (untuk pesanan yang sudah `paid`, wajib role Admin & flag `force_cancel_paid: true`).
+- `mode: "delete"` *(wajib `confirm: true`)*: menghapus permanen **hanya jika** pesanan berstatus `draft`/`cancelled` dan belum ada pembayaran masuk (`paid_total = 0`).
+
+```bash
+curl -sS -X POST "$BASE/api/bot/staff_booking_cancel.php" \
+  -H "Authorization: Bearer $SECRET" \
+  -H "X-Bot-Phone: $ADMIN_PHONE" \
+  -H "Content-Type: application/json" \
+  -d '{"document_number":"100120261120","mode":"cancel","reason":"Penumpang cancel"}'
+```
+
+### 5.12 `GET /api/bot/staff_rekap.php` — Rekap Manifest & Omzet (`travel.view` / `rental.view`)
+Menarik daftar manifest keberangkatan terurut tanggal/jam lengkap dengan teks WhatsApp siap kirim (`data.wa_text`).
+- Query filter: `date` (atau `date_from` & `date_to`, mendukung `hari ini`/`besok`/`lusa`/`YYYY-MM-DD`/`20 November 2026`), `time` (`HH:MM`), `booking_type` (`all`|`travel`|`rental`), `status` (`active`|`all`|`draft`|`scheduled`|`on_trip`|`done`|`cancelled`), `payment_status` (`all`|`unpaid`|`partial`|`paid`), `q` (cari nama/HP/alamat/resi/sopir), dan `format` (`full` default atau `driver` untuk grup sopir tanpa nominal harga).
+
+```bash
+curl -sS "$BASE/api/bot/staff_rekap.php?date=2026-11-20&format=full" \
+  -H "Authorization: Bearer $SECRET" \
+  -H "X-Bot-Phone: $ADMIN_PHONE"
+```
+
+---
+
+## 6. Mode Grup WhatsApp Admin (Form Data, Edit, Batal & Rekap)
+
+Aturan wajib saat Hermes beroperasi di **Grup WhatsApp Khusus Admin** (whitelist ID Grup + nomor pengirim harus berstatus `is_staff: true`):
+
+1. **Anti-Berisik (Filter Pemicu):**
+   - Abaikan obrolan santai biasa di grup.
+   - Proses pesan hanya bila: (a) menyerupai form pemesanan (`Nama`, `No Hp`, alamat jemput/tujuan, tanggal/jam, atau tarif), (b) me-mention `@Hermes` / diawali perintah (`/rekap`, `/edit`, `/batal`, `/hapus`), atau (c) merupakan **Reply langsung** terhadap pesan konfirmasi bot sebelumnya.
+2. **Alur Input Form Baru (`staff_booking_ingest.php`):**
+   - Kirim langsung teks form apa adanya ke `raw_text`. Nomor `No Hp` di dalam form dipakai sebagai nomor penumpang (bukan nomor admin pengirim).
+   - Bila API mengembalikan `422 INCOMPLETE_BOOKING_DATA`, balas singkat menanyakan hanya field pada `error.details.missing_fields`.
+   - Bila API mengembalikan `409 DUPLICATE_BOOKING`, tanyakan ke admin: *"Data a.n. ... pada tanggal & jam ini sudah ada di `#...`. Mau perbarui data lama atau tetap buat pesanan baru?"*
+   - Setelah `201 Created`, kirim `data.wa_text` sebagai **reply** di pesan form admin agar kode resi (`#...`) langsung tersimpan di konteks reply.
+3. **Alur Edit & Batal/Hapus dari Konteks Reply (`staff_booking_update.php` & `staff_booking_cancel.php`):**
+   - Saat admin membalas pesan bot sebelumnya dengan instruksi ubah (mis. *"ubah jam 20.00, DP 200rb transfer"*), ambil `document_number` dari pesan yang di-reply lalu panggil `staff_booking_update.php`.
+   - Untuk perintah hapus/batal (*"hapus salah input"* / *"batal ya"*), minta konfirmasi 1 kali terlebih dahulu sebelum mengirim `confirm: true` (`mode: "delete"`) atau membatalkan booking yang sudah berbayar.
+4. **Alur Rekap Manifest (`staff_rekap.php`):**
+   - Saat admin mengetik *"rekap besok"*, *"rekap 20 Nov jam 19.00"*, atau *"rekap untuk sopir besok"*, panggil `staff_rekap.php` dengan `format=full` (untuk admin) atau `format=driver` (untuk share ke grup sopir tanpa nominal uang) lalu kirim `data.wa_text` apa adanya.
+

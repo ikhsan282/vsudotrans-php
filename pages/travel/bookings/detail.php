@@ -205,7 +205,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $extra_pids,
                 $cat_id_post,
                 $veh_id_post,
-                $crewEmpIds
+                $crewEmpIds,
+                'travel'
             );
             $category_vehicle_id = $cat_id_post ?? 0;
 
@@ -225,7 +226,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 count($allPaxIds),
                 $total_price,
                 $pk_dist_in,
-                $dl_dist_in
+                $dl_dist_in,
+                'travel'
             );
 
             $db = db();
@@ -423,7 +425,7 @@ $cur_category_id = (int) ($b['category_vehicle_id'] ?? 0);
 
 $branches   = opts_branches($booking_cid);
 $passengers = opts_passengers($booking_cid, $selected_p_ids, 50);
-$cats       = opts_categories($booking_cid, $cur_category_id > 0 ? [$cur_category_id] : [], 200);
+$cats       = opts_categories($booking_cid, $cur_category_id > 0 ? [$cur_category_id] : [], 200, 'travel');
 $vehicles   = opts_vehicles_detailed(
     $booking_cid,
     [$booking_cid],
@@ -1184,6 +1186,7 @@ document.addEventListener('DOMContentLoaded', function () {
 
     routeCtrl = BookingErp.initTravelRouteLookup({
         appUrl: appUrl,
+        serviceType: 'travel',
         lookupUrl: appUrl + '/pages/travel/rutes/lookup.php',
         companyId: bookingCid,
         pickupCityEl: pCityEl,

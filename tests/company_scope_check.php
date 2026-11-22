@@ -131,8 +131,10 @@ try {
     $comp5 = 5; // LIZ
     $br1   = 1;
     $br5   = 5;
-    $cat1  = 2; // Sewa Big Bus (MTM)
-    $cat5  = 5; // Carter Mini Bus (LIZ)
+    $cat1    = (int) $db->query("SELECT id FROM category_vehicles WHERE company_id = 1 AND code = 'SBB' LIMIT 1")->fetch_column();
+    $cat1Trv = (int) $db->query("SELECT id FROM category_vehicles WHERE company_id = 1 AND code = 'REG' LIMIT 1")->fetch_column();
+    $cat5    = (int) $db->query("SELECT id FROM category_vehicles WHERE company_id = 5 AND code = 'CMB' LIMIT 1")->fetch_column();
+    $cat5Rnt = (int) $db->query("SELECT id FROM category_vehicles WHERE company_id = 5 AND code = 'SMB' LIMIT 1")->fetch_column();
 
     $refVeh = $db->query("SELECT brand_id, model_unit_id FROM vehicles WHERE company_id = 1 LIMIT 1")->fetch_assoc();
     $brandId = (int) ($refVeh['brand_id'] ?? 4);
@@ -198,7 +200,7 @@ try {
     // 4. Seed rutes for MTM & LIZ with same city pair, distinct prices
     $stR = $db->prepare("INSERT INTO rutes (company_id, code, name, pickup_point_city_id, delivery_point_city_id, category_vehicle_id, min_price, price, max_price, is_active, created_user) VALUES (?, ?, ?, ?, ?, ?, 100000, ?, 900000, 1, ?)");
     $r1Code = "RM{$uniq}"; $r1Name = "CSCOPE Route MTM {$uniq}"; $r1Price = 310000.0;
-    $stR->bind_param('issiiids', $comp1, $r1Code, $r1Name, $cityA, $cityB, $cat1, $r1Price, $uTest);
+    $stR->bind_param('issiiids', $comp1, $r1Code, $r1Name, $cityA, $cityB, $cat1Trv, $r1Price, $uTest);
     $stR->execute();
     $r1Id = (int) $db->insert_id;
     $tempRuteIds[] = $r1Id;
@@ -257,7 +259,7 @@ try {
         'delivery_point_city_id'     => $cityB,
         'delivery_point_district_id' => $distB,
         'total_price'                => 350000,
-        'category_vehicle_id'        => $cat1,
+        'category_vehicle_id'        => $cat1Trv,
         'vehicle_id'                 => $veh1Id,
         'passenger_id'               => $pax1Id,
         'passenger_ids'              => [$pax1Id],
@@ -328,7 +330,7 @@ try {
     cs_check($eo5['code'] === 200 && str_contains($eo5Json, $e5Name) && !str_contains($eo5Json, $e1Name),
         'employees/options.php?company_id=5 returns ONLY Company 5 employee');
 
-    $rl1 = $httpGet($jarAdmin, "/pages/travel/rutes/lookup.php?company_id=1&pickup_point_city_id={$cityA}&delivery_point_city_id={$cityB}&category_vehicle_id={$cat1}");
+    $rl1 = $httpGet($jarAdmin, "/pages/travel/rutes/lookup.php?company_id=1&pickup_point_city_id={$cityA}&delivery_point_city_id={$cityB}&category_vehicle_id={$cat1Trv}");
     $rl5 = $httpGet($jarAdmin, "/pages/travel/rutes/lookup.php?company_id=5&pickup_point_city_id={$cityA}&delivery_point_city_id={$cityB}&category_vehicle_id={$cat5}");
     cs_check(
         ($rl1['json']['route']['price'] ?? 0) == 310000 && ($rl5['json']['route']['price'] ?? 0) == 590000,
@@ -376,8 +378,10 @@ try {
     $tf5 = $httpGet($jarAdmin, '/pages/travel/bookings/form.php');
     cs_check(
         $tf5['code'] === 200
-        && str_contains($tf5['body'], 'Carter Mini Bus')
-        && !str_contains($tf5['body'], 'Sewa Big Bus')
+        && (bool) preg_match('/<select[^>]*id="travel_category_select"[^>]*>([\s\S]*?)<\/select>/', $tf5['body'], $mTfCat)
+        && str_contains($mTfCat[1], 'Carter Drop Mini Bus')
+        && !str_contains($mTfCat[1], 'Sewa Big Bus')
+        && !str_contains($mTfCat[1], "value=\"{$cat1Trv}\"")
         && !str_contains($tf5['body'], 'Head Office Cipondoh')
         && str_contains($tf5['body'], 'Kantor Pusat')
         && str_contains($tf5['body'], $v5Plate)
@@ -388,8 +392,10 @@ try {
     $rf5 = $httpGet($jarAdmin, '/pages/rental/bookings/form.php');
     cs_check(
         $rf5['code'] === 200
-        && str_contains($rf5['body'], 'Carter Mini Bus')
-        && !str_contains($rf5['body'], 'Sewa Big Bus')
+        && (bool) preg_match('/<select[^>]*id="rental_category_select"[^>]*>([\s\S]*?)<\/select>/', $rf5['body'], $mRfCat)
+        && str_contains($mRfCat[1], 'Sewa Medium Bus')
+        && !str_contains($mRfCat[1], 'Carter Drop Mini Bus')
+        && !str_contains($mRfCat[1], "value=\"{$cat1}\"")
         && !str_contains($rf5['body'], 'Head Office Cipondoh')
         && str_contains($rf5['body'], $v5Plate)
         && !str_contains($rf5['body'], $v1Plate)
@@ -413,7 +419,7 @@ try {
     cs_check(
         $regIdx5['code'] === 200
         && !str_contains($regIdx5['body'], 'Undefined array key')
-        && str_contains($regIdx5['body'], 'CMB - Carter Mini Bus')
+        && str_contains($regIdx5['body'], 'CMB - Carter Drop Mini Bus')
         && str_contains($regIdx5['body'], 'Rp 555.000')
         && !str_contains($regIdx5['body'], 'Rp 111.000')
         && !str_contains($regIdx5['body'], "CSCOPE Reg LIZ {$uniq}")
@@ -425,8 +431,8 @@ try {
     cs_check(
         $regForm5['code'] === 200
         && (bool) preg_match('/<select[^>]*id="regCategorySelect"[^>]*>([\s\S]*?)<\/select>/', $regForm5['body'], $mRegCat)
-        && str_contains($mRegCat[1], 'CMB - Carter Mini Bus')
-        && !str_contains($mRegCat[1], 'Sewa Big Bus'),
+        && str_contains($mRegCat[1], 'CMB - Carter Drop Mini Bus')
+        && !str_contains($mRegCat[1], "value=\"{$cat1}\""),
         'transport/regulations/form.php (active=5) renders ONLY Company 5 category options'
     );
     cs_check(
@@ -480,7 +486,7 @@ try {
         'delivery_address'           => 'Test Jl 2',
         'delivery_point_district_id' => $distB,
         'total_price'                => '350000',
-        'category_vehicle_id'        => $cat1,
+        'category_vehicle_id'        => $cat1Trv,
         'vehicle_id'                 => $veh1Id,
         'passenger_id'               => $pax1Id,
     ];
@@ -511,7 +517,7 @@ try {
         'delivery_address'           => 'Delivery MTM Test',
         'delivery_point_district_id' => $distB,
         'total_price'                => '350000',
-        'category_vehicle_id'        => $cat1,
+        'category_vehicle_id'        => $cat1Trv,
         'vehicle_id'                 => $veh5Id, // Company 5 vehicle!
         'passenger_id'               => $pax1Id,
     ]);
@@ -629,7 +635,7 @@ try {
         'name'                   => 'Invalid Slot Route',
         'pickup_point_city_id'   => $cityA,
         'delivery_point_city_id' => $cityB,
-        'category_vehicle_id'    => $cat1,
+        'category_vehicle_id'    => $cat1Trv,
         'price'                  => '100000',
         'departure_times'        => ['07:30'],
     ]);
@@ -637,7 +643,7 @@ try {
     cs_check($pRtBadSlot['code'] === 200 && $afterRtBadCnt === $afterRtCnt,
         'travel/rutes/form.php rejects invalid non-ENUM departure_times[] (07:30)');
 
-    $cat1RowB = $db->query("SELECT id FROM category_vehicles WHERE company_id = 1 AND is_active = 1 AND id <> {$cat1} ORDER BY id ASC LIMIT 1")->fetch_assoc();
+    $cat1RowB = $db->query("SELECT id FROM category_vehicles WHERE company_id = 1 AND is_active = 1 AND service_type = 'travel' AND id <> {$cat1Trv} ORDER BY id ASC LIMIT 1")->fetch_assoc();
     $cat1b = (int) ($cat1RowB['id'] ?? 0);
 
     $rtF1c = $httpGet($jarAdmin, '/pages/travel/rutes/form.php');
@@ -694,7 +700,7 @@ try {
     );
     $csrfRt1c = $extractCsrf($rtF1c['body']);
     $enumCode = "ENM{$uniq}";
-    $postTariffCats  = [$cat1];
+    $postTariffCats  = [$cat1Trv];
     $postTariffMins  = ['150000'];
     $postTariffPrcs  = ['180.000'];
     $postTariffMaxs  = ['220000'];
@@ -898,7 +904,7 @@ try {
     $rtFilterMatch = $httpGet(
         $jarAdmin,
         '/pages/travel/rutes/index.php?q=' . urlencode($enumCode)
-        . "&pickup_city_id={$cityA}&delivery_city_id={$cityB}&category_vehicle_id=" . ($cat1b > 0 ? $cat1b : $cat1)
+        . "&pickup_city_id={$cityA}&delivery_city_id={$cityB}&category_vehicle_id=" . ($cat1b > 0 ? $cat1b : $cat1Trv)
     );
     $rtFilterMiss = $httpGet(
         $jarAdmin,
@@ -949,7 +955,7 @@ try {
         'name'                       => "CSCOPE Dup Cat {$uniq}",
         'pickup_point_city_id'       => $cityA,
         'delivery_point_city_id'     => $cityB,
-        'tariff_category_vehicle_id' => [$cat1, $cat1],
+        'tariff_category_vehicle_id' => [$cat1Trv, $cat1Trv],
         'tariff_price'               => ['100000', '120000'],
         'is_active'                  => '1',
     ]);
@@ -969,7 +975,7 @@ try {
         'name'                   => "CSCOPE Bad Radius {$uniq}",
         'pickup_point_city_id'   => $cityA,
         'delivery_point_city_id' => $cityB,
-        'category_vehicle_id'    => $cat1,
+        'category_vehicle_id'    => $cat1Trv,
         'price'                  => '180000',
         'pickup_free_radius_km'  => '20',
         'pickup_max_radius_km'   => '10',
@@ -991,7 +997,7 @@ try {
         'name'                        => "CSCOPE Dup Rad {$uniq}",
         'pickup_point_city_id'        => $cityA,
         'delivery_point_city_id'      => $cityB,
-        'category_vehicle_id'         => $cat1,
+        'category_vehicle_id'         => $cat1Trv,
         'price'                       => '180000',
         'radius_pickup_district_id'   => [$distA, $distA],
         'radius_pickup_extra_price'   => ['30000', '50000'],
@@ -1013,7 +1019,7 @@ try {
         'name'                        => "CSCOPE Neg Rad {$uniq}",
         'pickup_point_city_id'        => $cityA,
         'delivery_point_city_id'      => $cityB,
-        'category_vehicle_id'         => $cat1,
+        'category_vehicle_id'         => $cat1Trv,
         'price'                       => '180000',
         'radius_pickup_district_id'   => [$distA],
         'radius_pickup_extra_price'   => ['-10000'],

@@ -16,7 +16,6 @@ if (empty($_SESSION['user_id'])) {
 
 $allowedPerms = [
     'employees.view', 'employees.manage',
-    'attendance.view', 'attendance.manage',
     'dispatch.view', 'dispatch.manage',
     'travel.view', 'travel.manage',
     'rental.view', 'rental.manage',

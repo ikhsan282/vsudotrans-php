@@ -87,15 +87,17 @@ function booking_unique_doc(string $type, int $company_id, ?string $date = null)
 
     $baseSeq = max(1000, $maxSeq) + 1;
 
-    for ($i = 0; $i < 50; $i++) {
+    for ($i = 0; $i < 200; $i++) {
         $doc = booking_numeric_doc_number($baseSeq + $i, $date);
         $st = $db->prepare(
             "SELECT 1 FROM rental_car_bookings WHERE document_number = ?
              UNION ALL
              SELECT 1 FROM travel_ticket_bookings WHERE document_number = ?
+             UNION ALL
+             SELECT 1 FROM invoices WHERE document_number = ?
              LIMIT 1"
         );
-        $st->bind_param('ss', $doc, $doc);
+        $st->bind_param('sss', $doc, $doc, $doc);
         $st->execute();
         $exists = $st->get_result()->num_rows > 0;
         $st->close();

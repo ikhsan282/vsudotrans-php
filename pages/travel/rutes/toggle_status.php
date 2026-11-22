@@ -1,9 +1,10 @@
 <?php
 require_once __DIR__ . '/../../../config/config.php';
-require_permission('travel.manage');
+require_once __DIR__ . '/../../transport/_helpers.php';
 
 $acceptJson = str_contains(strtolower((string) ($_SERVER['HTTP_ACCEPT'] ?? '')), 'application/json')
     || strtolower((string) ($_SERVER['HTTP_X_REQUESTED_WITH'] ?? '')) === 'xmlhttprequest';
+transport_require_manage($acceptJson);
 
 if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
     if ($acceptJson) {
@@ -17,7 +18,7 @@ if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
 
 verify_csrf();
 
-$allowedQueryKeys = ['q', 'status', 'company_id', 'pickup_city_id', 'delivery_city_id', 'category_vehicle_id', 'page'];
+$allowedQueryKeys = ['q', 'status', 'service_type', 'company_id', 'pickup_city_id', 'delivery_city_id', 'category_vehicle_id', 'page'];
 $parsedQuery = [];
 parse_str(ltrim(trim((string) ($_POST['return_query'] ?? '')), '?'), $rawQuery);
 if (is_array($rawQuery)) {

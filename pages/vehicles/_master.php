@@ -101,7 +101,7 @@ function vehicle_master_require_manage(string $key): void
 function vehicle_master_query(array $overrides = []): string
 {
     $base = [];
-    foreach (['company_id', 'brand_id', 'status', 'q', 'page'] as $param) {
+    foreach (['company_id', 'brand_id', 'service_type', 'pricing_unit', 'status', 'q', 'page'] as $param) {
         if (array_key_exists($param, $_GET) && $_GET[$param] !== '') {
             $base[$param] = (string) $_GET[$param];
         }
@@ -133,11 +133,15 @@ function vehicle_master_scalar(mysqli $db, string $sql, string $types = '', arra
 function vehicle_master_list(string $key): void
 {
     vehicle_master_require_view($key);
-    $vm        = vehicle_master_def($key);
-    $t         = $vm['table'];
-    $isModel   = ($key === 'model');
-    $canManage = vehicle_master_can_manage($key);
-    $db        = db();
+    $vm         = vehicle_master_def($key);
+    $t          = $vm['table'];
+    $isModel    = ($key === 'model');
+    $isCategory = ($key === 'category');
+    if ($isCategory) {
+        category_service_ensure_schema();
+    }
+    $canManage  = vehicle_master_can_manage($key);
+    $db         = db();
 
     $cscope               = company_filter_scope('x.company_id');
     $filter_company_id    = $cscope['filter_company_id'];
@@ -151,6 +155,10 @@ function vehicle_master_list(string $key): void
     $statusRaw   = trim((string) ($_GET['status'] ?? ''));
     $status      = ($statusRaw === '1' || $statusRaw === '0') ? $statusRaw : '';
     $brandFilter = $isModel ? (int) ($_GET['brand_id'] ?? 0) : 0;
+    $svcRaw      = $isCategory ? trim((string) ($_GET['service_type'] ?? '')) : '';
+    $svcFilter   = ($isCategory && isset(CATEGORY_SERVICE_TYPES[$svcRaw])) ? $svcRaw : '';
+    $unitRaw     = $isCategory ? trim((string) ($_GET['pricing_unit'] ?? '')) : '';
+    $unitFilter  = ($isCategory && isset(CATEGORY_PRICING_UNITS[$unitRaw])) ? $unitRaw : '';
 
     $brandFilterOpts   = $isModel ? vehicle_filter_options($db, 'brand_vehicles', $brandFilter, $show_company_col) : [];
     $selectedBrandName = '';
@@ -173,6 +181,16 @@ function vehicle_master_list(string $key): void
         $where .= ' AND x.brand_id = ?';
         $types .= 'i';
         $params[] = $brandFilter;
+    }
+    if ($isCategory && $svcFilter !== '') {
+        $where .= ' AND x.service_type = ?';
+        $types .= 's';
+        $params[] = $svcFilter;
+    }
+    if ($isCategory && $unitFilter !== '') {
+        $where .= ' AND x.pricing_unit = ?';
+        $types .= 's';
+        $params[] = $unitFilter;
     }
     if ($status === '1' || $status === '0') {
         $where .= ' AND x.is_active = ?';
@@ -206,16 +224,22 @@ function vehicle_master_list(string $key): void
         $max_export_rows = $isPdf ? GRID_PDF_MAX_ROWS : null;
         $select_cols     = $isModel
             ? 'x.code, x.name, b.name AS brand_name, c.code AS company_code, c.name AS company_name, x.note, x.is_active'
-            : 'x.code, x.name, c.code AS company_code, c.name AS company_name, x.note, x.is_active';
+            : ($isCategory
+                ? 'x.code, x.name, x.service_type, x.pricing_unit, c.code AS company_code, c.name AS company_name, x.note, x.is_active'
+                : 'x.code, x.name, c.code AS company_code, c.name AS company_name, x.note, x.is_active');
 
         $row_stream = grid_query_stream(
             "SELECT {$select_cols} {$from_sql} WHERE {$where} {$order_sql}",
             $types,
             $params,
-            static function (array $r) use ($isModel, $show_company_col): array {
+            static function (array $r) use ($isModel, $isCategory, $show_company_col): array {
                 $line = [$r['code'], $r['name']];
                 if ($isModel) {
                     $line[] = $r['brand_name'] ?: '-';
+                }
+                if ($isCategory) {
+                    $line[] = category_service_type_label((string) ($r['service_type'] ?? 'travel'));
+                    $line[] = category_pricing_unit_label((string) ($r['pricing_unit'] ?? 'per_seat'));
                 }
                 if ($show_company_col) {
                     $compLabel = trim(($r['company_code'] ? $r['company_code'] . ' - ' : '') . ($r['company_name'] ?? ''));
@@ -231,6 +255,10 @@ function vehicle_master_list(string $key): void
         $headers = ['Kode', 'Nama'];
         if ($isModel) {
             $headers[] = 'Merek';
+        }
+        if ($isCategory) {
+            $headers[] = 'Layanan';
+            $headers[] = 'Satuan Tarif';
         }
         if ($show_company_col) {
             $headers[] = 'Perusahaan';
@@ -254,6 +282,12 @@ function vehicle_master_list(string $key): void
         if ($isModel && $selectedBrandName !== '') {
             $subParts[] = 'Merek: ' . $selectedBrandName;
         }
+        if ($isCategory && $svcFilter !== '') {
+            $subParts[] = 'Layanan: ' . category_service_type_label($svcFilter);
+        }
+        if ($isCategory && $unitFilter !== '') {
+            $subParts[] = 'Satuan: ' . category_pricing_unit_label($unitFilter);
+        }
         if ($status === '1' || $status === '0') {
             $subParts[] = 'Status: ' . ($status === '1' ? 'Aktif' : 'Nonaktif');
         }
@@ -261,7 +295,7 @@ function vehicle_master_list(string $key): void
             $subParts[] = 'Cari: "' . $q . '"';
         }
 
-        $orient = ($isModel || $show_company_col) ? 'landscape' : 'portrait';
+        $orient = ($isModel || $isCategory || $show_company_col) ? 'landscape' : 'portrait';
         grid_export_send(
             'Master ' . $vm['label'],
             $headers,
@@ -283,15 +317,23 @@ function vehicle_master_list(string $key): void
     $rows = $st->get_result()->fetch_all(MYSQLI_ASSOC);
     $st->close();
 
-    $has_active_filter = ($q !== '' || $status !== '' || $brandFilter > 0 || ($show_company_filter && $filter_company_id !== ($cid ?? 0)));
-    $query_base        = vehicle_master_query(['page' => null, 'brand_id' => $brandFilter > 0 ? (string) $brandFilter : null, 'status' => $status !== '' ? $status : null]);
+    $has_active_filter = ($q !== '' || $status !== '' || $brandFilter > 0 || $svcFilter !== '' || $unitFilter !== '' || ($show_company_filter && $filter_company_id !== ($cid ?? 0)));
+    $query_base        = vehicle_master_query([
+        'page'         => null,
+        'brand_id'     => $brandFilter > 0 ? (string) $brandFilter : null,
+        'service_type' => $svcFilter !== '' ? $svcFilter : null,
+        'pricing_unit' => $unitFilter !== '' ? $unitFilter : null,
+        'status'       => $status !== '' ? $status : null,
+    ]);
     $reset_href        = APP_URL . '/' . vehicle_master_route($vm);
     $delete_action     = APP_URL . '/' . vehicle_master_route($vm, 'delete.php');
-    $colspan           = 6 + ($isModel ? 1 : 0) + ($show_company_col ? 1 : 0);
+    $colspan           = 6 + ($isModel ? 1 : 0) + ($isCategory ? 2 : 0) + ($show_company_col ? 1 : 0);
 
     $export_params = [
-        'brand_id' => ($isModel && $brandFilter > 0) ? (string) $brandFilter : null,
-        'status'   => $status !== '' ? $status : null,
+        'brand_id'     => ($isModel && $brandFilter > 0) ? (string) $brandFilter : null,
+        'service_type' => ($isCategory && $svcFilter !== '') ? $svcFilter : null,
+        'pricing_unit' => ($isCategory && $unitFilter !== '') ? $unitFilter : null,
+        'status'       => $status !== '' ? $status : null,
     ];
     $header_actions = ui_export_actions($export_params);
     if ($canManage && $cid !== null) {
@@ -345,6 +387,24 @@ function vehicle_master_list(string $key): void
                             </select>
                         </div>
                     <?php endif; ?>
+                    <?php if ($isCategory): ?>
+                        <div class="col-6 col-sm-4 erp-filter-item">
+                            <select name="service_type" class="form-select form-select-sm" onchange="this.form.submit()" title="Filter Layanan">
+                                <option value="">Semua Layanan</option>
+                                <?php foreach (CATEGORY_SERVICE_TYPES as $svcKey => $svcLabel): ?>
+                                    <option value="<?= e($svcKey) ?>" <?= $svcFilter === $svcKey ? 'selected' : '' ?>><?= e($svcLabel) ?></option>
+                                <?php endforeach; ?>
+                            </select>
+                        </div>
+                        <div class="col-6 col-sm-4 erp-filter-item">
+                            <select name="pricing_unit" class="form-select form-select-sm" onchange="this.form.submit()" title="Filter Satuan Tarif">
+                                <option value="">Semua Satuan</option>
+                                <?php foreach (CATEGORY_PRICING_UNITS as $uKey => $uLabel): ?>
+                                    <option value="<?= e($uKey) ?>" <?= $unitFilter === $uKey ? 'selected' : '' ?>><?= e($uLabel) ?></option>
+                                <?php endforeach; ?>
+                            </select>
+                        </div>
+                    <?php endif; ?>
                     <div class="col-6 col-sm-4 erp-filter-status">
                         <select name="status" class="form-select form-select-sm" onchange="this.form.submit()" title="Filter Status">
                             <option value="">Semua Status</option>
@@ -373,6 +433,10 @@ function vehicle_master_list(string $key): void
                             <th style="width: 140px;">Kode</th>
                             <th>Nama</th>
                             <?php if ($isModel): ?><th>Merek</th><?php endif; ?>
+                            <?php if ($isCategory): ?>
+                                <th style="width: 110px;">Layanan</th>
+                                <th style="width: 150px;">Satuan Tarif</th>
+                            <?php endif; ?>
                             <?php if ($show_company_col): ?><th>Perusahaan</th><?php endif; ?>
                             <th>Catatan</th>
                             <th style="width: 100px;">Status</th>
@@ -383,6 +447,8 @@ function vehicle_master_list(string $key): void
                     <?php foreach ($rows as $idx => $r):
                         $rowEditHref = APP_URL . '/' . vehicle_master_route($vm, 'form.php', ['id' => (int) $r['id']]);
                         $compText    = trim(($r['company_code'] ? $r['company_code'] . ' - ' : '') . ($r['company_name'] ?? ''));
+                        $rowSvc      = (string) ($r['service_type'] ?? 'travel');
+                        $rowUnit     = (string) ($r['pricing_unit'] ?? 'per_seat');
                     ?>
                         <tr>
                             <td class="text-center text-muted small"><?= number_format($p['offset'] + $idx + 1, 0, ',', '.') ?></td>
@@ -390,6 +456,16 @@ function vehicle_master_list(string $key): void
                             <td class="fw-medium"><?= e($r['name']) ?></td>
                             <?php if ($isModel): ?>
                                 <td><?= e($r['brand_name']) ?></td>
+                            <?php endif; ?>
+                            <?php if ($isCategory): ?>
+                                <td>
+                                    <span class="badge <?= $rowSvc === 'rental' ? 'bg-warning-subtle text-warning-emphasis border' : 'bg-primary-subtle text-primary border' ?>">
+                                        <?= e(category_service_type_label($rowSvc)) ?>
+                                    </span>
+                                </td>
+                                <td>
+                                    <span class="badge bg-light text-dark border"><?= e(category_pricing_unit_label($rowUnit)) ?></span>
+                                </td>
                             <?php endif; ?>
                             <?php if ($show_company_col): ?>
                                 <td class="small text-muted"><?= e($compText !== '' ? $compText : '-') ?></td>
@@ -442,11 +518,15 @@ function vehicle_master_list(string $key): void
 function vehicle_master_form(string $key): void
 {
     vehicle_master_require_manage($key);
-    $vm      = vehicle_master_def($key);
-    $t       = $vm['table'];
-    $isModel = ($key === 'model');
-    $db      = db();
-    $cid     = active_company_id();
+    $vm         = vehicle_master_def($key);
+    $t          = $vm['table'];
+    $isModel    = ($key === 'model');
+    $isCategory = ($key === 'category');
+    if ($isCategory) {
+        category_service_ensure_schema();
+    }
+    $db         = db();
+    $cid        = active_company_id();
 
     $id = (int) ($_GET['id'] ?? $_POST['id'] ?? 0);
     if ($id === 0 && $cid === null) {
@@ -459,6 +539,8 @@ function vehicle_master_form(string $key): void
         'company_id'    => (int) ($cid ?? 0),
         'code'          => '',
         'name'          => '',
+        'service_type'  => 'travel',
+        'pricing_unit'  => 'per_seat',
         'note'          => '',
         'is_active'     => 1,
         'brand_id'      => 0,
@@ -468,6 +550,7 @@ function vehicle_master_form(string $key): void
         'modified_date' => null,
     ];
     $companyLabel = '';
+    $existingSvc  = 'travel';
 
     if ($id > 0) {
         $st = $db->prepare("SELECT x.*, c.code AS company_code, c.name AS company_name
@@ -483,8 +566,9 @@ function vehicle_master_form(string $key): void
             redirect(vehicle_master_route($vm));
         }
         assert_company_access((int) $found['company_id']);
-        $row = $found + $row;
-        $cid = (int) $found['company_id'];
+        $row         = $found + $row;
+        $cid         = (int) $found['company_id'];
+        $existingSvc = (string) ($found['service_type'] ?? 'travel');
         if (!empty($found['company_name'])) {
             $companyLabel = trim(($found['company_code'] ? $found['company_code'] . ' - ' : '') . $found['company_name']);
         }
@@ -503,11 +587,13 @@ function vehicle_master_form(string $key): void
     if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         verify_csrf();
         $posted = [
-            'code'      => strtoupper(trim((string) ($_POST['code'] ?? ''))),
-            'name'      => trim((string) ($_POST['name'] ?? '')),
-            'note'      => trim((string) ($_POST['note'] ?? '')),
-            'is_active' => isset($_POST['is_active']) ? 1 : 0,
-            'brand_id'  => (int) ($_POST['brand_id'] ?? 0),
+            'code'         => strtoupper(trim((string) ($_POST['code'] ?? ''))),
+            'name'         => trim((string) ($_POST['name'] ?? '')),
+            'service_type' => trim((string) ($_POST['service_type'] ?? $row['service_type'])),
+            'pricing_unit' => trim((string) ($_POST['pricing_unit'] ?? $row['pricing_unit'])),
+            'note'         => trim((string) ($_POST['note'] ?? '')),
+            'is_active'    => isset($_POST['is_active']) ? 1 : 0,
+            'brand_id'     => (int) ($_POST['brand_id'] ?? 0),
         ];
         $row = array_merge($row, $posted);
 
@@ -525,6 +611,33 @@ function vehicle_master_form(string $key): void
         if ($isModel && !vehicle_owned($db, 'brand_vehicles', (int) $row['brand_id'], (int) $cid)) {
             $errors[] = 'Merek wajib dipilih dari perusahaan ini.';
         }
+        if ($isCategory) {
+            if (!isset(CATEGORY_SERVICE_TYPES[$row['service_type']])) {
+                $errors[] = 'Lingkup layanan wajib dipilih (Travel atau Rental).';
+            }
+            if (!isset(CATEGORY_PRICING_UNITS[$row['pricing_unit']])) {
+                $errors[] = 'Satuan hitung tarif tidak valid.';
+            }
+            if ($id > 0 && $row['service_type'] !== $existingSvc && isset(CATEGORY_SERVICE_TYPES[$row['service_type']])) {
+                if ($existingSvc === 'travel' && $row['service_type'] === 'rental') {
+                    $conflicts = [];
+                    foreach ([['travel_ticket_bookings', 'Pesanan Tiket Travel']] as [$rt, $rl]) {
+                        $cnt = vehicle_master_scalar($db, "SELECT COUNT(*) FROM {$rt} WHERE category_vehicle_id = ? AND company_id = ?", 'ii', [$id, $cid]);
+                        if ($cnt > 0) {
+                            $conflicts[] = "{$rl} ({$cnt})";
+                        }
+                    }
+                    if ($conflicts) {
+                        $errors[] = 'Lingkup layanan tidak dapat diubah ke Rental karena kategori ini masih dipakai pada ' . implode(', ', $conflicts) . '.';
+                    }
+                } elseif ($existingSvc === 'rental' && $row['service_type'] === 'travel') {
+                    $cntRnt = vehicle_master_scalar($db, 'SELECT COUNT(*) FROM rental_car_bookings WHERE category_vehicle_id = ? AND company_id = ?', 'ii', [$id, $cid]);
+                    if ($cntRnt > 0) {
+                        $errors[] = "Lingkup layanan tidak dapat diubah ke Travel karena kategori ini masih dipakai pada Pesanan Sewa Mobil ({$cntRnt}).";
+                    }
+                }
+            }
+        }
 
         if (!$errors) {
             $noteVal = $row['note'] === '' ? null : $row['note'];
@@ -541,6 +654,21 @@ function vehicle_master_form(string $key): void
                             $noteVal,
                             $row['is_active'],
                             $row['brand_id'],
+                            $user,
+                            $id,
+                            $cid
+                        );
+                    } elseif ($isCategory) {
+                        $st = $db->prepare("UPDATE {$t} SET code = ?, name = ?, service_type = ?, pricing_unit = ?, note = ?, is_active = ?,
+                            modified_user = ?, modified_date = NOW() WHERE id = ? AND company_id = ?");
+                        $st->bind_param(
+                            'sssssisii',
+                            $row['code'],
+                            $row['name'],
+                            $row['service_type'],
+                            $row['pricing_unit'],
+                            $noteVal,
+                            $row['is_active'],
                             $user,
                             $id,
                             $cid
@@ -577,6 +705,20 @@ function vehicle_master_form(string $key): void
                             $row['brand_id'],
                             $user
                         );
+                    } elseif ($isCategory) {
+                        $st = $db->prepare("INSERT INTO {$t} (company_id, code, name, service_type, pricing_unit, note, is_active, created_user)
+                            VALUES (?, ?, ?, ?, ?, ?, ?, ?)");
+                        $st->bind_param(
+                            'isssssis',
+                            $cid,
+                            $row['code'],
+                            $row['name'],
+                            $row['service_type'],
+                            $row['pricing_unit'],
+                            $noteVal,
+                            $row['is_active'],
+                            $user
+                        );
                     } else {
                         $st = $db->prepare("INSERT INTO {$t} (company_id, code, name, note, is_active, created_user)
                             VALUES (?, ?, ?, ?, ?, ?)");
@@ -605,6 +747,8 @@ function vehicle_master_form(string $key): void
         ? array_values(array_filter([
             !empty($row['code']) ? ['text' => $row['code'], 'class' => 'bg-primary-subtle text-primary border border-primary-subtle font-monospace'] : null,
             ['text' => 'ID #' . $id, 'class' => 'bg-light text-secondary border'],
+            $isCategory ? ['text' => category_service_type_label((string) ($row['service_type'] ?? 'travel')), 'class' => (($row['service_type'] ?? 'travel') === 'rental') ? 'bg-warning-subtle text-warning-emphasis border' : 'bg-info-subtle text-info-emphasis border'] : null,
+            $isCategory ? ['text' => category_pricing_unit_label((string) ($row['pricing_unit'] ?? 'per_seat')), 'class' => 'bg-light text-dark border'] : null,
             $companyLabel !== '' ? ['text' => $companyLabel, 'class' => 'bg-light text-secondary border'] : null,
             ['text' => !empty($row['is_active']) ? 'Aktif' : 'Nonaktif', 'class' => 'bg-' . (!empty($row['is_active']) ? 'success' : 'secondary') . '-subtle text-' . (!empty($row['is_active']) ? 'success' : 'secondary') . ' border'],
         ]))
@@ -667,6 +811,28 @@ function vehicle_master_form(string $key): void
                                             <input class="form-control form-control-sm" id="name" name="name" maxlength="255" required value="<?= e($row['name']) ?>">
                                         </div>
                                     </div>
+                                    <?php if ($isCategory): ?>
+                                        <div class="rnt-row">
+                                            <label class="rnt-label" for="service_type">Lingkup Layanan <span class="text-danger">*</span></label>
+                                            <div class="rnt-field">
+                                                <select class="form-select form-select-sm" id="service_type" name="service_type" required>
+                                                    <option value="travel" <?= $row['service_type'] === 'travel' ? 'selected' : '' ?>>Travel (Rute &amp; 1x Jalan / Carter Drop)</option>
+                                                    <option value="rental" <?= $row['service_type'] === 'rental' ? 'selected' : '' ?>>Rental (Sewa Harian / Durasi)</option>
+                                                </select>
+                                            </div>
+                                        </div>
+                                        <div class="rnt-row">
+                                            <label class="rnt-label" for="pricing_unit">Satuan Hitung Tarif <span class="text-danger">*</span></label>
+                                            <div class="rnt-field">
+                                                <select class="form-select form-select-sm" id="pricing_unit" name="pricing_unit" required>
+                                                    <option value="per_seat" <?= $row['pricing_unit'] === 'per_seat' ? 'selected' : '' ?>>Per Kursi (Travel Reguler)</option>
+                                                    <option value="per_vehicle" <?= $row['pricing_unit'] === 'per_vehicle' ? 'selected' : '' ?>>Per Mobil / Unit (Carter Drop / Borongan)</option>
+                                                    <option value="per_package" <?= $row['pricing_unit'] === 'per_package' ? 'selected' : '' ?>>Per Paket (Dokumen / Barang / Hewan)</option>
+                                                    <option value="per_day" <?= $row['pricing_unit'] === 'per_day' ? 'selected' : '' ?>>Per Hari (Sewa Harian / Rental)</option>
+                                                </select>
+                                            </div>
+                                        </div>
+                                    <?php endif; ?>
                                     <?php if ($isModel): ?>
                                         <div class="rnt-row">
                                             <label class="rnt-label" for="brand_id">Merek <span class="text-danger">*</span></label>
@@ -709,6 +875,21 @@ function vehicle_master_form(string $key): void
             </div>
         </div>
     </main>
+    <?php if ($isCategory && $id === 0): ?>
+    <script>
+    (function () {
+        var svcEl  = document.getElementById('service_type');
+        var unitEl = document.getElementById('pricing_unit');
+        if (!svcEl || !unitEl) return;
+        var unitTouched = false;
+        unitEl.addEventListener('change', function () { unitTouched = true; });
+        svcEl.addEventListener('change', function () {
+            if (unitTouched) return;
+            unitEl.value = svcEl.value === 'rental' ? 'per_day' : 'per_seat';
+        });
+    })();
+    </script>
+    <?php endif; ?>
     <?php
     require __DIR__ . '/../../includes/footer.php';
 }

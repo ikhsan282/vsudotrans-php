@@ -35,10 +35,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $res = payroll_generate($gen_cid, $gen_year, $gen_month, $user);
         audit('payroll.generate', 'Periode ' . payroll_month_name($gen_month) . " $gen_year (#{$res['period_id']}), {$res['items']} karyawan");
         $msg = 'Periode ' . payroll_month_name($gen_month) . " $gen_year dibuat dengan {$res['items']} item.";
-        if ($res['grade_missing']) {
-            $msg .= ' Tanpa grade (gaji 0): ' . implode(', ', array_slice($res['grade_missing'], 0, 5))
-                . (count($res['grade_missing']) > 5 ? ' (+' . (count($res['grade_missing']) - 5) . ' lagi)' : '') . '.';
-        }
         flash('success', $msg);
         redirect('pages/payroll/periods/detail.php?id=' . $res['period_id']);
     } catch (Throwable $ex) {
@@ -143,7 +139,7 @@ require __DIR__ . '/../../../includes/header.php';
                        value="<?= (int) date('Y') ?>" required>
             </div>
             <div class="col-md">
-                <div class="form-text mt-0">Satu item per karyawan aktif, gaji dari grade jabatan.</div>
+                <div class="form-text mt-0">Satu item per karyawan aktif perusahaan.</div>
             </div>
             <div class="col-md-2">
                 <button class="btn btn-sm btn-primary w-100" type="submit">Generate</button>

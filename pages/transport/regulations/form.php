@@ -5,6 +5,7 @@ transport_require_view();
 require_once __DIR__ . '/../../../includes/regulation_service.php';
 
 regulation_ensure_schema();
+category_service_ensure_schema();
 
 $companies  = accessible_companies();
 $active_cid = active_company_id();
@@ -127,11 +128,12 @@ $allCategories = [];
 if ($allowedCids) {
     $ph = implode(',', array_fill(0, count($allowedCids), '?'));
     $stCats = db()->prepare(
-        "SELECT id, company_id, code, name, CONCAT(code, ' - ', name) AS label
+        "SELECT id, company_id, code, name, service_type,
+                CONCAT(code, ' - ', name, ' [', IF(service_type = 'rental', 'Rental', 'Travel'), ']') AS label
            FROM category_vehicles
           WHERE company_id IN ({$ph})
             AND (is_active = 1 OR id = ?)
-          ORDER BY code, name"
+          ORDER BY service_type, code, name"
     );
     $stCats->bind_param(str_repeat('i', count($allowedCids)) . 'i', ...[...$allowedCids, $curCategoryId]);
     $stCats->execute();

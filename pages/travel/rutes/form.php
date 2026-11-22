@@ -1,7 +1,7 @@
 <?php
 require_once __DIR__ . '/../../../config/config.php';
-require_permission('travel.manage');
-require_once __DIR__ . '/../_helpers.php';
+require_once __DIR__ . '/../../transport/_helpers.php';
+transport_require_manage();
 
 $cid = require_active_company();
 rute_ensure_schema();
@@ -354,7 +354,13 @@ if ((int) $row['delivery_point_city_id'] > 0) {
 $provinces       = opts_provinces(array_filter([$pickupProvId, $deliveryProvId]), 100);
 $pickupCities    = opts_cities($pickupProvId > 0 ? $pickupProvId : null, array_filter([(int) $row['pickup_point_city_id']]), $pickupProvId > 0 ? 100 : 50, true);
 $deliveryCities  = opts_cities($deliveryProvId > 0 ? $deliveryProvId : null, array_filter([(int) $row['delivery_point_city_id']]), $deliveryProvId > 0 ? 100 : 50, true);
-$cats            = opts_categories($cid, array_filter(array_column($tariffRows, 'category_vehicle_id')), 200);
+$rawCats         = opts_categories($cid, array_filter(array_column($tariffRows, 'category_vehicle_id')), 200);
+$cats            = array_map(static function (array $cv): array {
+    $svcLabel  = category_service_type_label((string) ($cv['service_type'] ?? 'travel'));
+    $unitShort = category_pricing_unit_short((string) ($cv['pricing_unit'] ?? 'per_seat'));
+    $cv['name'] = (string) ($cv['name'] ?? '') . " [{$svcLabel} · {$unitShort}]";
+    return $cv;
+}, $rawCats);
 $catDefaultSeats = rute_category_default_seats($cid);
 $radiusTotalCnt  = count($radiusRows['pickup']) + count($radiusRows['delivery']);
 $hasRadiusRule   = ($radiusTotalCnt > 0
@@ -380,14 +386,14 @@ $radiusAreas     = [
         'rows'       => $radiusRows['delivery'],
     ],
 ];
-$active = 'travel';
-$title  = $id > 0 ? 'Ubah Rute' : 'Tambah Rute';
+$active = 'rutes';
+$title  = $id > 0 ? 'Ubah Rute & Tarif' : 'Tambah Rute & Tarif';
 require __DIR__ . '/../../../includes/header.php';
 ?>
 <main class="col-12 col-md-9 col-lg-10 p-3 p-lg-4">
     <?= ui_page_header(
         $title,
-        ['Dashboard' => 'pages/dashboard/index.php', 'Travel' => null, 'Rute' => 'pages/travel/rutes/index.php', ($id > 0 ? $row['name'] : 'Tambah Baru') => null],
+        ['Dashboard' => 'pages/dashboard/index.php', 'Transportasi' => null, 'Rute & Tarif' => 'pages/travel/rutes/index.php', ($id > 0 ? $row['name'] : 'Tambah Baru') => null],
         $id > 0 ? array_values(array_filter([
             !empty($row['code']) ? ['text' => $row['code'], 'class' => 'bg-primary-subtle text-primary border border-primary-subtle font-monospace'] : null,
             ['text' => 'ID #' . $id, 'class' => 'bg-light text-secondary border'],
@@ -662,6 +668,7 @@ require __DIR__ . '/../../../includes/header.php';
                                 </div>
                             </div>
                             <div class="rnt-panel-body">
+                                <div class="text-muted small mb-2">Opsional (khusus Travel) — pilih jam keberangkatan rutin pada rute ini; rute khusus Rental tidak wajib mengisi jadwal.</div>
                                 <?php foreach (rute_schedule_periods() as $grp): ?>
                                     <div class="d-flex flex-wrap align-items-center gap-2 mb-2">
                                         <span class="small text-muted fw-semibold" style="min-width: 78px;"><?= e($grp['label']) ?></span>
@@ -682,6 +689,7 @@ require __DIR__ . '/../../../includes/header.php';
 
                     <!-- ================= TAB 3: RADIUS JEMPUT & ANTAR ================= -->
                     <div class="tab-pane fade<?= $activeTab === 'radius' ? ' show active' : '' ?>" id="tab-rute-radius" role="tabpanel" aria-labelledby="tab-rute-radius-btn">
+                        <div class="text-muted small mb-2">Berlaku untuk pemesanan <strong>Travel &amp; Rental</strong> — atur kecamatan tujuan/jemput yang dikenai biaya tambahan area (mis. area pegunungan/Puncak atau wilayah pinggiran).</div>
                         <div class="row g-2">
                             <?php foreach ($radiusAreas as $area): ?>
                                 <div class="col-12 col-lg-6">

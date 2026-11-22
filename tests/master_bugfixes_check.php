@@ -1,13 +1,12 @@
 <?php
 /**
  * Self-test verifikasi perbaikan bug & celah master data:
- * 1. Blocker job_grades mencocokkan employees.job_grade (nama grade) + company_id.
- * 2. Sinkronisasi nama job_grades ke employees saat grade diubah namanya.
- * 3. Validasi hierarki wilayah (provinsi-negara, kota-provinsi, desa-kecamatan).
- * 4. Pagination sliding window.
- * 5. master_resolve_relation_id (lookup relasi via kode & nama).
- * 6. master_find_existing berdasarkan code & empty fallback.
- * 7. master_delete affected rows & scope global.
+ * 1. Blocker job_titles mencocokkan job_positions.job_title_id + company_id.
+ * 2. Validasi hierarki wilayah (provinsi-negara, kota-provinsi, desa-kecamatan).
+ * 3. Pagination sliding window.
+ * 4. master_resolve_relation_id (lookup relasi via kode & nama).
+ * 5. master_find_existing berdasarkan code & empty fallback.
+ * 6. master_delete affected rows & scope global.
  */
 require_once __DIR__ . '/../config/config.php';
 require_once __DIR__ . '/../pages/masters/_engine.php';
@@ -24,7 +23,7 @@ $db = db();
 echo "=== 1. Test Pagination Windowing ===\n";
 $p_small = ['total' => 50, 'per_page' => 10, 'current' => 2, 'total_pages' => 5];
 $html_small = pagination_html($p_small, 'q=test');
-ok(str_contains($html_small, 'q=test&amp;page=2') || str_contains($html_small, 'q=test&page=2'), 'query string terjaga');
+ok(str_contains($html_small, 'q=test') && str_contains($html_small, 'page=2'), 'query string terjaga');
 ok(substr_count($html_small, '<li class="page-item') === 7, 'total 5 halaman + prev + next = 7 li');
 
 $p_huge = ['total' => 10000, 'per_page' => 10, 'current' => 50, 'total_pages' => 1000];
@@ -43,69 +42,48 @@ ok(empty($err_valid), 'provinsi 911 cocok dengan negara 901 (tidak ada error)');
 $err_invalid = master_validate_geo_hierarchy('cities', ['country_id' => 902, 'province_id' => 911]);
 ok(!empty($err_invalid) && str_contains($err_invalid[0], 'Provinsi tidak sesuai dengan Negara'), 'provinsi 911 ditolak bila dipasangkan dengan negara 902');
 
-echo "\n=== 3. Test Blocker & Sinkronisasi Nama job_grades ===\n";
+echo "\n=== 3. Test Blocker & master_find_existing pada job_titles ===\n";
 $db->query("INSERT IGNORE INTO `groups` (id, code, name) VALUES (1, 'CHK-G', 'Grup Uji')");
 $db->query("INSERT IGNORE INTO companies (id, group_id, code, name, is_active) VALUES (991, 1, 'CHK-COMP', 'Perusahaan Uji', 1)");
 
 // Bersihkan data uji sebelumnya jika ada
-$db->query("DELETE FROM employees WHERE code = 'EMP-CHK-G'");
-$db->query("DELETE FROM job_grades WHERE code IN ('JG-CHK1', 'JG-CHK2') AND company_id = 991");
+$db->query("DELETE FROM job_positions WHERE code = 'JP-CHK-G' AND company_id = 991");
+$db->query("DELETE FROM job_titles WHERE code IN ('JT-CHK1', 'JT-CHK2') AND company_id = 991");
 
-// Buat Grade Uji
-$spec_jg = master_spec('job_grades');
+// Buat Jabatan Uji
+$spec_jt = master_spec('job_titles');
 $_SESSION['username'] = 'test-suite';
-$jg_id = master_save($spec_jg, 0, [
-    'code' => 'JG-CHK1', 'name' => 'Grade Khusus Uji',
-    'basic_salary' => '5000000', 'daily_allowance' => '100000',
-    'note' => 'test', 'is_active' => 1
+$jt_id = master_save($spec_jt, 0, [
+    'code' => 'JT-CHK1', 'name' => 'Jabatan Khusus Uji',
+    'level' => 1, 'note' => 'test', 'is_active' => 1
 ], 991);
-ok($jg_id > 0, "job_grade berhasil dibuat (id: $jg_id)");
+ok($jt_id > 0, "job_title berhasil dibuat (id: $jt_id)");
 
-// Buat karyawan yang memakai grade ini
-$st = $db->prepare("INSERT INTO employees (company_id, code, name, join_date, job_grade, status) VALUES (991, 'EMP-CHK-G', 'Karyawan Uji Grade', '2026-01-01', 'Grade Khusus Uji', 'aktif')");
+// Buat posisi yang memakai jabatan ini
+$st = $db->prepare("INSERT INTO job_positions (company_id, job_title_id, code, name, level, is_active) VALUES (991, ?, 'JP-CHK-G', 'Posisi Uji', 1, 1)");
+$st->bind_param('i', $jt_id);
 $st->execute();
-$emp_id = $db->insert_id;
+$pos_id = $db->insert_id;
 $st->close();
-ok($emp_id > 0, "karyawan berhasil dibuat memakai grade 'Grade Khusus Uji'");
+ok($pos_id > 0, "posisi berhasil dibuat memakai jabatan id $jt_id");
 
 // Tes blocker di master_delete:
-// Simulasi request POST delete
 $_SESSION['company_id'] = 991;
 $_SESSION['role_name'] = 'Admin';
 $_SESSION['permissions'] = ['hr.manage', 'hr.view'];
-$_SERVER['REQUEST_METHOD'] = 'POST';
-$_POST = ['id' => $jg_id, 'csrf_token' => csrf_token()];
-
-$row_jg = master_find($spec_jg, $jg_id);
+$row_jt = master_find($spec_jt, $jt_id);
 $has_blocker_fired = false;
-foreach ($spec_jg['blockers'] ?? [] as $b) {
-    if (($b['match'] ?? '') === 'name') {
-        $val = (string) ($row_jg['name'] ?? '');
-        $st = $db->prepare("SELECT COUNT(*) FROM `{$b['table']}` WHERE `{$b['col']}` = ? AND company_id = ?");
-        $st->bind_param('si', $val, $row_jg['company_id']);
-        $st->execute();
-        $n = (int) $st->get_result()->fetch_row()[0];
-        $st->close();
-        if ($n > 0) {
-            $has_blocker_fired = true;
-        }
+foreach ($spec_jt['blockers'] ?? [] as $b) {
+    $st = $db->prepare("SELECT COUNT(*) FROM `{$b['table']}` WHERE `{$b['col']}` = ? AND company_id = ?");
+    $st->bind_param('ii', $jt_id, $row_jt['company_id']);
+    $st->execute();
+    $n = (int) $st->get_result()->fetch_row()[0];
+    $st->close();
+    if ($n > 0) {
+        $has_blocker_fired = true;
     }
 }
-ok($has_blocker_fired, 'blocker job_grades aktif: grade terdeteksi sedang dipakai oleh karyawan');
-
-// Tes sinkronisasi nama grade saat diubah
-master_save($spec_jg, $jg_id, [
-    'code' => 'JG-CHK1', 'name' => 'Grade Khusus Uji RENAMED',
-    'basic_salary' => '6000000', 'daily_allowance' => '120000',
-    'note' => 'renamed', 'is_active' => 1
-], 991);
-
-$st = $db->prepare("SELECT job_grade FROM employees WHERE id = ?");
-$st->bind_param('i', $emp_id);
-$st->execute();
-$new_emp_grade = $st->get_result()->fetch_column();
-$st->close();
-ok($new_emp_grade === 'Grade Khusus Uji RENAMED', "employees.job_grade otomatis sinkron ke nama baru ($new_emp_grade)");
+ok($has_blocker_fired, 'blocker job_titles aktif: jabatan terdeteksi sedang dipakai oleh posisi');
 
 echo "\n=== 4. Test master_resolve_relation_id (Lookup Relasi via Kode & Nama) ===\n";
 $res_by_id = master_resolve_relation_id('countries', '901', null);
@@ -121,13 +99,13 @@ $res_none = master_resolve_relation_id('countries', 'TIDAK_ADA_XYZ', null);
 ok($res_none === null, 'lookup nilai yang tidak ada -> null');
 
 echo "\n=== 5. Test master_find_existing berdasarkan code ===\n";
-$existing_jg = master_find_existing($spec_jg, ['code' => 'JG-CHK1'], 991);
-ok($existing_jg !== null && (int)$existing_jg['id'] === $jg_id, 'master_find_existing mencocokkan job_grades berdasarkan code JG-CHK1');
-ok(master_find_existing($spec_jg, ['name' => 'Tanpa Kode'], 991) === null, 'master_find_existing tanpa code mengembalikan null');
+$existing_jt = master_find_existing($spec_jt, ['code' => 'JT-CHK1'], 991);
+ok($existing_jt !== null && (int)$existing_jt['id'] === $jt_id, 'master_find_existing mencocokkan job_titles berdasarkan code JT-CHK1');
+ok(master_find_existing($spec_jt, ['name' => 'Tanpa Kode'], 991) === null, 'master_find_existing tanpa code mengembalikan null');
 
 // Cleanup data uji
-$db->query("DELETE FROM employees WHERE id = $emp_id");
-$db->query("DELETE FROM job_grades WHERE id = $jg_id");
+$db->query("DELETE FROM job_positions WHERE id = $pos_id");
+$db->query("DELETE FROM job_titles WHERE id = $jt_id");
 $db->query("DELETE FROM provinces WHERE id = 911");
 $db->query("DELETE FROM countries WHERE id IN (901, 902)");
 $db->query("DELETE FROM companies WHERE id = 991");

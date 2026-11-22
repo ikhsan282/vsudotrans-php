@@ -4,6 +4,166 @@
  * Ditempatkan terpusat di `includes/` agar lintas modul tidak saling meng-include halaman satu sama lain.
  */
 
+if (!defined('CATEGORY_SERVICE_TYPES')) {
+    define('CATEGORY_SERVICE_TYPES', [
+        'travel' => 'Travel',
+        'rental' => 'Rental',
+    ]);
+}
+if (!defined('CATEGORY_PRICING_UNITS')) {
+    define('CATEGORY_PRICING_UNITS', [
+        'per_seat'    => 'Per Kursi',
+        'per_vehicle' => 'Per Mobil / Unit',
+        'per_package' => 'Per Paket',
+        'per_day'     => 'Per Hari',
+    ]);
+}
+if (!defined('CATEGORY_PRICING_UNIT_SHORT')) {
+    define('CATEGORY_PRICING_UNIT_SHORT', [
+        'per_seat'    => '/kursi',
+        'per_vehicle' => '/mobil',
+        'per_package' => '/paket',
+        'per_day'     => '/hari',
+    ]);
+}
+
+/**
+ * Pastikan kolom `service_type` & `pricing_unit` tersedia di `category_vehicles` beserta backfill awal yang idempoten.
+ */
+function category_service_ensure_schema(): void
+{
+    static $checked = false;
+    $hasSess = session_status() === PHP_SESSION_ACTIVE;
+    if ($checked || ($hasSess && !empty($_SESSION['_vst_schema_cat_service_v1']))) {
+        $checked = true;
+        return;
+    }
+    $checked = true;
+    $db = db();
+    $addedCol = false;
+
+    $colSvc = $db->query("SHOW COLUMNS FROM `category_vehicles` LIKE 'service_type'");
+    if (!$colSvc || $colSvc->num_rows === 0) {
+        $db->query("ALTER TABLE `category_vehicles` ADD COLUMN `service_type` ENUM('travel', 'rental') NOT NULL DEFAULT 'travel' AFTER `name`");
+        $addedCol = true;
+    }
+
+    $colUnit = $db->query("SHOW COLUMNS FROM `category_vehicles` LIKE 'pricing_unit'");
+    if (!$colUnit || $colUnit->num_rows === 0) {
+        $db->query("ALTER TABLE `category_vehicles` ADD COLUMN `pricing_unit` ENUM('per_seat', 'per_vehicle', 'per_package', 'per_day') NOT NULL DEFAULT 'per_seat' AFTER `service_type`");
+        $addedCol = true;
+    }
+
+    $idxChk = $db->query("SHOW INDEX FROM `category_vehicles` WHERE Key_name = 'ix_category_vehicles_service'");
+    if (!$idxChk || $idxChk->num_rows === 0) {
+        $db->query("ALTER TABLE `category_vehicles` ADD KEY `ix_category_vehicles_service` (`company_id`, `service_type`, `is_active`)");
+    }
+
+    if ($addedCol) {
+        $db->query(
+            "UPDATE `category_vehicles` cv
+                SET cv.`service_type` = 'rental', cv.`pricing_unit` = 'per_day'
+              WHERE UPPER(cv.`code`) IN ('SBB', 'SMB')
+                 OR LOWER(cv.`name`) LIKE '%sewa%'
+                 OR LOWER(cv.`name`) LIKE '%rental%'
+                 OR (
+                     EXISTS (SELECT 1 FROM `rental_car_bookings` rb WHERE rb.`category_vehicle_id` = cv.`id`)
+                     AND NOT EXISTS (SELECT 1 FROM `travel_ticket_bookings` tb WHERE tb.`category_vehicle_id` = cv.`id`)
+                     AND NOT EXISTS (SELECT 1 FROM `rute_tariffs` rt WHERE rt.`category_vehicle_id` = cv.`id`)
+                 )"
+        );
+        $db->query(
+            "UPDATE `category_vehicles`
+                SET `service_type` = 'travel', `pricing_unit` = 'per_package'
+              WHERE `service_type` = 'travel'
+                AND (UPPER(`code`) IN ('PKT', 'HWN') OR LOWER(`name`) LIKE '%paket%' OR LOWER(COALESCE(`note`, '')) LIKE '%per paket%')"
+        );
+        $db->query(
+            "UPDATE `category_vehicles`
+                SET `service_type` = 'travel', `pricing_unit` = 'per_vehicle'
+              WHERE `service_type` = 'travel'
+                AND (UPPER(`code`) IN ('CMB', 'CHC', 'CEL') OR LOWER(`name`) LIKE '%carter%' OR LOWER(COALESCE(`note`, '')) LIKE '%per mobil%')"
+        );
+    }
+
+    if ($hasSess) {
+        $_SESSION['_vst_schema_cat_service_v1'] = true;
+    }
+}
+
+function category_service_type_label(string $type): string
+{
+    return CATEGORY_SERVICE_TYPES[$type] ?? 'Travel';
+}
+
+function category_pricing_unit_label(string $unit): string
+{
+    return CATEGORY_PRICING_UNITS[$unit] ?? 'Per Kursi';
+}
+
+function category_pricing_unit_short(string $unit): string
+{
+    return CATEGORY_PRICING_UNIT_SHORT[$unit] ?? '/kursi';
+}
+
+function category_scope_meta_for_id(int $company_id, ?int $category_vehicle_id): array
+{
+    category_service_ensure_schema();
+    if ($category_vehicle_id === null || $category_vehicle_id <= 0) {
+        return ['service_type' => 'travel', 'pricing_unit' => 'per_seat'];
+    }
+    $db = db();
+    if ($company_id > 0) {
+        $st = $db->prepare('SELECT service_type, pricing_unit FROM category_vehicles WHERE id = ? AND company_id = ? LIMIT 1');
+        $st->bind_param('ii', $category_vehicle_id, $company_id);
+    } else {
+        $st = $db->prepare('SELECT service_type, pricing_unit FROM category_vehicles WHERE id = ? LIMIT 1');
+        $st->bind_param('i', $category_vehicle_id);
+    }
+    $st->execute();
+    $row = $st->get_result()->fetch_assoc() ?: [];
+    $st->close();
+    $svc  = (string) ($row['service_type'] ?? 'travel');
+    $unit = (string) ($row['pricing_unit'] ?? 'per_seat');
+    return [
+        'service_type' => isset(CATEGORY_SERVICE_TYPES[$svc]) ? $svc : 'travel',
+        'pricing_unit' => isset(CATEGORY_PRICING_UNITS[$unit]) ? $unit : 'per_seat',
+    ];
+}
+
+function category_service_type_for_id(int $company_id, ?int $category_vehicle_id): string
+{
+    return category_scope_meta_for_id($company_id, $category_vehicle_id)['service_type'];
+}
+
+function category_pricing_unit_for_id(int $company_id, ?int $category_vehicle_id): string
+{
+    return category_scope_meta_for_id($company_id, $category_vehicle_id)['pricing_unit'];
+}
+
+function category_pricing_unit_multiplier(string $pricing_unit, int $qty = 1): int
+{
+    return $pricing_unit === 'per_vehicle' ? 1 : max(1, $qty);
+}
+
+/** Hitung lama sewa rental (inklusif: tanggal yang sama = 1 hari, 20 s/d 22 = 3 hari). */
+function rental_duration_days(string $start_date, string $end_date): int
+{
+    if (!preg_match('/^\d{4}-\d{2}-\d{2}$/', $start_date) || !preg_match('/^\d{4}-\d{2}-\d{2}$/', $end_date)) {
+        return 1;
+    }
+    try {
+        $s = new DateTimeImmutable($start_date);
+        $e = new DateTimeImmutable($end_date);
+        if ($e < $s) {
+            return 1;
+        }
+        return max(1, (int) $s->diff($e)->days + 1);
+    } catch (Throwable $ignore) {
+        return 1;
+    }
+}
+
 /** Daftar 5 status resmi pemesanan (key => label Bahasa Indonesia). */
 function booking_status_options(): array
 {
@@ -169,18 +329,25 @@ function opts_passengers(int $company_id, array $include_ids = [], int $limit = 
     });
 }
 
-function opts_categories(int $company_id, array $include_ids = [], int $limit = 200): array
+function opts_categories(int $company_id, array $include_ids = [], int $limit = 200, ?string $service_type = null): array
 {
-    $limit = max(1, min(500, $limit));
-    $st = db()->prepare("SELECT id, CONCAT(code, ' - ', name) AS name, company_id FROM category_vehicles WHERE company_id = ? AND is_active = 1 ORDER BY code, name LIMIT ?");
-    $st->bind_param('ii', $company_id, $limit);
+    category_service_ensure_schema();
+    $limit     = max(1, min(500, $limit));
+    $svcFilter = ($service_type !== null && isset(CATEGORY_SERVICE_TYPES[$service_type])) ? $service_type : null;
+    if ($svcFilter !== null) {
+        $st = db()->prepare("SELECT id, code, name AS raw_name, CONCAT(code, ' - ', name) AS name, service_type, pricing_unit, company_id FROM category_vehicles WHERE company_id = ? AND is_active = 1 AND service_type = ? ORDER BY code, name LIMIT ?");
+        $st->bind_param('isi', $company_id, $svcFilter, $limit);
+    } else {
+        $st = db()->prepare("SELECT id, code, name AS raw_name, CONCAT(code, ' - ', name) AS name, service_type, pricing_unit, company_id FROM category_vehicles WHERE company_id = ? AND is_active = 1 ORDER BY code, name LIMIT ?");
+        $st->bind_param('ii', $company_id, $limit);
+    }
     $st->execute();
     $rows = $st->get_result()->fetch_all(MYSQLI_ASSOC);
     $st->close();
 
     return _merge_included_rows($rows, $include_ids, static function (array $ids) use ($company_id): array {
         $ph = implode(',', array_fill(0, count($ids), '?'));
-        $st2 = db()->prepare("SELECT id, CONCAT(code, ' - ', name) AS name, company_id FROM category_vehicles WHERE company_id = ? AND id IN ({$ph}) ORDER BY code, name");
+        $st2 = db()->prepare("SELECT id, code, name AS raw_name, CONCAT(code, ' - ', name) AS name, service_type, pricing_unit, company_id FROM category_vehicles WHERE company_id = ? AND id IN ({$ph}) ORDER BY code, name");
         $st2->bind_param('i' . str_repeat('i', count($ids)), $company_id, ...$ids);
         $st2->execute();
         $out = $st2->get_result()->fetch_all(MYSQLI_ASSOC);
@@ -985,7 +1152,8 @@ function validate_booking_company_scope(
     array $extra_passenger_ids,
     ?int &$category_vehicle_id,
     ?int $vehicle_id,
-    array $crew_employee_ids = []
+    array $crew_employee_ids = [],
+    ?string $expected_service_type = null
 ): void {
     if (!fetch_company_ref_row('branches', $branch_id, $company_id)) {
         throw new InvalidArgumentException('Cabang tidak valid untuk perusahaan ini.');
@@ -996,8 +1164,25 @@ function validate_booking_company_scope(
     if (!verify_company_ids_belong('passengers', $extra_passenger_ids, $company_id)) {
         throw new InvalidArgumentException('Penumpang tambahan tidak valid untuk perusahaan ini.');
     }
-    if ($category_vehicle_id !== null && $category_vehicle_id > 0 && !fetch_company_ref_row('category_vehicles', $category_vehicle_id, $company_id)) {
-        throw new InvalidArgumentException('Kategori layanan tidak valid untuk perusahaan ini.');
+    if ($category_vehicle_id !== null && $category_vehicle_id > 0) {
+        category_service_ensure_schema();
+        $stCat = db()->prepare('SELECT id, service_type FROM category_vehicles WHERE id = ? AND company_id = ? LIMIT 1');
+        $stCat->bind_param('ii', $category_vehicle_id, $company_id);
+        $stCat->execute();
+        $catRow = $stCat->get_result()->fetch_assoc();
+        $stCat->close();
+        if (!$catRow) {
+            throw new InvalidArgumentException('Kategori layanan tidak valid untuk perusahaan ini.');
+        }
+        if ($expected_service_type !== null && isset(CATEGORY_SERVICE_TYPES[$expected_service_type]) && (string) $catRow['service_type'] !== $expected_service_type) {
+            throw new InvalidArgumentException(
+                'Kategori layanan yang dipilih khusus untuk '
+                . category_service_type_label((string) $catRow['service_type'])
+                . ', bukan untuk '
+                . category_service_type_label($expected_service_type)
+                . '.'
+            );
+        }
     }
     if ($vehicle_id !== null && $vehicle_id > 0) {
         $vehRow = fetch_company_ref_row('vehicles', $vehicle_id, $company_id);
@@ -1248,6 +1433,7 @@ function rute_parse_signed_amount(mixed $raw): float
 /** Ambil peta [rute_id => list baris tarif kategori] dari tabel `rute_tariffs`. */
 function rute_tariffs_by_rute_ids(array $rute_ids, int $company_id = 0, string $orderBy = 'sort_order'): array
 {
+    category_service_ensure_schema();
     rute_tariff_ensure_schema();
     $ids = array_values(array_unique(array_filter(array_map('intval', $rute_ids), static fn ($x) => $x > 0)));
     if (!$ids) {
@@ -1261,7 +1447,8 @@ function rute_tariffs_by_rute_ids(array $rute_ids, int $company_id = 0, string $
     $ph    = implode(',', array_fill(0, count($ids), '?'));
     $sql   = "SELECT rt.id, rt.rute_id, rt.category_vehicle_id, rt.min_price, rt.price, rt.max_price,
                      rt.start_capacity_seat, rt.end_capacity_seat, rt.seat_capacity, rt.note, rt.sort_order,
-                     cv.code AS category_code, cv.name AS category_name
+                     cv.code AS category_code, cv.name AS category_name,
+                     cv.service_type AS category_service_type, cv.pricing_unit AS pricing_unit
                 FROM `rute_tariffs` rt
                 JOIN `category_vehicles` cv ON cv.id = rt.category_vehicle_id
                WHERE rt.rute_id IN ({$ph})";
@@ -1283,20 +1470,24 @@ function rute_tariffs_by_rute_ids(array $rute_ids, int $company_id = 0, string $
         if ($seatCap <= 0) {
             $seatCap = (int) ($r['end_capacity_seat'] ?? 0);
         }
+        $pUnit = (string) ($r['pricing_unit'] ?? 'per_seat');
         $out[$rid][] = [
-            'id'                  => (int) $r['id'],
-            'rute_id'             => $rid,
-            'category_vehicle_id' => (int) $r['category_vehicle_id'],
-            'category_code'       => (string) $r['category_code'],
-            'category_name'       => (string) $r['category_name'],
-            'min_price'           => (float) $r['min_price'],
-            'price'               => (float) $r['price'],
-            'max_price'           => (float) $r['max_price'],
-            'seat_capacity'       => $seatCap,
-            'start_capacity_seat' => (int) ($r['start_capacity_seat'] ?? ($seatCap > 0 ? 1 : 0)),
-            'end_capacity_seat'   => $seatCap > 0 ? $seatCap : (int) ($r['end_capacity_seat'] ?? 0),
-            'note'                => (string) ($r['note'] ?? ''),
-            'sort_order'          => (int) $r['sort_order'],
+            'id'                    => (int) $r['id'],
+            'rute_id'               => $rid,
+            'category_vehicle_id'   => (int) $r['category_vehicle_id'],
+            'category_code'         => (string) $r['category_code'],
+            'category_name'         => (string) $r['category_name'],
+            'category_service_type' => (string) ($r['category_service_type'] ?? 'travel'),
+            'pricing_unit'          => $pUnit,
+            'pricing_unit_short'    => category_pricing_unit_short($pUnit),
+            'min_price'             => (float) $r['min_price'],
+            'price'                 => (float) $r['price'],
+            'max_price'             => (float) $r['max_price'],
+            'seat_capacity'         => $seatCap,
+            'start_capacity_seat'   => (int) ($r['start_capacity_seat'] ?? ($seatCap > 0 ? 1 : 0)),
+            'end_capacity_seat'     => $seatCap > 0 ? $seatCap : (int) ($r['end_capacity_seat'] ?? 0),
+            'note'                  => (string) ($r['note'] ?? ''),
+            'sort_order'            => (int) $r['sort_order'],
         ];
     }
     $st->close();
@@ -1316,6 +1507,7 @@ function rute_tariffs_for_rute(int $rute_id, int $company_id = 0): array
 /** Normalisasi dan validasi list tarif kategori layanan dari form rute. */
 function rute_tariffs_normalize_and_validate(array $rows, int $company_id): array
 {
+    category_service_ensure_schema();
     $clean = [];
     $seenCats = [];
     $sort = 1;
@@ -1336,7 +1528,12 @@ function rute_tariffs_normalize_and_validate(array $rows, int $company_id): arra
         if ($catId <= 0) {
             throw new InvalidArgumentException('Setiap baris tarif wajib memilih kategori layanan.');
         }
-        if (!fetch_company_ref_row('category_vehicles', $catId, $company_id)) {
+        $stCat = db()->prepare('SELECT id, service_type FROM category_vehicles WHERE id = ? AND company_id = ? LIMIT 1');
+        $stCat->bind_param('ii', $catId, $company_id);
+        $stCat->execute();
+        $catRow = $stCat->get_result()->fetch_assoc();
+        $stCat->close();
+        if (!$catRow) {
             throw new InvalidArgumentException('Kategori layanan tidak valid atau bukan milik perusahaan yang dipilih.');
         }
         if (isset($seenCats[$catId])) {
@@ -1870,13 +2067,18 @@ function rute_calculate_travel_quote(
     ?int $category_vehicle_id,
     int $seats = 1,
     int $pickup_district_id = 0,
-    int $delivery_district_id = 0
+    int $delivery_district_id = 0,
+    int $rental_days = 0
 ): array {
+    category_service_ensure_schema();
     $seats = max(1, $seats);
     $unitPrice = (float) ($ruteRow['price'] ?? 0);
     $rid = (int) ($ruteRow['id'] ?? 0);
     $pickupExtra = 0.0;
     $deliveryExtra = 0.0;
+    $effCatId = ($category_vehicle_id !== null && $category_vehicle_id > 0)
+        ? $category_vehicle_id
+        : (int) ($ruteRow['category_vehicle_id'] ?? 0);
 
     if ($rid > 0 && $company_id > 0) {
         try {
@@ -1898,16 +2100,23 @@ function rute_calculate_travel_quote(
         }
     }
 
-    $subtotal    = round($unitPrice * $seats, 2);
+    $pricingUnit = category_pricing_unit_for_id($company_id, $effCatId > 0 ? $effCatId : null);
+    $qtyInput    = ($pricingUnit === 'per_day' && $rental_days > 0) ? $rental_days : $seats;
+    $billQty     = category_pricing_unit_multiplier($pricingUnit, $qtyInput);
+    $subtotal    = round($unitPrice * $billQty, 2);
     $radiusExtra = round($pickupExtra + $deliveryExtra, 2);
     return [
-        'unit_price'     => $unitPrice,
-        'seats'          => $seats,
-        'subtotal'       => $subtotal,
-        'pickup_extra'   => $pickupExtra,
-        'delivery_extra' => $deliveryExtra,
-        'radius_extra'   => $radiusExtra,
-        'total'          => round($subtotal + $radiusExtra, 2),
+        'unit_price'         => $unitPrice,
+        'seats'              => $seats,
+        'rental_days'        => $rental_days > 0 ? $rental_days : $seats,
+        'billable_qty'       => $billQty,
+        'pricing_unit'       => $pricingUnit,
+        'pricing_unit_short' => category_pricing_unit_short($pricingUnit),
+        'subtotal'           => $subtotal,
+        'pickup_extra'       => $pickupExtra,
+        'delivery_extra'     => $deliveryExtra,
+        'radius_extra'       => $radiusExtra,
+        'total'              => round($subtotal + $radiusExtra, 2),
     ];
 }
 
@@ -2078,15 +2287,18 @@ function travel_lookup_route_tariff(
     int $delivery_city_id,
     int $category_vehicle_id = 0,
     int $pickup_district_id = 0,
-    int $delivery_district_id = 0
+    int $delivery_district_id = 0,
+    ?string $service_type = null
 ): ?array {
     if ($company_id <= 0 || $pickup_city_id <= 0 || $delivery_city_id <= 0) {
         return null;
     }
+    category_service_ensure_schema();
     rute_ensure_schema();
     $db    = db();
     $route = null;
     $categoryMatched = ($category_vehicle_id <= 0);
+    $svcFilter = ($service_type !== null && isset(CATEGORY_SERVICE_TYPES[$service_type])) ? $service_type : null;
 
     $cols = 'r.id, r.name, r.pickup_point_city_id, r.delivery_point_city_id, r.category_vehicle_id, r.price,
              r.min_price, r.max_price, r.start_capacity_seat, r.end_capacity_seat, r.seat_capacity,
@@ -2099,20 +2311,38 @@ function travel_lookup_route_tariff(
                  LEFT JOIN provinces dp ON dp.id = dc.province_id';
 
     if ($category_vehicle_id > 0) {
-        $stTar = $db->prepare(
-            "SELECT {$cols},
-                    rt.category_vehicle_id AS t_category_id, rt.min_price AS t_min_price, rt.price AS t_price,
-                    rt.max_price AS t_max_price, rt.start_capacity_seat AS t_start_seat,
-                    rt.end_capacity_seat AS t_end_seat, rt.seat_capacity AS t_seat_cap
-               FROM rutes r
-               {$geoJoins}
-               JOIN rute_tariffs rt ON rt.rute_id = r.id
-              WHERE r.company_id = ? AND r.pickup_point_city_id = ? AND r.delivery_point_city_id = ? AND r.is_active = 1
-                AND rt.category_vehicle_id = ?
-              ORDER BY r.id ASC
-              LIMIT 1"
-        );
-        $stTar->bind_param('iiii', $company_id, $pickup_city_id, $delivery_city_id, $category_vehicle_id);
+        if ($svcFilter !== null) {
+            $stTar = $db->prepare(
+                "SELECT {$cols},
+                        rt.category_vehicle_id AS t_category_id, rt.min_price AS t_min_price, rt.price AS t_price,
+                        rt.max_price AS t_max_price, rt.start_capacity_seat AS t_start_seat,
+                        rt.end_capacity_seat AS t_end_seat, rt.seat_capacity AS t_seat_cap
+                   FROM rutes r
+                   {$geoJoins}
+                   JOIN rute_tariffs rt ON rt.rute_id = r.id
+                   JOIN category_vehicles cv_m ON cv_m.id = rt.category_vehicle_id AND cv_m.service_type = ?
+                  WHERE r.company_id = ? AND r.pickup_point_city_id = ? AND r.delivery_point_city_id = ? AND r.is_active = 1
+                    AND rt.category_vehicle_id = ?
+                  ORDER BY r.id ASC
+                  LIMIT 1"
+            );
+            $stTar->bind_param('siiii', $svcFilter, $company_id, $pickup_city_id, $delivery_city_id, $category_vehicle_id);
+        } else {
+            $stTar = $db->prepare(
+                "SELECT {$cols},
+                        rt.category_vehicle_id AS t_category_id, rt.min_price AS t_min_price, rt.price AS t_price,
+                        rt.max_price AS t_max_price, rt.start_capacity_seat AS t_start_seat,
+                        rt.end_capacity_seat AS t_end_seat, rt.seat_capacity AS t_seat_cap
+                   FROM rutes r
+                   {$geoJoins}
+                   JOIN rute_tariffs rt ON rt.rute_id = r.id
+                  WHERE r.company_id = ? AND r.pickup_point_city_id = ? AND r.delivery_point_city_id = ? AND r.is_active = 1
+                    AND rt.category_vehicle_id = ?
+                  ORDER BY r.id ASC
+                  LIMIT 1"
+            );
+            $stTar->bind_param('iiii', $company_id, $pickup_city_id, $delivery_city_id, $category_vehicle_id);
+        }
         $stTar->execute();
         $route = $stTar->get_result()->fetch_assoc() ?: null;
         $stTar->close();
@@ -2120,16 +2350,30 @@ function travel_lookup_route_tariff(
         if ($route) {
             $categoryMatched = true;
         } else {
-            $stCat = $db->prepare(
-                "SELECT {$cols}
-                   FROM rutes r
-                   {$geoJoins}
-                  WHERE r.company_id = ? AND r.pickup_point_city_id = ? AND r.delivery_point_city_id = ? AND r.is_active = 1
-                    AND r.category_vehicle_id = ?
-                  ORDER BY r.id ASC
-                  LIMIT 1"
-            );
-            $stCat->bind_param('iiii', $company_id, $pickup_city_id, $delivery_city_id, $category_vehicle_id);
+            if ($svcFilter !== null) {
+                $stCat = $db->prepare(
+                    "SELECT {$cols}
+                       FROM rutes r
+                       {$geoJoins}
+                       JOIN category_vehicles cv_m ON cv_m.id = r.category_vehicle_id AND cv_m.service_type = ?
+                      WHERE r.company_id = ? AND r.pickup_point_city_id = ? AND r.delivery_point_city_id = ? AND r.is_active = 1
+                        AND r.category_vehicle_id = ?
+                      ORDER BY r.id ASC
+                      LIMIT 1"
+                );
+                $stCat->bind_param('siiii', $svcFilter, $company_id, $pickup_city_id, $delivery_city_id, $category_vehicle_id);
+            } else {
+                $stCat = $db->prepare(
+                    "SELECT {$cols}
+                       FROM rutes r
+                       {$geoJoins}
+                      WHERE r.company_id = ? AND r.pickup_point_city_id = ? AND r.delivery_point_city_id = ? AND r.is_active = 1
+                        AND r.category_vehicle_id = ?
+                      ORDER BY r.id ASC
+                      LIMIT 1"
+                );
+                $stCat->bind_param('iiii', $company_id, $pickup_city_id, $delivery_city_id, $category_vehicle_id);
+            }
             $stCat->execute();
             $route = $stCat->get_result()->fetch_assoc() ?: null;
             $stCat->close();
@@ -2140,15 +2384,38 @@ function travel_lookup_route_tariff(
     }
 
     if (!$route) {
-        $st = $db->prepare(
-            "SELECT {$cols}
-               FROM rutes r
-               {$geoJoins}
-              WHERE r.company_id = ? AND r.pickup_point_city_id = ? AND r.delivery_point_city_id = ? AND r.is_active = 1
-              ORDER BY r.id ASC
-              LIMIT 1"
-        );
-        $st->bind_param('iii', $company_id, $pickup_city_id, $delivery_city_id);
+        if ($svcFilter !== null) {
+            $st = $db->prepare(
+                "SELECT {$cols}
+                   FROM rutes r
+                   {$geoJoins}
+                  WHERE r.company_id = ? AND r.pickup_point_city_id = ? AND r.delivery_point_city_id = ? AND r.is_active = 1
+                    AND (
+                        EXISTS (
+                            SELECT 1 FROM rute_tariffs rt_s
+                            JOIN category_vehicles cv_s ON cv_s.id = rt_s.category_vehicle_id
+                            WHERE rt_s.rute_id = r.id AND rt_s.company_id = r.company_id AND cv_s.service_type = ?
+                        )
+                        OR (
+                            NOT EXISTS (SELECT 1 FROM rute_tariffs rt_any WHERE rt_any.rute_id = r.id)
+                            AND EXISTS (SELECT 1 FROM category_vehicles cv_r WHERE cv_r.id = r.category_vehicle_id AND cv_r.service_type = ?)
+                        )
+                    )
+                  ORDER BY r.id ASC
+                  LIMIT 1"
+            );
+            $st->bind_param('iiiss', $company_id, $pickup_city_id, $delivery_city_id, $svcFilter, $svcFilter);
+        } else {
+            $st = $db->prepare(
+                "SELECT {$cols}
+                   FROM rutes r
+                   {$geoJoins}
+                  WHERE r.company_id = ? AND r.pickup_point_city_id = ? AND r.delivery_point_city_id = ? AND r.is_active = 1
+                  ORDER BY r.id ASC
+                  LIMIT 1"
+            );
+            $st->bind_param('iii', $company_id, $pickup_city_id, $delivery_city_id);
+        }
         $st->execute();
         $route = $st->get_result()->fetch_assoc() ?: null;
         $st->close();
@@ -2158,12 +2425,42 @@ function travel_lookup_route_tariff(
         return null;
     }
 
-    $tariffs    = rute_tariffs_for_rute((int) $route['id'], $company_id);
+    $tariffs = rute_tariffs_for_rute((int) $route['id'], $company_id);
+    if ($svcFilter !== null) {
+        $tariffs = array_values(array_filter(
+            $tariffs,
+            static fn (array $t): bool => (string) ($t['category_service_type'] ?? 'travel') === $svcFilter
+        ));
+        if (!$tariffs && empty($route['t_category_id'])) {
+            $defCat = (int) ($route['category_vehicle_id'] ?? 0);
+            $defMatch = false;
+            if ($defCat > 0) {
+                $stDc = $db->prepare('SELECT service_type FROM category_vehicles WHERE id = ? LIMIT 1');
+                $stDc->bind_param('i', $defCat);
+                $stDc->execute();
+                $defMatch = ((string) ($stDc->get_result()->fetch_column() ?: '') === $svcFilter);
+                $stDc->close();
+            }
+            if (!$defMatch) {
+                return null;
+            }
+        }
+    }
     $firstTar   = $tariffs[0] ?? [];
     $effCat     = (int) ($route['t_category_id'] ?? ($firstTar['category_vehicle_id'] ?? $route['category_vehicle_id']));
     $effPrc     = isset($route['t_price']) ? (float) $route['t_price'] : ($firstTar ? (float) $firstTar['price'] : (float) $route['price']);
     $effMin     = isset($route['t_min_price']) ? (float) $route['t_min_price'] : ($firstTar ? (float) $firstTar['min_price'] : (float) $route['min_price']);
     $effMax     = isset($route['t_max_price']) ? (float) $route['t_max_price'] : ($firstTar ? (float) $firstTar['max_price'] : (float) $route['max_price']);
+    $effPricingUnit = '';
+    foreach ($tariffs as $tf) {
+        if ((int) ($tf['category_vehicle_id'] ?? 0) === $effCat && !empty($tf['pricing_unit'])) {
+            $effPricingUnit = (string) $tf['pricing_unit'];
+            break;
+        }
+    }
+    if ($effPricingUnit === '') {
+        $effPricingUnit = category_pricing_unit_for_id($company_id, $effCat > 0 ? $effCat : null);
+    }
     $effSeatCap = 0;
     if (isset($route['t_seat_cap']) && (int) $route['t_seat_cap'] > 0) {
         $effSeatCap = (int) $route['t_seat_cap'];
@@ -2190,6 +2487,8 @@ function travel_lookup_route_tariff(
         'delivery_province_name'    => (string) ($route['delivery_province_name'] ?? ''),
         'category_vehicle_id'       => $effCat,
         'category_matched'          => $categoryMatched,
+        'pricing_unit'              => $effPricingUnit,
+        'pricing_unit_short'        => category_pricing_unit_short($effPricingUnit),
         'min_price'                 => $effMin,
         'price'                     => $effPrc,
         'max_price'                 => $effMax,
@@ -2217,7 +2516,7 @@ function travel_lookup_route_tariff(
     ];
 }
 
-/** Validasi batas Harga Min dan Harga Maks rute (plus biaya tambahan kecamatan) untuk pemesanan tiket perjalanan. */
+/** Validasi batas Harga Min dan Harga Maks rute (plus biaya tambahan kecamatan) untuk pemesanan travel/rental. */
 function travel_validate_route_price_bounds(
     int $company_id,
     int $pickup_city_id,
@@ -2226,40 +2525,53 @@ function travel_validate_route_price_bounds(
     int $passenger_count,
     float $total_price,
     int $pickup_district_id = 0,
-    int $delivery_district_id = 0
+    int $delivery_district_id = 0,
+    ?string $service_type = null
 ): void {
+    if ($service_type === 'rental' && $category_vehicle_id <= 0) {
+        return;
+    }
     $matched = travel_lookup_route_tariff(
         $company_id,
         $pickup_city_id,
         $delivery_city_id,
         $category_vehicle_id,
         $pickup_district_id,
-        $delivery_district_id
+        $delivery_district_id,
+        $service_type
     );
     if (!$matched || ($category_vehicle_id > 0 && empty($matched['category_matched']))) {
         return;
     }
     $paxCnt      = max(1, $passenger_count);
+    $pricingUnit = (string) ($matched['pricing_unit'] ?? 'per_seat');
+    $billQty     = category_pricing_unit_multiplier($pricingUnit, $paxCnt);
+    $qtyLabel    = match ($pricingUnit) {
+        'per_vehicle' => '1 mobil',
+        'per_package' => $billQty . ' paket',
+        'per_day'     => $billQty . ' hari',
+        default       => $billQty . ' penumpang',
+    };
     $minUnit     = (float) ($matched['min_price'] ?? 0);
     $maxUnit     = (float) ($matched['max_price'] ?? 0);
     $radiusExtra = round((float) ($matched['pickup_district_extra'] ?? 0) + (float) ($matched['delivery_district_extra'] ?? 0), 2);
     $extraText   = $radiusExtra > 0 ? (' + radius ' . rupiah($radiusExtra)) : '';
 
     if ($minUnit > 0) {
-        $minTotal = round($minUnit * $paxCnt + $radiusExtra, 2);
+        $minTotal = round($minUnit * $billQty + $radiusExtra, 2);
         if ($total_price + 0.001 < $minTotal) {
             throw new InvalidArgumentException(
                 'Total harga (' . rupiah($total_price) . ') di bawah Harga Min rute "' . $matched['name'] . '" untuk '
-                . $paxCnt . ' penumpang (' . rupiah($minTotal) . ' = ' . $paxCnt . ' x ' . rupiah($minUnit) . $extraText . ').'
+                . $qtyLabel . ' (' . rupiah($minTotal) . ' = ' . $billQty . ' x ' . rupiah($minUnit) . $extraText . ').'
             );
         }
     }
     if ($maxUnit > 0) {
-        $maxTotal = round($maxUnit * $paxCnt + $radiusExtra, 2);
+        $maxTotal = round($maxUnit * $billQty + $radiusExtra, 2);
         if ($total_price - 0.001 > $maxTotal) {
             throw new InvalidArgumentException(
                 'Total harga (' . rupiah($total_price) . ') melebihi Harga Maks rute "' . $matched['name'] . '" untuk '
-                . $paxCnt . ' penumpang (' . rupiah($maxTotal) . ' = ' . $paxCnt . ' x ' . rupiah($maxUnit) . $extraText . ').'
+                . $qtyLabel . ' (' . rupiah($maxTotal) . ' = ' . $billQty . ' x ' . rupiah($maxUnit) . $extraText . ').'
             );
         }
     }

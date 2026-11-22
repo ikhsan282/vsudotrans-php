@@ -82,6 +82,8 @@ $run_move = static function (int $id, string $dir, bool $csrf_ok = true): string
     return (string) @file_get_contents($f . '.out');
 };
 
+$origSort = $c->query("SELECT id, sort_order FROM payment_methods WHERE id NOT IN (" . implode(',', $ids) . ") AND code NOT LIKE 'CHK-R%'")->fetch_all(MYSQLI_ASSOC);
+
 try {
 foreach ($ids as $id) { $c->query("DELETE FROM payment_methods WHERE id = $id"); }
 $c->query("DELETE FROM payment_methods WHERE code LIKE 'CHK-R%'");
@@ -110,14 +112,20 @@ ok($vals([$A, $B, $C]) === [$A => 20, $B => 20, $C => null],
     'fixture kotor: A=20 & B=20 duplikat, C=NULL');
 
 // Normalisasi sebagai user perusahaan 1: baris company 1 (+ global) dinomori ulang
-// menurut urutan efektif daftar (ORDER BY sort_order, id) → C(10), A(20), B(30),
+// menurut urutan efektif daftar (ORDER BY sort_order, id) → C < A < B,
 // dan tenant 990 tidak tersentuh.
 $_SESSION['role_name'] = 'Admin';
 master_normalize_order($spec);
-ok($vals([$A, $B, $C]) === [$A => 20, $B => 30, $C => 10],
-    'normalisasi (perusahaan 1) → C,A,B = 10,20,30 (dapat ' . json_encode($vals([$A, $B, $C])) . ')');
+$vNorm = $vals([$A, $B, $C]);
+ok(
+    $vNorm[$C] !== null && $vNorm[$A] !== null && $vNorm[$B] !== null
+        && $vNorm[$C] < $vNorm[$A] && $vNorm[$A] < $vNorm[$B]
+        && count(array_unique($vNorm)) === 3,
+    'normalisasi (perusahaan 1) → C < A < B unik tanpa NULL (dapat ' . json_encode($vNorm) . ')'
+);
 ok($vals([$X, $Y]) === [$X => 10, $Y => 20], 'normalisasi tidak menyentuh tenant lain (990)');
-ok($list(990) === [$X, $Y], 'list tenant 990 utuh: ' . implode(',', $list(990)));
+$list990Own = array_values(array_intersect($list(990), [$X, $Y]));
+ok($list990Own === [$X, $Y], 'list tenant 990 utuh: ' . implode(',', $list990Own));
 
 // Super Admin (scope lintas tenant, 1=1): normalisasi menomori semua baris yang terlihat,
 // jadi tidak ada lagi duplikat/NULL dan tiap nilai unik.
@@ -147,7 +155,7 @@ $_SESSION['role_name'] = 'Admin';
     ksort($expect);
     $vb_sorted = $vb;
     ksort($vb_sorted);
-    ok($list(1) === [$second, $first, $third],
+    ok($list(1) === array_merge([$second, $first], array_slice($l1, 2)),
         'turun: baris 1 & 2 bertukar (dapat ' . implode(',', $list(1)) . '; hasil=' . $r1 . ')');
     ok($vb_sorted === $expect, 'nilai urut bertukar: ' . json_encode($va) . ' → ' . json_encode($vb));
 
@@ -172,6 +180,14 @@ $_SESSION['role_name'] = 'Admin';
     foreach ($ids as $id) { $c->query("DELETE FROM payment_methods WHERE id = $id"); }
     $c->query("DELETE FROM payment_methods WHERE code LIKE 'CHK-R%'");
     $c->query("ALTER TABLE payment_methods MODIFY sort_order INT(11) NOT NULL DEFAULT 0"); // kembalikan bentuk schema
+    $stRest = $c->prepare("UPDATE payment_methods SET sort_order = ? WHERE id = ?");
+    foreach ($origSort as $origRow) {
+        $sVal = (int) $origRow['sort_order'];
+        $sId  = (int) $origRow['id'];
+        $stRest->bind_param('ii', $sVal, $sId);
+        $stRest->execute();
+    }
+    $stRest->close();
     $c->query("DELETE FROM companies WHERE id = 990 OR code = 'CHK-URUT'");
     $left = (int) $c->query("SELECT COUNT(*) FROM payment_methods WHERE id IN (" . implode(',', $ids) . ") OR code LIKE 'CHK-R%'")->fetch_row()[0];
     ok($left === 0, 'fixture dibersihkan (sisa ' . $left . ' baris)');

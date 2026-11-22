@@ -5,6 +5,7 @@ require_once __DIR__ . '/_helpers.php';
 require_permission('employees.view');
 
 $canManage = can('employees.manage');
+$canSeeSalary = can('payroll.view');
 $id = (int) ($_GET['id'] ?? $_POST['id'] ?? 0);
 
 if ($id === 0 && !$canManage) {
@@ -37,11 +38,20 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     }
 
     $mapped = employee_map_input($_POST);
+    if (!$canSeeSalary) {
+        unset($mapped['data']['basic_salary'], $mapped['data']['daily_allowance']);
+    }
     $mapped['id'] = $id;
     // Create: dari perusahaan aktif. Edit: perusahaan baris (sudah lolos assert_company_access).
     $mapped['company_id'] = $row ? (int) $row['company_id'] : active_company_id();
     $errors = employee_validate($mapped);
     $input = $_POST;
+    if (isset($mapped['data']['basic_salary'])) {
+        $input['basic_salary'] = $mapped['data']['basic_salary'];
+    }
+    if (isset($mapped['data']['daily_allowance'])) {
+        $input['daily_allowance'] = $mapped['data']['daily_allowance'];
+    }
 
     if (!$errors) {
         try {
@@ -88,30 +98,24 @@ $roAttr = $canManage ? '' : ' readonly';
 $roCls  = $canManage ? '' : ' bg-light';
 $disAttr = $canManage ? '' : ' disabled';
 
-// Cabang milik perusahaan baris (edit/detail, termasuk Super Admin lintas perusahaan) atau perusahaan aktif (create).
-$branches = employee_branch_options($row ? (int) $row['company_id'] : active_company_id());
+// Cabang & Master HR milik perusahaan baris (edit/detail) atau perusahaan aktif (create).
+$emp_cid  = $row ? (int) $row['company_id'] : active_company_id();
+$branches = employee_branch_options($emp_cid);
+$hr_opts  = employee_hr_options($emp_cid);
+$title_opts = $hr_opts['job_titles'];
+$pos_opts   = $hr_opts['job_positions'];
+$org_opts   = $hr_opts['organization_structures'];
+
+$cur_title = $v('job_title');
+$cur_pos   = $v('job_position');
+$cur_org   = $v('organization_structure');
+$title_unlisted = $cur_title !== '' && !in_array($cur_title, array_column($title_opts, 'name'), true);
+$pos_unlisted   = $cur_pos !== '' && !in_array($cur_pos, array_column($pos_opts, 'name'), true);
+$org_unlisted   = $cur_org !== '' && !in_array($cur_org, array_column($org_opts, 'name'), true);
+
 $title = $id > 0 ? ('Karyawan - ' . $v('name')) : 'Tambah Karyawan';
 $active = 'employees';
 require __DIR__ . '/../../includes/header.php';
-
-// Select dari master `job_grades` (gaji pokok + uang harian payroll).
-$grade_opts = [];
-try {
-    $emp_cid = $row ? (int) $row['company_id'] : active_company_id();
-    if ($emp_cid !== null) {
-        $st_grade = db()->prepare('SELECT name FROM job_grades WHERE is_active = 1 AND company_id = ? ORDER BY name');
-        $st_grade->bind_param('i', $emp_cid);
-        $st_grade->execute();
-        $grade_opts = $st_grade->get_result()->fetch_all(MYSQLI_ASSOC);
-        $st_grade->close();
-    } else {
-        $grade_opts = db()->query('SELECT name FROM job_grades WHERE is_active = 1 ORDER BY name')->fetch_all(MYSQLI_ASSOC);
-    }
-} catch (mysqli_sql_exception $e) {
-    $grade_opts = [];
-}
-$grade_val = $v('job_grade');
-$grade_old = $grade_val !== '' && !in_array($grade_val, array_column($grade_opts, 'name'), true);
 
 $bank_list = master_bank_options();
 $cur_bank = (string) $v('bank_name');
@@ -231,34 +235,83 @@ if ($canManage) {
 
                             <div class="col-12 col-lg-6">
                                 <div class="rnt-panel h-100 mb-0">
-                                    <div class="rnt-panel-header"><span>Jabatan, Kontak &amp; Rekening Bank</span></div>
+                                    <div class="rnt-panel-header"><span>Jabatan, Struktur, Kontak &amp; Rekening Bank</span></div>
                                     <div class="rnt-panel-body">
                                         <div class="rnt-row">
-                                            <label class="rnt-label">Jabatan (title)</label>
+                                            <label class="rnt-label">Struktur Organisasi</label>
                                             <div class="rnt-field">
-                                                <input name="job_title" class="form-control form-control-sm<?= $roCls ?>" maxlength="100" value="<?= e($v('job_title')) ?>"<?= $roAttr ?>>
+                                                <select name="organization_structure" id="empOrgStructure" class="form-select form-select-sm<?= $roCls ?>"<?= $disAttr ?>>
+                                                    <option value="">— Pilih Struktur Organisasi —</option>
+                                                    <?php foreach ($org_opts as $org): ?>
+                                                        <option value="<?= e($org['name']) ?>" <?= $org['name'] === $cur_org ? 'selected' : '' ?>>
+                                                            <?= e($org['code'] . ' — ' . $org['name']) ?>
+                                                        </option>
+                                                    <?php endforeach; ?>
+                                                    <?php if ($org_unlisted): ?>
+                                                        <option value="<?= e($cur_org) ?>" selected><?= e($cur_org) ?> (belum terdaftar di Master HR)</option>
+                                                    <?php endif; ?>
+                                                </select>
                                             </div>
                                         </div>
                                         <div class="rnt-row">
                                             <label class="rnt-label">Posisi</label>
                                             <div class="rnt-field">
-                                                <input name="job_position" class="form-control form-control-sm<?= $roCls ?>" maxlength="100" value="<?= e($v('job_position')) ?>"<?= $roAttr ?>>
-                                            </div>
-                                        </div>
-                                        <div class="rnt-row">
-                                            <label class="rnt-label">Grade</label>
-                                            <div class="rnt-field">
-                                                <select name="job_grade" class="form-select form-select-sm<?= $roCls ?>"<?= $disAttr ?>>
-                                                    <option value="">— pilih —</option>
-                                                    <?php foreach ($grade_opts as $g): ?>
-                                                        <option value="<?= e($g['name']) ?>" <?= $g['name'] === $grade_val ? 'selected' : '' ?>><?= e($g['name']) ?></option>
+                                                <select name="job_position" id="empJobPosition" class="form-select form-select-sm<?= $roCls ?>"<?= $disAttr ?>>
+                                                    <option value="">— Pilih Posisi —</option>
+                                                    <?php foreach ($pos_opts as $jp): ?>
+                                                        <option value="<?= e($jp['name']) ?>"
+                                                                data-job-title="<?= e((string) ($jp['job_title_name'] ?? '')) ?>"
+                                                                <?php if ($canSeeSalary): ?>
+                                                                    data-basic-salary="<?= (int) round((float) ($jp['job_title_basic_salary'] ?? 0)) ?>"
+                                                                    data-daily-allowance="<?= (int) round((float) ($jp['job_title_daily_allowance'] ?? 0)) ?>"
+                                                                <?php endif; ?>
+                                                                <?= $jp['name'] === $cur_pos ? 'selected' : '' ?>>
+                                                            <?= e($jp['code'] . ' — ' . $jp['name'] . (!empty($jp['job_title_name']) ? ' (' . $jp['job_title_name'] . ')' : '')) ?>
+                                                        </option>
                                                     <?php endforeach; ?>
-                                                    <?php if ($grade_old): ?>
-                                                        <option value="<?= e($grade_val) ?>" selected><?= e($grade_val) ?> (tidak terdaftar)</option>
+                                                    <?php if ($pos_unlisted): ?>
+                                                        <option value="<?= e($cur_pos) ?>" selected><?= e($cur_pos) ?> (belum terdaftar di Master HR)</option>
                                                     <?php endif; ?>
                                                 </select>
                                             </div>
                                         </div>
+                                        <div class="rnt-row">
+                                            <label class="rnt-label">Jabatan</label>
+                                            <div class="rnt-field">
+                                                <select name="job_title" id="empJobTitle" class="form-select form-select-sm<?= $roCls ?>"<?= $disAttr ?>>
+                                                    <option value="">— Pilih Jabatan —</option>
+                                                    <?php foreach ($title_opts as $jt): ?>
+                                                        <option value="<?= e($jt['name']) ?>"
+                                                                <?php if ($canSeeSalary): ?>
+                                                                    data-basic-salary="<?= (int) round((float) ($jt['basic_salary'] ?? 0)) ?>"
+                                                                    data-daily-allowance="<?= (int) round((float) ($jt['daily_allowance'] ?? 0)) ?>"
+                                                                <?php endif; ?>
+                                                                <?= $jt['name'] === $cur_title ? 'selected' : '' ?>>
+                                                            <?= e($jt['code'] . ' — ' . $jt['name']) ?>
+                                                        </option>
+                                                    <?php endforeach; ?>
+                                                    <?php if ($title_unlisted): ?>
+                                                        <option value="<?= e($cur_title) ?>" selected><?= e($cur_title) ?> (belum terdaftar di Master HR)</option>
+                                                    <?php endif; ?>
+                                                </select>
+                                            </div>
+                                        </div>
+                                        <?php if ($canSeeSalary): ?>
+                                        <div class="rnt-row">
+                                            <label class="rnt-label">Gaji Pokok (Rp)</label>
+                                            <div class="rnt-field">
+                                                <input type="text" inputmode="numeric" name="basic_salary" id="empBasicSalary" class="form-control form-control-sm font-monospace<?= $roCls ?>"
+                                                       value="<?= e(number_format(employee_parse_money($v('basic_salary')), 0, ',', '.')) ?>"<?= $roAttr ?>>
+                                            </div>
+                                        </div>
+                                        <div class="rnt-row">
+                                            <label class="rnt-label">Uang Harian (Rp)</label>
+                                            <div class="rnt-field">
+                                                <input type="text" inputmode="numeric" name="daily_allowance" id="empDailyAllowance" class="form-control form-control-sm font-monospace<?= $roCls ?>"
+                                                       value="<?= e(number_format(employee_parse_money($v('daily_allowance')), 0, ',', '.')) ?>"<?= $roAttr ?>>
+                                            </div>
+                                        </div>
+                                        <?php endif; ?>
                                         <div class="rnt-row">
                                             <label class="rnt-label">Email</label>
                                             <div class="rnt-field">
@@ -462,6 +515,45 @@ if ($canManage) {
                 </div>
             <?php if ($canManage): ?>
             </form>
+            <script>
+            document.addEventListener('DOMContentLoaded', function () {
+                var posSel = document.getElementById('empJobPosition');
+                var titleSel = document.getElementById('empJobTitle');
+                var basicIn = document.getElementById('empBasicSalary');
+                var dailyIn = document.getElementById('empDailyAllowance');
+                function fmtIdr(n) {
+                    var v = parseInt(n, 10) || 0;
+                    return v.toString().replace(/\B(?=(\d{3})+(?!\d))/g, '.');
+                }
+                function applyTitleDefaults(opt) {
+                    if (!opt) return;
+                    var b = parseInt(opt.getAttribute('data-basic-salary') || '0', 10) || 0;
+                    var d = parseInt(opt.getAttribute('data-daily-allowance') || '0', 10) || 0;
+                    if (basicIn && b > 0) basicIn.value = fmtIdr(b);
+                    if (dailyIn && d > 0) dailyIn.value = fmtIdr(d);
+                }
+                if (posSel && titleSel) {
+                    posSel.addEventListener('change', function () {
+                        var opt = posSel.options[posSel.selectedIndex];
+                        var linkedTitle = opt ? (opt.getAttribute('data-job-title') || '') : '';
+                        if (linkedTitle !== '') {
+                            for (var i = 0; i < titleSel.options.length; i++) {
+                                if (titleSel.options[i].value === linkedTitle) {
+                                    titleSel.value = linkedTitle;
+                                    applyTitleDefaults(titleSel.options[i]);
+                                    break;
+                                }
+                            }
+                        }
+                    });
+                }
+                if (titleSel) {
+                    titleSel.addEventListener('change', function () {
+                        applyTitleDefaults(titleSel.options[titleSel.selectedIndex]);
+                    });
+                }
+            });
+            </script>
             <?php endif; ?>
         </div>
     </div>

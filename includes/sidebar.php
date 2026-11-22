@@ -55,14 +55,14 @@ $menu = [
     ['key' => 'dispatch',   'section' => 'Operasional & Armada', 'label' => 'Kalender Operasional', 'icon' => 'calendar2-check', 'href' => 'pages/dispatch/calendar.php', 'perm' => 'dispatch.view'],
     ['key' => 'travel', 'section' => 'Operasional & Armada', 'label' => 'Travel', 'icon' => 'bus-front', 'perm' => 'travel.view', 'sub' => [
         ['label' => 'Pemesanan Tiket Perjalanan', 'href' => 'pages/travel/bookings/index.php',  'perms' => 'travel.view'],
-        ['label' => 'Rute & Tarif',               'href' => 'pages/travel/rutes/index.php',     'perms' => 'travel.view'],
     ]],
     ['key' => 'rental', 'section' => 'Operasional & Armada', 'label' => 'Rental', 'icon' => 'car-front', 'perm' => 'rental.view', 'sub' => [
         ['label' => 'Pemesanan Sewa Kendaraan', 'href' => 'pages/rental/bookings/index.php',    'perms' => 'rental.view'],
     ]],
-    ['key' => 'transport', 'keys' => ['transport', 'passengers', 'categories', 'regulations'], 'section' => 'Operasional & Armada', 'label' => 'Transportasi', 'icon' => 'signpost-split', 'perm' => ['travel.view', 'rental.view', 'vehicles.view'], 'sub' => [
+    ['key' => 'transport', 'keys' => ['transport', 'passengers', 'categories', 'rutes', 'regulations'], 'section' => 'Operasional & Armada', 'label' => 'Transportasi', 'icon' => 'signpost-split', 'perm' => ['travel.view', 'rental.view', 'vehicles.view'], 'sub' => [
         ['key' => 'passengers',  'label' => 'Penumpang',        'href' => 'pages/transport/passengers/index.php',  'perms' => ['travel.view', 'rental.view']],
         ['key' => 'categories',  'label' => 'Kategori Layanan', 'href' => 'pages/transport/categories/index.php',  'perms' => ['travel.view', 'rental.view', 'vehicles.view']],
+        ['key' => 'rutes',       'label' => 'Rute & Tarif',     'href' => 'pages/travel/rutes/index.php',          'perms' => ['travel.view', 'rental.view']],
         ['key' => 'regulations', 'label' => 'Peraturan Komisi', 'href' => 'pages/transport/regulations/index.php', 'perms' => ['travel.view', 'rental.view']],
     ]],
     ['key' => 'vehicles',   'section' => 'Operasional & Armada', 'label' => 'Kendaraan',    'icon' => 'truck', 'perm' => 'vehicles.view', 'sub' => [
@@ -79,16 +79,11 @@ $menu = [
 
     // ── SDM & PAYROLL ───────────────────────────────────────────────────────
     ['key' => 'employees',  'section' => 'SDM & Payroll', 'label' => 'Karyawan',  'icon' => 'person-vcard',   'href' => 'pages/employees/index.php',       'perm' => 'employees.view'],
-    ['key' => 'attendance', 'section' => 'SDM & Payroll', 'label' => 'Absensi',   'icon' => 'calendar-check', 'perm' => 'attendance.view', 'sub' => [
-        ['label' => 'Absensi Harian', 'href' => 'pages/attendance/index.php',   'perms' => 'attendance.view'],
-        ['label' => 'Rekap Absensi',  'href' => 'pages/attendance/summary.php', 'perms' => 'attendance.view'],
-    ]],
     ['key' => 'payroll',    'section' => 'SDM & Payroll', 'label' => 'Payroll',   'icon' => 'cash-stack',     'href' => 'pages/payroll/periods/index.php', 'perm' => 'payroll.view'],
     ['key' => 'hr',         'section' => 'SDM & Payroll', 'label' => 'Master HR', 'icon' => 'briefcase',      'perm' => 'hr.view', 'sub' => [
-        ['label' => 'Grade Jabatan', 'href' => 'pages/hr/job_grades/index.php',              'perms' => 'hr.view'],
-        ['label' => 'Jabatan',       'href' => 'pages/hr/job_titles/index.php',              'perms' => 'hr.view'],
-        ['label' => 'Posisi',        'href' => 'pages/hr/job_positions/index.php',           'perms' => 'hr.view'],
-        ['label' => 'Struktur Org.', 'href' => 'pages/hr/organization_structures/index.php', 'perms' => 'hr.view'],
+        ['label' => 'Jabatan',             'href' => 'pages/hr/job_titles/index.php',              'perms' => 'hr.view'],
+        ['label' => 'Posisi',              'href' => 'pages/hr/job_positions/index.php',           'perms' => 'hr.view'],
+        ['label' => 'Struktur Organisasi', 'href' => 'pages/hr/organization_structures/index.php', 'perms' => 'hr.view'],
     ]],
 
     // ── LAPORAN ─────────────────────────────────────────────────────────────
@@ -128,13 +123,9 @@ $menu = [
 ];
 
 $req_path = parse_url($_SERVER['REQUEST_URI'] ?? '', PHP_URL_PATH) ?: '';
-$default_brand_logo = APP_URL . '/assets/brand/logo-transmandiri.png';
-$sidebar_logo_url = $default_brand_logo;
-if (!empty($activeLogo) && !preg_match('#/logo_[a-z]+\.png$#i', (string) $activeLogo) && function_exists('resolve_asset_url')) {
-    $resolved = resolve_asset_url((string) $activeLogo);
-    if ($resolved !== '') {
-        $sidebar_logo_url = $resolved;
-    }
+$sidebarCompanyName = trim((string) ($activeName ?? ''));
+if ($sidebarCompanyName === '') {
+    $sidebarCompanyName = APP_NAME;
 }
 $sbUserName = trim((string) ($user['name'] ?? ($user['full_name'] ?? 'User')));
 $sbParts    = preg_split('/\s+/', $sbUserName) ?: ['U'];
@@ -145,13 +136,9 @@ if ($sbInitials === '') {
 ?>
 <nav id="sidebar" class="sidebar d-flex flex-column flex-shrink-0 p-0">
   <a href="<?= e(APP_URL) ?>/pages/dashboard/index.php"
-     class="d-flex flex-column align-items-center justify-content-center px-3 py-3 text-white text-decoration-none sidebar-brand"
-     title="<?= e($activeName ?? APP_NAME) ?>">
-    <div class="sidebar-logo-frame">
-      <img src="<?= e($sidebar_logo_url) ?>"
-           onerror="this.onerror=null;this.src='<?= e($default_brand_logo) ?>';"
-           alt="<?= e($activeName ?? APP_NAME) ?>" class="sidebar-logo">
-    </div>
+     class="d-flex align-items-center justify-content-center px-3 py-3 text-white text-decoration-none sidebar-brand"
+     title="<?= e($sidebarCompanyName) ?>">
+    <span class="sidebar-company-name text-center"><?= e($sidebarCompanyName) ?></span>
   </a>
 
   <div class="nav-scroll">

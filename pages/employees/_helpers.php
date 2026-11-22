@@ -60,6 +60,92 @@ function employee_branch_options(?int $cid): array
     return $rows;
 }
 
+/**
+ * Pastikan kolom employees.organization_structure, basic_salary, daily_allowance
+ * serta job_titles.basic_salary, daily_allowance tersedia.
+ */
+function employee_ensure_hr_schema(): void
+{
+    static $checked = false;
+    if ($checked) {
+        return;
+    }
+    $checked = true;
+    $db = db();
+    $res = $db->query("SHOW COLUMNS FROM `employees` LIKE 'organization_structure'");
+    if ($res && $res->num_rows === 0) {
+        $db->query("ALTER TABLE `employees` ADD COLUMN `organization_structure` VARCHAR(100) DEFAULT NULL AFTER `job_position`");
+    }
+    $resB = $db->query("SHOW COLUMNS FROM `employees` LIKE 'basic_salary'");
+    if ($resB && $resB->num_rows === 0) {
+        $db->query("ALTER TABLE `employees` ADD COLUMN `basic_salary` DECIMAL(18,2) NOT NULL DEFAULT 0 AFTER `organization_structure`");
+    }
+    $resD = $db->query("SHOW COLUMNS FROM `employees` LIKE 'daily_allowance'");
+    if ($resD && $resD->num_rows === 0) {
+        $db->query("ALTER TABLE `employees` ADD COLUMN `daily_allowance` DECIMAL(18,2) NOT NULL DEFAULT 0 AFTER `basic_salary`");
+    }
+    $resJtB = $db->query("SHOW COLUMNS FROM `job_titles` LIKE 'basic_salary'");
+    if ($resJtB && $resJtB->num_rows === 0) {
+        $db->query("ALTER TABLE `job_titles` ADD COLUMN `basic_salary` DECIMAL(18,2) NOT NULL DEFAULT 0 AFTER `level`");
+    }
+    $resJtD = $db->query("SHOW COLUMNS FROM `job_titles` LIKE 'daily_allowance'");
+    if ($resJtD && $resJtD->num_rows === 0) {
+        $db->query("ALTER TABLE `job_titles` ADD COLUMN `daily_allowance` DECIMAL(18,2) NOT NULL DEFAULT 0 AFTER `basic_salary`");
+    }
+}
+
+/**
+ * Ambil opsi Master HR aktif (Jabatan, Posisi, Struktur Organisasi) untuk perusahaan $cid.
+ *
+ * @return array{job_titles: list<array<string,mixed>>, job_positions: list<array<string,mixed>>, organization_structures: list<array<string,mixed>>}
+ */
+function employee_hr_options(?int $cid): array
+{
+    employee_ensure_hr_schema();
+    $db = db();
+    $titles = [];
+    $positions = [];
+    $structures = [];
+
+    if ($cid !== null) {
+        $st = $db->prepare('SELECT id, code, name, level, basic_salary, daily_allowance FROM job_titles WHERE is_active = 1 AND (company_id = ? OR company_id IS NULL) ORDER BY level ASC, name ASC');
+        $st->bind_param('i', $cid);
+        $st->execute();
+        $titles = $st->get_result()->fetch_all(MYSQLI_ASSOC);
+        $st->close();
+
+        $st = $db->prepare('SELECT jp.id, jp.code, jp.name, jp.level, jt.name AS job_title_name, jt.basic_salary AS job_title_basic_salary, jt.daily_allowance AS job_title_daily_allowance
+            FROM job_positions jp
+            LEFT JOIN job_titles jt ON jt.id = jp.job_title_id
+            WHERE jp.is_active = 1 AND jp.company_id = ?
+            ORDER BY jp.level ASC, jp.name ASC');
+        $st->bind_param('i', $cid);
+        $st->execute();
+        $positions = $st->get_result()->fetch_all(MYSQLI_ASSOC);
+        $st->close();
+
+        $st = $db->prepare('SELECT id, code, name, level FROM organization_structures WHERE is_active = 1 AND company_id = ? ORDER BY level ASC, name ASC');
+        $st->bind_param('i', $cid);
+        $st->execute();
+        $structures = $st->get_result()->fetch_all(MYSQLI_ASSOC);
+        $st->close();
+    } else {
+        $titles = $db->query('SELECT id, code, name, level, basic_salary, daily_allowance FROM job_titles WHERE is_active = 1 ORDER BY level ASC, name ASC')->fetch_all(MYSQLI_ASSOC);
+        $positions = $db->query('SELECT jp.id, jp.code, jp.name, jp.level, jt.name AS job_title_name, jt.basic_salary AS job_title_basic_salary, jt.daily_allowance AS job_title_daily_allowance
+            FROM job_positions jp
+            LEFT JOIN job_titles jt ON jt.id = jp.job_title_id
+            WHERE jp.is_active = 1
+            ORDER BY jp.level ASC, jp.name ASC')->fetch_all(MYSQLI_ASSOC);
+        $structures = $db->query('SELECT id, code, name, level FROM organization_structures WHERE is_active = 1 ORDER BY level ASC, name ASC')->fetch_all(MYSQLI_ASSOC);
+    }
+
+    return [
+        'job_titles'              => $titles,
+        'job_positions'           => $positions,
+        'organization_structures' => $structures,
+    ];
+}
+
 /** Nama perusahaan (dipakai judul form pada Super Admin). */
 function employee_company_name(?int $cid): string
 {
@@ -113,6 +199,7 @@ function employee_code_unique(string $code, ?int $company_id, int $exclude_id = 
  */
 function employee_list(int $page, string $q, string $status, ?int $filter_cid = null): array
 {
+    employee_ensure_hr_schema();
     // Alias 'e.' wajib: query ini JOIN branches/companies yang juga punya company_id -> ambigu.
     if (is_super_admin() && $filter_cid !== null) {
         [$wsql, $wtypes, $wparams] = $filter_cid > 0 ? ['e.company_id = ?', 'i', [$filter_cid]] : ['1=1', '', []];
@@ -165,6 +252,23 @@ function employee_list(int $page, string $q, string $status, ?int $filter_cid = 
 }
 
 /**
+ * Urai input nominal uang (mendukung format Indonesia `3.200.000` / `3.200.000,50`
+ * maupun desimal standar `3200000.50`).
+ */
+function employee_parse_money($raw): float
+{
+    $s = trim(str_ireplace(['Rp', ' '], '', (string) $raw));
+    if ($s === '') {
+        return 0.0;
+    }
+    if (preg_match('/^-?\d+\.\d{1,2}$/', $s)) {
+        return max(0.0, (float) $s);
+    }
+    $s = str_replace(['.', ','], ['', '.'], $s);
+    return max(0.0, (float) $s);
+}
+
+/**
  * Petakan input POST -> data insert/update (hanya kolom yang ada di form).
  *
  * @return array{data: array<string,string|null>, types: array<string,string>, dates: array}
@@ -189,10 +293,10 @@ function employee_map_input(array $post): array
         'phone_number'     => normalize_phone_62((string) ($post['phone_number'] ?? '')),
         'join_date'        => $dates['join_date'] === '' || $dates['join_date'] === false ? '' : $dates['join_date'],
         'resignation_date' => $dates['resignation_date'] === '' || $dates['resignation_date'] === false ? null : $dates['resignation_date'],
-        'job_title'        => $str('job_title'),
-        'job_position'     => $str('job_position'),
-        'job_grade'        => $str('job_grade'),
-        'bank_name'        => $str('bank_name'),
+        'job_title'              => $str('job_title'),
+        'job_position'           => $str('job_position'),
+        'organization_structure' => $str('organization_structure'),
+        'bank_name'              => $str('bank_name'),
         'account_number'   => $str('account_number'),
         'account_name'     => $str('account_name'),
         'id_number'        => $str('id_number'),
@@ -210,7 +314,13 @@ function employee_map_input(array $post): array
         'sim_due'          => $dates['sim_due'] === '' || $dates['sim_due'] === false ? null : $dates['sim_due'],
         'status'           => in_array($post['status'] ?? '', ['aktif', 'resign'], true) ? $post['status'] : 'aktif',
     ];
-    $types = ['branch_id' => 'i'];
+    if (array_key_exists('basic_salary', $post)) {
+        $data['basic_salary'] = (string) employee_parse_money($post['basic_salary']);
+    }
+    if (array_key_exists('daily_allowance', $post)) {
+        $data['daily_allowance'] = (string) employee_parse_money($post['daily_allowance']);
+    }
+    $types = ['branch_id' => 'i', 'basic_salary' => 'd', 'daily_allowance' => 'd'];
     foreach (array_keys($data) as $f) {
         $types[$f] ??= 's';
     }
@@ -277,13 +387,20 @@ function employee_validate(array $mapped): array
 /** Insert/update. Kembalikan id baris. company_id create = active_company_id(). */
 function employee_save(int $id, array $mapped): int
 {
+    employee_ensure_hr_schema();
+    $data = $mapped['data'];
     $cols = [
         'branch_id', 'code', 'name', 'email', 'phone_number', 'join_date', 'resignation_date',
-        'job_title', 'job_position', 'job_grade', 'bank_name', 'account_number', 'account_name',
+        'job_title', 'job_position', 'organization_structure', 'bank_name', 'account_number', 'account_name',
         'id_number', 'family_number', 'tax_number', 'birth_date', 'birth_place', 'gender',
         'religion', 'marital_status', 'address', 'photo', 'ktp_doc_path', 'sim_doc_path', 'sim_due', 'status',
     ];
-    $data = $mapped['data'];
+    if (array_key_exists('basic_salary', $data)) {
+        $cols[] = 'basic_salary';
+    }
+    if (array_key_exists('daily_allowance', $data)) {
+        $cols[] = 'daily_allowance';
+    }
     $colTypes = $mapped['types'];
     $user = (string) ($_SESSION['username'] ?? '');
     $now = date('Y-m-d H:i:s');

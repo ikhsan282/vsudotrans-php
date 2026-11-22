@@ -8,7 +8,6 @@ require_once __DIR__ . '/../pages/travel/_helpers.php';
 require_once __DIR__ . '/../includes/booking_service.php';
 require_once __DIR__ . '/../includes/invoice_service.php';
 require_once __DIR__ . '/../includes/dispatch_service.php';
-require_once __DIR__ . '/../pages/attendance/_helpers.php';
 
 $pass = 0;
 $fail = 0;
@@ -634,10 +633,6 @@ try {
     $drvOptIds = array_map(static fn($r) => (int) ($r['id'] ?? 0), $drvOpts);
     ts_check(count($drvOpts) <= 51 && in_array($lastDrvId, $drvOptIds, true), 'driver_list() caps at 50 + preserved include_ids');
 
-    $attOpts = attendance_employee_options(1, [$lastEmpId], 50);
-    $attOptIds = array_map(static fn($r) => (int) ($r['id'] ?? 0), $attOpts);
-    ts_check(count($attOpts) <= 51 && in_array($lastEmpId, $attOptIds, true), 'attendance_employee_options() caps at 50 + preserved include_ids');
-
     $empSearch = $httpGet('/pages/employees/options.php?company_id=1&q=ZZZScale');
     ts_check(
         $empSearch['code'] === 200 && is_array($empSearch['json']) && count($empSearch['json']) > 0 && count($empSearch['json']) <= 30 && isset($empSearch['json'][0]['value'], $empSearch['json'][0]['text'], $empSearch['json'][0]['job_position']),
@@ -657,8 +652,6 @@ try {
     ts_check($drvSearch['code'] === 200 && $onlyDrivers, 'employees/options.php job_position=Driver filters strictly to 15 seeded drivers');
 
     foreach ([
-        ['/pages/attendance/form.php', 'pages/employees/options.php', 'attendance/form.php'],
-        ['/pages/attendance/index.php', 'pages/employees/options.php', 'attendance/index.php'],
         ['/pages/travel/bookings/detail.php?id=' . $tempTravelId, 'pages/employees/options.php', 'travel/detail.php #tab-crew'],
         ['/pages/travel/bookings/form.php', 'crew-emp-select', 'travel/form.php crew'],
         ['/pages/rental/bookings/detail.php?id=' . $tempBookingId, 'crew-emp-select', 'rental/detail.php crew'],
@@ -1049,7 +1042,6 @@ try {
         '/pages/vehicles/models/index.php?company_id=1',
         '/pages/transport/passengers/index.php?company_id=1',
         '/pages/transport/regulations/index.php?company_id=1',
-        '/pages/attendance/index.php?company_id=1',
         '/pages/payroll/periods/index.php?company_id=1',
         '/pages/finance/cash/index.php?company_id=1',
         '/pages/masters/countries/index.php',

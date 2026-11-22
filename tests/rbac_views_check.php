@@ -30,7 +30,7 @@ foreach ([4, 5] as $r) {
 }
 // Terbuka untuk Staff & Viewer (operasional)
 foreach ([4, 5] as $r) {
-    foreach (['travel.view', 'rental.view', 'vehicles.view', 'attendance.view', 'reports.view'] as $p) {
+    foreach (['travel.view', 'rental.view', 'vehicles.view', 'reports.view'] as $p) {
         ok($has($r, $p), "role $r punya $p");
     }
 }

@@ -18,12 +18,12 @@ PHP Native + MySQLi + Bootstrap 5. Konversi dari VSudoTrans.API (ASP.NET Core).
 mysql -u root -p < database/schema.sql
 ```
 
-> Schema lengkap di 1 file: **59 tabel**, **5 role** (`Super Admin`, `Admin Perusahaan`, `HRD`, `Staff`, `Viewer`), dan **5 user default** dengan password `P@ssw0rd`.
+> Schema lengkap di 1 file: **56 tabel**, **5 role** (`Super Admin`, `Admin Perusahaan`, `HRD`, `Staff`, `Viewer`), dan **5 user default** dengan password `P@ssw0rd`.
 >
 > **Hak akses berbasis RBAC (`role_permissions`)**:
 > - `Super Admin` & `Admin Perusahaan`: akses penuh modul operasional, keuangan, SDM/payroll, master data, pengguna & audit (`roles.manage` khusus `Super Admin`).
-> - `HRD`: akses kelola SDM, absensi, payroll, organisasi/cabang, serta akses lihat (`*.view`) ke travel, rental & kendaraan — tanpa akses ke `invoices.view`, `finance.view`, `reports.view`, maupun `dispatch.view`.
-> - `Staff` & `Viewer`: akses lihat (`*.view`) modul operasional (travel, rental, kalender operasional, kendaraan, karyawan, absensi, invoice, referensi, grup/perusahaan/cabang, laporan operasional/booking/driver); tidak memiliki akses ke Buku Kas/Metode Pembayaran (`finance.view`), Payroll (`payroll.view`), Pengguna (`users.view`), maupun Audit (`audit.view`).
+> - `HRD`: akses kelola SDM, payroll, organisasi/cabang, serta akses lihat (`*.view`) ke travel, rental & kendaraan — tanpa akses ke `invoices.view`, `finance.view`, `reports.view`, maupun `dispatch.view`.
+> - `Staff` & `Viewer`: akses lihat (`*.view`) modul operasional (travel, rental, kalender operasional, kendaraan, karyawan, invoice, referensi, grup/perusahaan/cabang, laporan operasional/booking/driver); tidak memiliki akses ke Buku Kas/Metode Pembayaran (`finance.view`), Payroll (`payroll.view`), Pengguna (`users.view`), maupun Audit (`audit.view`).
 >
 > **Penting:** file ini sudah memuat `CREATE DATABASE IF NOT EXISTS \`vsudotrans\`` dan `USE \`vsudotrans\``. Jadi:
 > - Tidak perlu membuat database dulu; cukup import.
@@ -114,7 +114,7 @@ Password semua user: `P@ssw0rd`. **Wajib diganti sebelum production.**
 | **Kalender Operasional & Driver** | ✅ | ✅ | Kalender operasional (`pages/dispatch/calendar.php` Bulan/Minggu/Hari/Daftar: ringkasan 2 baris dengan singkatan kota, kategori · merk · plat armada, tanggal/jam Travel & Rental, klik Daftar buka modal detail), papan/penugasan aktif, detail & cetak surat jalan (`manifest.php`) dari Detail Booking |
 | **WhatsApp Bot API** (`api/bot/*`) | ✅ | ✅ | Endpoint internal bot untuk booking, rute, metode pembayaran, QRIS dinamis, & ringkasan staf |
 | **Laporan** (Booking, Keuangan, Operasional, Driver) | ✅ | ✅ | Rekap lintas dimensi + export CSV, XLSX, PDF, & Cetak |
-| **Payroll & Absensi** | ✅ | ✅ | Absensi harian/rekap → sumber hari hadir generate payroll (`draft` → `final` → `dibayar`), cetak & PDF |
+| **Payroll** | ✅ | ✅ | Periode bulanan generate payroll (`draft` → `final` → `dibayar`), cetak & PDF |
 | **Buku Kas** | ✅ | ✅ | Buku besar uang masuk/keluar (tanpa konsep akun kas/bank) + rekap harian di Laporan Keuangan; export CSV, XLSX, PDF, cetak |
 | **Backup & Restore** | ✅ | ✅ | Dump/unduh `.sql` + restore dari file; khusus Super Admin |
 | **Import CSV master data** | ✅ | ✅ | Template CSV, all-or-nothing, mode upsert |
@@ -136,9 +136,8 @@ Menu sidebar (`includes/sidebar.php`) dikelompokkan dalam 7 kategori dan difilte
 | | **Kendaraan** ▾ | **Daftar Kendaraan**, **Merek Kendaraan**, **Kategori Kendaraan**, **Model Unit**; lengkap foto unit, STNK, KIR (Azure Blob) |
 | **3. KEUANGAN & AKUNTANSI** | **Keuangan** ▾ | **Buku Kas** · **Metode Pembayaran**. *(Konfigurasi Payment Gateway/QRIS di `pages/companies/detail.php?tab=payment`; Pembayaran, Detail/Ketentuan Invoice & Cetak/PDF Invoice terintegrasi satu pintu di masing-masing pemesanan Travel & Rental)* |
 | **4. SDM & PAYROLL** | **Karyawan** | CRUD karyawan + detail, rekening payroll, foto profil, KTP & SIM (Azure Blob) |
-| | **Absensi** ▾ | **Absensi Harian** · **Rekap Absensi** (sumber hari hadir Payroll, export CSV/XLSX/PDF/Cetak) |
 | | **Payroll** | Periode bulanan (`draft` → `final` → `dibayar`), generate per karyawan aktif, hitung ulang potongan & hari hadir, cetak + export CSV/XLSX/PDF |
-| | **Master HR** ▾ | Grade Jabatan, Jabatan, Posisi, Struktur Org. + Import CSV |
+| | **Master HR** ▾ | Jabatan, Posisi, Struktur Organisasi + Import CSV |
 | **5. LAPORAN** | **Laporan** ▾ | **Laporan Booking** · **Laporan Keuangan** · **Laporan Operasional** · **Laporan Driver** (semua export CSV, XLSX, PDF, dan Cetak) |
 | **6. MASTER DATA & ORGANISASI** | **Organisasi** ▾ | **Grup Perusahaan** · **Perusahaan** (termasuk pengaturan WA & logo/stempel Azure Blob) · **Cabang** |
 | | **Referensi Umum** ▾ | **Bank**, **Wilayah** (`Negara` → `Provinsi` → `Kota/Kab.` + `short_name` 3–4 huruf → `Kecamatan` → `Desa`), **Satuan** — Streaming Grid Export & Import CSV |
@@ -206,7 +205,6 @@ vsudotrans-php/
 │   ├── masters/       # referensi umum, engine: _engine.php + _import.php + subfolder per tabel
 │   ├── vehicles/      # daftar unit + subfolder brands, categories, models
 │   ├── hr/            # master HR (CRUD + import CSV per folder)
-│   ├── attendance/    # absensi harian + rekap
 │   ├── finance/       # cash, payment_methods
 │   ├── dispatch/      # kalender operasional, penugasan driver, surat jalan (manifest.php)
 │   ├── transport/     # passengers, regulations (master bersama Travel & Rental)

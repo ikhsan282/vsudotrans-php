@@ -103,7 +103,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $extra_pids,
                 $cat_id,
                 $veh_id,
-                array_column($in_crew, 'employee_id')
+                array_column($in_crew, 'employee_id'),
+                'rental'
             );
 
             // Cek bentrok armada (kecualikan booking ini sendiri: b.id != $id)
@@ -140,6 +141,18 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $d_city = $d_info['city_id'];
                 $d_prov = $d_info['province_id'];
             }
+
+            travel_validate_route_price_bounds(
+                $booking_cid,
+                (int) ($p_city ?? 0),
+                (int) ($d_city ?? 0),
+                (int) ($cat_id ?? 0),
+                rental_duration_days($start_date, $end_date),
+                $total_price,
+                (int) $p_dist,
+                (int) $d_dist,
+                'rental'
+            );
 
             $time_sql = $time . ':00';
 
@@ -366,7 +379,7 @@ $cur_veh_id = (int) ($b['vehicle_id'] ?? 0);
 $cur_cat_id_raw = (int) ($b['category_vehicle_id'] ?? 0);
 
 // Kategori & kendaraan perusahaan terkait (dibatasi LIMIT agar aman jutaan data + wajib sertakan nilai terpilih)
-$cats = opts_categories((int) $b['company_id'], $cur_cat_id_raw > 0 ? [$cur_cat_id_raw] : [], 200);
+$cats = opts_categories((int) $b['company_id'], $cur_cat_id_raw > 0 ? [$cur_cat_id_raw] : [], 200, 'rental');
 $vehicles = opts_vehicles_detailed(
     (int) $b['company_id'],
     [(int) $b['company_id']],
@@ -588,8 +601,16 @@ require __DIR__ . '/../../../includes/header.php';
                             <div class="rnt-row">
                                 <div class="rnt-label">Harga <span class="text-danger">*</span></div>
                                 <div class="rnt-field">
-                                    <input type="text" inputmode="numeric" class="form-control form-control-sm fw-semibold" id="totalPriceDisplay" value="<?= e(format_nominal((float) $b['total_price'])) ?>" placeholder="0" <?= $canManage ? 'required' : 'readonly' ?>>
+                                    <div class="input-group input-group-sm">
+                                        <input type="text" inputmode="numeric" class="form-control form-control-sm fw-semibold" id="totalPriceDisplay" value="<?= e(format_nominal((float) $b['total_price'])) ?>" placeholder="0" <?= $canManage ? 'required' : 'readonly' ?>>
+                                        <?php if ($canManage): ?>
+                                            <button type="button" class="btn btn-outline-primary d-none" id="btn_apply_rental_route_price" title="Terapkan tarif rute &amp; radius kecamatan ke Harga">
+                                                <i class="bi bi-magic"></i>
+                                            </button>
+                                        <?php endif; ?>
+                                    </div>
                                     <input type="hidden" name="total_price" id="totalPriceValue" form="rentalDetailForm" value="<?= (int) round((float) $b['total_price']) ?>">
+                                    <div id="rental_route_price_hint" class="small text-muted mt-1" style="line-height: 1.35;"></div>
                                 </div>
                             </div>
                         </div>
@@ -994,9 +1015,6 @@ require __DIR__ . '/../../../includes/header.php';
                                         </strong>
                                         <span id="qrisOverpayBadge" class="badge bg-danger-subtle text-danger border fw-semibold d-none"></span>
                                     </span>
-                                    <span id="qrisLiveSyncBadge" class="badge bg-info-subtle text-info-emphasis border <?= $hasPendingQris ? '' : 'd-none' ?>">
-                                        <i class="bi bi-arrow-repeat me-1"></i>Pantau QRIS Otomatis Aktif
-                                    </span>
                                 </div>
                             </div>
                         </div>
@@ -1013,7 +1031,9 @@ require __DIR__ . '/../../../includes/header.php';
                     <div class="rnt-panel mb-0">
                         <div class="rnt-panel-header">
                             <span>Pembayaran Sewa</span>
-                            <?php if ($canManage): ?>
+                            <?php if ($canManage):
+                                $rntPayActionsDisabled = ($status === 'cancelled' || ($qrisInvTotal > 0 && $qrisRemaining <= 0));
+                            ?>
                             <div class="d-flex flex-wrap align-items-center gap-3">
                                 <?php if (!empty($qrisChannels)): ?>
                                 <button type="button" class="rnt-header-action" id="btnPayQrisAuto" <?= ($status === 'cancelled' || $qrisRemaining <= 0) ? 'disabled' : '' ?>>
@@ -1024,13 +1044,13 @@ require __DIR__ . '/../../../includes/header.php';
                                     <i class="bi bi-qr-code me-1"></i>QRIS Belum Aktif
                                 </button>
                                 <?php endif; ?>
-                                <button type="button" class="rnt-header-action" id="btnQuickPayDp50" title="Isi nominal 50% dari total tagihan sebagai DP">
+                                <button type="button" class="rnt-header-action" id="btnQuickPayDp50" title="Isi nominal 50% dari total tagihan sebagai DP" <?= $rntPayActionsDisabled ? 'disabled' : '' ?>>
                                     <i class="bi bi-percent me-1"></i>Isi DP 50%
                                 </button>
-                                <button type="button" class="rnt-header-action" id="btnQuickPayFull" title="Isi penuh sisa tagihan">
+                                <button type="button" class="rnt-header-action" id="btnQuickPayFull" title="Isi penuh sisa tagihan" <?= $rntPayActionsDisabled ? 'disabled' : '' ?>>
                                     <i class="bi bi-cash-coin me-1"></i>Isi Lunas
                                 </button>
-                                <button type="button" class="rnt-header-action" id="btnAddPayRow">
+                                <button type="button" class="rnt-header-action" id="btnAddPayRow" <?= $rntPayActionsDisabled ? 'disabled' : '' ?>>
                                     <i class="bi bi-plus-lg me-1"></i>Tambah Pembayaran Manual
                                 </button>
                             </div>
@@ -1137,7 +1157,7 @@ require __DIR__ . '/../../../includes/header.php';
                                                 <span id="payRecordCount">Record <?= count($payment_rows) ? 1 : 0 ?> of <?= count($payment_rows) ?></span>
                                                 <?php if ($canManage): ?>
                                                 <div class="btn-group btn-group-sm ms-2">
-                                                    <button type="button" class="btn btn-outline-secondary py-0 px-2" id="btnFooterAddPay" title="Tambah Baris">+</button>
+                                                    <button type="button" class="btn btn-outline-secondary py-0 px-2" id="btnFooterAddPay" title="Tambah Baris" <?= !empty($rntPayActionsDisabled) ? 'disabled' : '' ?>>+</button>
                                                     <button type="button" class="btn btn-outline-secondary py-0 px-2" id="btnFooterDelPay" title="Hapus Baris Terakhir">&minus;</button>
                                                 </div>
                                                 <?php endif; ?>
@@ -1570,6 +1590,7 @@ document.addEventListener('DOMContentLoaded', () => {
         return null;
     }
 
+    let rentalRouteCtrl = null;
     function calcDaysFromDates() {
         if (!startEl || !endEl || !durEl) return;
         const s = parseDateObj(startEl);
@@ -1586,6 +1607,7 @@ document.addEventListener('DOMContentLoaded', () => {
             }
         }
         durEl.value = diff;
+        if (rentalRouteCtrl) rentalRouteCtrl.lookup(false);
     }
 
     function calcEndDateFromDays() {
@@ -1603,6 +1625,7 @@ document.addEventListener('DOMContentLoaded', () => {
         } else {
             endEl.value = formatDateIso(target);
         }
+        if (rentalRouteCtrl) rentalRouteCtrl.lookup(false);
     }
 
     function initFlatpickr(el, onDateChange) {
@@ -1779,11 +1802,36 @@ document.addEventListener('DOMContentLoaded', () => {
                 setTsValueSilent(pSel, String(opt.province_id));
             }
             reloadDistrictOptions(val, dSel, '');
+            if (rentalRouteCtrl) rentalRouteCtrl.lookup(false);
         });
     }
 
     bindProvinceCityDistrict('pickupProvince', 'pickupCity', 'pickupDistrict');
     bindProvinceCityDistrict('deliveryProvince', 'deliveryCity', 'deliveryDistrict');
+
+    if (typeof BookingErp !== 'undefined' && typeof BookingErp.initTravelRouteLookup === 'function') {
+        rentalRouteCtrl = BookingErp.initTravelRouteLookup({
+            appUrl: appUrl,
+            serviceType: 'rental',
+            lookupUrl: appUrl + '/pages/travel/rutes/lookup.php',
+            companyId: <?= (int) ($b['company_id'] ?? $cid ?? 0) ?>,
+            pickupCityEl: document.getElementById('pickupCity'),
+            deliveryCityEl: document.getElementById('deliveryCity'),
+            pickupDistrictEl: document.getElementById('pickupDistrict'),
+            deliveryDistrictEl: document.getElementById('deliveryDistrict'),
+            categoryEl: catSelect,
+            startDateEl: startEl,
+            endDateEl: endEl,
+            durationEl: durEl,
+            hintEl: document.getElementById('rental_route_price_hint'),
+            applyBtnEl: document.getElementById('btn_apply_rental_route_price'),
+            priceDisplayEl: priceDisp,
+            priceValueEl: priceVal,
+            autoFillZero: false,
+            onPriceApplied: function () { if (typeof recalcPayTotals === 'function') recalcPayTotals(); }
+        });
+        rentalRouteCtrl.lookup(false);
+    }
 
     // Hindari pelanggan utama terpilih ganda pada penumpang tambahan (2 arah) + peringatan kapasitas kursi
     if (window.bindExclusivePrimaryExtra) {
@@ -1941,6 +1989,12 @@ document.addEventListener('DOMContentLoaded', () => {
                 const rowOver = st.exceeded && parseRupiah(hid ? hid.value : '0') > 0;
                 disp.classList.toggle('is-invalid', rowOver);
                 disp.classList.toggle('text-danger', rowOver);
+            });
+        }
+        if (typeof BookingErp !== 'undefined' && typeof BookingErp.syncPayActionButtons === 'function') {
+            BookingErp.syncPayActionButtons({
+                billTotal: st.targetTotal,
+                paySum: st.paySum
             });
         }
     }
@@ -2601,6 +2655,21 @@ document.addEventListener('DOMContentLoaded', () => {
                 }, 150);
                 return false;
             }
+
+            <?php if ($canManage): ?>
+            if (rentalRouteCtrl && typeof rentalRouteCtrl.validateBounds === 'function') {
+                const rRes = rentalRouteCtrl.validateBounds();
+                if (!rRes.valid) {
+                    e.preventDefault();
+                    const detTabBtn = document.querySelector('[data-bs-target="#tab-detail"]');
+                    if (detTabBtn && typeof bootstrap !== 'undefined' && bootstrap.Tab) {
+                        bootstrap.Tab.getOrCreateInstance(detTabBtn).show();
+                    }
+                    setTimeout(() => { if (rRes.focusEl) rRes.focusEl.focus(); }, 150);
+                    return false;
+                }
+            }
+            <?php endif; ?>
 
             if (!this.checkValidity()) {
                 e.preventDefault();

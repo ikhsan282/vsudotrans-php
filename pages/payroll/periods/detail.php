@@ -32,17 +32,25 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $act = (string) ($_POST['act'] ?? '');
     try {
         if ($act === 'save_item') {
+            $parseMoney = static function (string $raw): float {
+                $s = trim(str_ireplace(['Rp', ' '], '', $raw));
+                if ($s === '') {
+                    return 0.0;
+                }
+                if (preg_match('/^-?\d+\.\d{1,2}$/', $s)) {
+                    return (float) $s;
+                }
+                return (float) str_replace(['.', ','], ['', '.'], $s);
+            };
             $item_id = (int) ($_POST['item_id'] ?? 0);
+            $basic   = isset($_POST['basic_salary']) ? $parseMoney((string) $_POST['basic_salary']) : null;
+            $daily   = isset($_POST['daily_allowance']) ? $parseMoney((string) $_POST['daily_allowance']) : null;
             $days    = (int) ($_POST['days_present'] ?? 0);
-            $ded     = (float) str_replace(['.', ','], ['', '.'], (string) ($_POST['deductions'] ?? '0'));
+            $ded     = $parseMoney((string) ($_POST['deductions'] ?? '0'));
             $note    = trim((string) ($_POST['note'] ?? ''));
-            $res = payroll_item_update($id, $cid, $item_id, $days, $ded, $note === '' ? null : $note, $user);
+            $res = payroll_item_update($id, $cid, $item_id, $days, $ded, $note === '' ? null : $note, $user, $basic, $daily);
             audit('payroll.item', "Periode #{$id} item #{$item_id} net " . rupiah((float) $res['net_salary']));
             flash('success', 'Item gaji diperbarui: ' . rupiah((float) $res['net_salary']) . '.');
-        } elseif ($act === 'pull_attendance') {
-            $res = payroll_pull_attendance($id, $cid, $user);
-            audit('payroll.pull_attendance', "Periode #{$id} ({$period['period_year']}-{$period['period_month']}): {$res['updated']} item diperbarui dari Absensi");
-            flash('success', $res['updated'] . ' item gaji diperbarui dari Absensi.');
         } elseif ($act === 'final' || $act === 'pay') {
             $next = $act === 'final' ? 'final' : 'paid';
             $record_cash = !isset($_POST['record_cash']) || (string) $_POST['record_cash'] !== '0';
@@ -92,15 +100,6 @@ require __DIR__ . '/../../../includes/header.php';
 $payActions = [
     ['label' => 'Kembali', 'icon' => 'arrow-left', 'href' => 'pages/payroll/periods/index.php', 'class' => 'btn btn-outline-secondary btn-sm'],
 ];
-if ($can_manage && $period['status'] === 'draft') {
-    $payActions[] = [
-        'html' => '<form method="post" action="" class="d-inline" onsubmit="return confirm(\'Tarik hari hadir dari Absensi dan timpa Hari Hadir semua item periode ini?\')">'
-            . csrf_field()
-            . '<input type="hidden" name="id" value="' . $id . '">'
-            . '<input type="hidden" name="act" value="pull_attendance">'
-            . '<button class="btn btn-sm btn-primary" type="submit"><i class="bi bi-calendar-check me-1"></i>Tarik dari Absensi</button></form>',
-    ];
-}
 $payActions[] = ['label' => 'Cetak', 'icon' => 'printer', 'href' => 'pages/payroll/periods/print.php?id=' . $id, 'target' => '_blank', 'class' => 'btn btn-dark btn-sm'];
 $payActions[] = ['label' => 'CSV', 'icon' => 'filetype-csv', 'href' => 'pages/payroll/periods/export.php?id=' . $id . '&format=csv', 'class' => 'btn btn-outline-success btn-sm'];
 $payActions[] = ['label' => 'Excel', 'icon' => 'file-earmark-excel', 'href' => 'pages/payroll/periods/export.php?id=' . $id . '&format=xlsx', 'class' => 'btn btn-outline-success btn-sm'];
@@ -219,8 +218,22 @@ $payActions[] = ['label' => 'PDF', 'icon' => 'filetype-pdf', 'href' => 'pages/pa
                                                 <div class="fw-semibold"><?= e($it['employee_name']) ?></div>
                                                 <div class="small text-muted"><?= e((string) $it['employee_code']) ?><?= $it['account_number'] ? ' · ' . e((string) $it['bank_name']) . ' ' . e((string) $it['account_number']) : '' ?></div>
                                             </td>
-                                            <td class="text-end"><?= e(rupiah((float) $it['basic_salary'])) ?></td>
-                                            <td class="text-end"><?= e(rupiah((float) $it['daily_allowance'])) ?></td>
+                                            <td class="text-end">
+                                                <?php if ($editable): ?>
+                                                    <input type="text" inputmode="numeric" name="basic_salary" class="form-control form-control-sm text-end ms-auto" style="width: 130px"
+                                                           value="<?= e(number_format((float) $it['basic_salary'], 0, ',', '.')) ?>" form="<?= e($fid) ?>">
+                                                <?php else: ?>
+                                                    <?= e(rupiah((float) $it['basic_salary'])) ?>
+                                                <?php endif; ?>
+                                            </td>
+                                            <td class="text-end">
+                                                <?php if ($editable): ?>
+                                                    <input type="text" inputmode="numeric" name="daily_allowance" class="form-control form-control-sm text-end ms-auto" style="width: 120px"
+                                                           value="<?= e(number_format((float) $it['daily_allowance'], 0, ',', '.')) ?>" form="<?= e($fid) ?>">
+                                                <?php else: ?>
+                                                    <?= e(rupiah((float) $it['daily_allowance'])) ?>
+                                                <?php endif; ?>
+                                            </td>
                                             <td class="text-end">
                                                 <?php if ($editable): ?>
                                                     <input type="number" name="days_present" class="form-control form-control-sm text-end ms-auto" style="width: 90px"
