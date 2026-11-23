@@ -138,4 +138,53 @@ check(
     && str_contains($css, '.fc-vst-missing-chip'),
     'stylesheet defines calendar KPI, chip, hover card, and alert pill styles'
 );
+
+// Upgrade operasional lanjutan: Quick Assign, Manifest Gabungan Armada, dan Drag & Drop Reschedule
+$assignEndpoint = is_file(__DIR__ . '/../pages/dispatch/calendar_assign.php')
+    ? file_get_contents(__DIR__ . '/../pages/dispatch/calendar_assign.php') : '';
+$reschedEndpoint = is_file(__DIR__ . '/../pages/dispatch/calendar_reschedule.php')
+    ? file_get_contents(__DIR__ . '/../pages/dispatch/calendar_reschedule.php') : '';
+$groupManifest = is_file(__DIR__ . '/../pages/dispatch/manifest_group.php')
+    ? file_get_contents(__DIR__ . '/../pages/dispatch/manifest_group.php') : '';
+
+check(
+    $assignEndpoint !== ''
+    && str_contains($assignEndpoint, "require_permission('dispatch.view')")
+    && str_contains($assignEndpoint, 'hash_equals(csrf_token()')
+    && str_contains($assignEndpoint, 'booking_assign_driver(')
+    && str_contains($assignEndpoint, 'booking_auto_advance_status(')
+    && str_contains($assignEndpoint, '409'),
+    'quick assign endpoint enforces RBAC, CSRF, Rental conflict guard, driver sync, and auto status advance'
+);
+check(
+    $reschedEndpoint !== ''
+    && str_contains($reschedEndpoint, "require_permission('dispatch.view')")
+    && str_contains($reschedEndpoint, 'hash_equals(csrf_token()')
+    && str_contains($reschedEndpoint, 'parse_valid_ymd(')
+    && str_contains($reschedEndpoint, 'invoice_snapshot(')
+    && str_contains($reschedEndpoint, '409'),
+    'drag reschedule endpoint enforces RBAC, CSRF, date validation, Rental overlap check, and invoice snapshot'
+);
+check(
+    $groupManifest !== ''
+    && str_contains($groupManifest, 'pdf_send_or_html(')
+    && str_contains($groupManifest, 'booking_driver_summaries(')
+    && str_contains($groupManifest, 'copyWaRekapBtn'),
+    'group manifest page supports combined Travel/Rental schedule, PDF output, and WA recap copy'
+);
+check(
+    str_contains($events, "'startEditable'")
+    && str_contains($events, "'group_manifest_url'")
+    && str_contains($events, "'company_id'"),
+    'calendar events expose drag-drop editability, company_id, and group manifest link'
+);
+check(
+    str_contains($view, 'editable: true')
+    && str_contains($view, 'eventDrop:')
+    && str_contains($view, 'calModalQuickAssignBox')
+    && str_contains($view, 'calRescheduleModal')
+    && str_contains($view, 'cal-group-manifest-btn')
+    && str_contains($view, 'calModalGroupManifestBtn'),
+    'calendar view implements quick assign panel, group manifest CTA, and drag-drop reschedule modal'
+);
 exit($failures ? 1 : 0);

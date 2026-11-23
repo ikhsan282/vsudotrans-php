@@ -404,21 +404,29 @@ foreach ($rows as $row) {
             ? APP_URL . '/pages/dispatch/manifest.php?id=' . $assignmentId
             : APP_URL . '/pages/dispatch/manifest.php?type=' . $kind . '&booking_id=' . $id)
         : null;
+    $vehIdInt = (int) ($row['vehicle_id'] ?? 0);
+    $groupManifestUrl = ($status !== 'cancelled' && $vehIdInt > 0)
+        ? (APP_URL . '/pages/dispatch/manifest_group.php?vehicle_id=' . $vehIdInt . '&date=' . urlencode($rawStart))
+        : null;
+    $rowCanManage = $kind === 'rental' ? $rentalCanManage : $travelCanManage;
 
     $events[] = [
-        'id'              => $kind . '-' . $id,
-        'title'           => $title,
-        'start'           => $kind === 'rental' ? $row['starts_on'] : ($row['starts_on'] . 'T' . $timeFull),
-        'end'             => $kind === 'rental' ? $row['ends_on'] : null,
-        'allDay'          => $kind === 'rental',
-        'display'         => 'block',
-        'url'             => $detailUrl,
-        'backgroundColor' => $style['backgroundColor'],
-        'borderColor'     => $style['borderColor'],
-        'textColor'       => $style['textColor'],
-        'classNames'      => $style['classNames'],
-        'extendedProps'   => [
+        'id'               => $kind . '-' . $id,
+        'title'            => $title,
+        'start'            => $kind === 'rental' ? $row['starts_on'] : ($row['starts_on'] . 'T' . $timeFull),
+        'end'              => $kind === 'rental' ? $row['ends_on'] : null,
+        'allDay'           => $kind === 'rental',
+        'startEditable'    => $rowCanManage && !in_array($status, ['done', 'cancelled'], true),
+        'durationEditable' => false,
+        'display'          => 'block',
+        'url'              => $detailUrl,
+        'backgroundColor'  => $style['backgroundColor'],
+        'borderColor'      => $style['borderColor'],
+        'textColor'        => $style['textColor'],
+        'classNames'       => $style['classNames'],
+        'extendedProps'    => [
             'booking_id'          => $id,
+            'company_id'          => (int) $row['company_id'],
             'kind'                => $kind,
             'kind_label'          => $kindLabel,
             'service_group'       => $serviceGroup,
@@ -436,7 +444,7 @@ foreach ($rows as $row) {
             'passenger_phone'     => trim((string) ($row['passenger_phone'] ?? '')),
             'passenger_phone_62'  => normalize_phone_62((string) ($row['passenger_phone'] ?? '')) ?? '',
             'extra_pax'           => $extraPax,
-            'vehicle_id'          => (int) ($row['vehicle_id'] ?? 0),
+            'vehicle_id'          => $vehIdInt,
             'vehicle_number'      => $plate,
             'vehicle_category'    => $vehCategory,
             'brand_name'          => $brandName,
@@ -451,7 +459,7 @@ foreach ($rows as $row) {
             'has_driver'          => $hasDriver,
             'needs_dispatch'      => $needsDispatch,
             'is_unpaid'           => $isUnpaid,
-            'can_manage'          => $kind === 'rental' ? $rentalCanManage : $travelCanManage,
+            'can_manage'          => $rowCanManage,
             'orig_city'           => $origCity,
             'dest_city'           => $destCity,
             'orig_city_short'     => $origCityShort,
@@ -473,6 +481,7 @@ foreach ($rows as $row) {
             'note'                => trim((string) ($row['note'] ?? '')),
             'detail_url'          => $detailUrl,
             'manifest_url'        => $manifestUrl,
+            'group_manifest_url'  => $groupManifestUrl,
             'details'             => implode(' · ', $details),
         ],
     ];

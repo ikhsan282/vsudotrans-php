@@ -30,10 +30,15 @@ $status_sql = "(SELECT h.to_status FROM booking_status_history h
 $companies  = accessible_companies();
 $active_cid = active_company_id();
 
-$q          = trim((string) ($_GET['q'] ?? ''));
-$status     = trim((string) ($_GET['status'] ?? ''));
-$start_date = parse_valid_ymd($_GET['start_date'] ?? null) ?? '';
-$end_date   = parse_valid_ymd($_GET['end_date'] ?? null) ?? '';
+$q           = trim((string) ($_GET['q'] ?? ''));
+$status      = trim((string) ($_GET['status'] ?? ''));
+$category_id = max(0, (int) ($_GET['category_id'] ?? 0));
+$pay_status  = strtolower(trim((string) ($_GET['pay_status'] ?? '')));
+if (!in_array($pay_status, ['unpaid', 'partial', 'paid'], true)) {
+    $pay_status = '';
+}
+$start_date  = parse_valid_ymd($_GET['start_date'] ?? null) ?? '';
+$end_date    = parse_valid_ymd($_GET['end_date'] ?? null) ?? '';
 
 if (isset($_GET['company_id'])) {
     $filter_company_id = $_GET['company_id'] !== '' ? (int) $_GET['company_id'] : 0;
@@ -81,6 +86,41 @@ if ($status !== '') {
     $where .= " AND COALESCE({$status_sql}, 'draft') = ?";
     $types .= 's';
     $params[] = $status;
+}
+if ($category_id > 0) {
+    $where .= ' AND b.category_vehicle_id = ?';
+    $types .= 'i';
+    $params[] = $category_id;
+}
+if ($pay_status !== '') {
+    $where .= " AND COALESCE({$status_sql}, 'draft') <> 'cancelled'";
+    if ($pay_status === 'paid') {
+        $where .= ' AND COALESCE(b.total_payment, 0) + 0.001 >= GREATEST(COALESCE(b.total_price, 0), 0)';
+    } elseif ($pay_status === 'partial') {
+        $where .= ' AND COALESCE(b.total_payment, 0) > 0 AND COALESCE(b.total_payment, 0) + 0.001 < COALESCE(b.total_price, 0)';
+    } elseif ($pay_status === 'unpaid') {
+        $where .= ' AND COALESCE(b.total_payment, 0) <= 0 AND COALESCE(b.total_price, 0) > 0.001';
+    }
+}
+
+category_service_ensure_schema();
+$catScopeIds = $filter_company_id > 0
+    ? [$filter_company_id]
+    : ($companies ? array_map('intval', array_column($companies, 'id')) : []);
+$categoryOptions = [];
+if ($catScopeIds) {
+    $catCompIn = implode(',', $catScopeIds);
+    $resCatOpt = db()->query(
+        "SELECT cv.id, cv.code, cv.name, c.code AS company_code
+           FROM category_vehicles cv
+           JOIN companies c ON c.id = cv.company_id
+          WHERE cv.service_type = 'travel' AND cv.is_active = 1 AND cv.company_id IN ({$catCompIn})
+          ORDER BY cv.name ASC, cv.id ASC"
+    );
+    if ($resCatOpt) {
+        $categoryOptions = $resCatOpt->fetch_all(MYSQLI_ASSOC);
+        $resCatOpt->close();
+    }
 }
 
 $countJoin = $q !== '' ? 'JOIN passengers p ON p.id = b.passenger_id' : '';
@@ -133,7 +173,9 @@ if (in_array($export_format, ['xlsx', 'pdf'], true)) {
     $subParts = [];
     if ($q !== '') $subParts[] = 'Pencarian: "' . $q . '"';
     if ($start_date !== '' || $end_date !== '') $subParts[] = 'Tgl: ' . ($start_date ?: '...') . ' s/d ' . ($end_date ?: '...');
-    if ($status !== '') $subParts[] = 'Status: ' . ucfirst($status);
+    if ($status !== '') $subParts[] = 'Status: ' . booking_status_label($status);
+    if ($category_id > 0) $subParts[] = 'Kategori #' . $category_id;
+    if ($pay_status !== '') $subParts[] = 'Bayar: ' . $pay_status;
     $sub = $subParts ? implode(' | ', $subParts) : 'Semua Data';
 
     grid_export_send(
@@ -153,7 +195,7 @@ $st = db()->prepare("SELECT b.id, b.company_id, c.code AS company_code, c.name A
                      COALESCE(b.total_payment, 0) AS total_payment,
                      p.name AS passenger_name, p.phone_number AS passenger_phone,
                      bv.name AS brand_name, mu.name AS model_name,
-                     v.vehicle_number, cv.name AS category_name,
+                     v.vehicle_number, cv.code AS category_code, cv.name AS category_name,
                      pc.name AS pickup_city_name, dc.name AS delivery_city_name,
                      COALESCE({$status_sql}, 'draft') AS status
                      FROM travel_ticket_bookings b
@@ -183,12 +225,14 @@ if (can('travel.manage') && active_company_id() !== null) {
 $query_params = [];
 if ($q !== '') $query_params['q'] = $q;
 if ($status !== '') $query_params['status'] = $status;
+if ($category_id > 0) $query_params['category_id'] = (string) $category_id;
+if ($pay_status !== '') $query_params['pay_status'] = $pay_status;
 if ($start_date !== '') $query_params['start_date'] = $start_date;
 if ($end_date !== '') $query_params['end_date'] = $end_date;
 if (isset($_GET['company_id'])) $query_params['company_id'] = $_GET['company_id'];
 $query_base = http_build_query($query_params);
 
-$has_active_filter = ($q !== '' || $status !== '' || $start_date !== '' || $end_date !== '' || (isset($_GET['company_id']) && (int) $_GET['company_id'] !== ($active_cid ?? 0)));
+$has_active_filter = ($q !== '' || $status !== '' || $category_id > 0 || $pay_status !== '' || $start_date !== '' || $end_date !== '' || (isset($_GET['company_id']) && (int) $_GET['company_id'] !== ($active_cid ?? 0)));
 
 $active = 'travel';
 $title  = 'Pemesanan Tiket Perjalanan';
@@ -204,19 +248,19 @@ require __DIR__ . '/../../../includes/header.php';
     <div class="card shadow-sm border-0 mb-3">
         <div class="card-body py-2 px-3">
             <form method="get" class="row g-2 align-items-center erp-filter-bar erp-filter-bar-wide">
-                <div class="col-12 col-md-3">
+                <div class="col-12 col-md-4 col-xl-3">
                     <div class="input-group input-group-sm">
                         <span class="input-group-text bg-white text-muted"><i class="bi bi-search"></i></span>
                         <input type="text" name="q" class="form-control" placeholder="Cari resi / penumpang / sopir / no. wa..." value="<?= e($q) ?>">
                     </div>
                 </div>
-                <div class="col-6 col-md-2">
+                <div class="col-6 col-md-2 col-xl-auto">
                     <input type="text" name="start_date" class="form-control form-control-sm bg-white flatpickr-date" value="<?= e($start_date) ?>" placeholder="Tgl Mulai">
                 </div>
-                <div class="col-6 col-md-2">
+                <div class="col-6 col-md-2 col-xl-auto">
                     <input type="text" name="end_date" class="form-control form-control-sm bg-white flatpickr-date" value="<?= e($end_date) ?>" placeholder="Tgl Akhir">
                 </div>
-                <div class="col-6 col-md-2">
+                <div class="col-6 col-md-2 col-xl-auto">
                     <select name="company_id" class="form-select form-select-sm" onchange="this.form.submit()" title="Pilih Perusahaan">
                         <?php if (is_super_admin()): ?>
                             <option value="0" <?= ($filter_company_id === 0 && isset($_GET['company_id'])) ? 'selected' : '' ?>>Semua Perusahaan</option>
@@ -228,12 +272,31 @@ require __DIR__ . '/../../../includes/header.php';
                         <?php endforeach; ?>
                     </select>
                 </div>
-                <div class="col-6 col-md-2">
+                <div class="col-6 col-md-3 col-xl-auto">
+                    <select name="category_id" class="form-select form-select-sm" onchange="this.form.submit()" title="Pilih Kategori Layanan">
+                        <option value="">Semua Kategori</option>
+                        <?php foreach ($categoryOptions as $catOpt):
+                            $catLbl = ($catOpt['code'] ? '[' . $catOpt['code'] . '] ' : '') . $catOpt['name']
+                                . ($filter_company_id === 0 && !empty($catOpt['company_code']) ? ' (' . $catOpt['company_code'] . ')' : '');
+                            ?>
+                            <option value="<?= (int) $catOpt['id'] ?>" <?= $category_id === (int) $catOpt['id'] ? 'selected' : '' ?>><?= e($catLbl) ?></option>
+                        <?php endforeach; ?>
+                    </select>
+                </div>
+                <div class="col-6 col-md-2 col-xl-auto">
                     <select name="status" class="form-select form-select-sm" onchange="this.form.submit()" title="Pilih Status">
                         <option value="">Semua Status</option>
                         <?php foreach (booking_status_options() as $sk => $sl): ?>
                             <option value="<?= e($sk) ?>" <?= $status === $sk ? 'selected' : '' ?>><?= e($sl) ?></option>
                         <?php endforeach; ?>
+                    </select>
+                </div>
+                <div class="col-6 col-md-2 col-xl-auto">
+                    <select name="pay_status" class="form-select form-select-sm" onchange="this.form.submit()" title="Filter Status Pembayaran">
+                        <option value="">Semua Pembayaran</option>
+                        <option value="unpaid" <?= $pay_status === 'unpaid' ? 'selected' : '' ?>>Belum Bayar</option>
+                        <option value="partial" <?= $pay_status === 'partial' ? 'selected' : '' ?>>Sebagian / DP</option>
+                        <option value="paid" <?= $pay_status === 'paid' ? 'selected' : '' ?>>Lunas</option>
                     </select>
                 </div>
                 <?= ui_filter_actions(APP_URL . '/pages/travel/bookings/index.php', $has_active_filter) ?>
@@ -257,7 +320,7 @@ require __DIR__ . '/../../../includes/header.php';
                         <th class="text-end">Total Harga</th>
                         <th class="text-end">Total Pembayaran</th>
                         <th class="text-center">Status</th>
-                        <th class="text-center" style="width: 100px;">Aksi</th>
+                        <th class="text-center" style="width: 120px;">Aksi</th>
                     </tr>
                 </thead>
                 <tbody>
@@ -267,6 +330,18 @@ require __DIR__ . '/../../../includes/header.php';
                     $jam = !empty($r['time']) ? substr($r['time'], 0, 5) : '-';
                     $tgl = !empty($r['date']) ? date('d-M-Y', strtotime($r['date'])) : '-';
                     $exCnt = $extraCounts[(int) $r['id']] ?? 0;
+                    $totPrice = (float) $r['total_price'];
+                    $totPaid = (float) $r['total_payment'];
+                    $rowSt = (string) ($r['status'] ?? 'draft');
+                    if ($rowSt === 'cancelled') {
+                        $payBadgeHtml = '<span class="badge bg-secondary-subtle text-secondary border fw-normal" style="font-size:.68rem">Batal</span>';
+                    } elseif ($totPaid + 0.001 >= $totPrice) {
+                        $payBadgeHtml = '<span class="badge bg-success-subtle text-success border fw-normal" style="font-size:.68rem">Lunas</span>';
+                    } elseif ($totPaid > 0) {
+                        $payBadgeHtml = '<span class="badge bg-warning-subtle text-warning-emphasis border fw-normal" style="font-size:.68rem">DP / Sebagian</span>';
+                    } else {
+                        $payBadgeHtml = '<span class="badge bg-danger-subtle text-danger border fw-normal" style="font-size:.68rem">Belum Bayar</span>';
+                    }
                 ?>
                     <tr>
                         <td class="text-center text-muted small"><?= number_format($p['offset'] + $idx + 1, 0, ',', '.') ?></td>
@@ -274,6 +349,13 @@ require __DIR__ . '/../../../includes/header.php';
                             <a class="fw-semibold text-decoration-none" href="<?= e(APP_URL) ?>/pages/travel/bookings/detail.php?id=<?= (int) $r['id'] ?>">
                                 <?= e($r['document_number']) ?>
                             </a>
+                            <?php if (!empty($r['category_name'])): ?>
+                                <div class="mt-1">
+                                    <span class="badge bg-body-secondary text-body border fw-normal" style="font-size:.68rem">
+                                        <?= e((!empty($r['category_code']) ? '[' . $r['category_code'] . '] ' : '') . $r['category_name']) ?>
+                                    </span>
+                                </div>
+                            <?php endif; ?>
                         </td>
                         <td><?= booking_passenger_cell_html((string) ($r['passenger_name'] ?? ''), $r['passenger_phone'] ?? null, (int) $exCnt) ?></td>
                         <td class="text-center">
@@ -300,10 +382,18 @@ require __DIR__ . '/../../../includes/header.php';
                         <td class="text-nowrap small"><?= e($tgl) ?></td>
                         <td class="small"><?= e($r['pickup_city_name'] ?: '-') ?></td>
                         <td class="small"><?= e($r['delivery_city_name'] ?: '-') ?></td>
-                        <td class="text-end fw-semibold text-nowrap booking-amount-cell"><?= e(format_nominal((float) $r['total_price'])) ?></td>
-                        <td class="text-end fw-semibold text-nowrap text-success booking-amount-cell"><?= e(format_nominal((float) $r['total_payment'])) ?></td>
+                        <td class="text-end fw-semibold text-nowrap booking-amount-cell"><?= e(format_nominal($totPrice)) ?></td>
+                        <td class="text-end fw-semibold text-nowrap text-success booking-amount-cell">
+                            <div><?= e(format_nominal($totPaid)) ?></div>
+                            <div class="mt-1"><?= $payBadgeHtml ?></div>
+                        </td>
                         <td class="text-center"><?= status_badge($r['status']) ?></td>
                         <td class="text-center text-nowrap">
+                            <?php if ($rowSt !== 'cancelled'): ?>
+                                <a class="btn btn-sm btn-outline-secondary" href="<?= e(APP_URL) ?>/pages/dispatch/manifest.php?type=travel&amp;booking_id=<?= (int) $r['id'] ?>" target="_blank" rel="noopener" title="Cetak Surat Jalan" aria-label="Cetak Surat Jalan">
+                                    <i class="bi bi-printer"></i>
+                                </a>
+                            <?php endif; ?>
                             <?php if (can('travel.manage')): ?>
                                 <a class="btn btn-sm btn-outline-primary" href="<?= e(APP_URL) ?>/pages/travel/bookings/detail.php?id=<?= (int) $r['id'] ?>" title="Detail / Ubah Pemesanan">
                                     <i class="bi bi-pencil-square"></i>

@@ -457,3 +457,114 @@ function dash_cash_summary(): array
         'month_out' => (float) ($row['month_out'] ?? 0),
     ];
 }
+
+/**
+ * Pemesanan aktif yang memerlukan tindakan operasional (belum ada armada,
+ * belum ada sopir, atau masih status Draft) dalam rentang waktu dekat.
+ *
+ * @return array<int, array<string, mixed>>
+ */
+function dash_attention_bookings(int $limit = 8, bool $include_travel = true, bool $include_rental = true): array
+{
+    if (!$include_travel && !$include_rental) {
+        return [];
+    }
+    [$w, $t, $p] = company_scope('b.company_id');
+    $parts  = [];
+    $types  = '';
+    $params = [];
+
+    if ($include_travel) {
+        $parts[] = "SELECT 'travel' AS booking_type, b.id, b.document_number, b.date AS trip_date, b.date AS end_date, b.time,
+                           COALESCE(b.vehicle_id, 0) AS vehicle_id,
+                           p.name AS passenger_name, COALESCE(p.phone_number, '') AS passenger_phone,
+                           COALESCE(v.vehicle_number, '') AS vehicle_number,
+                           COALESCE(cv.name, '') AS category_name,
+                           COALESCE(oc.name, '-') AS origin_city, COALESCE(dc.name, '-') AS dest_city,
+                           COALESCE((SELECT h.to_status FROM booking_status_history h
+                                     WHERE h.booking_type = 'travel' AND h.booking_id = b.id ORDER BY h.id DESC LIMIT 1), 'draft') AS st
+                      FROM travel_ticket_bookings b
+                      JOIN passengers p ON p.id = b.passenger_id
+                      LEFT JOIN vehicles v ON v.id = b.vehicle_id
+                      LEFT JOIN category_vehicles cv ON cv.id = b.category_vehicle_id
+                      LEFT JOIN cities oc ON oc.id = b.pickup_point_city_id
+                      LEFT JOIN cities dc ON dc.id = b.delivery_point_city_id
+                     WHERE {$w}
+                       AND b.date >= DATE_SUB(CURDATE(), INTERVAL 7 DAY)
+                       AND COALESCE((SELECT h.to_status FROM booking_status_history h
+                                     WHERE h.booking_type = 'travel' AND h.booking_id = b.id ORDER BY h.id DESC LIMIT 1), 'draft') IN ('draft', 'scheduled', 'on_trip')";
+        $types  .= $t;
+        array_push($params, ...$p);
+    }
+
+    if ($include_rental) {
+        $parts[] = "SELECT 'rental' AS booking_type, b.id, b.document_number, b.start_date AS trip_date, b.end_date AS end_date, b.time,
+                           COALESCE(b.vehicle_id, 0) AS vehicle_id,
+                           p.name AS passenger_name, COALESCE(p.phone_number, '') AS passenger_phone,
+                           COALESCE(v.vehicle_number, '') AS vehicle_number,
+                           COALESCE(cv.name, '') AS category_name,
+                           COALESCE(oc.name, '-') AS origin_city, COALESCE(dc.name, '-') AS dest_city,
+                           COALESCE((SELECT h.to_status FROM booking_status_history h
+                                     WHERE h.booking_type = 'rental' AND h.booking_id = b.id ORDER BY h.id DESC LIMIT 1), 'draft') AS st
+                      FROM rental_car_bookings b
+                      JOIN passengers p ON p.id = b.passenger_id
+                      LEFT JOIN vehicles v ON v.id = b.vehicle_id
+                      LEFT JOIN category_vehicles cv ON cv.id = b.category_vehicle_id
+                      LEFT JOIN cities oc ON oc.id = b.pickup_point_city_id
+                      LEFT JOIN cities dc ON dc.id = b.delivery_point_city_id
+                     WHERE {$w}
+                       AND b.end_date >= DATE_SUB(CURDATE(), INTERVAL 7 DAY)
+                       AND COALESCE((SELECT h.to_status FROM booking_status_history h
+                                     WHERE h.booking_type = 'rental' AND h.booking_id = b.id ORDER BY h.id DESC LIMIT 1), 'draft') IN ('draft', 'scheduled', 'on_trip')";
+        $types  .= $t;
+        array_push($params, ...$p);
+    }
+
+    $sql = implode(' UNION ALL ', $parts) . ' ORDER BY (trip_date < CURDATE()) ASC, trip_date ASC, time ASC LIMIT 40';
+    $st = db()->prepare($sql);
+    if ($types !== '') {
+        $st->bind_param($types, ...$params);
+    }
+    $st->execute();
+    $rows = $st->get_result()->fetch_all(MYSQLI_ASSOC);
+    $st->close();
+
+    $byType = ['travel' => [], 'rental' => []];
+    foreach ($rows as $row) {
+        $byType[$row['booking_type'] === 'rental' ? 'rental' : 'travel'][] = (int) $row['id'];
+    }
+    $drvMaps = [
+        'travel' => $byType['travel'] ? booking_driver_summaries('travel', $byType['travel']) : [],
+        'rental' => $byType['rental'] ? booking_driver_summaries('rental', $byType['rental']) : [],
+    ];
+
+    $out = [];
+    foreach ($rows as $row) {
+        $tp = $row['booking_type'] === 'rental' ? 'rental' : 'travel';
+        $id = (int) $row['id'];
+        $drvSum = $drvMaps[$tp][$id] ?? null;
+        $hasVehicle = (int) $row['vehicle_id'] > 0 && trim((string) $row['vehicle_number']) !== '';
+        $hasDriver  = !empty($drvSum['primary']['name']);
+        $isDraft    = $row['st'] === 'draft';
+
+        if ($hasVehicle && $hasDriver && !$isDraft) {
+            continue;
+        }
+        $reasons = [];
+        if (!$hasVehicle) $reasons[] = 'Belum ada armada';
+        if (!$hasDriver)  $reasons[] = 'Belum ada sopir';
+        if ($isDraft)     $reasons[] = 'Perlu konfirmasi';
+
+        $row['driver_summary'] = $drvSum;
+        $row['needs_vehicle']  = !$hasVehicle;
+        $row['needs_driver']   = !$hasDriver;
+        $row['needs_confirm']  = $isDraft;
+        $row['reasons']        = $reasons;
+        $out[] = $row;
+        if (count($out) >= $limit) {
+            break;
+        }
+    }
+    return $out;
+}
+

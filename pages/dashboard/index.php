@@ -63,13 +63,32 @@ $chart      = $chart_data['chart'];
 $today_book = $chart_data['summary']['today'];
 $week_book  = $chart_data['summary']['week'];
 
-$status_counts = $canBookings ? dash_status_counts($canTravel, $canRental) : [];
-$upcoming      = $canBookings ? dash_upcoming_bookings(6, $canTravel, $canRental) : [];
-$drivers       = ($canDispatch || $canBookings) ? dash_active_drivers() : [];
-$overdue       = $canInvoices ? dash_overdue_receivables(0, 8) : ['rows' => [], 'total' => 0.0, 'count' => 0];
-$expiring_docs = ($canVehicles || $canEmployees)
+$status_counts  = $canBookings ? dash_status_counts($canTravel, $canRental) : [];
+$upcoming       = $canBookings ? dash_upcoming_bookings(6, $canTravel, $canRental) : [];
+$attention_rows = $canBookings ? dash_attention_bookings(8, $canTravel, $canRental) : [];
+$drivers        = ($canDispatch || $canBookings) ? dash_active_drivers() : [];
+$overdue        = $canInvoices ? dash_overdue_receivables(0, 8) : ['rows' => [], 'total' => 0.0, 'count' => 0];
+$expiring_docs  = ($canVehicles || $canEmployees)
     ? dash_expiring_documents(30, 8, $canVehicles, $canEmployees)
     : ['items' => [], 'total_expired' => 0, 'total_warning' => 0, 'total' => 0, 'total_all' => 0];
+
+$kpiTodayHref = $canDispatch
+    ? (APP_URL . '/pages/dispatch/calendar.php?view=timeGridDay&date=' . urlencode($today))
+    : ($canTravel
+        ? (APP_URL . '/pages/travel/bookings/index.php?start_date=' . urlencode($today) . '&end_date=' . urlencode($today))
+        : ($canRental ? (APP_URL . '/pages/rental/bookings/index.php?start_date=' . urlencode($today) . '&end_date=' . urlencode($today)) : null));
+$kpiWeekHref = $canDispatch
+    ? (APP_URL . '/pages/dispatch/calendar.php?view=timeGridWeek&date=' . urlencode($today))
+    : ($canTravel
+        ? (APP_URL . '/pages/travel/bookings/index.php?start_date=' . urlencode($week_start) . '&end_date=' . urlencode($week_end))
+        : ($canRental ? (APP_URL . '/pages/rental/bookings/index.php?start_date=' . urlencode($week_start) . '&end_date=' . urlencode($week_end)) : null));
+$kpiDriverHref = $canDispatch
+    ? (APP_URL . '/pages/dispatch/calendar.php?view=listWeek&attention=on_trip')
+    : ($canEmployees ? (APP_URL . '/pages/employees/index.php') : null);
+$kpiOverdueHref = $canTravel
+    ? (APP_URL . '/pages/travel/bookings/index.php?pay_status=unpaid')
+    : ($canRental ? (APP_URL . '/pages/rental/bookings/index.php?pay_status=unpaid') : null);
+$kpiVehicleHref = $canVehicles ? (APP_URL . '/pages/vehicles/index.php') : null;
 
 $dash_actions = [];
 if ($canDispatch) {
@@ -97,8 +116,8 @@ require __DIR__ . '/../../includes/header.php';
     <!-- Operasional hari ini -->
     <div class="row g-3 mb-3">
         <div class="col-6 col-lg-3">
-            <div class="card shadow-sm border-0 h-100">
-                <div class="card-body d-flex align-items-center">
+            <div class="card shadow-sm border-0 h-100 dash-kpi-card">
+                <div class="card-body d-flex align-items-center position-relative">
                     <div class="fs-2 text-primary me-3"><i class="bi bi-calendar-day"></i></div>
                     <div>
                         <div class="text-muted small">Booking Hari Ini</div>
@@ -107,12 +126,15 @@ require __DIR__ . '/../../includes/header.php';
                             <div class="small text-muted"><?= e(rupiah_singkat($today_book['total'])) ?></div>
                         <?php endif; ?>
                     </div>
+                    <?php if ($kpiTodayHref): ?>
+                        <a href="<?= e($kpiTodayHref) ?>" class="stretched-link" aria-label="Lihat booking hari ini"></a>
+                    <?php endif; ?>
                 </div>
             </div>
         </div>
         <div class="col-6 col-lg-3">
-            <div class="card shadow-sm border-0 h-100">
-                <div class="card-body d-flex align-items-center">
+            <div class="card shadow-sm border-0 h-100 dash-kpi-card">
+                <div class="card-body d-flex align-items-center position-relative">
                     <div class="fs-2 text-info me-3"><i class="bi bi-calendar-week"></i></div>
                     <div>
                         <div class="text-muted small">Booking Minggu Ini</div>
@@ -121,25 +143,31 @@ require __DIR__ . '/../../includes/header.php';
                             <div class="small text-muted"><?= e(rupiah_singkat($week_book['total'])) ?></div>
                         <?php endif; ?>
                     </div>
+                    <?php if ($kpiWeekHref): ?>
+                        <a href="<?= e($kpiWeekHref) ?>" class="stretched-link" aria-label="Lihat booking minggu ini"></a>
+                    <?php endif; ?>
                 </div>
             </div>
         </div>
         <div class="col-6 col-lg-3">
-            <div class="card shadow-sm border-0 h-100">
-                <div class="card-body d-flex align-items-center">
+            <div class="card shadow-sm border-0 h-100 dash-kpi-card">
+                <div class="card-body d-flex align-items-center position-relative">
                     <div class="fs-2 text-success me-3"><i class="bi bi-truck"></i></div>
                     <div>
                         <div class="text-muted small">Driver Bertugas</div>
                         <div class="fs-4 fw-bold"><?= count($drivers) ?></div>
                         <div class="small text-muted">penugasan aktif</div>
                     </div>
+                    <?php if ($kpiDriverHref): ?>
+                        <a href="<?= e($kpiDriverHref) ?>" class="stretched-link" aria-label="Lihat driver bertugas"></a>
+                    <?php endif; ?>
                 </div>
             </div>
         </div>
         <?php if ($canInvoices): ?>
         <div class="col-6 col-lg-3">
-            <div class="card shadow-sm border-0 h-100 <?= $overdue['total'] > 0 ? 'border-start border-danger border-3' : '' ?>">
-                <div class="card-body d-flex align-items-center">
+            <div class="card shadow-sm border-0 h-100 dash-kpi-card <?= $overdue['total'] > 0 ? 'border-start border-danger border-3' : '' ?>">
+                <div class="card-body d-flex align-items-center position-relative">
                     <div class="fs-2 <?= $overdue['total'] > 0 ? 'text-danger' : 'text-secondary' ?> me-3">
                         <i class="bi bi-exclamation-triangle"></i>
                     </div>
@@ -150,19 +178,25 @@ require __DIR__ . '/../../includes/header.php';
                         </div>
                         <div class="small text-muted"><?= (int) $overdue['count'] ?> invoice</div>
                     </div>
+                    <?php if ($kpiOverdueHref): ?>
+                        <a href="<?= e($kpiOverdueHref) ?>" class="stretched-link" aria-label="Lihat piutang belum lunas"></a>
+                    <?php endif; ?>
                 </div>
             </div>
         </div>
         <?php else: ?>
         <div class="col-6 col-lg-3">
-            <div class="card shadow-sm border-0 h-100">
-                <div class="card-body d-flex align-items-center">
+            <div class="card shadow-sm border-0 h-100 dash-kpi-card">
+                <div class="card-body d-flex align-items-center position-relative">
                     <div class="fs-2 text-secondary me-3"><i class="bi bi-car-front"></i></div>
                     <div>
                         <div class="text-muted small">Armada Aktif</div>
                         <div class="fs-4 fw-bold"><?= $vehicles ?></div>
                         <div class="small text-muted">unit siap operasi</div>
                     </div>
+                    <?php if ($kpiVehicleHref): ?>
+                        <a href="<?= e($kpiVehicleHref) ?>" class="stretched-link" aria-label="Lihat armada aktif"></a>
+                    <?php endif; ?>
                 </div>
             </div>
         </div>
@@ -186,8 +220,11 @@ require __DIR__ . '/../../includes/header.php';
                 <?php foreach (booking_status_options() as $sk => $sl):
                     $cnt = (int) ($status_counts[$sk] ?? 0);
                     $cls = $statusPalette[$sk] ?? 'border-secondary-subtle text-secondary';
+                    $pillHref = $canDispatch
+                        ? (APP_URL . '/pages/dispatch/calendar.php?view=listMonth&status=' . urlencode($sk) . ($sk === 'cancelled' ? '&hide_cancelled=0' : ''))
+                        : (APP_URL . '/' . $statusFilterTarget . '?status=' . urlencode($sk));
                 ?>
-                    <a href="<?= e(APP_URL . '/' . $statusFilterTarget . '?status=' . urlencode($sk)) ?>"
+                    <a href="<?= e($pillHref) ?>"
                        class="badge rounded-pill bg-body border <?= e($cls) ?> text-decoration-none px-3 py-2 fw-medium">
                         <?= e($sl) ?>: <strong><?= number_format($cnt, 0, ',', '.') ?></strong>
                     </a>
@@ -327,6 +364,99 @@ require __DIR__ . '/../../includes/header.php';
     </div>
 
     <?php if ($canBookings): ?>
+    <!-- Perlu Tindakan Operasional -->
+    <div class="row g-3 mb-3">
+        <div class="col-12">
+            <div class="card shadow-sm border-0 <?= $attention_rows ? 'border-start border-warning border-3' : '' ?>">
+                <div class="card-header bg-white fw-semibold d-flex flex-wrap justify-content-between align-items-center gap-2">
+                    <div class="d-flex align-items-center gap-2">
+                        <span><i class="bi bi-exclamation-diamond-fill text-warning me-1"></i> Perlu Tindakan Operasional</span>
+                        <span class="badge rounded-pill <?= $attention_rows ? 'bg-warning-subtle text-warning-emphasis border' : 'bg-success-subtle text-success border' ?>">
+                            <?= count($attention_rows) ?>
+                        </span>
+                    </div>
+                    <?php if ($canDispatch): ?>
+                        <a href="<?= e(APP_URL) ?>/pages/dispatch/calendar.php?view=listMonth&amp;attention=unassigned" class="small text-decoration-none">
+                            Tangani di Kalender &rarr;
+                        </a>
+                    <?php endif; ?>
+                </div>
+                <div class="card-body p-0">
+                    <div class="table-responsive">
+                        <table class="table table-sm table-hover mb-0 align-middle">
+                            <thead class="table-light">
+                                <tr>
+                                    <th>Resi &amp; Layanan</th>
+                                    <th>Penumpang</th>
+                                    <th>Jadwal</th>
+                                    <th>Kebutuhan Penugasan</th>
+                                    <th class="text-center" style="width: 90px;">Aksi</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                            <?php foreach ($attention_rows as $ar):
+                                $arType = $ar['booking_type'] === 'rental' ? 'rental' : 'travel';
+                                $arUrl = APP_URL . '/pages/' . $arType . '/bookings/detail.php?id=' . (int) $ar['id'];
+                                $arDateRaw = (string) ($ar['trip_date'] ?? '');
+                                $arCalUrl = APP_URL . '/pages/dispatch/calendar.php?date=' . urlencode($arDateRaw) . '&q=' . urlencode((string) $ar['document_number']);
+                                $arJam = !empty($ar['time']) ? substr((string) $ar['time'], 0, 5) : '-';
+                                $arTgl = $arDateRaw !== '' ? date('d-M-Y', strtotime($arDateRaw)) : '-';
+                                if ($arType === 'rental' && !empty($ar['end_date']) && $ar['end_date'] !== $arDateRaw) {
+                                    $arTgl .= ' s/d ' . date('d-M-Y', strtotime((string) $ar['end_date']));
+                                }
+                            ?>
+                                <tr>
+                                    <td class="small text-nowrap">
+                                        <span class="badge <?= $arType === 'rental' ? 'bg-success-subtle text-success' : 'bg-primary-subtle text-primary' ?> border text-uppercase me-1" style="font-size:.65rem"><?= e($arType) ?></span>
+                                        <a class="fw-semibold text-decoration-none" href="<?= e($arUrl) ?>"><?= e($ar['document_number']) ?></a>
+                                        <?php if (!empty($ar['category_name'])): ?>
+                                            <div class="text-muted" style="font-size:.73rem"><?= e($ar['category_name']) ?></div>
+                                        <?php endif; ?>
+                                    </td>
+                                    <td>
+                                        <div class="small fw-semibold text-body"><?= e($ar['passenger_name']) ?></div>
+                                        <div class="text-muted" style="font-size:.75rem"><?= e($ar['passenger_phone'] ?: '-') ?></div>
+                                    </td>
+                                    <td class="small text-nowrap">
+                                        <div><?= e($arTgl) ?> &middot; <?= e($arJam) ?></div>
+                                        <div class="text-muted" style="font-size:.75rem"><?= e($ar['origin_city']) ?> &rarr; <?= e($ar['dest_city']) ?></div>
+                                    </td>
+                                    <td>
+                                        <div class="d-flex flex-wrap gap-1">
+                                            <?php if ($ar['needs_vehicle']): ?>
+                                                <span class="badge bg-warning-subtle text-warning-emphasis border fw-normal">Tanpa Armada</span>
+                                            <?php endif; ?>
+                                            <?php if ($ar['needs_driver']): ?>
+                                                <span class="badge bg-warning-subtle text-warning-emphasis border fw-normal">Tanpa Sopir</span>
+                                            <?php endif; ?>
+                                            <?php if ($ar['needs_confirm']): ?>
+                                                <span class="badge bg-secondary-subtle text-secondary border fw-normal">Draft</span>
+                                            <?php endif; ?>
+                                        </div>
+                                    </td>
+                                    <td class="text-center text-nowrap">
+                                        <?php if ($canDispatch): ?>
+                                            <a class="btn btn-sm btn-outline-primary" href="<?= e($arCalUrl) ?>" title="Tugaskan di Kalender" aria-label="Tugaskan di Kalender"><i class="bi bi-calendar2-check"></i></a>
+                                        <?php endif; ?>
+                                        <a class="btn btn-sm btn-outline-secondary" href="<?= e($arUrl) ?>" title="Lengkapi Penugasan" aria-label="Lengkapi Penugasan"><i class="bi bi-wrench-adjustable"></i></a>
+                                    </td>
+                                </tr>
+                            <?php endforeach; ?>
+                            <?php if (!$attention_rows): ?>
+                                <tr>
+                                    <td colspan="5" class="text-center text-success py-3 small">
+                                        <i class="bi bi-check-circle me-1"></i>Seluruh jadwal aktif sudah lengkap armada, sopir, dan terkonfirmasi.
+                                    </td>
+                                </tr>
+                            <?php endif; ?>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
     <!-- Pemesanan Aktif & Perlu Tindak Lanjut -->
     <div class="row g-3 mb-3">
         <div class="col-12">

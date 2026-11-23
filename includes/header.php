@@ -66,6 +66,12 @@ $roleLabel = trim((string) ($_SESSION['role_name'] ?? 'Pengguna'));
         </div>
 
         <div class="ms-auto d-flex align-items-center gap-2 flex-shrink-0">
+            <button type="button" id="globalSearchTrigger" class="topbar-search-btn"
+                    title="Pencarian Cepat Global (Ctrl+K)" aria-label="Pencarian Cepat Global">
+                <i class="bi bi-search" aria-hidden="true"></i>
+                <span class="d-none d-md-inline topbar-search-placeholder">Cari cepat...</span>
+                <kbd class="d-none d-lg-inline topbar-search-kbd">Ctrl+K</kbd>
+            </button>
             <div class="dropdown">
                 <button class="topbar-pill dropdown-toggle" type="button" data-bs-toggle="dropdown" aria-expanded="false" title="Perusahaan Aktif: <?= e($activeName) ?>">
                     <span class="topbar-company-dot" aria-hidden="true"></span>

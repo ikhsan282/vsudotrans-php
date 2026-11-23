@@ -3200,3 +3200,103 @@ html[data-bs-theme="dark"] .vst-ai-wa-btn:hover {
   0%, 49% { opacity: 1; }
   50%, 100% { opacity: 0; }
 }
+
+/* ---------- Global Quick Search (Ctrl+K) & Topbar Trigger ---------- */
+.topbar-search-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: .45rem;
+  height: 34px;
+  padding: 0 .65rem;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  background: var(--surface-subtle);
+  color: var(--text-muted);
+  font-size: .8rem;
+  cursor: pointer;
+  transition: border-color .15s ease, color .15s ease, background-color .15s ease;
+}
+.topbar-search-btn:hover {
+  border-color: var(--accent);
+  color: var(--text-main);
+  background: var(--surface);
+}
+.topbar-search-placeholder {
+  color: var(--text-muted);
+}
+.topbar-search-kbd {
+  font-size: .68rem;
+  padding: 1px 5px;
+  border-radius: 4px;
+  background: var(--surface);
+  color: var(--text-muted);
+  border: 1px solid var(--border);
+}
+.gs-dialog {
+  max-width: 620px;
+}
+.gs-input-wrap {
+  background: var(--surface);
+}
+.gs-input {
+  font-size: .92rem;
+}
+.gs-body {
+  max-height: 60vh;
+}
+.gs-group-label {
+  font-size: .68rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: .04em;
+  color: var(--text-muted);
+  margin-top: .25rem;
+}
+.gs-result-item {
+  border: 1px solid transparent;
+  transition: background-color .12s ease, border-color .12s ease;
+}
+.gs-result-item:hover,
+.gs-result-item.is-active {
+  background: var(--surface-hover);
+  border-color: rgba(13, 110, 253, .28);
+}
+
+/* ---------- Dashboard KPI Hover Drill-Down ---------- */
+.dash-kpi-card {
+  position: relative;
+  transition: transform .15s ease, box-shadow .15s ease;
+}
+.dash-kpi-card:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 .35rem 1rem rgba(15, 23, 42, .08) !important;
+}
+html[data-bs-theme="dark"] .dash-kpi-card:hover {
+  box-shadow: 0 .35rem 1rem rgba(0, 0, 0, .38) !important;
+}
+
+/* ---------- Kalender Quick Assign & Reschedule Modal ---------- */
+.ops-cal-quick-assign {
+  border: 1px solid rgba(13, 110, 253, .25);
+  background: var(--bs-tertiary-bg, #f8fafc);
+}
+.ops-cal-resched-diff {
+  border: 1px solid var(--border);
+  background: var(--bs-tertiary-bg, #f8fafc);
+}
+html[data-bs-theme="dark"] .ops-cal-quick-assign {
+  border-color: rgba(96, 165, 250, .3);
+  background: rgba(30, 41, 59, .55);
+}
+html[data-bs-theme="dark"] .ops-cal-resched-diff {
+  background: rgba(30, 41, 59, .55);
+}
+@media (max-width: 575.98px) {
+  .ops-cal-jump-wrap {
+    flex-wrap: wrap;
+    width: 100%;
+  }
+  .ops-cal-jump-wrap .btn {
+    flex: 1 1 auto;
+  }
+}

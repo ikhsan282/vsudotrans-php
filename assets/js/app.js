@@ -675,4 +675,195 @@ document.addEventListener('DOMContentLoaded', function () {
     if (!f || !f.querySelectorAll) return;
     f.querySelectorAll(sel).forEach(applyNorm);
   }, true);
+
+  // Global Quick Search (Ctrl+K / Topbar Search)
+  (function initGlobalQuickSearch() {
+    const modalEl = document.getElementById('globalSearchModal');
+    const triggerEl = document.getElementById('globalSearchTrigger');
+    const inputEl = document.getElementById('globalSearchInput');
+    const resultsEl = document.getElementById('globalSearchResults');
+    const spinnerEl = document.getElementById('globalSearchSpinner');
+    const metaEl = document.getElementById('globalSearchMeta');
+    if (!modalEl || !inputEl || !resultsEl || !window.bootstrap?.Modal) return;
+
+    const appBase = String(window.__VST_APP_URL || '').replace(/\/+$/, '');
+    const esc = (s) => String(s == null ? '' : s)
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;')
+      .replace(/'/g, '&#39;');
+
+    // Bangun indeks menu yang sudah difilter RBAC di DOM sidebar
+    const menuItems = [];
+    const seenUrls = new Set();
+    document.querySelectorAll('#sidebar ul.nav a.nav-link[href]').forEach(function (a) {
+      const href = a.getAttribute('href') || '';
+      if (!href || href === '#' || href.startsWith('#') || href.startsWith('javascript:') || a.hasAttribute('data-bs-toggle') || seenUrls.has(href)) return;
+      seenUrls.add(href);
+      const label = (a.textContent || '').replace(/\s+/g, ' ').trim();
+      if (!label || /keluar/i.test(label)) return;
+      const grpEl = a.closest('.collapse');
+      const grpBtn = grpEl ? document.querySelector('[href="#' + grpEl.id + '"]') : null;
+      const grpLabel = grpBtn ? (grpBtn.textContent || '').replace(/\s+/g, ' ').trim() : 'Menu Utama';
+      const iconEl = a.querySelector('i.bi');
+      const iconCls = iconEl ? Array.from(iconEl.classList).find(c => c.startsWith('bi-')) || 'bi-arrow-right-short' : 'bi-arrow-right-short';
+      menuItems.push({ title: label, subtitle: grpLabel, badge: 'Menu', url: href, icon: iconCls });
+    });
+    if (window.__VST_CAN_DISPATCH && appBase) {
+      const gmHref = appBase + '/pages/dispatch/manifest_group.php';
+      if (!seenUrls.has(gmHref)) {
+        menuItems.push({ title: 'Manifest Gabungan Armada', subtitle: 'Operasional & Armada', badge: 'Cetak', url: gmHref, icon: 'bi-card-checklist' });
+      }
+    }
+
+    let debounceTimer = null;
+    let activeAbort = null;
+    let activeIdx = 0;
+
+    function getNavItems() {
+      return Array.from(resultsEl.querySelectorAll('a.gs-result-item'));
+    }
+
+    function setActiveIndex(nextIdx) {
+      const list = getNavItems();
+      if (!list.length) { activeIdx = -1; return; }
+      activeIdx = ((nextIdx % list.length) + list.length) % list.length;
+      list.forEach((el, idx) => {
+        el.classList.toggle('is-active', idx === activeIdx);
+      });
+      list[activeIdx].scrollIntoView({ block: 'nearest' });
+    }
+
+    function filterLocalMenus(q) {
+      const ql = q.trim().toLowerCase();
+      if (!ql) return menuItems.slice(0, 6);
+      return menuItems.filter(m =>
+        m.title.toLowerCase().includes(ql) || m.subtitle.toLowerCase().includes(ql)
+      ).slice(0, 5);
+    }
+
+    function renderGroups(menuMatches, apiGroups, q) {
+      const allGroups = [];
+      if (menuMatches.length > 0) {
+        allGroups.push({
+          key: 'menus',
+          label: q.trim() ? 'Menu & Halaman' : 'Navigasi Cepat',
+          icon: 'bi-compass',
+          items: menuMatches
+        });
+      }
+      if (Array.isArray(apiGroups)) {
+        apiGroups.forEach(g => allGroups.push(g));
+      }
+
+      if (!allGroups.length) {
+        resultsEl.innerHTML = '<div class="gs-empty small text-body-secondary text-center py-4">Tidak ada hasil yang cocok untuk "' + esc(q) + '".</div>';
+        if (metaEl) metaEl.textContent = '0 hasil';
+        return;
+      }
+
+      let html = '';
+      let totalCnt = 0;
+      allGroups.forEach(grp => {
+        const items = Array.isArray(grp.items) ? grp.items : [];
+        if (!items.length) return;
+        html += '<div class="gs-group-label px-2 py-1">'
+          + '<i class="bi ' + esc(grp.icon || 'bi-folder') + ' me-1" aria-hidden="true"></i>' + esc(grp.label || '')
+          + '</div>';
+        items.forEach(it => {
+          totalCnt++;
+          html += '<a href="' + esc(it.url || '#') + '" class="gs-result-item d-flex align-items-center justify-content-between gap-2 px-3 py-2 rounded-2 text-decoration-none">'
+            + '<div class="min-w-0">'
+            + '<div class="fw-semibold small text-body text-truncate">' + esc(it.title || '-') + '</div>'
+            + (it.subtitle ? '<div class="text-body-secondary text-truncate" style="font-size:.74rem">' + esc(it.subtitle) + '</div>' : '')
+            + '</div>'
+            + (it.badge ? '<span class="badge bg-body-secondary text-body border fw-normal flex-shrink-0">' + esc(it.badge) + '</span>' : '')
+            + '</a>';
+        });
+      });
+      resultsEl.innerHTML = html;
+      setActiveIndex(0);
+      if (metaEl) metaEl.textContent = totalCnt + ' hasil';
+    }
+
+    async function runSearch(q) {
+      const trimmed = q.trim();
+      const menuMatches = filterLocalMenus(trimmed);
+      if (trimmed.length < 2) {
+        if (activeAbort) { activeAbort.abort(); activeAbort = null; }
+        if (spinnerEl) spinnerEl.classList.add('d-none');
+        renderGroups(menuMatches, [], trimmed);
+        return;
+      }
+
+      renderGroups(menuMatches, [], trimmed);
+      if (activeAbort) activeAbort.abort();
+      activeAbort = new AbortController();
+      if (spinnerEl) spinnerEl.classList.remove('d-none');
+
+      try {
+        const res = await fetch(appBase + '/pages/search/global.php?q=' + encodeURIComponent(trimmed), {
+          credentials: 'same-origin',
+          signal: activeAbort.signal
+        });
+        const data = await res.json().catch(() => ({}));
+        if (inputEl.value.trim() !== trimmed) return;
+        renderGroups(menuMatches, (res.ok && data.ok && Array.isArray(data.groups)) ? data.groups : [], trimmed);
+      } catch (err) {
+        if (err && err.name === 'AbortError') return;
+      } finally {
+        if (spinnerEl) spinnerEl.classList.add('d-none');
+      }
+    }
+
+    function openGlobalSearch() {
+      runSearch(inputEl.value);
+      const inst = bootstrap.Modal.getOrCreateInstance(modalEl);
+      inst.show();
+    }
+
+    if (triggerEl) {
+      triggerEl.addEventListener('click', openGlobalSearch);
+    }
+
+    modalEl.addEventListener('shown.bs.modal', function () {
+      window.requestAnimationFrame(function () {
+        inputEl.focus();
+        inputEl.select();
+      });
+    });
+
+    inputEl.addEventListener('input', function () {
+      clearTimeout(debounceTimer);
+      debounceTimer = setTimeout(() => runSearch(inputEl.value), 220);
+    });
+
+    inputEl.addEventListener('keydown', function (e) {
+      const list = getNavItems();
+      if (e.key === 'ArrowDown') {
+        e.preventDefault();
+        if (list.length) setActiveIndex(activeIdx + 1);
+      } else if (e.key === 'ArrowUp') {
+        e.preventDefault();
+        if (list.length) setActiveIndex(activeIdx - 1);
+      } else if (e.key === 'Enter') {
+        if (list.length && activeIdx >= 0 && list[activeIdx]) {
+          e.preventDefault();
+          window.location.href = list[activeIdx].href;
+        }
+      }
+    });
+
+    document.addEventListener('keydown', function (e) {
+      if ((e.ctrlKey || e.metaKey) && !e.shiftKey && !e.altKey && String(e.key || '').toLowerCase() === 'k') {
+        e.preventDefault();
+        if (modalEl.classList.contains('show')) {
+          bootstrap.Modal.getOrCreateInstance(modalEl).hide();
+        } else {
+          openGlobalSearch();
+        }
+      }
+    });
+  })();
 });
