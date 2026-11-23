@@ -72,8 +72,10 @@ require __DIR__ . '/../../includes/header.php';
                         <?php endforeach; ?>
                     </select>
                 </div>
-                <?= ui_filter_actions(APP_URL . '/pages/reports/finance.php', ($f['from'] !== date('Y-m-01') || $f['to'] !== date('Y-m-t') || $f['booking_type'] !== 'all' || (is_super_admin() && !empty($f['filter_company_id'])))) ?>
+                <?= report_category_filter_col($f) ?>
+                <?= ui_filter_actions(APP_URL . '/pages/reports/finance.php', ($f['from'] !== date('Y-m-01') || $f['to'] !== date('Y-m-t') || $f['booking_type'] !== 'all' || !empty($f['category_id']) || (is_super_admin() && !empty($f['filter_company_id'])))) ?>
             </form>
+            <?= report_preset_pills_html('pages/reports/finance.php', $f) ?>
         </div>
     </div>
 
@@ -194,6 +196,66 @@ require __DIR__ . '/../../includes/header.php';
         </div>
     </div>
 
+    <?php
+    $catRows = $data['categories'] ?? [];
+    $ftCat   = fin_category_totals($catRows);
+    ?>
+    <div class="card shadow-sm border-0 mb-3">
+        <div class="card-header bg-white d-flex justify-content-between align-items-center flex-wrap gap-2">
+            <span class="fw-semibold">Pendapatan &amp; Laba per Kategori Layanan</span>
+            <span class="small text-muted">Margin Total <?= e(number_format((float) $ftCat['margin_pct'], 1, ',', '.')) ?>%</span>
+        </div>
+        <div class="table-responsive">
+            <table class="table table-sm table-hover mb-0 align-middle">
+                <thead><tr>
+                    <th>Kategori Layanan</th>
+                    <th>Layanan</th>
+                    <th class="text-end">Booking</th>
+                    <th class="text-end">Pendapatan</th>
+                    <th class="text-end">Terbayar</th>
+                    <th class="text-end">Piutang</th>
+                    <th class="text-end">Biaya Trip</th>
+                    <th class="text-end">Laba Kotor</th>
+                    <th class="text-end">Margin</th>
+                </tr></thead>
+                <tbody>
+                <?php foreach ($catRows as $r):
+                    $gpCat = (float) ($r['gross_profit'] ?? 0);
+                ?>
+                    <tr>
+                        <td><?= e((string) $r['category_label']) ?></td>
+                        <td><span class="badge <?= $r['booking_type'] === 'rental' ? 'bg-success-subtle text-success border border-success-subtle' : 'bg-primary-subtle text-primary border border-primary-subtle' ?>"><?= e((string) $r['service_label']) ?></span></td>
+                        <td class="text-end"><?= (int) $r['booking_count'] ?></td>
+                        <td class="text-end"><?= e(rupiah((float) $r['revenue'])) ?></td>
+                        <td class="text-end"><?= e(rupiah((float) $r['paid'])) ?></td>
+                        <td class="text-end"><?= e(rupiah((float) $r['receivable'])) ?></td>
+                        <td class="text-end"><?= e(rupiah((float) $r['cost'])) ?></td>
+                        <td class="text-end fw-semibold <?= $gpCat >= 0 ? 'text-success' : 'text-danger' ?>"><?= e(rupiah($gpCat)) ?></td>
+                        <td class="text-end"><?= e(number_format((float) $r['margin_pct'], 1, ',', '.')) ?>%</td>
+                    </tr>
+                <?php endforeach; ?>
+                <?php if (!$catRows): ?>
+                    <tr><td colspan="9" class="text-center text-muted py-3">Belum ada transaksi per kategori pada periode ini.</td></tr>
+                <?php endif; ?>
+                </tbody>
+                <?php if ($catRows): ?>
+                <tfoot class="table-light fw-semibold">
+                    <tr>
+                        <td colspan="2">Total</td>
+                        <td class="text-end"><?= (int) $ftCat['booking_count'] ?></td>
+                        <td class="text-end"><?= e(rupiah((float) $ftCat['revenue'])) ?></td>
+                        <td class="text-end"><?= e(rupiah((float) $ftCat['paid'])) ?></td>
+                        <td class="text-end"><?= e(rupiah((float) $ftCat['receivable'])) ?></td>
+                        <td class="text-end"><?= e(rupiah((float) $ftCat['cost'])) ?></td>
+                        <td class="text-end <?= $ftCat['gross_profit'] >= 0 ? 'text-success' : 'text-danger' ?>"><?= e(rupiah((float) $ftCat['gross_profit'])) ?></td>
+                        <td class="text-end"><?= e(number_format((float) $ftCat['margin_pct'], 1, ',', '.')) ?>%</td>
+                    </tr>
+                </tfoot>
+                <?php endif; ?>
+            </table>
+        </div>
+    </div>
+
     <div class="card shadow-sm border-0 mb-3">
         <div class="card-header bg-white d-flex justify-content-between align-items-center">
             <span class="fw-semibold">Biaya Operasional per Jenis</span>
@@ -239,9 +301,9 @@ require __DIR__ . '/../../includes/header.php';
                 <?php endif; ?>
             </span>
         </div>
-        <?php if (($f['booking_type'] ?? 'all') !== 'all'): ?>
+        <?php if (($f['booking_type'] ?? 'all') !== 'all' || !empty($f['category_id'])): ?>
         <div class="px-3 py-2 border-bottom small text-muted">
-            Catatan: Kas Masuk &amp; Kas Keluar mengikuti Buku Kas perusahaan (semua transaksi), sedangkan Omzet Booking &amp; Biaya Trip mengikuti filter jenis booking.
+            Catatan: Kas Masuk &amp; Kas Keluar mengikuti Buku Kas perusahaan (semua transaksi), sedangkan Omzet Booking &amp; Biaya Trip mengikuti filter jenis/kategori.
         </div>
         <?php endif; ?>
         <?php if ($daily): ?>

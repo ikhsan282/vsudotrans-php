@@ -34,11 +34,43 @@ function pdf_boot(): void
 }
 
 /**
+ * Pastikan memory_limit PHP mencukupi untuk render PDF tabel besar (mis. 250+ baris)
+ * di environment shared hosting / XAMPP default (128M), tanpa menurunkan batas
+ * bila server sudah mengatur lebih besar atau unlimited (-1).
+ */
+function pdf_ensure_memory_limit(int $minMb = 384): void
+{
+    $raw = trim((string) @ini_get('memory_limit'));
+    if ($raw === '' || $raw === '-1') {
+        if (PHP_SAPI !== 'cli' && function_exists('set_time_limit')) {
+            @set_time_limit(120);
+        }
+        return;
+    }
+    $val = (int) $raw;
+    $unit = strtolower(substr($raw, -1));
+    $bytes = match ($unit) {
+        'g'     => $val * 1024 * 1024 * 1024,
+        'm'     => $val * 1024 * 1024,
+        'k'     => $val * 1024,
+        default => $val,
+    };
+    $targetBytes = $minMb * 1024 * 1024;
+    if ($bytes > 0 && $bytes < $targetBytes) {
+        @ini_set('memory_limit', $minMb . 'M');
+    }
+    if (PHP_SAPI !== 'cli' && function_exists('set_time_limit')) {
+        @set_time_limit(120);
+    }
+}
+
+/**
  * Render HTML menjadi string PDF. $paper 'A4', $orient 'portrait'|'landscape'.
  * Mengembalikan string PDF; melempar RuntimeException bila gagal.
  */
 function pdf_render(string $html, string $paper = 'A4', string $orient = 'portrait', string $font = 'DejaVu Sans'): string
 {
+    pdf_ensure_memory_limit(384);
     pdf_boot();
     $opts = new \Dompdf\Options();
     $opts->setChroot(dirname(__DIR__));

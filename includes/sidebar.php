@@ -52,7 +52,8 @@ $menu = [
     ['key' => 'dashboard', 'section' => 'Utama', 'label' => 'Dashboard', 'icon' => 'speedometer2', 'href' => 'pages/dashboard/index.php', 'perm' => null],
 
     // ── OPERASIONAL & ARMADA ────────────────────────────────────────────────
-    ['key' => 'dispatch',   'section' => 'Operasional & Armada', 'label' => 'Kalender Operasional', 'icon' => 'calendar2-check', 'href' => 'pages/dispatch/calendar.php', 'perm' => 'dispatch.view'],
+    ['key' => 'dispatch',       'section' => 'Operasional & Armada', 'label' => 'Kalender Operasional', 'icon' => 'calendar2-check', 'href' => 'pages/dispatch/calendar.php',       'perm' => 'dispatch.view'],
+    ['key' => 'manifest_group', 'section' => 'Operasional & Armada', 'label' => 'Manifest Gabungan',    'icon' => 'card-checklist',  'href' => 'pages/dispatch/manifest_group.php', 'perm' => ['dispatch.view', 'travel.view', 'rental.view']],
     ['key' => 'travel', 'section' => 'Operasional & Armada', 'label' => 'Travel', 'icon' => 'bus-front', 'perm' => 'travel.view', 'sub' => [
         ['label' => 'Pemesanan Tiket Perjalanan', 'href' => 'pages/travel/bookings/index.php',  'perms' => 'travel.view'],
     ]],

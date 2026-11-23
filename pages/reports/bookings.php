@@ -13,13 +13,15 @@ $header_actions = report_header_actions('pages/reports/bookings_export.php', $f)
 
 // Definisi kolom tiap tabel: [label, key, tipe] — tipe 'n' = angka, 'm' = uang.
 $dims = [
-    ['title' => 'Per Periode',          'rows' => $data['period'],  'cols' => [
+    ['title' => 'Per Kategori Layanan',       'rows' => $data['category'], 'cols' => [
+        ['Kategori Layanan', 'category_label', 's'], ['Layanan', 'service_label', 's']]],
+    ['title' => 'Per Periode',                'rows' => $data['period'],  'cols' => [
         ['Tanggal', 'period', 's']]],
-    ['title' => 'Per Wilayah Asal → Tujuan', 'rows' => $data['route'], 'cols' => [
+    ['title' => 'Per Wilayah Asal → Tujuan',  'rows' => $data['route'],   'cols' => [
         ['Wilayah', 'route_label', 's']]],
-    ['title' => 'Per Kendaraan',        'rows' => $data['vehicle'], 'cols' => [
+    ['title' => 'Per Kendaraan',              'rows' => $data['vehicle'], 'cols' => [
         ['No. Kendaraan', 'vehicle_number', 's'], ['Warna', 'vehicle_color', 's']]],
-    ['title' => 'Per Driver',           'rows' => $data['driver'],  'cols' => [
+    ['title' => 'Per Driver',                 'rows' => $data['driver'],  'cols' => [
         ['Driver', 'driver_name', 's']]],
 ];
 
@@ -55,8 +57,10 @@ require __DIR__ . '/../../includes/header.php';
                         <?php endforeach; ?>
                     </select>
                 </div>
-                <?= ui_filter_actions(APP_URL . '/pages/reports/bookings.php', ($f['from'] !== date('Y-m-01') || $f['to'] !== date('Y-m-t') || $f['booking_type'] !== 'all' || (is_super_admin() && !empty($f['filter_company_id'])))) ?>
+                <?= report_category_filter_col($f) ?>
+                <?= ui_filter_actions(APP_URL . '/pages/reports/bookings.php', ($f['from'] !== date('Y-m-01') || $f['to'] !== date('Y-m-t') || $f['booking_type'] !== 'all' || !empty($f['category_id']) || (is_super_admin() && !empty($f['filter_company_id'])))) ?>
             </form>
+            <?= report_preset_pills_html('pages/reports/bookings.php', $f) ?>
         </div>
     </div>
 

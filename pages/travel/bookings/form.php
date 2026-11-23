@@ -2,6 +2,7 @@
 require_once __DIR__ . '/../../../config/config.php';
 require_permission('travel.manage');
 require_once __DIR__ . '/../_helpers.php';
+require_once __DIR__ . '/../../transport/_helpers.php';
 require_once __DIR__ . '/../../../includes/booking_service.php';
 require_once __DIR__ . '/../../../includes/invoice_service.php';
 require_once __DIR__ . '/../../../includes/regulation_service.php';
@@ -50,6 +51,10 @@ $in_crew = [
 $in_payments = [
     ['id' => 0, 'pay_type' => 'Down Payment (DP)', 'pay_method' => 'Transfer', 'pay_date' => date('Y-m-d'), 'amount' => 0, 'proof_blob_path' => '', 'is_auto_qris' => false],
 ];
+
+$prefillBanner = $_SERVER['REQUEST_METHOD'] !== 'POST'
+    ? booking_apply_passenger_prefill($cid, 'travel', $in)
+    : null;
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     verify_csrf();
@@ -293,6 +298,8 @@ require __DIR__ . '/../../../includes/header.php';
     $ai_endpoint = APP_URL . '/pages/travel/bookings/ai_parse.php';
     require __DIR__ . '/../../../includes/ai_panel.php';
     ?>
+
+    <?= booking_prefill_banner_html($prefillBanner) ?>
 
     <!-- ERP Window Container -->
     <div class="erp-window-card">

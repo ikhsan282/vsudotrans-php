@@ -41,36 +41,10 @@ function fin_company_scope(string $column, array $f): array
     return company_scope($column);
 }
 
-/** Sumber booking UNION (identik report_source, menghormati filter_company_id UI jika diset). */
+/** Sumber booking UNION (identik report_source, menghormati filter_company_id & category_id). */
 function fin_booking_source(array $f): array
 {
-    if (!is_super_admin() || empty($f['filter_company_id'])) {
-        return report_source($f);
-    }
-    $fcid = (int) $f['filter_company_id'];
-    $inner_where = 'b.company_id = ? AND b.date BETWEEN ? AND ?';
-    $bTypes = 'iss';
-    $bParams = [$fcid, $f['from'], $f['to']];
-    $cols = static fn(string $table, string $type) => "SELECT '{$type}' AS booking_type, b.id, b.company_id,
-            b.branch_id, b.date, b.time, b.total_price, b.total_payment, b.document_number,
-            b.passenger_id, b.vehicle_id, b.pickup_point_city_id AS origin_city_id,
-            b.delivery_point_city_id AS dest_city_id
-        FROM {$table} b
-        WHERE {$inner_where}";
-    $parts = [];
-    $types = '';
-    $params = [];
-    if ($f['booking_type'] !== 'rental') {
-        $parts[] = $cols('travel_ticket_bookings', 'travel');
-        $types .= $bTypes;
-        $params = array_merge($params, $bParams);
-    }
-    if ($f['booking_type'] !== 'travel') {
-        $parts[] = $cols('rental_car_bookings', 'rental');
-        $types .= $bTypes;
-        $params = array_merge($params, $bParams);
-    }
-    return ['sql' => '(' . implode(' UNION ALL ', $parts) . ') x', 'types' => $types, 'params' => $params];
+    return report_source($f);
 }
 
 /** Ringkasan arus uang: pendapatan per jenis, terbayar, piutang. */
@@ -97,7 +71,15 @@ function fin_rental_bbm_source(array $f): ?array
     [$w, $wt, $wp] = fin_company_scope('r.company_id', $f);
     $sql = 'rental_car_bookings r WHERE ' . ($w !== '' ? $w . ' AND ' : '')
         . "COALESCE(NULLIF(r.start_date, ''), r.date) BETWEEN ? AND ? AND r.bbm > 0";
-    return ['sql' => $sql, 'types' => $wt . 'ss', 'params' => array_merge($wp, [$f['from'], $f['to']])];
+    $types  = $wt . 'ss';
+    $params = array_merge($wp, [$f['from'], $f['to']]);
+    $catId  = (int) ($f['category_id'] ?? 0);
+    if ($catId > 0) {
+        $sql .= ' AND r.category_vehicle_id = ?';
+        $types .= 'i';
+        $params[] = $catId;
+    }
+    return ['sql' => $sql, 'types' => $types, 'params' => $params];
 }
 
 /** Total biaya operasional pada rentang + filter jenis (tidak menghitung baris pembayaran 'payment'). */
@@ -131,6 +113,14 @@ function fin_cost_source(array $f): array
         $sql .= ' AND z.booking_type = ?';
         $types .= 's';
         $params[] = $f['booking_type'];
+    }
+    $catId = (int) ($f['category_id'] ?? 0);
+    if ($catId > 0) {
+        $sql .= " AND ((z.booking_type = 'travel' AND EXISTS (SELECT 1 FROM travel_ticket_bookings tb WHERE tb.id = z.booking_id AND tb.company_id = z.company_id AND tb.category_vehicle_id = ?))"
+              . " OR (z.booking_type = 'rental' AND EXISTS (SELECT 1 FROM rental_car_bookings rb WHERE rb.id = z.booking_id AND rb.company_id = z.company_id AND rb.category_vehicle_id = ?)))";
+        $types .= 'ii';
+        $params[] = $catId;
+        $params[] = $catId;
     }
     return ['sql' => $sql, 'types' => $types, 'params' => $params];
 }
@@ -222,6 +212,157 @@ function fin_unpaid(array $f, ?int $limit = null): array
     return report_run($sql, $types, $params);
 }
 
+/** Pendapatan, terbayar, piutang, biaya operasional trip (+ BBM rental), laba kotor & margin per Kategori Layanan. */
+function fin_by_category(array $f): array
+{
+    $map = [];
+    $ensure = static function (string $bt, int $catId) use (&$map): string {
+        $btNorm = $bt === 'rental' ? 'rental' : 'travel';
+        $k = $btNorm . ':' . $catId;
+        if (!isset($map[$k])) {
+            $map[$k] = [
+                'category_id'    => $catId,
+                'booking_type'   => $btNorm,
+                'service_label'  => $btNorm === 'rental' ? 'Rental' : 'Travel',
+                'category_code'  => '',
+                'category_name'  => '',
+                'category_label' => 'Tanpa Kategori',
+                'booking_count'  => 0,
+                'revenue'        => 0.0,
+                'paid'           => 0.0,
+                'receivable'     => 0.0,
+                'cost'           => 0.0,
+                'gross_profit'   => 0.0,
+                'margin_pct'     => 0.0,
+            ];
+        }
+        return $k;
+    };
+
+    $j = report_joined($f);
+    $revRows = report_run(
+        "SELECT COALESCE(x.category_vehicle_id, 0) AS category_id,
+                x.booking_type,
+                COUNT(*) AS booking_count,
+                COALESCE(SUM(x.total_price), 0) AS revenue,
+                COALESCE(SUM(x.total_payment), 0) AS paid,
+                COALESCE(SUM(x.total_price - x.total_payment), 0) AS receivable
+           FROM {$j['sql']}
+          GROUP BY category_id, x.booking_type",
+        $j['types'],
+        $j['params']
+    );
+    foreach ($revRows as $rr) {
+        $k = $ensure((string) $rr['booking_type'], (int) $rr['category_id']);
+        $map[$k]['booking_count'] += (int) ($rr['booking_count'] ?? 0);
+        $map[$k]['revenue']       += (float) ($rr['revenue'] ?? 0);
+        $map[$k]['paid']          += (float) ($rr['paid'] ?? 0);
+        $map[$k]['receivable']    += (float) ($rr['receivable'] ?? 0);
+    }
+
+    $cs = fin_cost_source($f);
+    $costRows = report_run(
+        "SELECT csl.booking_type,
+                COALESCE(tb.category_vehicle_id, rb.category_vehicle_id, 0) AS category_id,
+                COALESCE(SUM(csl.amount), 0) AS cost_amt
+           FROM (SELECT z.booking_type, z.booking_id, z.company_id, z.amount FROM {$cs['sql']}) csl
+           LEFT JOIN travel_ticket_bookings tb
+                  ON csl.booking_type = 'travel' AND tb.id = csl.booking_id AND tb.company_id = csl.company_id
+           LEFT JOIN rental_car_bookings rb
+                  ON csl.booking_type = 'rental' AND rb.id = csl.booking_id AND rb.company_id = csl.company_id
+          GROUP BY csl.booking_type, category_id",
+        $cs['types'],
+        $cs['params']
+    );
+    foreach ($costRows as $cr) {
+        $k = $ensure((string) $cr['booking_type'], (int) $cr['category_id']);
+        $map[$k]['cost'] += (float) ($cr['cost_amt'] ?? 0);
+    }
+
+    $bbm = fin_rental_bbm_source($f);
+    if ($bbm !== null) {
+        $bbmRows = report_run(
+            "SELECT COALESCE(r.category_vehicle_id, 0) AS category_id,
+                    COALESCE(SUM(r.bbm), 0) AS cost_amt
+               FROM {$bbm['sql']}
+              GROUP BY category_id",
+            $bbm['types'],
+            $bbm['params']
+        );
+        foreach ($bbmRows as $br) {
+            $k = $ensure('rental', (int) $br['category_id']);
+            $map[$k]['cost'] += (float) ($br['cost_amt'] ?? 0);
+        }
+    }
+
+    $catIds = [];
+    foreach ($map as $row) {
+        if ((int) $row['category_id'] > 0) {
+            $catIds[(int) $row['category_id']] = (int) $row['category_id'];
+        }
+    }
+    if ($catIds) {
+        $idList = implode(',', array_values($catIds));
+        $catMeta = [];
+        $resCat = db()->query("SELECT id, code, name FROM category_vehicles WHERE id IN ({$idList})");
+        if ($resCat) {
+            while ($cm = $resCat->fetch_assoc()) {
+                $catMeta[(int) $cm['id']] = $cm;
+            }
+        }
+        foreach ($map as &$row) {
+            $cid = (int) $row['category_id'];
+            if ($cid > 0 && isset($catMeta[$cid])) {
+                $row['category_code']  = (string) ($catMeta[$cid]['code'] ?? '');
+                $row['category_name']  = (string) ($catMeta[$cid]['name'] ?? '');
+                $lbl = trim(($row['category_code'] !== '' ? $row['category_code'] . ' - ' : '') . $row['category_name']);
+                $row['category_label'] = $lbl !== '' ? $lbl : ('Kategori #' . $cid);
+            }
+        }
+        unset($row);
+    }
+
+    foreach ($map as &$row) {
+        $row['gross_profit'] = (float) $row['revenue'] - (float) $row['cost'];
+        $row['margin_pct']   = (float) $row['revenue'] > 0
+            ? round(($row['gross_profit'] * 100) / (float) $row['revenue'], 1)
+            : 0.0;
+    }
+    unset($row);
+
+    $rows = array_values($map);
+    usort($rows, static fn(array $a, array $b): int =>
+        ((float) $b['revenue'] <=> (float) $a['revenue'])
+        ?: ((float) $b['cost'] <=> (float) $a['cost'])
+        ?: strcmp((string) $a['category_label'], (string) $b['category_label'])
+    );
+    return $rows;
+}
+
+/** Total kolom <tfoot> tabel Pendapatan & Laba per Kategori Layanan. */
+function fin_category_totals(array $rows): array
+{
+    $t = [
+        'booking_count' => 0,
+        'revenue'       => 0.0,
+        'paid'          => 0.0,
+        'receivable'    => 0.0,
+        'cost'          => 0.0,
+        'gross_profit'  => 0.0,
+        'margin_pct'    => 0.0,
+    ];
+    foreach ($rows as $r) {
+        $t['booking_count'] += (int) ($r['booking_count'] ?? 0);
+        $t['revenue']       += (float) ($r['revenue'] ?? 0);
+        $t['paid']          += (float) ($r['paid'] ?? 0);
+        $t['receivable']    += (float) ($r['receivable'] ?? 0);
+        $t['cost']          += (float) ($r['cost'] ?? 0);
+        $t['gross_profit']  += (float) ($r['gross_profit'] ?? 0);
+    }
+    $t['margin_pct'] = $t['revenue'] > 0 ? round(($t['gross_profit'] * 100) / $t['revenue'], 1) : 0.0;
+    return $t;
+}
+
 /** Semua angka laporan keuangan sekaligus — halaman & export identik. */
 function fin_all(array $f, ?int $unpaid_limit = 200): array
 {
@@ -232,6 +373,7 @@ function fin_all(array $f, ?int $unpaid_limit = 200): array
         'cost_total'   => $cost,
         'gross_profit' => $rev['total'] - $cost,
         'cost_types'   => fin_cost_by_type($f),
+        'categories'   => fin_by_category($f),
         'unpaid'       => fin_unpaid($f, $unpaid_limit),
         'monthly'      => fin_monthly($f),
         'daily'        => fin_daily($f),

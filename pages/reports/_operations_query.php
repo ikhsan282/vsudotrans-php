@@ -37,6 +37,14 @@ function ops_assign_source(array $f, string $alias = 'ta'): array
         $types .= 's';
         $params[] = $f['booking_type'];
     }
+    $catId = (int) ($f['category_id'] ?? 0);
+    if ($catId > 0) {
+        $cond .= " AND (({$alias}.booking_type = 'travel' AND EXISTS (SELECT 1 FROM travel_ticket_bookings tb WHERE tb.id = {$alias}.booking_id AND tb.company_id = {$alias}.company_id AND tb.category_vehicle_id = ?))"
+              . " OR ({$alias}.booking_type = 'rental' AND EXISTS (SELECT 1 FROM rental_car_bookings rb WHERE rb.id = {$alias}.booking_id AND rb.company_id = {$alias}.company_id AND rb.category_vehicle_id = ?)))";
+        $types .= 'ii';
+        $params[] = $catId;
+        $params[] = $catId;
+    }
     return ['where' => $cond, 'types' => $types, 'params' => $params];
 }
 
@@ -51,7 +59,11 @@ function ops_vehicle_usage(array $f): array
     // kendaraan tanpa penugasan (di WHERE, LEFT JOIN jadi INNER JOIN).
     $s = ops_assign_source($f);
     [$vw, $vt, $vp] = report_scope('v.company_id', $f);
-    return report_run("SELECT v.id, v.vehicle_number, v.vehicle_color,
+    $catId = (int) ($f['category_id'] ?? 0);
+    $having = $catId > 0 ? ' HAVING tugas > 0 OR v.category_vehicle_id = ?' : '';
+    $types  = $s['types'] . $vt . ($catId > 0 ? 'i' : '');
+    $params = array_merge($s['params'], $vp, $catId > 0 ? [$catId] : []);
+    return report_run("SELECT v.id, v.vehicle_number, v.vehicle_color, v.category_vehicle_id,
         COUNT(DISTINCT ta.id) AS tugas,
         COALESCE(SUM(ta.ended_at IS NOT NULL), 0) AS selesai,
         COALESCE(SUM(ta.ended_at IS NULL), 0) AS berjalan,
@@ -59,8 +71,8 @@ function ops_vehicle_usage(array $f): array
         FROM vehicles v
         LEFT JOIN trip_assignments ta ON ta.vehicle_id = v.id AND {$s['where']}
         WHERE {$vw}
-        GROUP BY v.id, v.vehicle_number, v.vehicle_color
-        ORDER BY tugas DESC, v.vehicle_number ASC", $s['types'] . $vt, array_merge($s['params'], $vp));
+        GROUP BY v.id, v.vehicle_number, v.vehicle_color, v.category_vehicle_id{$having}
+        ORDER BY tugas DESC, v.vehicle_number ASC", $types, $params);
 }
 
 /** Aktivitas driver: hanya karyawan yang benar-benar pernah ditugaskan. */
@@ -118,6 +130,42 @@ function ops_booking_status(array $f): array
         GROUP BY status ORDER BY total DESC, status ASC", $j['types'], $j['params']);
 }
 
+/** Operasional booking per kategori layanan (aktif/berjalan, selesai, batal, tingkat selesai %). */
+function ops_by_category(array $f): array
+{
+    $j = report_joined($f);
+    $rows = report_run(
+        "SELECT COALESCE(x.category_vehicle_id, 0) AS category_id,
+                x.booking_type,
+                COALESCE(cv.code, '') AS category_code,
+                COALESCE(cv.name, '') AS category_name,
+                COUNT(*) AS total,
+                COALESCE(SUM(COALESCE(h.to_status, 'draft') NOT IN ('done', 'cancelled')), 0) AS berjalan,
+                COALESCE(SUM(COALESCE(h.to_status, 'draft') = 'done'), 0) AS selesai,
+                COALESCE(SUM(COALESCE(h.to_status, 'draft') = 'cancelled'), 0) AS dibatalkan
+           FROM {$j['sql']}
+           LEFT JOIN category_vehicles cv ON cv.id = x.category_vehicle_id
+           LEFT JOIN booking_status_history h
+                  ON h.id = (SELECT MAX(h2.id) FROM booking_status_history h2
+                              WHERE h2.booking_type = x.booking_type
+                                AND h2.booking_id = x.id
+                                AND h2.company_id = x.company_id)
+          GROUP BY category_id, x.booking_type, category_code, category_name
+          ORDER BY total DESC, category_name ASC",
+        $j['types'],
+        $j['params']
+    );
+    foreach ($rows as &$r) {
+        $lbl = trim(($r['category_code'] !== '' ? $r['category_code'] . ' - ' : '') . $r['category_name']);
+        $r['category_label'] = $lbl !== '' ? $lbl : 'Tanpa Kategori';
+        $r['service_label']  = $r['booking_type'] === 'rental' ? 'Rental' : 'Travel';
+        $activeCnt = max(0, (int) $r['total'] - (int) $r['dibatalkan']);
+        $r['persen'] = $activeCnt > 0 ? round(((int) $r['selesai'] * 100) / $activeCnt, 1) : 0.0;
+    }
+    unset($r);
+    return $rows;
+}
+
 /** Semua angka operasional sekaligus — halaman & export identik. */
 function ops_all(array $f): array
 {
@@ -126,6 +174,7 @@ function ops_all(array $f): array
         'drivers'    => ops_driver_activity($f),
         'completion' => ops_completion($f),
         'status'     => ops_booking_status($f),
+        'categories' => ops_by_category($f),
     ];
 }
 

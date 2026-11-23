@@ -130,10 +130,11 @@ require __DIR__ . '/../../../includes/header.php';
                     <tr>
                         <td class="text-center text-muted small"><?= number_format($p['offset'] + $idx + 1, 0, ',', '.') ?></td>
                         <td class="fw-semibold"><?= e($r['code']) ?></td>
-                        <td><?= e($r['name']) ?></td>
+                        <td><a class="text-decoration-none fw-medium" href="<?= e(APP_URL) ?>/pages/transport/passengers/detail.php?id=<?= (int) $r['id'] ?>"><?= e($r['name']) ?></a></td>
                         <td><?= e(trim((string) ($r['phone_number'] ?? ''))) ?: '-' ?></td>
                         <td><?= e($r['email'] ?: '-') ?></td>
                         <td class="text-end text-nowrap">
+                            <a class="btn btn-sm btn-outline-secondary" href="<?= e(APP_URL) ?>/pages/transport/passengers/detail.php?id=<?= (int) $r['id'] ?>" title="Lihat Profil &amp; Riwayat" aria-label="Lihat Profil &amp; Riwayat"><i class="bi bi-eye"></i></a>
                             <?php if ($can_manage): ?>
                                 <a class="btn btn-sm btn-outline-primary" href="<?= e(APP_URL) ?>/pages/transport/passengers/form.php?id=<?= (int) $r['id'] ?>" title="Ubah" aria-label="Ubah"><i class="bi bi-pencil-square"></i></a>
                                 <form method="post" action="<?= e(APP_URL) ?>/pages/transport/passengers/delete.php" class="d-inline" onsubmit="return confirm('Hapus penumpang ini?')">

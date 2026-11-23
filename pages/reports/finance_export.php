@@ -11,14 +11,16 @@ require_once __DIR__ . '/_finance_query.php';
 $f = fin_report_filter($_GET);
 $fmt = (string) ($_GET['format'] ?? 'xlsx');
 $fmt = in_array($fmt, ['csv', 'xlsx', 'pdf', 'html'], true) ? $fmt : 'xlsx';
-$sub = 'Periode ' . $f['from'] . ' s/d ' . $f['to'];
+$sub = report_period_subtitle($f);
 // Export memuat SEMUA tagihan belum lunas (tanpa limit tabel HTML).
 $data = fin_all($f, null);
 
-$rev    = $data['revenue'];
-$costs  = $data['cost_types'];
-$ct     = fin_cost_totals($costs);
-$unpaid = $data['unpaid'];
+$rev     = $data['revenue'];
+$costs   = $data['cost_types'];
+$ct      = fin_cost_totals($costs);
+$catRows = $data['categories'] ?? [];
+$ftCat   = fin_category_totals($catRows);
+$unpaid  = $data['unpaid'];
 $ut     = fin_unpaid_totals($unpaid);
 $daily  = $data['daily'] ?? [];
 $dt     = fin_daily_totals($daily);
@@ -39,6 +41,34 @@ $table[] = ['Jenis', 'Pendapatan'];
 $table[] = ['Travel', (float) $rev['travel']];
 $table[] = ['Rental', (float) $rev['rental']];
 $table[] = ['TOTAL', (float) $rev['total']];
+$table[] = [''];
+
+$table[] = ['', 'Pendapatan & Laba per Kategori Layanan'];
+$table[] = ['Kategori Layanan', 'Layanan', 'Booking', 'Pendapatan', 'Terbayar', 'Piutang', 'Biaya Trip', 'Laba Kotor', 'Margin (%)'];
+foreach ($catRows as $r) {
+    $table[] = [
+        (string) $r['category_label'],
+        (string) $r['service_label'],
+        (int) $r['booking_count'],
+        (float) $r['revenue'],
+        (float) $r['paid'],
+        (float) $r['receivable'],
+        (float) $r['cost'],
+        (float) $r['gross_profit'],
+        (float) $r['margin_pct'],
+    ];
+}
+$table[] = [
+    'TOTAL',
+    '',
+    (int) $ftCat['booking_count'],
+    (float) $ftCat['revenue'],
+    (float) $ftCat['paid'],
+    (float) $ftCat['receivable'],
+    (float) $ftCat['cost'],
+    (float) $ftCat['gross_profit'],
+    (float) $ftCat['margin_pct'],
+];
 $table[] = [''];
 
 $table[] = ['Biaya Operasional per Jenis', ''];

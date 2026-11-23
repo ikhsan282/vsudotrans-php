@@ -16,9 +16,13 @@ $comp   = $data['completion'];
 $veh    = $data['vehicles'];
 $drv    = $data['drivers'];
 $status = $data['status'];
+$cats   = $data['categories'] ?? [];
 $vt     = ops_totals($veh, ['tugas', 'selesai', 'berjalan', 'hari']);
 $dt     = ops_totals($drv, ['tugas', 'selesai', 'berjalan']);
 $st     = ops_totals($status, ['travel', 'rental', 'total']);
+$ctOps  = ops_totals($cats, ['total', 'berjalan', 'selesai', 'dibatalkan']);
+$catActive = max(0, (int) $ctOps['total'] - (int) $ctOps['dibatalkan']);
+$catPct    = $catActive > 0 ? round(((int) $ctOps['selesai'] * 100) / $catActive, 1) : 0.0;
 
 $cards = [
     ['Total Penugasan', number_format($comp['total'], 0, ',', '.'), 'primary', 'clipboard-check'],
@@ -59,8 +63,10 @@ require __DIR__ . '/../../includes/header.php';
                         <?php endforeach; ?>
                     </select>
                 </div>
-                <?= ui_filter_actions(APP_URL . '/pages/reports/operations.php', ($f['from'] !== date('Y-m-01') || $f['to'] !== date('Y-m-t') || $f['booking_type'] !== 'all' || (is_super_admin() && !empty($f['filter_company_id'])))) ?>
+                <?= report_category_filter_col($f) ?>
+                <?= ui_filter_actions(APP_URL . '/pages/reports/operations.php', ($f['from'] !== date('Y-m-01') || $f['to'] !== date('Y-m-t') || $f['booking_type'] !== 'all' || !empty($f['category_id']) || (is_super_admin() && !empty($f['filter_company_id'])))) ?>
             </form>
+            <?= report_preset_pills_html('pages/reports/operations.php', $f) ?>
         </div>
     </div>
 
@@ -78,6 +84,46 @@ require __DIR__ . '/../../includes/header.php';
                 </div>
             </div>
         <?php endforeach; ?>
+    </div>
+
+    <div class="card shadow-sm border-0 mb-3">
+        <div class="card-header bg-white fw-semibold">Operasional per Kategori Layanan</div>
+        <div class="table-responsive">
+            <table class="table table-sm table-hover mb-0 align-middle">
+                <thead><tr>
+                    <th>Kategori Layanan</th><th>Layanan</th>
+                    <th class="text-end">Total Booking</th><th class="text-end">Berjalan</th>
+                    <th class="text-end">Selesai</th><th class="text-end">Batal</th>
+                    <th class="text-end">Tingkat Selesai</th>
+                </tr></thead>
+                <tbody>
+                <?php foreach ($cats as $r): ?>
+                    <tr>
+                        <td><?= e((string) $r['category_label']) ?></td>
+                        <td><span class="badge <?= $r['booking_type'] === 'rental' ? 'bg-success-subtle text-success border border-success-subtle' : 'bg-primary-subtle text-primary border border-primary-subtle' ?>"><?= e((string) $r['service_label']) ?></span></td>
+                        <td class="text-end"><?= (int) $r['total'] ?></td>
+                        <td class="text-end"><?= (int) $r['berjalan'] ?></td>
+                        <td class="text-end"><?= (int) $r['selesai'] ?></td>
+                        <td class="text-end"><?= (int) $r['dibatalkan'] ?></td>
+                        <td class="text-end fw-semibold"><?= e(number_format((float) $r['persen'], 1, ',', '.')) ?>%</td>
+                    </tr>
+                <?php endforeach; ?>
+                <?php if (!$cats): ?>
+                    <tr><td colspan="7" class="text-center text-muted py-3">Tidak ada booking pada periode ini.</td></tr>
+                <?php endif; ?>
+                </tbody>
+                <tfoot class="table-light fw-semibold">
+                    <tr>
+                        <td colspan="2">Total</td>
+                        <td class="text-end"><?= (int) $ctOps['total'] ?></td>
+                        <td class="text-end"><?= (int) $ctOps['berjalan'] ?></td>
+                        <td class="text-end"><?= (int) $ctOps['selesai'] ?></td>
+                        <td class="text-end"><?= (int) $ctOps['dibatalkan'] ?></td>
+                        <td class="text-end"><?= e(number_format($catPct, 1, ',', '.')) ?>%</td>
+                    </tr>
+                </tfoot>
+            </table>
+        </div>
     </div>
 
     <div class="card shadow-sm border-0 mb-3">

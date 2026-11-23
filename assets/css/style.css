@@ -325,6 +325,7 @@ body {
   width: 100%;
   max-width: 100%;
   flex: 1 1 auto;
+  min-width: 0;
   min-height: 0;
 }
 
@@ -3299,4 +3300,40 @@ html[data-bs-theme="dark"] .ops-cal-resched-diff {
   .ops-cal-jump-wrap .btn {
     flex: 1 1 auto;
   }
+}
+
+/* ---------- Laporan Preset Periode Cepat & CRM Pelanggan ---------- */
+.rpt-preset-bar {
+  gap: .35rem !important;
+}
+.rpt-preset-pill {
+  font-size: .76rem;
+  padding: .2rem .6rem;
+  border-radius: 999px;
+  white-space: nowrap;
+}
+.pax-crm-avatar {
+  width: 48px;
+  height: 48px;
+  border-radius: 12px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: 700;
+  font-size: 1rem;
+  background: rgba(13, 110, 253, .12);
+  color: #0d6efd;
+  border: 1px solid rgba(13, 110, 253, .22);
+}
+.pax-crm-loc-box {
+  background: var(--bs-tertiary-bg, #f8fafc);
+  border: 1px solid var(--border);
+}
+html[data-bs-theme="dark"] .pax-crm-avatar {
+  background: rgba(96, 165, 250, .18);
+  color: #93c5fd;
+  border-color: rgba(96, 165, 250, .3);
+}
+html[data-bs-theme="dark"] .pax-crm-loc-box {
+  background: rgba(30, 41, 59, .55);
 }

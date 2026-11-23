@@ -30,6 +30,7 @@ function report_filter(?array $in = null): array
         'to'           => $d('to', date('Y-m-t')),
         'company_id'   => active_company_id(),
         'booking_type' => $type,
+        'category_id'  => max(0, (int) ($in['category_id'] ?? 0)),
     ];
 }
 
@@ -56,7 +57,7 @@ function report_scope(string $column, array $f): array
     return company_scope($column);
 }
 
-/** Bangun query string export standar laporan + company_id bila diset Super Admin. */
+/** Bangun query string export standar laporan + category_id + company_id bila diset Super Admin. */
 function report_export_qs(array $f, string $format = 'csv'): string
 {
     $p = [
@@ -65,6 +66,9 @@ function report_export_qs(array $f, string $format = 'csv'): string
         'to'           => $f['to'],
         'booking_type' => $f['booking_type'],
     ];
+    if (!empty($f['category_id']) && (int) $f['category_id'] > 0) {
+        $p['category_id'] = (int) $f['category_id'];
+    }
     if (is_super_admin() && isset($f['filter_company_id'])) {
         $p['company_id'] = (int) $f['filter_company_id'];
     }
@@ -112,7 +116,7 @@ function report_header_actions(string $export_script, array $f): array
     ];
 }
 
-/** Subtitle periode + nama perusahaan bila difilter per PT. */
+/** Subtitle periode + nama perusahaan + kategori layanan bila difilter. */
 function report_period_subtitle(array $f): string
 {
     $sub = 'Periode ' . $f['from'] . ' s/d ' . $f['to'];
@@ -124,7 +128,110 @@ function report_period_subtitle(array $f): string
             }
         }
     }
+    $catId = (int) ($f['category_id'] ?? 0);
+    if ($catId > 0) {
+        $stCat = db()->prepare('SELECT code, name FROM category_vehicles WHERE id = ? LIMIT 1');
+        $stCat->bind_param('i', $catId);
+        $stCat->execute();
+        $catRow = $stCat->get_result()->fetch_assoc();
+        $stCat->close();
+        if ($catRow) {
+            $lbl = trim(($catRow['code'] ?? '') . ' - ' . ($catRow['name'] ?? ''));
+            if ($lbl !== '') {
+                $sub .= ' · Kategori: ' . $lbl;
+            }
+        }
+    }
     return $sub;
+}
+
+/** Daftar preset periode cepat standar laporan. */
+function report_period_presets(): array
+{
+    $today = date('Y-m-d');
+    $dow   = (int) date('N');
+    $mon   = date('Y-m-d', strtotime('-' . ($dow - 1) . ' days'));
+    $sun   = date('Y-m-d', strtotime('+' . (7 - $dow) . ' days'));
+    return [
+        'today'   => ['label' => 'Hari Ini',   'from' => $today, 'to' => $today],
+        'week'    => ['label' => 'Minggu Ini', 'from' => $mon,   'to' => $sun],
+        'month'   => ['label' => 'Bulan Ini',  'from' => date('Y-m-01'), 'to' => date('Y-m-t')],
+        'prev_mo' => [
+            'label' => 'Bulan Lalu',
+            'from'  => date('Y-m-01', strtotime('first day of last month')),
+            'to'    => date('Y-m-t', strtotime('last day of last month')),
+        ],
+        '90d'     => ['label' => '90 Hari', 'from' => date('Y-m-d', strtotime('-89 days')), 'to' => $today],
+    ];
+}
+
+/** Render bar preset periode cepat yang mempertahankan filter lain. */
+function report_preset_pills_html(string $basePath, array $f): string
+{
+    $html = '<div class="rpt-preset-bar d-flex flex-wrap align-items-center gap-1 mt-2 pt-2 border-top">';
+    $html .= '<span class="small text-muted me-1"><i class="bi bi-calendar-range me-1"></i>Periode Cepat:</span>';
+    foreach (report_period_presets() as $key => $p) {
+        $isAct = ($f['from'] === $p['from'] && $f['to'] === $p['to']);
+        $q = [
+            'from'         => $p['from'],
+            'to'           => $p['to'],
+            'booking_type' => $f['booking_type'] ?? 'all',
+        ];
+        if (!empty($f['category_id']) && (int) $f['category_id'] > 0) {
+            $q['category_id'] = (int) $f['category_id'];
+        }
+        if (is_super_admin() && isset($f['filter_company_id'])) {
+            $q['company_id'] = (int) $f['filter_company_id'];
+        }
+        $href = APP_URL . '/' . ltrim($basePath, '/') . '?' . http_build_query($q);
+        $cls  = 'btn btn-sm rpt-preset-pill ' . ($isAct ? 'btn-primary active' : 'btn-outline-secondary');
+        $html .= '<a href="' . e($href) . '" data-preset="' . e($key) . '" class="' . e($cls) . '">' . e($p['label']) . '</a>';
+    }
+    $html .= '</div>';
+    return $html;
+}
+
+/** Ambil daftar kategori layanan ter-scope tenant + jenis booking. */
+function report_category_options(array $f): array
+{
+    category_service_ensure_schema();
+    [$w, $wt, $wp] = report_scope('cv.company_id', $f);
+    $sql = "SELECT cv.id, cv.code, cv.name, cv.service_type, c.code AS comp_code
+              FROM category_vehicles cv
+              JOIN companies c ON c.id = cv.company_id
+             WHERE " . ($w !== '' ? $w . ' AND ' : '') . 'cv.is_active = 1';
+    $types  = $wt;
+    $params = $wp;
+    $bt = (string) ($f['booking_type'] ?? 'all');
+    if (in_array($bt, ['travel', 'rental'], true)) {
+        $sql .= ' AND cv.service_type = ?';
+        $types .= 's';
+        $params[] = $bt;
+    }
+    $sql .= ' ORDER BY c.code ASC, cv.service_type ASC, cv.name ASC';
+    return report_run($sql, $types, $params);
+}
+
+/** Render kolom filter Kategori Layanan agar seragam di halaman Laporan. */
+function report_category_filter_col(array $f): string
+{
+    $sel       = (int) ($f['category_id'] ?? 0);
+    $cats      = report_category_options($f);
+    $multiComp = is_super_admin() && empty($f['filter_company_id']);
+    $html      = '<div class="col-12 col-sm-6 col-lg-2">'
+        . '<label class="form-label small mb-1">Kategori Layanan</label>'
+        . '<select class="form-select form-select-sm" name="category_id">'
+        . '<option value="0"' . ($sel === 0 ? ' selected' : '') . '>Semua Kategori</option>';
+    foreach ($cats as $cv) {
+        $cvId  = (int) $cv['id'];
+        $srv   = ($cv['service_type'] ?? 'travel') === 'rental' ? 'Rental' : 'Travel';
+        $label = trim(($cv['code'] ?? '') . ' - ' . ($cv['name'] ?? '')) . ' (' . $srv . ')';
+        if ($multiComp && !empty($cv['comp_code'])) {
+            $label = '[' . $cv['comp_code'] . '] ' . $label;
+        }
+        $html .= '<option value="' . $cvId . '"' . ($sel === $cvId ? ' selected' : '') . '>' . e($label) . '</option>';
+    }
+    return $html . '</select></div>';
 }
 
 /** Render kolom filter Perusahaan khusus Super Admin agar seragam di semua halaman Laporan. */
@@ -171,9 +278,16 @@ function report_source(array $f): array
     $branch_types = $wt . 'ss';
     $branch_params = array_merge($wp, [$f['from'], $f['to']]);
 
+    $catId = (int) ($f['category_id'] ?? 0);
+    if ($catId > 0) {
+        $inner_where .= ' AND b.category_vehicle_id = ?';
+        $branch_types .= 'i';
+        $branch_params[] = $catId;
+    }
+
     $cols = static fn(string $table, string $type) => "SELECT '{$type}' AS booking_type, b.id, b.company_id,
             b.branch_id, b.date, b.time, b.total_price, b.total_payment, b.document_number,
-            b.passenger_id, b.vehicle_id, b.pickup_point_city_id AS origin_city_id,
+            b.passenger_id, b.category_vehicle_id, b.vehicle_id, b.pickup_point_city_id AS origin_city_id,
             b.delivery_point_city_id AS dest_city_id
         FROM {$table} b
         WHERE {$inner_where}";
@@ -299,15 +413,42 @@ function report_by_driver(array $f): array
         ORDER BY total_bookings DESC, driver_name ASC", $j['types'], $j['params']);
 }
 
-/** Empat dimensi sekaligus — dipakai halaman & export agar angka identik. */
+/** Per kategori layanan (booking tanpa kategori → label 'Tanpa Kategori'). */
+function report_by_category(array $f): array
+{
+    $j = report_joined($f);
+    $rows = report_run(
+        "SELECT COALESCE(x.category_vehicle_id, 0) AS category_id,
+                x.booking_type,
+                COALESCE(cv.code, '') AS category_code,
+                COALESCE(cv.name, '') AS category_name, "
+            . report_agg() . "
+           FROM {$j['sql']}
+           LEFT JOIN category_vehicles cv ON cv.id = x.category_vehicle_id
+          GROUP BY category_id, x.booking_type, category_code, category_name
+          ORDER BY total_price DESC, total_bookings DESC, category_name ASC",
+        $j['types'],
+        $j['params']
+    );
+    foreach ($rows as &$r) {
+        $lbl = trim(($r['category_code'] !== '' ? $r['category_code'] . ' - ' : '') . $r['category_name']);
+        $r['category_label'] = $lbl !== '' ? $lbl : 'Tanpa Kategori';
+        $r['service_label']  = $r['booking_type'] === 'rental' ? 'Rental' : 'Travel';
+    }
+    unset($r);
+    return $rows;
+}
+
+/** Lima dimensi sekaligus — dipakai halaman & export agar angka identik. */
 function report_all(array $f): array
 {
     return [
-        'summary' => report_summary($f),
-        'period'  => report_by_period($f),
-        'route'   => report_by_route($f),
-        'vehicle' => report_by_vehicle($f),
-        'driver'  => report_by_driver($f),
+        'summary'  => report_summary($f),
+        'category' => report_by_category($f),
+        'period'   => report_by_period($f),
+        'route'    => report_by_route($f),
+        'vehicle'  => report_by_vehicle($f),
+        'driver'   => report_by_driver($f),
     ];
 }
 

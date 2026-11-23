@@ -68,10 +68,13 @@ $jar = tempnam(sys_get_temp_dir(), 'ts_jar_');
 $viewerJar = tempnam(sys_get_temp_dir(), 'ts_vjar_');
 
 try {
-    $brandId = (int) $db->query('SELECT id FROM brand_vehicles LIMIT 1')->fetch_column();
-    $modelId = (int) $db->query('SELECT id FROM model_units LIMIT 1')->fetch_column();
-    $catId   = (int) $db->query('SELECT id FROM category_vehicles WHERE company_id = 1 AND is_active = 1 LIMIT 1')->fetch_column();
-    $branchId = (int) $db->query('SELECT id FROM branches WHERE company_id = 1 LIMIT 1')->fetch_column();
+    $brandId     = (int) $db->query('SELECT id FROM brand_vehicles LIMIT 1')->fetch_column();
+    $modelId     = (int) $db->query('SELECT id FROM model_units LIMIT 1')->fetch_column();
+    $catId       = (int) ($db->query("SELECT id FROM category_vehicles WHERE company_id = 1 AND is_active = 1 AND service_type = 'travel' LIMIT 1")->fetch_column()
+        ?: $db->query('SELECT id FROM category_vehicles WHERE company_id = 1 AND is_active = 1 LIMIT 1')->fetch_column());
+    $rentalCatId = (int) ($db->query("SELECT id FROM category_vehicles WHERE company_id = 1 AND is_active = 1 AND service_type = 'rental' LIMIT 1")->fetch_column()
+        ?: $catId);
+    $branchId    = (int) $db->query('SELECT id FROM branches WHERE company_id = 1 LIMIT 1')->fetch_column();
 
     for ($i = 1; $i <= 120; $i++) {
         $code = sprintf('PT-%04d-%d', $i, random_int(10, 99));
@@ -109,6 +112,18 @@ try {
 
     $lastPaxId = end($createdPaxIds);
     $lastVehId = end($createdVehIds);
+    $rentalVehId = $lastVehId;
+    if ($rentalCatId !== $catId) {
+        $plateR = 'ZZ 0071 SC';
+        $frameR = 'FRMZZSC00071' . random_int(10, 99);
+        $machR  = 'MCHZZSC00071' . random_int(10, 99);
+        $st = $db->prepare("INSERT INTO vehicles (company_id, brand_id, model_unit_id, category_vehicle_id, frame_number, machine_number, seat, production_year, vehicle_color, vehicle_number, ownership, is_active) VALUES (1, ?, ?, ?, ?, ?, 7, 2024, 'Hitam', ?, 'Internal', 1)");
+        $st->bind_param('iiisss', $brandId, $modelId, $rentalCatId, $frameR, $machR, $plateR);
+        $st->execute();
+        $rentalVehId = (int) $db->insert_id;
+        $createdVehIds[] = $rentalVehId;
+        $st->close();
+    }
 
     $resPax = opts_passengers(1, [$lastPaxId], 50);
     ts_check(count($resPax) <= 51, 'opts_passengers caps initial rows <= 51 even with 120+ rows (got ' . count($resPax) . ')');
@@ -140,8 +155,8 @@ try {
         'delivery_point_city_id'     => (int) $distRow['city_id'],
         'delivery_point_district_id' => (int) $distRow['id'],
         'total_price'                => 500000,
-        'category_vehicle_id'        => $catId,
-        'vehicle_id'                 => $lastVehId,
+        'category_vehicle_id'        => $rentalCatId,
+        'vehicle_id'                 => $rentalVehId,
         'passenger_id'               => $lastPaxId,
         'note'                       => 'Test TomSelect Scale',
         'created_user'               => 'test',
@@ -238,7 +253,7 @@ try {
         $csrfTok = $csrfM[1];
         $extra3 = array_slice($createdPaxIds, 0, 3);
         $extra2 = [$extra3[0], $extra3[2]];
-        $httpPostDetail = static function (array $extraIds) use ($base, $jar, $tempBookingId, $branchId, $distRow, $catId, $lastVehId, $lastPaxId, $csrfTok): void {
+        $httpPostDetail = static function (array $extraIds) use ($base, $jar, $tempBookingId, $branchId, $distRow, $rentalCatId, $rentalVehId, $lastPaxId, $csrfTok): void {
             $postFields = [
                 'csrf_token'                 => $csrfTok,
                 'id'                         => (string) $tempBookingId,
@@ -248,8 +263,8 @@ try {
                 'end_date'                   => date('Y-m-d'),
                 'time'                       => '09:00',
                 'passenger_id'               => (string) $lastPaxId,
-                'category_vehicle_id'        => (string) $catId,
-                'vehicle_id'                 => (string) $lastVehId,
+                'category_vehicle_id'        => (string) $rentalCatId,
+                'vehicle_id'                 => (string) $rentalVehId,
                 'total_price'                => '500000',
                 'trip'                       => '1',
                 'bbm'                        => '0',

@@ -177,7 +177,7 @@ if (can('travel.view') || can('rental.view')) {
                 'title'    => $r['name'],
                 'subtitle' => implode(' · ', $subBits) ?: 'Penumpang',
                 'badge'    => 'Pelanggan',
-                'url'      => APP_URL . '/pages/transport/passengers/form.php?id=' . (int) $r['id'],
+                'url'      => APP_URL . '/pages/transport/passengers/detail.php?id=' . (int) $r['id'],
             ];
         }
         $groups[] = ['key' => 'passengers', 'label' => 'Penumpang / Pelanggan', 'icon' => 'bi-people', 'items' => $items];

@@ -14,10 +14,11 @@ $sub = report_period_subtitle($f);
 $data = report_all($f);
 
 $dims = [
-    ['title' => 'Per Periode',   'rows' => $data['period'],  'cols' => [['Tanggal', 'period']]],
-    ['title' => 'Per Wilayah',   'rows' => $data['route'],   'cols' => [['Wilayah', 'route_label']]],
-    ['title' => 'Per Kendaraan', 'rows' => $data['vehicle'], 'cols' => [['No. Kendaraan', 'vehicle_number'], ['Warna', 'vehicle_color']]],
-    ['title' => 'Per Driver',    'rows' => $data['driver'],  'cols' => [['Driver', 'driver_name']]],
+    ['title' => 'Per Kategori Layanan', 'rows' => $data['category'], 'cols' => [['Kategori Layanan', 'category_label'], ['Layanan', 'service_label']]],
+    ['title' => 'Per Periode',          'rows' => $data['period'],   'cols' => [['Tanggal', 'period']]],
+    ['title' => 'Per Wilayah',          'rows' => $data['route'],    'cols' => [['Wilayah', 'route_label']]],
+    ['title' => 'Per Kendaraan',        'rows' => $data['vehicle'],  'cols' => [['No. Kendaraan', 'vehicle_number'], ['Warna', 'vehicle_color']]],
+    ['title' => 'Per Driver',           'rows' => $data['driver'],   'cols' => [['Driver', 'driver_name']]],
 ];
 
 // Baris siap-tulis untuk satu dimensi: [tanggal, jenis, label…, booking, nilai, terbayar, sisa].

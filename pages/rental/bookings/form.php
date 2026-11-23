@@ -2,6 +2,7 @@
 require_once __DIR__ . '/../../../config/config.php';
 require_permission('rental.manage');
 require_once __DIR__ . '/../../../includes/transport_helpers.php';
+require_once __DIR__ . '/../../transport/_helpers.php';
 require_once __DIR__ . '/../../../includes/booking_service.php';
 require_once __DIR__ . '/../../../includes/invoice_service.php';
 require_once __DIR__ . '/../../../includes/payment_gateway.php';
@@ -53,6 +54,10 @@ $in_crew = [
 $in_payments = [
     ['pay_type' => 'Down Payment (DP)', 'pay_method' => 'Transfer', 'pay_date' => date('Y-m-d'), 'amount' => '0'],
 ];
+
+$prefillBanner = (!$is_edit && $_SERVER['REQUEST_METHOD'] !== 'POST')
+    ? booking_apply_passenger_prefill($cid, 'rental', $in)
+    : null;
 
 if ($is_edit && $_SERVER['REQUEST_METHOD'] !== 'POST') {
     $d1 = new DateTime((string) $b['start_date']);
@@ -379,6 +384,28 @@ $employees  = opts_employees($cid, $crewEmpIds, 50);
 
 $p_form_dist = resolve_district_id($in['pickup_point_district_id'] ?? 0);
 $d_form_dist = resolve_district_id($in['delivery_point_district_id'] ?? 0);
+if ($p_form_dist > 0) {
+    $in['pickup_point_district_id'] = (string) $p_form_dist;
+    if ($p_inf = resolve_district_info($p_form_dist)) {
+        if ($in['pickup_point_city_id'] === '') {
+            $in['pickup_point_city_id'] = (string) $p_inf['city_id'];
+        }
+        if ($in['pickup_point_province_id'] === '') {
+            $in['pickup_point_province_id'] = (string) $p_inf['province_id'];
+        }
+    }
+}
+if ($d_form_dist > 0) {
+    $in['delivery_point_district_id'] = (string) $d_form_dist;
+    if ($d_inf = resolve_district_info($d_form_dist)) {
+        if ($in['delivery_point_city_id'] === '') {
+            $in['delivery_point_city_id'] = (string) $d_inf['city_id'];
+        }
+        if ($in['delivery_point_province_id'] === '') {
+            $in['delivery_point_province_id'] = (string) $d_inf['province_id'];
+        }
+    }
+}
 
 $provinces = opts_provinces([(int) ($in['pickup_point_province_id'] ?? 0), (int) ($in['delivery_point_province_id'] ?? 0)], 100);
 $pickup_cities = opts_cities(
@@ -426,6 +453,8 @@ require __DIR__ . '/../../../includes/header.php';
     $ai_placeholder = 'Contoh: sewa 2 hari mulai besok jam 07:00 jemput Cipondoh ke Bandung, pelanggan Budi, harga 2,5jt';
     require __DIR__ . '/../../../includes/ai_panel.php';
     ?>
+
+    <?= booking_prefill_banner_html($prefillBanner) ?>
 
     <!-- ERP Window Container -->
     <div class="erp-window-card">

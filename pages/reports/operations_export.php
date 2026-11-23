@@ -17,9 +17,13 @@ $comp = $data['completion'];
 $veh  = $data['vehicles'];
 $drv  = $data['drivers'];
 $stts = $data['status'];
+$cats = $data['categories'] ?? [];
 $vt   = ops_totals($veh, ['tugas', 'selesai', 'berjalan', 'hari']);
 $dt   = ops_totals($drv, ['tugas', 'selesai', 'berjalan']);
 $st   = ops_totals($stts, ['travel', 'rental', 'total']);
+$ctOps = ops_totals($cats, ['total', 'berjalan', 'selesai', 'dibatalkan']);
+$catActive = max(0, (int) $ctOps['total'] - (int) $ctOps['dibatalkan']);
+$catPct    = $catActive > 0 ? round(((int) $ctOps['selesai'] * 100) / $catActive, 1) : 0.0;
 
 $table = [];
 array_unshift($table, ['Ringkasan', ''], ['Total Penugasan', $comp['total']],
@@ -55,6 +59,22 @@ foreach ($stts as $r) {
     $table[] = [(string) $r['status'], (int) $r['travel'], (int) $r['rental'], (int) $r['total']];
 }
 $table[] = ['TOTAL', $st['travel'], $st['rental'], $st['total']];
+$table[] = [''];
+
+$table[] = ['', 'Operasional per Kategori Layanan'];
+$table[] = ['Kategori Layanan', 'Layanan', 'Booking', 'Berjalan', 'Selesai', 'Batal', 'Tingkat Selesai (%)'];
+foreach ($cats as $r) {
+    $table[] = [
+        (string) $r['category_label'],
+        (string) $r['service_label'],
+        (int) $r['total'],
+        (int) $r['berjalan'],
+        (int) $r['selesai'],
+        (int) $r['dibatalkan'],
+        (float) $r['persen'],
+    ];
+}
+$table[] = ['TOTAL', '', (int) $ctOps['total'], (int) $ctOps['berjalan'], (int) $ctOps['selesai'], (int) $ctOps['dibatalkan'], (float) $catPct];
 
 $base = 'Laporan Operasional ' . $f['from'] . ' s-d ' . $f['to'];
 
