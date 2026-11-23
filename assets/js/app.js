@@ -787,6 +787,25 @@ document.addEventListener('DOMContentLoaded', function () {
       if (metaEl) metaEl.textContent = totalCnt + ' hasil';
     }
 
+    function renderSearchSkeleton(q) {
+      let rows = '<div class="vst-skel-search"><div class="vst-skel-bar mb-2"></div>';
+      for (let i = 0; i < 3; i++) {
+        rows += '<div class="vst-skel-search-row">'
+          + '<span class="vst-skel vst-skel-line" style="width:' + (68 - i * 10) + '%"></span>'
+          + '<span class="vst-skel vst-skel-line mb-0" style="width:' + (46 - i * 6) + '%;height:9px"></span>'
+          + '</div>';
+      }
+      rows += '</div>';
+      const menuMatches = filterLocalMenus(q);
+      if (menuMatches.length > 0) {
+        renderGroups(menuMatches, [], q);
+        resultsEl.insertAdjacentHTML('beforeend', rows);
+      } else {
+        resultsEl.innerHTML = rows;
+      }
+      if (metaEl) metaEl.textContent = 'Mencari…';
+    }
+
     async function runSearch(q) {
       const trimmed = q.trim();
       const menuMatches = filterLocalMenus(trimmed);
@@ -797,7 +816,7 @@ document.addEventListener('DOMContentLoaded', function () {
         return;
       }
 
-      renderGroups(menuMatches, [], trimmed);
+      renderSearchSkeleton(trimmed);
       if (activeAbort) activeAbort.abort();
       activeAbort = new AbortController();
       if (spinnerEl) spinnerEl.classList.remove('d-none');

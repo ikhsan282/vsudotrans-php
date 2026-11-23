@@ -53,6 +53,47 @@ $roleLabel = trim((string) ($_SESSION['role_name'] ?? 'Pengguna'));
     <link href="<?= e(APP_URL) ?>/assets/css/style.css?v=<?= (int) @filemtime(dirname(__DIR__) . '/assets/css/style.css') ?>" rel="stylesheet">
 </head>
 <body>
+<?php
+$showSplitReveal = !empty($_SESSION['vst_login_reveal']);
+if ($showSplitReveal) {
+    unset($_SESSION['vst_login_reveal']);
+}
+if ($showSplitReveal):
+?>
+<div id="vstSplitReveal" class="vst-lgo-overlay" role="status" aria-live="polite" aria-label="Membuka workspace">
+    <div class="vst-lgo-half vst-lgo-half--l" aria-hidden="true"></div>
+    <div class="vst-lgo-half vst-lgo-half--r" aria-hidden="true"></div>
+    <div class="vst-lgo-core" aria-hidden="true">
+        <span class="vst-lgo-ring"></span>
+        <span class="vst-lgo-logo">
+            <img src="<?= e(APP_URL) ?>/assets/brand/logo-transmandiri.png" alt="">
+        </span>
+    </div>
+</div>
+<script>
+  (function () {
+    try { sessionStorage.removeItem('vst_login_split'); } catch (e) {}
+    var el = document.getElementById('vstSplitReveal');
+    if (!el) return;
+    function dismiss() {
+      if (el && el.parentNode) el.parentNode.removeChild(el);
+    }
+    function openCurtain() {
+      if (!el) return;
+      el.classList.add('is-open');
+      window.setTimeout(dismiss, 720);
+    }
+    if (document.readyState === 'loading') {
+      document.addEventListener('DOMContentLoaded', function () {
+        window.requestAnimationFrame(openCurtain);
+      }, { once: true });
+    } else {
+      window.requestAnimationFrame(openCurtain);
+    }
+    window.setTimeout(dismiss, 1600);
+  })();
+</script>
+<?php endif; ?>
 <div class="wrapper d-flex">
 <?php require __DIR__ . '/sidebar.php'; ?>
 <div class="content-wrapper">

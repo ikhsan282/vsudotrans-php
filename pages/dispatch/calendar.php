@@ -287,7 +287,24 @@ $csrfToken = csrf_token();
                 </div>
             </div>
 
-            <div id="ops-calendar" class="<?= $canCreateAny ? 'fc-can-create' : '' ?>" aria-label="Kalender booking travel dan rental"></div>
+            <div class="ops-cal-stage">
+                <div id="cal-skeleton-overlay" class="vst-cal-skeleton d-none" aria-hidden="true">
+                    <div class="vst-cal-skel-box">
+                        <div class="vst-skel-bar"></div>
+                        <span class="vst-skel vst-skel-line" style="width:42%"></span>
+                        <span class="vst-skel vst-skel-line" style="width:65%;height:10px"></span>
+                        <div class="vst-cal-skel-grid">
+                            <span class="vst-skel vst-skel-card"></span>
+                            <span class="vst-skel vst-skel-card"></span>
+                            <span class="vst-skel vst-skel-card"></span>
+                            <span class="vst-skel vst-skel-card"></span>
+                            <span class="vst-skel vst-skel-card"></span>
+                            <span class="vst-skel vst-skel-card"></span>
+                        </div>
+                    </div>
+                </div>
+                <div id="ops-calendar" class="<?= $canCreateAny ? 'fc-can-create' : '' ?>" aria-label="Kalender booking travel dan rental"></div>
+            </div>
         </div>
     </div>
 </main>
@@ -567,6 +584,7 @@ document.addEventListener('DOMContentLoaded', function () {
     const elHideCancelled = document.getElementById('cal-filter-hide-cancelled');
     const elReset = document.getElementById('cal-filter-reset');
     const elLoading = document.getElementById('cal-loading-badge');
+    const elCalSkeleton = document.getElementById('cal-skeleton-overlay');
     const elCount = document.getElementById('cal-visible-count');
     const elJumpDate = document.getElementById('cal-jump-date');
     const elErrorBanner = document.getElementById('cal-error-banner');
@@ -1406,6 +1424,7 @@ document.addEventListener('DOMContentLoaded', function () {
         },
         loading: function (isLoading) {
             if (elLoading) elLoading.classList.toggle('d-none', !isLoading);
+            if (elCalSkeleton) elCalSkeleton.classList.toggle('d-none', !isLoading);
         },
         eventsSet: function (evList) {
             if (!elCount) return;
