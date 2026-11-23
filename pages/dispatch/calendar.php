@@ -2,6 +2,7 @@
 require_once __DIR__ . '/../../config/config.php';
 require_once __DIR__ . '/../../includes/transport_helpers.php';
 require_permission('dispatch.view');
+category_service_ensure_schema();
 
 $activeCid = active_company_id();
 $cidInt = (int) ($activeCid ?? 0);
@@ -33,6 +34,33 @@ if ($companyIds) {
     }
 }
 
+$categoryOptions = [];
+if ($companyIds) {
+    $compIn = implode(',', array_map('intval', $companyIds));
+    $multiComp = $activeCid === null;
+    $sqlCat = "SELECT cv.id, cv.code, cv.name, cv.service_type, cv.pricing_unit, c.code AS company_code
+                 FROM category_vehicles cv
+                 JOIN companies c ON c.id = cv.company_id
+                WHERE cv.company_id IN ({$compIn}) AND cv.is_active = 1
+                ORDER BY cv.service_type ASC, cv.name ASC, cv.id ASC";
+    $resCat = db()->query($sqlCat);
+    if ($resCat) {
+        foreach ($resCat->fetch_all(MYSQLI_ASSOC) as $catRow) {
+            if ($catRow['service_type'] === 'travel' && !$canTravelView) {
+                continue;
+            }
+            if ($catRow['service_type'] === 'rental' && !$canRentalView) {
+                continue;
+            }
+            $prefix = trim((string) ($catRow['code'] ?? ''));
+            $compSuffix = ($multiComp && !empty($catRow['company_code'])) ? ' (' . $catRow['company_code'] . ')' : '';
+            $catRow['label'] = ($prefix !== '' ? '[' . $prefix . '] ' : '') . $catRow['name'] . $compSuffix;
+            $categoryOptions[] = $catRow;
+        }
+        $resCat->close();
+    }
+}
+
 $vehicleLimit = $activeCid !== null ? 50 : 100;
 $vehicleOptions = $companyIds ? opts_vehicles_detailed($cidInt, $companyIds, null, null, $vehicleLimit) : [];
 $statusOptions = booking_status_options();
@@ -54,6 +82,8 @@ $active = 'dispatch';
 $title = 'Kalender Operasional';
 require __DIR__ . '/../../includes/header.php';
 $eventsUrl = APP_URL . '/pages/dispatch/calendar_events.php';
+$statusUpdateUrl = APP_URL . '/pages/dispatch/calendar_status.php';
+$csrfToken = csrf_token();
 ?>
 <main class="p-2 px-lg-2 py-lg-3 w-100 flex-grow-1 ops-calendar-page">
     <?= ui_page_header(
@@ -61,116 +91,199 @@ $eventsUrl = APP_URL . '/pages/dispatch/calendar_events.php';
         ['Dashboard' => 'pages/dashboard/index.php', 'Kalender Operasional' => null],
         $headerBadges,
         $headerActions,
-        $activeCid === null ? 'Pilih perusahaan aktif untuk membuat pemesanan baru langsung dari kalender' : 'Klik jadwal untuk detail cepat atau klik tanggal untuk buat pemesanan'
+        $activeCid === null ? 'Pilih perusahaan aktif untuk membuat pemesanan baru langsung dari kalender' : 'Klik jadwal untuk aksi cepat, atau klik/seret tanggal untuk membuat pemesanan'
     ) ?>
 
     <div class="card shadow-sm border-0 mb-3">
         <div class="card-body py-2 px-3">
-            <div class="row g-2 align-items-center erp-filter-bar erp-filter-bar-wide" id="cal-filter-form">
-                <div class="col-12 col-md-6 erp-filter-q">
-                    <div class="input-group input-group-sm">
-                        <span class="input-group-text bg-body-tertiary text-body-secondary"><i class="bi bi-search"></i></span>
-                        <input type="search" id="cal-filter-q" class="form-control" placeholder="Cari resi / penumpang / sopir / plat / kota..." autocomplete="off">
+            <div class="row g-2 align-items-center erp-filter-bar ops-cal-filter-bar" id="cal-filter-form">
+                <div class="col-12 col-md-6 col-xl-4">
+                    <div class="d-flex align-items-center gap-2">
+                        <div class="input-group input-group-sm flex-grow-1 min-w-0">
+                            <span class="input-group-text bg-body-tertiary text-body-secondary"><i class="bi bi-search" aria-hidden="true"></i></span>
+                            <input type="search" id="cal-filter-q" class="form-control" placeholder="Cari resi / pelanggan / sopir / plat / kota... (tekan /)" autocomplete="off">
+                        </div>
+                        <button type="button" id="cal-mobile-filter-toggle"
+                                class="btn btn-sm btn-outline-secondary d-md-none flex-shrink-0 text-nowrap"
+                                data-bs-toggle="collapse" data-bs-target="#cal-filter-advanced"
+                                aria-expanded="false" aria-controls="cal-filter-advanced">
+                            <i class="bi bi-sliders me-1" aria-hidden="true"></i>Filter
+                            <span id="cal-mobile-filter-badge" class="badge bg-primary rounded-pill ms-1 d-none">0</span>
+                        </button>
                     </div>
                 </div>
-                <div class="col-6 col-md-3 erp-filter-compact">
-                    <select id="cal-filter-kind" class="form-select form-select-sm" aria-label="Filter jenis layanan">
-                        <option value="all">Semua Jenis</option>
-                        <?php if ($canTravelView): ?><option value="travel">Travel</option><?php endif; ?>
-                        <?php if ($canRentalView): ?><option value="rental">Rental</option><?php endif; ?>
-                    </select>
-                </div>
-                <div class="col-6 col-md-3 erp-filter-compact">
-                    <select id="cal-filter-status" class="form-select form-select-sm" aria-label="Filter status operasional">
-                        <option value="">Semua Status</option>
-                        <?php foreach ($statusOptions as $stKey => $stLabel): ?>
-                            <option value="<?= e($stKey) ?>"><?= e($stLabel) ?></option>
-                        <?php endforeach; ?>
-                    </select>
-                </div>
-                <div class="col-12 col-sm-6 erp-filter-item">
-                    <select id="cal-filter-driver"
-                            class="form-select form-select-sm ts-select"
-                            data-ts-placeholder="Semua Sopir"
-                            data-ts-url="<?= e(APP_URL) ?>/pages/employees/options.php"
-                            data-ts-limit="50"
-                            <?php if ($cidInt > 0): ?>data-ts-company="<?= (int) $cidInt ?>"<?php endif; ?>
-                            aria-label="Filter sopir">
-                        <option value="">Semua Sopir</option>
-                        <?php foreach ($driverOptions as $drv): ?>
-                            <option value="<?= (int) $drv['id'] ?>" data-phone="<?= e($drv['phone'] ?? '') ?>"><?= e($drv['name']) ?></option>
-                        <?php endforeach; ?>
-                    </select>
-                </div>
-                <div class="col-12 col-sm-6 erp-filter-item">
-                    <select id="cal-filter-vehicle"
-                            class="form-select form-select-sm ts-select"
-                            data-ts-placeholder="Semua Armada"
-                            data-ts-url="<?= e(APP_URL) ?>/pages/vehicles/options.php"
-                            data-ts-limit="50"
-                            <?php if ($cidInt > 0): ?>data-ts-company="<?= (int) $cidInt ?>"<?php endif; ?>
-                            aria-label="Filter armada">
-                        <option value="">Semua Armada</option>
-                        <?php foreach ($vehicleOptions as $veh): ?>
-                            <option value="<?= (int) $veh['id'] ?>" data-plate="<?= e($veh['vehicle_number'] ?? '') ?>"><?= e($veh['name']) ?></option>
-                        <?php endforeach; ?>
-                    </select>
-                </div>
-                <div class="col-auto erp-filter-actions d-flex align-items-center gap-2">
-                    <div class="form-check form-switch mb-0 small me-1">
-                        <input class="form-check-input" type="checkbox" role="switch" id="cal-filter-hide-cancelled">
-                        <label class="form-check-label text-nowrap" for="cal-filter-hide-cancelled">Sembunyikan Dibatalkan</label>
+                <div class="collapse col-12" id="cal-filter-advanced">
+                    <div class="row g-2 align-items-center">
+                        <div class="col-6 col-md-3 col-xl-2">
+                            <select id="cal-filter-kind" class="form-select form-select-sm" aria-label="Filter jenis layanan">
+                                <option value="all">Semua Jenis</option>
+                                <?php if ($canTravelView): ?><option value="travel">Travel</option><?php endif; ?>
+                                <?php if ($canRentalView): ?><option value="rental">Rental</option><?php endif; ?>
+                            </select>
+                        </div>
+                        <div class="col-6 col-md-3 col-xl-3">
+                            <select id="cal-filter-category" class="form-select form-select-sm" aria-label="Filter kategori layanan">
+                                <option value="">Semua Layanan</option>
+                                <?php foreach ($categoryOptions as $cat): ?>
+                                    <option value="<?= (int) $cat['id'] ?>" data-service-type="<?= e($cat['service_type']) ?>"><?= e($cat['label']) ?></option>
+                                <?php endforeach; ?>
+                            </select>
+                        </div>
+                        <div class="col-12 col-md-4 col-xl-3">
+                            <select id="cal-filter-status" class="form-select form-select-sm" aria-label="Filter status operasional">
+                                <option value="">Semua Status</option>
+                                <?php foreach ($statusOptions as $stKey => $stLabel): ?>
+                                    <option value="<?= e($stKey) ?>"><?= e($stLabel) ?></option>
+                                <?php endforeach; ?>
+                            </select>
+                        </div>
+                        <div class="col-12 col-sm-6 col-md-4 col-xl-4">
+                            <select id="cal-filter-driver"
+                                    class="form-select form-select-sm ts-select"
+                                    data-ts-placeholder="Semua Sopir"
+                                    data-ts-url="<?= e(APP_URL) ?>/pages/employees/options.php"
+                                    data-ts-limit="50"
+                                    <?php if ($cidInt > 0): ?>data-ts-company="<?= (int) $cidInt ?>"<?php endif; ?>
+                                    aria-label="Filter sopir">
+                                <option value="">Semua Sopir</option>
+                                <?php foreach ($driverOptions as $drv): ?>
+                                    <option value="<?= (int) $drv['id'] ?>" data-phone="<?= e($drv['phone'] ?? '') ?>"><?= e($drv['name']) ?></option>
+                                <?php endforeach; ?>
+                            </select>
+                        </div>
+                        <div class="col-12 col-sm-6 col-md-4 col-xl-4">
+                            <select id="cal-filter-vehicle"
+                                    class="form-select form-select-sm ts-select"
+                                    data-ts-placeholder="Semua Armada"
+                                    data-ts-url="<?= e(APP_URL) ?>/pages/vehicles/options.php"
+                                    data-ts-limit="50"
+                                    <?php if ($cidInt > 0): ?>data-ts-company="<?= (int) $cidInt ?>"<?php endif; ?>
+                                    aria-label="Filter armada">
+                                <option value="">Semua Armada</option>
+                                <?php foreach ($vehicleOptions as $veh): ?>
+                                    <option value="<?= (int) $veh['id'] ?>" data-plate="<?= e($veh['vehicle_number'] ?? '') ?>"><?= e($veh['name']) ?></option>
+                                <?php endforeach; ?>
+                            </select>
+                        </div>
+                        <div class="col-12 col-xl-4 d-flex flex-wrap align-items-center justify-content-between justify-content-xl-end gap-2">
+                            <div class="form-check form-switch mb-0 small me-1">
+                                <input class="form-check-input" type="checkbox" role="switch" id="cal-filter-hide-cancelled">
+                                <label class="form-check-label text-nowrap" for="cal-filter-hide-cancelled">Sembunyikan Dibatalkan</label>
+                            </div>
+                            <button type="button" id="cal-filter-reset" class="btn btn-sm btn-outline-secondary text-nowrap" title="Reset semua filter">
+                                <i class="bi bi-arrow-counterclockwise me-1" aria-hidden="true"></i>Reset
+                            </button>
+                        </div>
                     </div>
-                    <button type="button" id="cal-filter-reset" class="btn btn-sm btn-outline-secondary text-nowrap" title="Reset semua filter">
-                        <i class="bi bi-arrow-counterclockwise me-1"></i>Reset
-                    </button>
                 </div>
             </div>
 
-            <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 pt-2 mt-2 border-top small">
-                <div class="d-flex flex-wrap align-items-center gap-3 text-body-secondary">
-                    <span class="d-inline-flex align-items-center gap-1"><span class="ops-calendar-legend-swatch" style="background:#0d6efd"></span> Travel</span>
-                    <span class="d-inline-flex align-items-center gap-1"><span class="ops-calendar-legend-swatch" style="background:#198754"></span> Rental</span>
-                    <span class="text-body-tertiary d-none d-sm-inline">|</span>
-                    <span class="d-inline-flex align-items-center gap-1"><span class="ops-calendar-legend-swatch" style="background:#0284c7;border-left:3px solid #f59e0b"></span> Sedang Jalan</span>
-                    <span class="d-inline-flex align-items-center gap-1"><span class="ops-calendar-legend-swatch" style="background:#4f7fc8;border:1px dashed #1e40af"></span> Draft</span>
-                    <span class="d-inline-flex align-items-center gap-1"><i class="bi bi-check-circle-fill text-success"></i> Selesai</span>
-                    <span class="d-inline-flex align-items-center gap-1"><span class="ops-calendar-legend-swatch" style="background:#6c757d;opacity:.65"></span> <span class="text-decoration-line-through">Dibatalkan</span></span>
+            <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 pt-2 mt-2 border-top small text-body-secondary ops-calendar-icon-legend">
+                <div class="ops-cal-chip-group" role="group" aria-label="Filter cepat jenis layanan dan status">
+                    <?php if ($canTravelView): ?>
+                        <button type="button" class="ops-cal-chip" data-cal-group="regular" aria-pressed="false">
+                            <span class="ops-calendar-legend-swatch" style="background:#0d6efd"></span> Reguler
+                        </button>
+                        <button type="button" class="ops-cal-chip" data-cal-group="package" aria-pressed="false">
+                            <span class="ops-calendar-legend-swatch" style="background:#6f42c1"></span> Paket
+                        </button>
+                        <button type="button" class="ops-cal-chip" data-cal-group="carter" aria-pressed="false">
+                            <span class="ops-calendar-legend-swatch" style="background:#0e7490"></span> Carter
+                        </button>
+                    <?php endif; ?>
+                    <?php if ($canRentalView): ?>
+                        <button type="button" class="ops-cal-chip" data-cal-group="rental" aria-pressed="false">
+                            <span class="ops-calendar-legend-swatch" style="background:#198754"></span> Rental
+                        </button>
+                    <?php endif; ?>
+                    <span class="text-body-tertiary d-none d-sm-inline px-1" aria-hidden="true">|</span>
+                    <button type="button" class="ops-cal-chip" data-cal-status="scheduled" aria-pressed="false">
+                        <i class="bi bi-clock text-primary" aria-hidden="true"></i> Terjadwal
+                    </button>
+                    <button type="button" class="ops-cal-chip" data-cal-status="on_trip" aria-pressed="false">
+                        <span class="fc-vst-live-dot" aria-hidden="true"></span> Sedang Jalan
+                    </button>
+                    <button type="button" class="ops-cal-chip" data-cal-status="draft" aria-pressed="false">
+                        <i class="bi bi-pencil-square text-secondary" aria-hidden="true"></i> Draft
+                    </button>
+                    <button type="button" class="ops-cal-chip" data-cal-status="done" aria-pressed="false">
+                        <i class="bi bi-check-circle-fill text-success" aria-hidden="true"></i> Selesai
+                    </button>
+                    <button type="button" class="ops-cal-chip" data-cal-status="cancelled" aria-pressed="false">
+                        <i class="bi bi-x-circle text-danger" aria-hidden="true"></i> Dibatalkan
+                    </button>
                 </div>
-                <div class="d-flex align-items-center gap-2">
+                <div class="d-flex align-items-center gap-2 ms-auto">
                     <span id="cal-loading-badge" class="badge bg-warning-subtle text-warning-emphasis border d-none">
                         <span class="spinner-border spinner-border-sm me-1" role="status" aria-hidden="true"></span>Memuat...
                     </span>
                     <span id="cal-visible-count" class="badge bg-body-secondary text-body border">0 jadwal tampil</span>
+                    <span class="d-none d-lg-inline-flex align-items-center text-body-tertiary"
+                          title="Shortcut Keyboard: / fokus pencarian, T hari ini, ←/→ pindah periode, M Bulan, W Minggu, D Hari, L Daftar">
+                        <i class="bi bi-keyboard" aria-hidden="true"></i>
+                    </span>
                 </div>
-            </div>
-
-            <div class="d-flex flex-wrap align-items-center gap-3 pt-2 mt-2 border-top small text-body-secondary ops-calendar-icon-legend">
-                <span class="fw-semibold text-body">Tanda Ikon:</span>
-                <span class="d-inline-flex align-items-center gap-1"><i class="bi bi-clock text-primary" aria-hidden="true"></i> Terjadwal</span>
-                <span class="d-inline-flex align-items-center gap-1"><span class="fc-vst-live-dot" aria-hidden="true"></span> Sedang Jalan</span>
-                <span class="d-inline-flex align-items-center gap-1"><i class="bi bi-pencil-square text-secondary" aria-hidden="true"></i> Draft</span>
-                <span class="d-inline-flex align-items-center gap-1"><i class="bi bi-check-circle-fill text-success" aria-hidden="true"></i> Selesai</span>
-                <span class="d-inline-flex align-items-center gap-1"><i class="bi bi-x-circle text-danger" aria-hidden="true"></i> Dibatalkan</span>
             </div>
         </div>
     </div>
 
     <div class="card shadow-sm border-0">
-        <div class="card-body p-1 p-md-2">
+        <div class="card-body p-2">
+            <div class="ops-cal-toolbar-meta">
+                <div class="ops-cal-kpi-strip" role="group" aria-label="Ringkasan operasional periode ini">
+                    <button type="button" class="ops-cal-kpi-item active" id="cal-kpi-total-btn" data-kpi="all" aria-pressed="true">
+                        <span>Total</span>
+                        <span class="ops-cal-kpi-num" id="cal-kpi-total-num">0</span>
+                    </button>
+                    <button type="button" class="ops-cal-kpi-item" id="cal-kpi-ontrip-btn" data-kpi="on_trip" aria-pressed="false">
+                        <span class="fc-vst-live-dot" aria-hidden="true"></span>
+                        <span>Sedang Jalan</span>
+                        <span class="ops-cal-kpi-num" id="cal-kpi-ontrip-num">0</span>
+                    </button>
+                    <button type="button" class="ops-cal-kpi-item" id="cal-kpi-unassigned-btn" data-kpi="unassigned" aria-pressed="false">
+                        <i class="bi bi-exclamation-triangle-fill text-warning" aria-hidden="true"></i>
+                        <span>Butuh Sopir/Armada</span>
+                        <span class="ops-cal-kpi-num" id="cal-kpi-unassigned-num">0</span>
+                    </button>
+                    <button type="button" class="ops-cal-kpi-item" id="cal-kpi-unpaid-btn" data-kpi="unpaid" aria-pressed="false">
+                        <i class="bi bi-cash-coin text-danger" aria-hidden="true"></i>
+                        <span>Belum Lunas</span>
+                        <span class="ops-cal-kpi-num" id="cal-kpi-unpaid-num">0</span>
+                    </button>
+                </div>
+                <div class="ops-cal-jump-wrap">
+                    <label for="cal-jump-date" class="small text-body-secondary mb-0 text-nowrap">Ke Tanggal:</label>
+                    <input type="date" id="cal-jump-date" class="form-control form-control-sm ops-cal-jump-input"
+                           aria-label="Lompat ke tanggal" title="Lompat langsung ke tanggal tertentu">
+                </div>
+            </div>
+
+            <div id="cal-error-banner" class="alert alert-danger d-none py-2 px-3 mb-2" role="alert" data-no-autodismiss>
+                <div class="d-flex flex-wrap align-items-center justify-content-between gap-2">
+                    <div class="d-flex align-items-center gap-2 small">
+                        <i class="bi bi-wifi-off" aria-hidden="true"></i>
+                        <span id="cal-error-text">Gagal memuat data kalender.</span>
+                    </div>
+                    <button type="button" id="cal-retry-btn" class="btn btn-sm btn-outline-danger flex-shrink-0">
+                        <i class="bi bi-arrow-clockwise me-1" aria-hidden="true"></i>Coba Lagi
+                    </button>
+                </div>
+            </div>
+
             <div id="ops-calendar" class="<?= $canCreateAny ? 'fc-can-create' : '' ?>" aria-label="Kalender booking travel dan rental"></div>
         </div>
     </div>
 </main>
 
-<!-- Modal Pratinjau Jadwal Operasional -->
+<!-- Modal Pratinjau & Aksi Cepat Jadwal Operasional -->
 <div class="modal fade" id="calEventModal" tabindex="-1" aria-labelledby="calEventModalTitle" aria-hidden="true">
-    <div class="modal-dialog modal-dialog-centered ops-cal-modal-dialog">
+    <div class="modal-dialog modal-dialog-centered modal-dialog-scrollable modal-fullscreen-sm-down ops-cal-modal-dialog">
         <div class="modal-content ops-cal-modal border-0 shadow-lg overflow-hidden">
             <div class="modal-header ops-cal-modal-header flex-column align-items-stretch gap-2 border-bottom">
                 <div class="d-flex align-items-start justify-content-between gap-2">
                     <div class="d-flex flex-wrap align-items-center gap-2 min-w-0">
                         <span id="calModalKindBadge" class="badge rounded-pill px-2">Travel</span>
+                        <span id="calModalCategoryBadge" class="badge rounded-pill px-2 d-none"></span>
                         <h5 class="modal-title fs-6 fw-bold mb-0 ops-cal-tabular" id="calEventModalTitle">-</h5>
                         <span id="calModalCompanyBadge" class="badge bg-body-secondary text-body border d-none"></span>
                     </div>
@@ -188,6 +301,17 @@ $eventsUrl = APP_URL . '/pages/dispatch/calendar_events.php';
                 </div>
             </div>
             <div class="modal-body p-3 d-flex flex-column gap-3">
+                <div id="calModalActionFeedback" class="alert py-2 px-3 mb-0 small d-none" role="status" data-no-autodismiss></div>
+
+                <div class="ops-cal-quick-status rounded-3 p-2 px-3 d-none" id="calModalQuickStatusWrap">
+                    <div class="d-flex flex-wrap align-items-center justify-content-between gap-2">
+                        <span class="ops-cal-section-label mb-0">
+                            <i class="bi bi-lightning-charge text-warning me-1" aria-hidden="true"></i>Ubah Status Cepat
+                        </span>
+                        <div class="d-flex flex-wrap gap-1" id="calModalQuickStatusBtns"></div>
+                    </div>
+                </div>
+
                 <div class="ops-cal-detail-card rounded-3 p-3">
                     <div class="ops-cal-section-label mb-1">
                         <i class="bi bi-signpost-split text-primary me-1" aria-hidden="true"></i>Rute Perjalanan
@@ -262,14 +386,17 @@ $eventsUrl = APP_URL . '/pages/dispatch/calendar_events.php';
             </div>
             <div class="modal-footer ops-cal-modal-footer py-2 px-3 d-flex flex-wrap justify-content-between gap-2 border-top">
                 <div class="d-flex flex-wrap gap-2">
+                    <button type="button" id="calModalCopyDriverBtn" class="btn btn-sm btn-outline-primary">
+                        <i class="bi bi-clipboard me-1" aria-hidden="true"></i>Salin Info Sopir
+                    </button>
                     <a href="#" id="calModalManifestBtn" target="_blank" rel="noopener" class="btn btn-sm btn-outline-secondary d-none">
-                        <i class="bi bi-printer me-1"></i>Cetak Surat Jalan
+                        <i class="bi bi-printer me-1" aria-hidden="true"></i>Cetak Surat Jalan
                     </a>
                 </div>
                 <div class="d-flex gap-2 ms-auto">
                     <button type="button" class="btn btn-sm btn-outline-secondary" data-bs-dismiss="modal">Tutup</button>
                     <a href="#" id="calModalDetailBtn" class="btn btn-sm btn-primary px-3">
-                        <i class="bi bi-box-arrow-up-right me-1"></i>Lihat Detail Booking
+                        <i class="bi bi-box-arrow-up-right me-1" aria-hidden="true"></i>Lihat Detail Booking
                     </a>
                 </div>
             </div>
@@ -293,12 +420,12 @@ $eventsUrl = APP_URL . '/pages/dispatch/calendar_events.php';
                 <div class="d-grid gap-2">
                     <?php if ($canCreateTravel): ?>
                         <a href="#" id="calDateCreateTravelBtn" class="btn btn-primary btn-sm">
-                            <i class="bi bi-ticket-perforated me-1"></i>Pemesanan Tiket Perjalanan
+                            <i class="bi bi-ticket-perforated me-1" aria-hidden="true"></i>Pemesanan Tiket Perjalanan
                         </a>
                     <?php endif; ?>
                     <?php if ($canCreateRental): ?>
                         <a href="#" id="calDateCreateRentalBtn" class="btn btn-success btn-sm">
-                            <i class="bi bi-car-front me-1"></i>Pemesanan Sewa Kendaraan
+                            <i class="bi bi-car-front me-1" aria-hidden="true"></i>Pemesanan Sewa Kendaraan
                         </a>
                     <?php endif; ?>
                 </div>
@@ -312,12 +439,20 @@ $eventsUrl = APP_URL . '/pages/dispatch/calendar_events.php';
 <script>
 document.addEventListener('DOMContentLoaded', function () {
     const eventsBaseUrl = <?= json_encode($eventsUrl, JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT) ?>;
+    const statusUpdateUrl = <?= json_encode($statusUpdateUrl, JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT) ?>;
+    const csrfToken = <?= json_encode($csrfToken, JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT) ?>;
     const travelFormBase = <?= json_encode(APP_URL . '/pages/travel/bookings/form.php', JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT) ?>;
     const rentalFormBase = <?= json_encode(APP_URL . '/pages/rental/bookings/form.php', JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT) ?>;
     const canCreateAny = <?= $canCreateAny ? 'true' : 'false' ?>;
 
+    const STORAGE_HIDE_CANCELLED = 'vst_cal_hide_cancelled';
+    const allowedViews = ['dayGridMonth', 'timeGridWeek', 'timeGridDay', 'listWeek', 'listMonth'];
+    const allowedGroups = ['regular', 'package', 'carter', 'rental'];
+    const allowedAttention = ['', 'on_trip', 'unassigned', 'unpaid'];
+
     const elQ = document.getElementById('cal-filter-q');
     const elKind = document.getElementById('cal-filter-kind');
+    const elCategory = document.getElementById('cal-filter-category');
     const elStatus = document.getElementById('cal-filter-status');
     const elDriver = document.getElementById('cal-filter-driver');
     const elVehicle = document.getElementById('cal-filter-vehicle');
@@ -325,6 +460,19 @@ document.addEventListener('DOMContentLoaded', function () {
     const elReset = document.getElementById('cal-filter-reset');
     const elLoading = document.getElementById('cal-loading-badge');
     const elCount = document.getElementById('cal-visible-count');
+    const elJumpDate = document.getElementById('cal-jump-date');
+    const elErrorBanner = document.getElementById('cal-error-banner');
+    const elErrorText = document.getElementById('cal-error-text');
+    const elRetryBtn = document.getElementById('cal-retry-btn');
+    const elMobileFilterBadge = document.getElementById('cal-mobile-filter-badge');
+
+    let activeCategoryGroup = '';
+    let activeAttention = '';
+    let lastFetchKey = '';
+    let lastFetchedEvents = null;
+    let lastHeightMode = null;
+    let activeModalProps = null;
+    let hoverTimer = null;
 
     const escHtml = (str) => String(str == null ? '' : str)
         .replace(/&/g, '&amp;')
@@ -356,6 +504,41 @@ document.addEventListener('DOMContentLoaded', function () {
         return Array.isArray(raw) ? String(raw[0] || '') : String(raw || '');
     };
 
+    const setSelectValue = (el, val) => {
+        if (!el) return;
+        const v = String(val || '');
+        if (window.setTsValueSilent && el.tomselect) {
+            window.setTsValueSilent(el, v);
+        } else {
+            el.value = v;
+        }
+    };
+
+    const isValidYmd = (val) => /^\d{4}-\d{2}-\d{2}$/.test(String(val || ''));
+
+    const formatYmdLocal = (dt) => {
+        if (!(dt instanceof Date) || Number.isNaN(dt.getTime())) return '';
+        const y = dt.getFullYear();
+        const m = String(dt.getMonth() + 1).padStart(2, '0');
+        const d = String(dt.getDate()).padStart(2, '0');
+        return y + '-' + m + '-' + d;
+    };
+
+    const addDaysYmd = (ymd, delta) => {
+        if (!isValidYmd(ymd)) return ymd;
+        const [y, m, d] = ymd.split('-').map(Number);
+        const dt = new Date(Date.UTC(y, m - 1, d + delta));
+        return dt.toISOString().slice(0, 10);
+    };
+
+    const diffDaysInclusive = (startYmd, endYmd) => {
+        if (!isValidYmd(startYmd) || !isValidYmd(endYmd)) return 1;
+        const [y1, m1, d1] = startYmd.split('-').map(Number);
+        const [y2, m2, d2] = endYmd.split('-').map(Number);
+        const diff = Math.round((Date.UTC(y2, m2 - 1, d2) - Date.UTC(y1, m1 - 1, d1)) / 86400000) + 1;
+        return Math.max(1, diff);
+    };
+
     const statusBadgeClass = {
         draft: 'badge rounded-pill bg-secondary-subtle text-secondary-emphasis border border-secondary-subtle',
         scheduled: 'badge rounded-pill bg-primary-subtle text-primary-emphasis border border-primary-subtle',
@@ -371,22 +554,146 @@ document.addEventListener('DOMContentLoaded', function () {
         cancelled: 'badge rounded-pill bg-secondary-subtle text-secondary-emphasis border border-secondary-subtle'
     };
 
-    const statusIconHtml = (status) => {
-        if (status === 'on_trip') return '<span class="fc-vst-live-dot" title="Sedang Jalan"></span>';
-        if (status === 'done') return '<i class="bi bi-check-circle-fill flex-shrink-0" title="Selesai"></i>';
-        if (status === 'draft') return '<i class="bi bi-pencil-square flex-shrink-0" title="Draft"></i>';
-        if (status === 'cancelled') return '<i class="bi bi-x-circle flex-shrink-0" title="Dibatalkan"></i>';
-        return '<i class="bi bi-clock flex-shrink-0" title="Terjadwal"></i>';
+    const categoryBadgeClass = {
+        regular: 'badge rounded-pill px-2 bg-primary-subtle text-primary-emphasis border border-primary-subtle',
+        package: 'badge rounded-pill px-2 ops-cal-cat-package',
+        carter: 'badge rounded-pill px-2 bg-info-subtle text-info-emphasis border border-info-subtle',
+        rental: 'badge rounded-pill px-2 bg-success-subtle text-success-emphasis border border-success-subtle'
     };
+
+    const statusIconHtml = (status) => {
+        if (status === 'on_trip') return '<span class="fc-vst-live-dot" aria-label="Sedang Jalan"></span>';
+        if (status === 'done') return '<i class="bi bi-check-circle-fill flex-shrink-0" aria-hidden="true"></i>';
+        if (status === 'draft') return '<i class="bi bi-pencil-square flex-shrink-0" aria-hidden="true"></i>';
+        if (status === 'cancelled') return '<i class="bi bi-x-circle flex-shrink-0" aria-hidden="true"></i>';
+        return '<i class="bi bi-clock flex-shrink-0" aria-hidden="true"></i>';
+    };
+
+    const applyOptionSelected = (el, val) => {
+        if (!el || val === '') return;
+        const opt = Array.from(el.options).find(o => o.value === val);
+        if (opt) el.value = val;
+    };
+
+    // Hidrasi state awal dari URL & localStorage sebelum Calendar dirender
+    const urlParams = new URLSearchParams(window.location.search);
+    const initView = allowedViews.includes(urlParams.get('view'))
+        ? urlParams.get('view')
+        : (window.matchMedia('(max-width: 767px)').matches ? 'listWeek' : 'dayGridMonth');
+    const initDate = isValidYmd(urlParams.get('date')) ? urlParams.get('date') : undefined;
+
+    if (elQ && urlParams.has('q')) elQ.value = urlParams.get('q') || '';
+    if (elKind && urlParams.has('kind')) applyOptionSelected(elKind, urlParams.get('kind') || 'all');
+    if (elCategory && urlParams.has('category_id')) applyOptionSelected(elCategory, urlParams.get('category_id') || '');
+    if (elStatus && urlParams.has('status')) applyOptionSelected(elStatus, urlParams.get('status') || '');
+    if (elDriver && urlParams.has('driver_id')) applyOptionSelected(elDriver, urlParams.get('driver_id') || '');
+    if (elVehicle && urlParams.has('vehicle_id')) applyOptionSelected(elVehicle, urlParams.get('vehicle_id') || '');
+
+    const initGroup = String(urlParams.get('category_group') || '').toLowerCase();
+    if (allowedGroups.includes(initGroup)) activeCategoryGroup = initGroup;
+    const initAttention = String(urlParams.get('attention') || '').toLowerCase();
+    if (allowedAttention.includes(initAttention)) activeAttention = initAttention;
+
+    if (elHideCancelled) {
+        if (urlParams.has('hide_cancelled')) {
+            elHideCancelled.checked = urlParams.get('hide_cancelled') === '1';
+        } else {
+            let storedHide = null;
+            try { storedHide = localStorage.getItem(STORAGE_HIDE_CANCELLED); } catch (e) {}
+            elHideCancelled.checked = storedHide !== null ? (storedHide === '1') : true;
+        }
+        if (elStatus && elStatus.value === 'cancelled') {
+            elHideCancelled.checked = false;
+        }
+    }
 
     const hasAnyActiveFilter = () => Boolean(
         (elQ && elQ.value.trim() !== '') ||
         (elKind && elKind.value !== 'all') ||
+        (elCategory && elCategory.value !== '') ||
+        activeCategoryGroup !== '' ||
+        activeAttention !== '' ||
         (elStatus && elStatus.value !== '') ||
         getSelectValue(elDriver) !== '' ||
         getSelectValue(elVehicle) !== '' ||
         (elHideCancelled && elHideCancelled.checked)
     );
+
+    const updateMobileFilterBadge = () => {
+        if (!elMobileFilterBadge) return;
+        let cnt = 0;
+        if (elKind && elKind.value !== 'all') cnt++;
+        if (elCategory && elCategory.value !== '') cnt++;
+        if (elStatus && elStatus.value !== '') cnt++;
+        if (getSelectValue(elDriver) !== '') cnt++;
+        if (getSelectValue(elVehicle) !== '') cnt++;
+        if (elHideCancelled && elHideCancelled.checked) cnt++;
+        elMobileFilterBadge.textContent = String(cnt);
+        elMobileFilterBadge.classList.toggle('d-none', cnt === 0);
+    };
+
+    const syncChipAndKpiStates = () => {
+        const curStatus = elStatus ? elStatus.value : '';
+        document.querySelectorAll('.ops-cal-chip[data-cal-group]').forEach(btn => {
+            const grp = btn.getAttribute('data-cal-group') || '';
+            const isOn = activeCategoryGroup === grp;
+            btn.classList.toggle('active', isOn);
+            btn.setAttribute('aria-pressed', isOn ? 'true' : 'false');
+        });
+        document.querySelectorAll('.ops-cal-chip[data-cal-status]').forEach(btn => {
+            const st = btn.getAttribute('data-cal-status') || '';
+            const isOn = curStatus === st;
+            btn.classList.toggle('active', isOn);
+            btn.setAttribute('aria-pressed', isOn ? 'true' : 'false');
+        });
+        document.querySelectorAll('.ops-cal-kpi-item[data-kpi]').forEach(btn => {
+            const kpi = btn.getAttribute('data-kpi') || 'all';
+            const isOn = (kpi === 'all' && activeAttention === '') || (kpi !== 'all' && activeAttention === kpi);
+            btn.classList.toggle('active', isOn);
+            btn.setAttribute('aria-pressed', isOn ? 'true' : 'false');
+        });
+        updateMobileFilterBadge();
+    };
+
+    const applyAttentionFilter = (events) => {
+        if (!Array.isArray(events)) return [];
+        if (activeAttention === 'on_trip') {
+            return events.filter(ev => (ev.extendedProps || {}).status === 'on_trip');
+        }
+        if (activeAttention === 'unassigned') {
+            return events.filter(ev => Boolean((ev.extendedProps || {}).needs_dispatch));
+        }
+        if (activeAttention === 'unpaid') {
+            return events.filter(ev => Boolean((ev.extendedProps || {}).is_unpaid));
+        }
+        return events;
+    };
+
+    const updateKpiStrip = (events) => {
+        const list = Array.isArray(events) ? events : [];
+        let onTripCnt = 0;
+        let unassignedCnt = 0;
+        let unpaidCnt = 0;
+        list.forEach(ev => {
+            const p = ev.extendedProps || {};
+            if (p.status === 'on_trip') onTripCnt++;
+            if (p.needs_dispatch) unassignedCnt++;
+            if (p.is_unpaid) unpaidCnt++;
+        });
+        const totalEl = document.getElementById('cal-kpi-total-num');
+        const tripEl = document.getElementById('cal-kpi-ontrip-num');
+        const unasEl = document.getElementById('cal-kpi-unassigned-num');
+        const unpdEl = document.getElementById('cal-kpi-unpaid-num');
+        if (totalEl) totalEl.textContent = String(list.length);
+        if (tripEl) tripEl.textContent = String(onTripCnt);
+        if (unasEl) unasEl.textContent = String(unassignedCnt);
+        if (unpdEl) unpdEl.textContent = String(unpaidCnt);
+
+        const unasBtn = document.getElementById('cal-kpi-unassigned-btn');
+        const unpdBtn = document.getElementById('cal-kpi-unpaid-btn');
+        if (unasBtn) unasBtn.classList.toggle('is-warn', unassignedCnt > 0);
+        if (unpdBtn) unpdBtn.classList.toggle('is-danger', unpaidCnt > 0);
+    };
 
     const buildWaChip = (phoneDisplay, phone62) => {
         if (!phoneDisplay) return null;
@@ -405,19 +712,167 @@ document.addEventListener('DOMContentLoaded', function () {
         return a;
     };
 
-    const openEventModal = (fcEvent) => {
+    // Hover Preview Card ringan
+    const canHoverDesktop = () => window.matchMedia('(hover: hover) and (pointer: fine)').matches && window.innerWidth >= 768;
+    const hoverCard = document.createElement('div');
+    hoverCard.id = 'ops-cal-hover-card';
+    hoverCard.className = 'ops-cal-hover-card d-none';
+    hoverCard.setAttribute('aria-hidden', 'true');
+    document.body.appendChild(hoverCard);
+
+    const hideHoverCard = () => {
+        clearTimeout(hoverTimer);
+        hoverCard.classList.add('d-none');
+    };
+
+    const showHoverCard = (fcEvent, targetEl) => {
+        if (!canHoverDesktop() || !targetEl || !fcEvent) return;
         const p = fcEvent.extendedProps || {};
+        const catChip = p.category_name
+            ? '<span class="badge bg-body-secondary text-body border">' + escHtml(p.category_name) + '</span>'
+            : '';
+        const vehText = p.vehicle_number
+            ? [p.vehicle_category, p.vehicle_number].filter(Boolean).join(' · ')
+            : 'Armada belum ditentukan';
+        const drvText = p.driver || 'Sopir belum ditugaskan';
+        const warnRow = (!p.has_vehicle || !p.has_driver)
+            ? '<div class="text-warning-emphasis fw-semibold mt-1"><i class="bi bi-exclamation-triangle-fill me-1"></i>'
+              + (!p.has_vehicle && !p.has_driver ? 'Belum ada mobil &amp; sopir' : (!p.has_vehicle ? 'Armada belum ditentukan' : 'Sopir belum ditugaskan'))
+              + '</div>'
+            : '';
+        const payRow = p.status !== 'cancelled'
+            ? '<div class="d-flex justify-content-between gap-2 mt-1 pt-1 border-top">'
+              + '<span class="text-body-secondary">' + escHtml(p.payment_label || '') + '</span>'
+              + '<strong class="' + (p.is_unpaid ? 'text-danger' : 'text-success') + '">'
+              + (p.is_unpaid ? ('Sisa ' + escHtml(p.balance_fmt || 'Rp 0')) : escHtml(p.total_price_fmt || 'Rp 0'))
+              + '</strong></div>'
+            : '';
+
+        hoverCard.innerHTML = ''
+            + '<div class="d-flex flex-wrap align-items-center justify-content-between gap-1 mb-1">'
+            + '<div class="d-flex flex-wrap align-items-center gap-1">'
+            + '<span class="badge ' + (p.kind === 'rental' ? 'bg-success' : 'bg-primary') + '">' + escHtml(p.kind_label || 'Travel') + '</span>'
+            + catChip
+            + '</div>'
+            + '<span class="' + (statusBadgeClass[p.status] || 'badge bg-secondary') + '">' + escHtml(p.status_label || '') + '</span>'
+            + '</div>'
+            + '<div class="fw-bold text-truncate">' + escHtml(p.passenger || '-') + ' <span class="fw-normal text-body-secondary">(' + escHtml(p.document_number || '') + ')</span></div>'
+            + '<div class="text-body-secondary mt-1"><i class="bi bi-calendar3 me-1"></i>' + escHtml(p.period_label || '-') + '</div>'
+            + (p.route_label && p.route_label !== '—' ? '<div class="text-truncate mt-1"><i class="bi bi-signpost-split me-1 text-primary"></i>' + escHtml(p.route_label) + '</div>' : '')
+            + '<div class="text-truncate text-body-secondary mt-1"><i class="bi bi-truck me-1"></i>' + escHtml(vehText) + ' · ' + escHtml(drvText) + '</div>'
+            + warnRow
+            + payRow;
+
+        hoverCard.classList.remove('d-none');
+        const rect = targetEl.getBoundingClientRect();
+        const cardW = hoverCard.offsetWidth || 295;
+        const cardH = hoverCard.offsetHeight || 160;
+        let left = rect.right + 10;
+        if (left + cardW > window.innerWidth - 12) {
+            left = rect.left - cardW - 10;
+        }
+        if (left < 12) {
+            left = Math.max(12, Math.min(rect.left, window.innerWidth - cardW - 12));
+        }
+        let top = rect.top;
+        if (top + cardH > window.innerHeight - 12) {
+            top = Math.max(12, window.innerHeight - cardH - 12);
+        }
+        hoverCard.style.left = Math.round(left) + 'px';
+        hoverCard.style.top = Math.round(top) + 'px';
+    };
+
+    const quickTransitionMap = {
+        draft: [
+            { to: 'scheduled', label: 'Terjadwal', cls: 'btn-primary', icon: 'bi-clock' },
+            { to: 'on_trip', label: 'Sedang Jalan', cls: 'btn-warning', icon: 'bi-play-circle' },
+            { to: 'cancelled', label: 'Batalkan', cls: 'btn-outline-danger', icon: 'bi-x-circle' }
+        ],
+        scheduled: [
+            { to: 'on_trip', label: 'Sedang Jalan', cls: 'btn-warning', icon: 'bi-play-circle' },
+            { to: 'done', label: 'Selesai', cls: 'btn-success', icon: 'bi-check-circle' },
+            { to: 'cancelled', label: 'Batalkan', cls: 'btn-outline-danger', icon: 'bi-x-circle' }
+        ],
+        on_trip: [
+            { to: 'done', label: 'Selesai', cls: 'btn-success', icon: 'bi-check-circle' },
+            { to: 'scheduled', label: 'Terjadwal', cls: 'btn-outline-primary', icon: 'bi-clock' },
+            { to: 'cancelled', label: 'Batalkan', cls: 'btn-outline-danger', icon: 'bi-x-circle' }
+        ],
+        done: [
+            { to: 'scheduled', label: 'Buka Kembali (Terjadwal)', cls: 'btn-outline-primary', icon: 'bi-arrow-counterclockwise' }
+        ],
+        cancelled: [
+            { to: 'scheduled', label: 'Aktifkan (Terjadwal)', cls: 'btn-outline-primary', icon: 'bi-arrow-counterclockwise' }
+        ]
+    };
+
+    const setModalFeedback = (kind, msg) => {
+        const fb = document.getElementById('calModalActionFeedback');
+        if (!fb) return;
+        if (!msg) {
+            fb.classList.add('d-none');
+            fb.textContent = '';
+            return;
+        }
+        fb.className = 'alert py-2 px-3 mb-0 small ' + (kind === 'success' ? 'alert-success' : 'alert-danger');
+        fb.textContent = msg;
+        fb.classList.remove('d-none');
+    };
+
+    const renderModalQuickStatusButtons = (props) => {
+        const p = props || {};
+        const wrap = document.getElementById('calModalQuickStatusWrap');
+        const container = document.getElementById('calModalQuickStatusBtns');
+        if (!wrap || !container) return;
+
+        if (!p.can_manage || !p.booking_id) {
+            wrap.classList.add('d-none');
+            container.replaceChildren();
+            return;
+        }
+
+        const actions = quickTransitionMap[p.status] || quickTransitionMap.scheduled;
+        wrap.classList.remove('d-none');
+        container.replaceChildren();
+
+        actions.forEach(act => {
+            const btn = document.createElement('button');
+            btn.type = 'button';
+            btn.className = 'btn btn-sm ' + act.cls;
+            btn.innerHTML = '<i class="bi ' + act.icon + ' me-1" aria-hidden="true"></i>' + escHtml(act.label);
+            btn.addEventListener('click', () => handleQuickStatusChange(p, act.to, btn));
+            container.appendChild(btn);
+        });
+    };
+
+    const openEventModal = (fcEvent) => {
+        hideHoverCard();
+        activeModalProps = Object.assign({}, fcEvent.extendedProps || {});
+        const p = activeModalProps;
         const modalEl = document.getElementById('calEventModal');
         if (!modalEl || !window.bootstrap?.Modal) {
             if (fcEvent.url) window.location.href = fcEvent.url;
             return;
         }
 
+        setModalFeedback('', '');
+
         const kindBadge = document.getElementById('calModalKindBadge');
         kindBadge.textContent = p.kind_label || 'Travel';
         kindBadge.className = p.kind === 'rental'
             ? 'badge rounded-pill px-2 bg-success'
             : 'badge rounded-pill px-2 bg-primary';
+
+        const catBadge = document.getElementById('calModalCategoryBadge');
+        if (catBadge) {
+            if (p.category_name) {
+                catBadge.textContent = p.category_name;
+                catBadge.className = categoryBadgeClass[p.service_group] || 'badge rounded-pill px-2 bg-body-secondary text-body border';
+                catBadge.classList.remove('d-none');
+            } else {
+                catBadge.classList.add('d-none');
+            }
+        }
 
         document.getElementById('calEventModalTitle').textContent = p.document_number || fcEvent.title;
 
@@ -466,7 +921,7 @@ document.addEventListener('DOMContentLoaded', function () {
 
         const vehEl = document.getElementById('calModalVehicle');
         const vehParts = [];
-        [p.category_name, p.vehicle_category, p.brand_name, p.vehicle_number].forEach(val => {
+        [p.vehicle_category, p.brand_name, p.vehicle_number].forEach(val => {
             const s = String(val || '').trim();
             if (s && !vehParts.some(x => x.toLowerCase() === s.toLowerCase())) vehParts.push(s);
         });
@@ -507,6 +962,13 @@ document.addEventListener('DOMContentLoaded', function () {
             noteWrap.classList.add('d-none');
         }
 
+        renderModalQuickStatusButtons(p);
+
+        const copyBtn = document.getElementById('calModalCopyDriverBtn');
+        if (copyBtn) {
+            copyBtn.innerHTML = '<i class="bi bi-clipboard me-1" aria-hidden="true"></i>Salin Info Sopir';
+        }
+
         const detailBtn = document.getElementById('calModalDetailBtn');
         detailBtn.href = p.detail_url || fcEvent.url || '#';
 
@@ -522,7 +984,7 @@ document.addEventListener('DOMContentLoaded', function () {
     };
 
     const formatIndoLongDate = (ymd) => {
-        if (!/^\d{4}-\d{2}-\d{2}$/.test(ymd)) return ymd;
+        if (!isValidYmd(ymd)) return ymd;
         const dt = new Date(ymd + 'T00:00:00');
         if (Number.isNaN(dt.getTime())) return ymd;
         try {
@@ -532,24 +994,66 @@ document.addEventListener('DOMContentLoaded', function () {
         }
     };
 
-    const openDateCreateModal = (ymd) => {
-        if (!canCreateAny || !/^\d{4}-\d{2}-\d{2}$/.test(ymd)) return;
+    const openDateCreateModal = (startYmd, endYmd) => {
+        if (!canCreateAny || !isValidYmd(startYmd)) return;
+        const finalEnd = (isValidYmd(endYmd) && endYmd >= startYmd) ? endYmd : startYmd;
         const modalEl = document.getElementById('calDateCreateModal');
         if (!modalEl || !window.bootstrap?.Modal) return;
-        document.getElementById('calDateCreateLabel').textContent = formatIndoLongDate(ymd);
+
+        let labelText = formatIndoLongDate(startYmd);
+        if (finalEnd > startYmd) {
+            labelText = formatIndoLongDate(startYmd) + ' – ' + formatIndoLongDate(finalEnd) + ' (' + diffDaysInclusive(startYmd, finalEnd) + ' hari)';
+        }
+        document.getElementById('calDateCreateLabel').textContent = labelText;
+
         const btnTrv = document.getElementById('calDateCreateTravelBtn');
         const btnRnt = document.getElementById('calDateCreateRentalBtn');
-        if (btnTrv) btnTrv.href = travelFormBase + '?date=' + encodeURIComponent(ymd);
-        if (btnRnt) btnRnt.href = rentalFormBase + '?date=' + encodeURIComponent(ymd);
+        if (btnTrv) btnTrv.href = travelFormBase + '?date=' + encodeURIComponent(startYmd);
+        if (btnRnt) {
+            btnRnt.href = rentalFormBase + '?date=' + encodeURIComponent(startYmd)
+                + (finalEnd > startYmd ? '&end_date=' + encodeURIComponent(finalEnd) : '');
+        }
         bootstrap.Modal.getOrCreateInstance(modalEl).show();
     };
 
-    const calendar = new FullCalendar.Calendar(document.getElementById('ops-calendar'), {
-        initialView: window.matchMedia('(max-width: 767px)').matches ? 'listWeek' : 'dayGridMonth',
+    let calendar = null;
+
+    const syncUrlState = () => {
+        if (!calendar || !window.history?.replaceState) return;
+        const params = new URLSearchParams();
+        const viewType = calendar.view ? calendar.view.type : initView;
+        const centerYmd = formatYmdLocal(calendar.getDate());
+        params.set('view', viewType);
+        if (centerYmd) params.set('date', centerYmd);
+
+        const qVal = elQ ? elQ.value.trim() : '';
+        if (qVal) params.set('q', qVal);
+        if (elKind && elKind.value !== 'all') params.set('kind', elKind.value);
+        if (elCategory && elCategory.value !== '') params.set('category_id', elCategory.value);
+        if (activeCategoryGroup) params.set('category_group', activeCategoryGroup);
+        if (elStatus && elStatus.value !== '') params.set('status', elStatus.value);
+        const drvVal = getSelectValue(elDriver);
+        if (drvVal) params.set('driver_id', drvVal);
+        const vehVal = getSelectValue(elVehicle);
+        if (vehVal) params.set('vehicle_id', vehVal);
+        if (elHideCancelled) params.set('hide_cancelled', elHideCancelled.checked ? '1' : '0');
+        if (activeAttention) params.set('attention', activeAttention);
+
+        const nextUrl = window.location.pathname + '?' + params.toString();
+        window.history.replaceState(null, '', nextUrl);
+    };
+
+    calendar = new FullCalendar.Calendar(document.getElementById('ops-calendar'), {
+        initialView: initView,
+        initialDate: initDate,
         locale: 'id',
-        height: 'auto',
+        height: initView.startsWith('timeGrid') ? Math.max(540, Math.min(760, window.innerHeight - 230)) : 'auto',
+        scrollTime: '06:30:00',
         nowIndicator: true,
-        dayMaxEvents: true,
+        dayMaxEvents: 4,
+        selectable: canCreateAny,
+        selectMirror: true,
+        unselectAuto: true,
         allDayText: 'Harian',
         noEventsText: 'Tidak ada jadwal pada rentang ini.',
         buttonText: {
@@ -559,32 +1063,67 @@ document.addEventListener('DOMContentLoaded', function () {
             day: 'Hari',
             list: 'Daftar'
         },
+        views: {
+            listWeek: { buttonText: 'Daftar' },
+            listMonth: { buttonText: 'Daftar Bulan' }
+        },
         moreLinkText: (n) => '+' + n + ' lagi',
         eventTimeFormat: { hour: '2-digit', minute: '2-digit', hour12: false },
         slotLabelFormat: { hour: '2-digit', minute: '2-digit', hour12: false },
-        headerToolbar: { left: 'prev,next today', center: 'title', right: 'dayGridMonth,timeGridWeek,timeGridDay,listWeek' },
+        headerToolbar: { left: 'prev,next today', center: 'title', right: 'dayGridMonth,timeGridWeek,timeGridDay,listWeek,listMonth' },
+        datesSet: function (info) {
+            hideHoverCard();
+            const isTimeGrid = info.view && info.view.type && info.view.type.startsWith('timeGrid');
+            const targetMode = isTimeGrid ? 'timegrid' : 'auto';
+            if (targetMode !== lastHeightMode) {
+                lastHeightMode = targetMode;
+                calendar.setOption('height', isTimeGrid ? Math.max(540, Math.min(760, window.innerHeight - 230)) : 'auto');
+            }
+            if (elJumpDate) {
+                const jumpYmd = formatYmdLocal(calendar.getDate());
+                if (jumpYmd && elJumpDate.value !== jumpYmd) elJumpDate.value = jumpYmd;
+            }
+            syncUrlState();
+        },
         events: function (fetchInfo, successCallback, failureCallback) {
             const params = new URLSearchParams({
                 start: fetchInfo.startStr,
                 end: fetchInfo.endStr,
                 kind: elKind ? elKind.value : 'all',
+                category_id: elCategory ? elCategory.value : '',
+                category_group: activeCategoryGroup,
                 status: elStatus ? elStatus.value : '',
                 hide_cancelled: elHideCancelled && elHideCancelled.checked ? '1' : '0',
                 driver_id: getSelectValue(elDriver),
                 vehicle_id: getSelectValue(elVehicle),
                 q: elQ ? elQ.value.trim() : ''
             });
-            fetch(eventsBaseUrl + '?' + params.toString(), { credentials: 'same-origin' })
+            const fetchKey = params.toString();
+            if (fetchKey === lastFetchKey && lastFetchedEvents !== null) {
+                if (elErrorBanner) elErrorBanner.classList.add('d-none');
+                updateKpiStrip(lastFetchedEvents);
+                successCallback(applyAttentionFilter(lastFetchedEvents));
+                return;
+            }
+            fetch(eventsBaseUrl + '?' + fetchKey, { credentials: 'same-origin' })
                 .then(res => {
                     if (!res.ok) throw new Error('HTTP ' + res.status);
                     return res.json();
                 })
                 .then(data => {
                     if (!Array.isArray(data)) throw new Error('Respon kalender tidak valid');
-                    successCallback(data);
+                    lastFetchKey = fetchKey;
+                    lastFetchedEvents = data;
+                    if (elErrorBanner) elErrorBanner.classList.add('d-none');
+                    updateKpiStrip(data);
+                    successCallback(applyAttentionFilter(data));
                 })
                 .catch(err => {
                     console.error(err);
+                    if (elErrorText) {
+                        elErrorText.textContent = 'Gagal memuat data kalender (' + (err && err.message ? err.message : 'Koneksi terputus') + ').';
+                    }
+                    if (elErrorBanner) elErrorBanner.classList.remove('d-none');
                     failureCallback(err);
                 });
         },
@@ -601,6 +1140,16 @@ document.addEventListener('DOMContentLoaded', function () {
             const viewType = arg.view ? arg.view.type : 'dayGridMonth';
             const compTag = (p.multi_company && p.company_code)
                 ? '<span class="fc-vst-kind-tag">' + escHtml(p.company_code) + '</span>'
+                : '';
+            const showCatTag = p.kind === 'travel' && p.service_group !== 'regular' && (p.category_code || p.service_group_label);
+            const catTag = showCatTag
+                ? '<span class="fc-vst-cat-tag">' + escHtml(p.category_code || p.service_group_label) + '</span>'
+                : '';
+            const alertIcons = (p.needs_dispatch || p.is_unpaid)
+                ? '<span class="fc-vst-pill-alerts">'
+                  + (p.needs_dispatch ? '<span class="fc-vst-alert-warn" title="Armada/Sopir belum lengkap"><i class="bi bi-exclamation-triangle-fill"></i></span>' : '')
+                  + (p.is_unpaid ? '<span class="fc-vst-alert-unpaid" title="Belum Lunas">Rp!</span>' : '')
+                  + '</span>'
                 : '';
 
             if (viewType.startsWith('list')) {
@@ -625,6 +1174,7 @@ document.addEventListener('DOMContentLoaded', function () {
                     html: '<div class="d-flex flex-column gap-1">'
                         + '<div class="d-flex flex-wrap align-items-center gap-1">'
                         + '<span class="' + kindCls + '">' + escHtml(p.kind_label || 'Travel') + '</span>'
+                        + (p.category_code ? '<span class="badge bg-body-secondary text-body border">' + escHtml(p.category_code) + '</span>' : '')
                         + (p.multi_company && p.company_code ? '<span class="badge bg-body-secondary text-body border">' + escHtml(p.company_code) + '</span>' : '')
                         + '<span class="' + stCls + '">' + escHtml(p.status_label || '') + '</span>'
                         + '<span class="' + pmCls + '">' + escHtml(p.payment_label || '') + '</span>'
@@ -638,19 +1188,22 @@ document.addEventListener('DOMContentLoaded', function () {
 
             if (viewType.startsWith('timeGrid') && !arg.event.allDay) {
                 const vehText = p.vehicle_number
-                    ? [p.vehicle_category, p.vehicle_number].filter(Boolean).join(' · ')
-                    : 'Tanpa Mobil';
-                const drvText = p.driver || 'Tanpa Sopir';
-                const line2 = [vehText, drvText].join(' · ');
+                    ? escHtml([p.vehicle_category, p.vehicle_number].filter(Boolean).join(' · '))
+                    : '<span class="fc-vst-missing-chip">Tanpa Mobil</span>';
+                const drvText = p.driver
+                    ? escHtml(p.driver)
+                    : '<span class="fc-vst-missing-chip">Tanpa Sopir</span>';
                 return {
                     html: '<div class="px-1 py-0 overflow-hidden">'
                         + '<div class="fc-vst-pill-inner">'
                         + statusIconHtml(p.status)
                         + (p.starts_at ? '<span class="fc-vst-time">' + escHtml(p.starts_at) + '</span>' : '')
                         + compTag
-                        + '<strong class="text-truncate">' + escHtml(p.passenger || '') + '</strong>'
+                        + catTag
+                        + '<strong class="text-truncate flex-grow-1">' + escHtml(p.passenger || '') + '</strong>'
+                        + alertIcons
                         + '</div>'
-                        + (line2 ? '<div class="fc-vst-sub text-truncate">' + escHtml(line2) + '</div>' : '')
+                        + '<div class="fc-vst-sub text-truncate">' + vehText + ' · ' + drvText + '</div>'
                         + (p.route_label && p.route_label !== '—' ? '<div class="fc-vst-sub text-truncate">' + escHtml(p.route_label) + '</div>' : '')
                         + '</div>'
                 };
@@ -661,14 +1214,22 @@ document.addEventListener('DOMContentLoaded', function () {
                 : '';
             const primaryText = p.passenger || '-';
             const routeShort = compactRouteLabel(p);
-            const row2Parts = p.vehicle_number
-                ? [
-                    p.vehicle_category ? '<span class="fc-vst-plate">' + escHtml(p.vehicle_category) + '</span>' : '',
-                    '<span class="fc-vst-plate">' + escHtml(p.vehicle_number) + '</span>'
-                ].filter(Boolean)
-                : ['<span class="fc-vst-plate">Tanpa Mobil</span>'];
-            row2Parts.push(escHtml(p.driver || 'Tanpa Sopir'));
-            const row2Html = row2Parts.join(' · ');
+            const row2Bits = [];
+            if (routeShort) {
+                row2Bits.push(escHtml(routeShort));
+            }
+            if (p.vehicle_number) {
+                const vehSummary = [p.vehicle_category, p.vehicle_number].filter(Boolean).join(' · ');
+                row2Bits.push('<span class="fc-vst-plate">' + escHtml(vehSummary) + '</span>');
+            } else {
+                row2Bits.push('<span class="fc-vst-missing-chip">Tanpa Mobil</span>');
+            }
+            if (p.driver) {
+                row2Bits.push(escHtml(p.driver));
+            } else {
+                row2Bits.push('<span class="fc-vst-missing-chip">Tanpa Sopir</span>');
+            }
+            const row2Html = row2Bits.join(' · ');
 
             return {
                 html: '<div class="fc-vst-pill-stack">'
@@ -676,8 +1237,9 @@ document.addEventListener('DOMContentLoaded', function () {
                     + statusIconHtml(p.status)
                     + timeChunk
                     + compTag
-                    + '<strong class="text-truncate">' + escHtml(primaryText) + '</strong>'
-                    + (routeShort ? '<span class="fc-vst-sub fc-vst-plate flex-shrink-0">· ' + escHtml(routeShort) + '</span>' : '')
+                    + catTag
+                    + '<strong class="text-truncate flex-grow-1">' + escHtml(primaryText) + '</strong>'
+                    + alertIcons
                     + '</div>'
                     + (row2Html ? '<div class="fc-vst-pill-route text-truncate">' + row2Html + '</div>' : '')
                     + '</div>'
@@ -685,8 +1247,17 @@ document.addEventListener('DOMContentLoaded', function () {
         },
         eventDidMount: function (info) {
             if (info.event.extendedProps && info.event.extendedProps.details) {
-                info.el.title = info.event.extendedProps.details;
+                info.el.setAttribute('aria-label', info.event.extendedProps.details);
+                if (!canHoverDesktop()) {
+                    info.el.title = info.event.extendedProps.details;
+                }
             }
+            info.el.addEventListener('mouseenter', function () {
+                if (!canHoverDesktop()) return;
+                clearTimeout(hoverTimer);
+                hoverTimer = setTimeout(() => showHoverCard(info.event, info.el), 140);
+            });
+            info.el.addEventListener('mouseleave', hideHoverCard);
             if (info.view && info.view.type && info.view.type.startsWith('list')) {
                 info.el.querySelectorAll('a[href]').forEach(function (a) {
                     a.removeAttribute('href');
@@ -705,6 +1276,7 @@ document.addEventListener('DOMContentLoaded', function () {
             }
         },
         eventClick: function (info) {
+            hideHoverCard();
             if (info.jsEvent && (info.jsEvent.ctrlKey || info.jsEvent.metaKey)) {
                 return;
             }
@@ -714,12 +1286,149 @@ document.addEventListener('DOMContentLoaded', function () {
         dateClick: function (info) {
             if (!canCreateAny) return;
             const ymd = String(info.dateStr || '').slice(0, 10);
-            openDateCreateModal(ymd);
+            openDateCreateModal(ymd, ymd);
+        },
+        select: function (info) {
+            if (!canCreateAny) return;
+            const startYmd = String(info.startStr || '').slice(0, 10);
+            const endExclYmd = String(info.endStr || '').slice(0, 10);
+            const endInclYmd = addDaysYmd(endExclYmd, -1);
+            if (isValidYmd(startYmd) && isValidYmd(endInclYmd) && endInclYmd > startYmd) {
+                openDateCreateModal(startYmd, endInclYmd);
+            }
         }
     });
-    calendar.render();
 
-    const refetch = () => calendar.refetchEvents();
+    async function handleQuickStatusChange(props, toStatus, triggerBtn) {
+        const p = props || {};
+        if (!p.booking_id || !p.kind) return;
+        if (toStatus === 'cancelled' && !window.confirm('Yakin ingin membatalkan pemesanan ' + (p.document_number || '') + '?')) {
+            return;
+        }
+        const btns = Array.from(document.querySelectorAll('#calModalQuickStatusBtns button'));
+        const origHtml = triggerBtn ? triggerBtn.innerHTML : '';
+        btns.forEach(b => { b.disabled = true; });
+        if (triggerBtn) {
+            triggerBtn.innerHTML = '<span class="spinner-border spinner-border-sm me-1" role="status" aria-hidden="true"></span>Menyimpan...';
+        }
+        setModalFeedback('', '');
+
+        try {
+            const fd = new FormData();
+            fd.append('csrf_token', csrfToken);
+            fd.append('kind', p.kind);
+            fd.append('booking_id', String(p.booking_id));
+            fd.append('to_status', toStatus);
+
+            const res = await fetch(statusUpdateUrl, {
+                method: 'POST',
+                credentials: 'same-origin',
+                body: fd
+            });
+            const data = await res.json().catch(() => ({}));
+            if (!res.ok || !data.ok) {
+                throw new Error(data.error || ('HTTP ' + res.status));
+            }
+
+            const nextStatus = data.status || toStatus;
+            const nextLabel = data.status_label || toStatus;
+            p.status = nextStatus;
+            p.status_label = nextLabel;
+            p.needs_dispatch = nextStatus !== 'cancelled' && nextStatus !== 'done' && (!p.has_vehicle || !p.has_driver);
+            const stBadge = document.getElementById('calModalStatusBadge');
+            if (stBadge) {
+                stBadge.textContent = nextLabel;
+                stBadge.className = statusBadgeClass[nextStatus] || 'badge rounded-pill bg-secondary';
+            }
+            const manifestBtn = document.getElementById('calModalManifestBtn');
+            if (manifestBtn && p.manifest_url) {
+                manifestBtn.classList.toggle('d-none', nextStatus === 'cancelled');
+            }
+            renderModalQuickStatusButtons(p);
+            setModalFeedback('success', data.message || 'Status pemesanan berhasil diperbarui.');
+            lastFetchKey = '';
+            lastFetchedEvents = null;
+            calendar.refetchEvents();
+        } catch (err) {
+            setModalFeedback('error', err && err.message ? err.message : 'Gagal mengubah status pemesanan.');
+            btns.forEach(b => { b.disabled = false; });
+            if (triggerBtn) triggerBtn.innerHTML = origHtml;
+        }
+    }
+
+    const copyBtnEl = document.getElementById('calModalCopyDriverBtn');
+    if (copyBtnEl) {
+        copyBtnEl.addEventListener('click', async () => {
+            if (!activeModalProps) return;
+            const p = activeModalProps;
+            const vehStr = [p.vehicle_category, p.brand_name, p.vehicle_number].filter(Boolean).join(' · ') || 'Belum ditentukan';
+            const lines = [
+                '[' + (p.kind_label || 'Travel') + (p.category_name ? ' · ' + p.category_name : '') + '] ' + (p.document_number || '-'),
+                'Jadwal: ' + (p.period_label || '-'),
+                'Pelanggan: ' + (p.passenger || '-') + (p.extra_pax > 0 ? ' (+' + p.extra_pax + ' lain)' : '') + (p.passenger_phone ? ' (' + p.passenger_phone + ')' : ''),
+                'Rute: ' + (p.route_label || '-'),
+                p.pickup_address ? ('Jemput: ' + p.pickup_address) : null,
+                p.delivery_address ? ('Antar: ' + p.delivery_address) : null,
+                'Armada: ' + vehStr,
+                'Sopir: ' + (p.driver ? (p.driver + (p.driver_phone ? ' (' + p.driver_phone + ')' : '')) : 'Belum ditugaskan'),
+                'Pembayaran: ' + (p.payment_label || '-') + (p.balance_amount > 0 && p.status !== 'cancelled' ? ' (Sisa ' + (p.balance_fmt || 'Rp 0') + ')' : ''),
+                p.note ? ('Catatan: ' + p.note) : null
+            ].filter(Boolean).join('\n');
+
+            let copied = false;
+            try {
+                if (navigator.clipboard && window.isSecureContext) {
+                    await navigator.clipboard.writeText(lines);
+                    copied = true;
+                }
+            } catch (e) {}
+            if (!copied) {
+                try {
+                    const ta = document.createElement('textarea');
+                    ta.value = lines;
+                    ta.style.position = 'fixed';
+                    ta.style.opacity = '0';
+                    document.body.appendChild(ta);
+                    ta.select();
+                    copied = document.execCommand('copy');
+                    document.body.removeChild(ta);
+                } catch (e) {}
+            }
+            if (copied) {
+                copyBtnEl.innerHTML = '<i class="bi bi-check2 me-1" aria-hidden="true"></i>Tersalin!';
+                setTimeout(() => {
+                    copyBtnEl.innerHTML = '<i class="bi bi-clipboard me-1" aria-hidden="true"></i>Salin Info Sopir';
+                }, 1800);
+            } else {
+                setModalFeedback('error', 'Browser tidak mengizinkan salin otomatis.');
+            }
+        });
+    }
+
+    const dateCreateModalEl = document.getElementById('calDateCreateModal');
+    if (dateCreateModalEl) {
+        dateCreateModalEl.addEventListener('hidden.bs.modal', () => {
+            calendar.unselect();
+        });
+    }
+
+    calendar.render();
+    syncChipAndKpiStates();
+    updateMobileFilterBadge();
+
+    const triggerRefetch = (invalidateCache = true) => {
+        hideHoverCard();
+        if (invalidateCache) {
+            lastFetchKey = '';
+            lastFetchedEvents = null;
+        }
+        syncChipAndKpiStates();
+        syncUrlState();
+        calendar.refetchEvents();
+    };
+
+    const refetch = () => triggerRefetch(true);
+
     let qTimer = null;
     if (elQ) {
         elQ.addEventListener('input', () => {
@@ -731,19 +1440,63 @@ document.addEventListener('DOMContentLoaded', function () {
                 e.preventDefault();
                 clearTimeout(qTimer);
                 refetch();
+            } else if (e.key === 'Escape') {
+                if (elQ.value !== '') {
+                    elQ.value = '';
+                    clearTimeout(qTimer);
+                    refetch();
+                } else {
+                    elQ.blur();
+                }
             }
         });
     }
-    if (elKind) elKind.addEventListener('change', refetch);
+
+    if (elKind) {
+        elKind.addEventListener('change', () => {
+            if (elKind.value !== 'all' && activeCategoryGroup) {
+                if (elKind.value === 'rental' && activeCategoryGroup !== 'rental') activeCategoryGroup = '';
+                if (elKind.value === 'travel' && activeCategoryGroup === 'rental') activeCategoryGroup = '';
+            }
+            if (elCategory && elCategory.value !== '' && elKind.value !== 'all') {
+                const opt = elCategory.options[elCategory.selectedIndex];
+                const st = opt ? (opt.getAttribute('data-service-type') || '') : '';
+                if (st && st !== elKind.value) elCategory.value = '';
+            }
+            refetch();
+        });
+    }
+
+    if (elCategory) {
+        elCategory.addEventListener('change', () => {
+            const opt = elCategory.options[elCategory.selectedIndex];
+            const st = opt ? (opt.getAttribute('data-service-type') || '') : '';
+            if (st && elKind && elKind.value !== 'all' && elKind.value !== st) {
+                elKind.value = 'all';
+            }
+            activeCategoryGroup = '';
+            refetch();
+        });
+    }
+
     if (elStatus) {
         elStatus.addEventListener('change', () => {
             if (elStatus.value === 'cancelled' && elHideCancelled && elHideCancelled.checked) {
                 elHideCancelled.checked = false;
             }
+            if (elStatus.value !== '' && activeAttention === 'on_trip' && elStatus.value !== 'on_trip') {
+                activeAttention = '';
+            }
             refetch();
         });
     }
-    if (elHideCancelled) elHideCancelled.addEventListener('change', refetch);
+
+    if (elHideCancelled) {
+        elHideCancelled.addEventListener('change', () => {
+            try { localStorage.setItem(STORAGE_HIDE_CANCELLED, elHideCancelled.checked ? '1' : '0'); } catch (e) {}
+            refetch();
+        });
+    }
 
     if (window.bindTsChange) {
         if (elDriver) window.bindTsChange(elDriver, refetch);
@@ -753,22 +1506,112 @@ document.addEventListener('DOMContentLoaded', function () {
         if (elVehicle) elVehicle.addEventListener('change', refetch);
     }
 
+    // Unified clickable legend chips
+    document.querySelectorAll('.ops-cal-chip[data-cal-group]').forEach(btn => {
+        btn.addEventListener('click', () => {
+            const grp = btn.getAttribute('data-cal-group') || '';
+            activeCategoryGroup = (activeCategoryGroup === grp) ? '' : grp;
+            if (activeCategoryGroup === 'rental' && elKind && elKind.value === 'travel') {
+                elKind.value = 'all';
+            } else if (activeCategoryGroup !== '' && activeCategoryGroup !== 'rental' && elKind && elKind.value === 'rental') {
+                elKind.value = 'all';
+            }
+            if (elCategory && elCategory.value !== '') {
+                elCategory.value = '';
+            }
+            refetch();
+        });
+    });
+
+    document.querySelectorAll('.ops-cal-chip[data-cal-status]').forEach(btn => {
+        btn.addEventListener('click', () => {
+            if (!elStatus) return;
+            const st = btn.getAttribute('data-cal-status') || '';
+            elStatus.value = (elStatus.value === st) ? '' : st;
+            if (elStatus.value === 'cancelled' && elHideCancelled && elHideCancelled.checked) {
+                elHideCancelled.checked = false;
+            }
+            refetch();
+        });
+    });
+
+    // Clickable KPI summary strip (instant client-side attention filtering when cache matches)
+    document.querySelectorAll('.ops-cal-kpi-item[data-kpi]').forEach(btn => {
+        btn.addEventListener('click', () => {
+            const kpi = btn.getAttribute('data-kpi') || 'all';
+            const nextAtt = (kpi === 'all' || activeAttention === kpi) ? '' : kpi;
+            activeAttention = nextAtt;
+            triggerRefetch(false);
+        });
+    });
+
+    // Jump-to-date control
+    if (elJumpDate) {
+        elJumpDate.addEventListener('change', () => {
+            if (isValidYmd(elJumpDate.value)) {
+                calendar.gotoDate(elJumpDate.value);
+            }
+        });
+    }
+
+    if (elRetryBtn) {
+        elRetryBtn.addEventListener('click', refetch);
+    }
+
     if (elReset) {
         elReset.addEventListener('click', () => {
             if (elQ) elQ.value = '';
             if (elKind) elKind.value = 'all';
+            if (elCategory) elCategory.value = '';
             if (elStatus) elStatus.value = '';
-            if (elHideCancelled) elHideCancelled.checked = false;
-            if (window.setTsValueSilent) {
-                if (elDriver) window.setTsValueSilent(elDriver, '');
-                if (elVehicle) window.setTsValueSilent(elVehicle, '');
-            } else {
-                if (elDriver) elDriver.value = '';
-                if (elVehicle) elVehicle.value = '';
+            activeCategoryGroup = '';
+            activeAttention = '';
+            if (elHideCancelled) {
+                elHideCancelled.checked = false;
+                try { localStorage.setItem(STORAGE_HIDE_CANCELLED, '0'); } catch (e) {}
             }
+            setSelectValue(elDriver, '');
+            setSelectValue(elVehicle, '');
             refetch();
         });
     }
+
+    window.addEventListener('scroll', hideHoverCard, { passive: true });
+    document.addEventListener('keydown', (e) => {
+        if (e.ctrlKey || e.metaKey || e.altKey) return;
+        if (document.querySelector('.modal.show')) return;
+        const t = e.target;
+        const tag = t && t.tagName ? t.tagName.toUpperCase() : '';
+        if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || (t && t.isContentEditable)) return;
+        if (document.querySelector('.ts-wrapper.dropdown-active')) return;
+
+        if (e.key === '/' && elQ) {
+            e.preventDefault();
+            elQ.focus();
+            elQ.select();
+        } else if (e.key === 't' || e.key === 'T') {
+            e.preventDefault();
+            calendar.today();
+        } else if (e.key === 'ArrowLeft') {
+            e.preventDefault();
+            calendar.prev();
+        } else if (e.key === 'ArrowRight') {
+            e.preventDefault();
+            calendar.next();
+        } else if (e.key === 'm' || e.key === 'M') {
+            e.preventDefault();
+            calendar.changeView('dayGridMonth');
+        } else if (e.key === 'w' || e.key === 'W') {
+            e.preventDefault();
+            calendar.changeView('timeGridWeek');
+        } else if (e.key === 'd' || e.key === 'D') {
+            e.preventDefault();
+            calendar.changeView('timeGridDay');
+        } else if (e.key === 'l' || e.key === 'L') {
+            e.preventDefault();
+            calendar.changeView('listWeek');
+        }
+    });
 });
 </script>
 <?php require __DIR__ . '/../../includes/footer.php'; ?>

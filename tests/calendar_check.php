@@ -85,6 +85,57 @@ check(
     'list view displays period_label (date and time) for both travel and rental'
 );
 check(str_contains($css, 'html[data-bs-theme="dark"] #ops-calendar') && str_contains($css, '.fc-vst-status-cancelled'), 'FullCalendar includes dark mode and status styles');
-check(str_contains($travelForm, "parse_valid_ymd(\$_GET['date']") && str_contains($rentalForm, "parse_valid_ymd(\$_GET['date']"), 'travel and rental forms support optional valid ?date prefill');
+check(str_contains($travelForm, "parse_valid_ymd(\$_GET['date']") && str_contains($rentalForm, "parse_valid_ymd(\$_GET['date']") && str_contains($rentalForm, "parse_valid_ymd(\$_GET['end_date']"), 'travel and rental forms support optional valid ?date and ?end_date prefill');
 check(parse_valid_ymd('2026-11-28') === '2026-11-28' && parse_valid_ymd('2026-02-30') === null && parse_valid_ymd('2026-11-28T09:00:00') === null && parse_valid_ymd('') === null, 'parse_valid_ymd validates strict Y-m-d dates');
+
+// UI/UX upgrades: quick status endpoint, category differentiation, KPI strip, modal quick actions, URL sync, jump date, mobile drawer, drag & hover
+$statusEndpointPath = __DIR__ . '/../pages/dispatch/calendar_status.php';
+$statusEndpoint = is_file($statusEndpointPath) ? file_get_contents($statusEndpointPath) : '';
+check(
+    $statusEndpoint !== ''
+    && str_contains($statusEndpoint, "require_permission('dispatch.view')")
+    && str_contains($statusEndpoint, 'hash_equals(csrf_token()')
+    && str_contains($statusEndpoint, 'booking_find($kind, $bookingId)')
+    && str_contains($statusEndpoint, 'booking_change_status('),
+    'quick status endpoint enforces dispatch RBAC, CSRF, tenant guard, and booking_change_status'
+);
+check(
+    str_contains($events, '$categoryId')
+    && str_contains($events, '$categoryGroup')
+    && str_contains($events, '$classifyServiceGroup')
+    && str_contains($events, "'service_group'")
+    && str_contains($events, "'needs_dispatch'")
+    && str_contains($events, "'is_unpaid'")
+    && str_contains($events, "'can_manage'")
+    && str_contains($events, 'pricing_unit'),
+    'event feed exposes service_group differentiation, dispatch/payment flags, and category filters'
+);
+check(
+    str_contains($view, 'cal-filter-category')
+    && str_contains($view, 'ops-cal-chip')
+    && str_contains($view, 'ops-cal-kpi-strip')
+    && str_contains($view, 'cal-kpi-unassigned-num')
+    && str_contains($view, 'cal-kpi-unpaid-num')
+    && str_contains($view, 'calModalCategoryBadge')
+    && str_contains($view, 'calModalCopyDriverBtn')
+    && str_contains($view, 'calModalQuickStatusWrap')
+    && str_contains($view, 'handleQuickStatusChange')
+    && str_contains($view, 'history.replaceState')
+    && str_contains($view, 'cal-jump-date')
+    && str_contains($view, 'listMonth')
+    && str_contains($view, "scrollTime: '06:30:00'")
+    && str_contains($view, 'cal-error-banner')
+    && str_contains($view, 'cal-mobile-filter-toggle')
+    && str_contains($view, 'selectable: canCreateAny')
+    && str_contains($view, 'ops-cal-hover-card')
+    && str_contains($view, 'calendar.today()'),
+    'calendar UI includes interactive chips, KPI strip, modal quick actions, URL persistence, jump picker, listMonth, error banner, mobile drawer, drag select, hover card, and shortcuts'
+);
+check(
+    str_contains($css, '.ops-cal-kpi-strip')
+    && str_contains($css, '.ops-cal-chip.active')
+    && str_contains($css, '.ops-cal-hover-card')
+    && str_contains($css, '.fc-vst-missing-chip'),
+    'stylesheet defines calendar KPI, chip, hover card, and alert pill styles'
+);
 exit($failures ? 1 : 0);

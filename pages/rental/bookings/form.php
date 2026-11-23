@@ -16,13 +16,16 @@ if ($is_edit) {
 }
 
 $prefillDate = ($_SERVER['REQUEST_METHOD'] !== 'POST' ? parse_valid_ymd($_GET['date'] ?? null) : null) ?? date('Y-m-d');
+$prefillEndRaw = $_SERVER['REQUEST_METHOD'] !== 'POST' ? parse_valid_ymd($_GET['end_date'] ?? null) : null;
+$prefillEndDate = ($prefillEndRaw !== null && $prefillEndRaw >= $prefillDate) ? $prefillEndRaw : $prefillDate;
+$prefillDays = (string) rental_duration_days($prefillDate, $prefillEndDate);
 
 $in  = [
     'date'                       => date('Y-m-d'),
     'time'                       => '05:00',
     'start_date'                 => $prefillDate,
-    'end_date'                   => $prefillDate,
-    'duration_days'              => '1',
+    'end_date'                   => $prefillEndDate,
+    'duration_days'              => $prefillDays,
     'trip'                       => '0',
     'bbm'                        => '0',
     'branch_id'                  => '',
