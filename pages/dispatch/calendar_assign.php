@@ -196,7 +196,6 @@ try {
         'needs_dispatch'     => $needsDispatch,
         'status'             => $newStatus,
         'status_label'       => booking_status_label($newStatus),
-        'group_manifest_url' => $vehicleId > 0 ? (APP_URL . '/pages/dispatch/manifest_group.php?vehicle_id=' . $vehicleId . '&date=' . urlencode($startYmd)) : null,
         'message'            => 'Penugasan armada & sopir berhasil disimpan.',
     ], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
 } catch (Throwable $e) {

@@ -117,7 +117,11 @@ check(
     && str_contains($view, 'cal-kpi-unassigned-num')
     && str_contains($view, 'cal-kpi-unpaid-num')
     && str_contains($view, 'calModalCategoryBadge')
-    && str_contains($view, 'calModalCopyDriverBtn')
+    && str_contains($view, 'id="calEventModal"')
+    && str_contains($view, 'data-bs-focus="false"')
+    && str_contains($view, 'ensureQuickAssignTs')
+    && !str_contains($view, 'calModalCopyDriverBtn')
+    && !str_contains($view, 'Salin Info Sopir')
     && str_contains($view, 'calModalQuickStatusWrap')
     && str_contains($view, 'handleQuickStatusChange')
     && str_contains($view, 'history.replaceState')
@@ -139,13 +143,11 @@ check(
     'stylesheet defines calendar KPI, chip, hover card, and alert pill styles'
 );
 
-// Upgrade operasional lanjutan: Quick Assign, Manifest Gabungan Armada, dan Drag & Drop Reschedule
+// Upgrade operasional lanjutan: Quick Assign dan Drag & Drop Reschedule
 $assignEndpoint = is_file(__DIR__ . '/../pages/dispatch/calendar_assign.php')
     ? file_get_contents(__DIR__ . '/../pages/dispatch/calendar_assign.php') : '';
 $reschedEndpoint = is_file(__DIR__ . '/../pages/dispatch/calendar_reschedule.php')
     ? file_get_contents(__DIR__ . '/../pages/dispatch/calendar_reschedule.php') : '';
-$groupManifest = is_file(__DIR__ . '/../pages/dispatch/manifest_group.php')
-    ? file_get_contents(__DIR__ . '/../pages/dispatch/manifest_group.php') : '';
 
 check(
     $assignEndpoint !== ''
@@ -166,25 +168,20 @@ check(
     'drag reschedule endpoint enforces RBAC, CSRF, date validation, Rental overlap check, and invoice snapshot'
 );
 check(
-    $groupManifest !== ''
-    && str_contains($groupManifest, 'pdf_send_or_html(')
-    && str_contains($groupManifest, 'booking_driver_summaries(')
-    && str_contains($groupManifest, 'copyWaRekapBtn'),
-    'group manifest page supports combined Travel/Rental schedule, PDF output, and WA recap copy'
+    !is_file(__DIR__ . '/../pages/dispatch/manifest_group.php')
+    && !str_contains($view, 'manifest_group.php'),
+    'group manifest feature has been removed cleanly from dispatch'
 );
 check(
     str_contains($events, "'startEditable'")
-    && str_contains($events, "'group_manifest_url'")
     && str_contains($events, "'company_id'"),
-    'calendar events expose drag-drop editability, company_id, and group manifest link'
+    'calendar events expose drag-drop editability and company_id'
 );
 check(
     str_contains($view, 'editable: true')
     && str_contains($view, 'eventDrop:')
     && str_contains($view, 'calModalQuickAssignBox')
-    && str_contains($view, 'calRescheduleModal')
-    && str_contains($view, 'cal-group-manifest-btn')
-    && str_contains($view, 'calModalGroupManifestBtn'),
-    'calendar view implements quick assign panel, group manifest CTA, and drag-drop reschedule modal'
+    && str_contains($view, 'calRescheduleModal'),
+    'calendar view implements quick assign panel and drag-drop reschedule modal'
 );
 exit($failures ? 1 : 0);

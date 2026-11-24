@@ -98,9 +98,17 @@ require __DIR__ . '/../../includes/header.php';
     <div class="card shadow-sm border-0 mb-3">
         <div class="card-header bg-white d-flex justify-content-between align-items-center flex-wrap gap-2">
             <span class="fw-semibold"><i class="bi bi-wallet2 me-1 text-success"></i>Arus Kas Nyata (Buku Kas)</span>
-            <a class="btn btn-outline-primary btn-sm py-0 px-2" href="<?= e(APP_URL) ?>/pages/finance/cash/index.php?from=<?= e($f['from']) ?>&to=<?= e($f['to']) ?><?= is_super_admin() ? '&company_id=' . (int) ($f['filter_company_id'] ?? 0) : '' ?>">
-                Buka Buku Kas <i class="bi bi-arrow-right-short"></i>
-            </a>
+            <div class="d-flex flex-wrap gap-2">
+                <a class="btn btn-outline-success btn-sm py-0 px-2" href="<?= e(APP_URL) ?>/pages/finance/incomes/index.php?from=<?= e($f['from']) ?>&to=<?= e($f['to']) ?><?= is_super_admin() ? '&company_id=' . (int) ($f['filter_company_id'] ?? 0) : '' ?>">
+                    Pemasukan <i class="bi bi-arrow-right-short"></i>
+                </a>
+                <a class="btn btn-outline-danger btn-sm py-0 px-2" href="<?= e(APP_URL) ?>/pages/finance/expenses/index.php?from=<?= e($f['from']) ?>&to=<?= e($f['to']) ?><?= is_super_admin() ? '&company_id=' . (int) ($f['filter_company_id'] ?? 0) : '' ?>">
+                    Pengeluaran <i class="bi bi-arrow-right-short"></i>
+                </a>
+                <a class="btn btn-outline-primary btn-sm py-0 px-2" href="<?= e(APP_URL) ?>/pages/finance/cash/index.php?from=<?= e($f['from']) ?>&to=<?= e($f['to']) ?><?= is_super_admin() ? '&company_id=' . (int) ($f['filter_company_id'] ?? 0) : '' ?>">
+                    Buka Buku Kas <i class="bi bi-arrow-right-short"></i>
+                </a>
+            </div>
         </div>
         <div class="card-body py-2">
             <div class="row g-3 text-center text-md-start align-items-center">
@@ -112,7 +120,11 @@ require __DIR__ . '/../../includes/header.php';
                 <div class="col-6 col-md-3">
                     <div class="small text-muted">Kas Keluar (Periode)</div>
                     <div class="fw-bold text-danger"><?= e(rupiah((float) $cash['out_total'])) ?></div>
-                    <div class="text-muted" style="font-size:.75rem;">Gaji: <?= e(rupiah((float) $cash['out_payroll'])) ?> · Non-Booking: <?= e(rupiah((float) $cash['out_other'])) ?></div>
+                    <?php if ((float) $cash['out_payroll'] > 0): ?>
+                        <div class="text-muted" style="font-size:.75rem;">Gaji: <?= e(rupiah((float) $cash['out_payroll'])) ?> · Non-Booking: <?= e(rupiah((float) $cash['out_other'])) ?></div>
+                    <?php else: ?>
+                        <div class="text-muted" style="font-size:.75rem;">Total pengeluaran kas tercatat</div>
+                    <?php endif; ?>
                 </div>
                 <div class="col-6 col-md-3">
                     <div class="small text-muted">Arus Kas Bersih</div>

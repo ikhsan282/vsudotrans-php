@@ -57,14 +57,15 @@ $header_actions = [
     ['label' => 'Cetak', 'icon' => 'printer',            'href' => 'pages/finance/cash/export.php?' . $export_qs . '&format=html&print=1', 'class' => 'btn btn-outline-secondary btn-sm', 'target' => '_blank'],
 ];
 if (can('finance.manage')) {
-    $header_actions[] = ['label' => 'Transaksi', 'icon' => 'plus-lg', 'href' => 'pages/finance/cash/form.php', 'class' => 'btn btn-primary btn-sm'];
+    $header_actions[] = ['label' => 'Pemasukan',   'icon' => 'arrow-down-circle', 'href' => 'pages/finance/incomes/form.php?return=cash',  'class' => 'btn btn-success btn-sm'];
+    $header_actions[] = ['label' => 'Pengeluaran', 'icon' => 'arrow-up-circle',   'href' => 'pages/finance/expenses/form.php?return=cash', 'class' => 'btn btn-danger btn-sm'];
 }
 
 $active = 'finance';
 $title  = 'Buku Kas';
 require __DIR__ . '/../../../includes/header.php';
 ?>
-<main class="col-12 col-md-9 col-lg-10 p-3 p-lg-4">
+<main class="p-3 p-lg-4 w-100 flex-grow-1 min-w-0">
     <?= ui_page_header(
         'Buku Kas',
         ['Dashboard' => 'pages/dashboard/index.php', 'Keuangan' => null, 'Buku Kas' => null],
@@ -74,7 +75,7 @@ require __DIR__ . '/../../../includes/header.php';
 
     <div class="card shadow-sm border-0 mb-3">
         <div class="card-body py-2 px-3">
-            <form class="row g-2 align-items-end erp-filter-bar" method="get">
+            <form class="row g-2 align-items-end erp-filter-bar erp-filter-bar-wide" method="get">
                 <?php if (is_super_admin()): ?>
                 <div class="col-12 col-sm-6 col-lg-2">
                     <label class="form-label small mb-1">Perusahaan</label>
@@ -160,8 +161,8 @@ require __DIR__ . '/../../../includes/header.php';
                                 <a class="badge bg-primary-subtle text-primary border text-decoration-none ms-1" href="<?= e($refBookHref) ?>" title="Sumber otomatis dari pembayaran pemesanan (Invoice #<?= (int) ($r['ref_invoice_id'] ?? 0) ?>)"><i class="bi bi-link-45deg"></i>Auto Booking</a>
                             <?php elseif ($srcType === 'booking_payment'): ?>
                                 <span class="badge bg-primary-subtle text-primary border ms-1">Auto Booking</span>
-                            <?php elseif ($srcType === 'payroll_period' && $srcId > 0): ?>
-                                <a class="badge bg-info-subtle text-info-emphasis border text-decoration-none ms-1" href="../../payroll/periods/detail.php?id=<?= $srcId ?>" title="Sumber otomatis dari Payroll"><i class="bi bi-link-45deg"></i>Auto Payroll</a>
+                            <?php elseif ($srcType === 'payroll_period'): ?>
+                                <span class="badge bg-info-subtle text-info-emphasis border ms-1">Auto Gaji</span>
                             <?php elseif ($isAuto): ?>
                                 <span class="badge bg-secondary-subtle text-secondary border ms-1">Auto</span>
                             <?php endif; ?>
@@ -174,7 +175,7 @@ require __DIR__ . '/../../../includes/header.php';
                         <td class="text-end text-nowrap">
                             <?php if (can('finance.manage')): ?>
                                 <?php if ($isAuto): ?>
-                                    <span class="text-muted small" title="Transaksi tersinkron otomatis dari sumber (Invoice/Booking/Payroll)"><i class="bi bi-lock-fill"></i></span>
+                                    <span class="text-muted small" title="Transaksi tersinkron otomatis dari sumber (Invoice/Booking)"><i class="bi bi-lock-fill"></i></span>
                                 <?php else: ?>
                                     <a class="btn btn-sm btn-outline-primary" href="form.php?id=<?= (int) $r['id'] ?>" title="Ubah" aria-label="Ubah"><i class="bi bi-pencil-square"></i></a>
                                     <form method="post" action="delete.php" class="d-inline" onsubmit="return confirm('Hapus transaksi ini?')">

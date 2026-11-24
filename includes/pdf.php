@@ -1,7 +1,7 @@
 <?php
 /**
  * Helper PDF bersama (Dompdf, vendor di includes/vendor/dompdf — tanpa Composer).
- * Dipakai invoice, slip payroll, dan laporan (PDF server-side, bukan dialog cetak browser).
+ * Dipakai invoice dan laporan (PDF server-side, bukan dialog cetak browser).
  *
  * Kontrak:
  *  - hanya teks/tabel; TIDAK ada akses jaringan (setIsRemoteEnabled(false)) — jadi

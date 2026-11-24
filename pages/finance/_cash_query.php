@@ -17,6 +17,51 @@ function cash_directions(): array
     return ['in' => 'Masuk', 'out' => 'Keluar'];
 }
 
+function cash_expense_categories(): array
+{
+    return [
+        'BBM'                      => 'BBM / Solar / Bensin',
+        'Tol & Parkir'             => 'Tol, Parkir & Retribusi',
+        'Servis & Perawatan Armada'=> 'Servis, Oli, Ban & Sparepart Armada',
+        'Uang Jalan & Komisi Kru'  => 'Uang Jalan, Uang Makan & Komisi Sopir/Kru',
+        'Gaji & Tunjangan'         => 'Gaji, Tunjangan & Bonus Karyawan',
+        'Sewa & Utilitas Kantor'   => 'Sewa Kantor/Pool, Listrik, Air & Internet',
+        'Operasional & ATK'        => 'ATK, Konsumsi & Operasional Kantor',
+        'Pajak & Legalitas Armada' => 'Pajak Kendaraan, STNK, KIR & Asuransi',
+        'Lain-lain'                => 'Pengeluaran Lain-lain',
+    ];
+}
+
+function cash_income_categories(): array
+{
+    return [
+        'Setoran Modal'      => 'Setoran Modal / Tambahan Kas',
+        'Pendapatan Travel'  => 'Pemasukan Tiket / Charter Travel Manual',
+        'Pendapatan Rental'  => 'Pemasukan Sewa Kendaraan Manual',
+        'Pelunasan Piutang'  => 'Pelunasan Piutang / Titipan',
+        'Komisi & Bagi Hasil'=> 'Komisi Agen, Mitra & Bagi Hasil',
+        'Refund / Retur'     => 'Pengembalian Dana / Refund Supplier',
+        'Pendapatan Lainnya' => 'Pemasukan Lain-lain',
+    ];
+}
+
+/** Urai nominal uang format Indonesia (`250.000`, `250.000,50`) maupun desimal titik (`250000.50`). */
+function cash_parse_amount($raw): float
+{
+    $s = trim(str_ireplace(['Rp', ' '], '', (string) $raw));
+    if ($s === '') {
+        return 0.0;
+    }
+    if (preg_match('/^-?\d+(\.\d{1,2})?$/', $s)) {
+        return (float) $s;
+    }
+    $s = str_replace(['.', ','], ['', '.'], $s);
+    if (!is_numeric($s)) {
+        return 0.0;
+    }
+    return (float) $s;
+}
+
 function cash_direction_badge(string $d): string
 {
     return $d === 'in'
@@ -40,6 +85,8 @@ function cash_filter(?array $in = null): array
         'method'     => max(0, (int) ($in['method'] ?? 0)),
         'direction'  => $dir,
         'company_id' => isset($in['company_id']) && $in['company_id'] !== '' ? max(0, (int) $in['company_id']) : 0,
+        'category'   => trim((string) ($in['category'] ?? '')),
+        'q'          => trim((string) ($in['q'] ?? '')),
     ];
 }
 
@@ -76,10 +123,97 @@ function cash_tx_where(array $f, bool $with_dates = true): array
         $types .= 's';
         $params[] = $f['direction'];
     }
+    if (!empty($f['category'])) {
+        $sql .= ($sql === '' ? '' : ' AND ') . 't.category = ?';
+        $types .= 's';
+        $params[] = (string) $f['category'];
+    }
+    if (!empty($f['q'])) {
+        $like = '%' . $f['q'] . '%';
+        $sql .= ($sql === '' ? '' : ' AND ') . '(t.category LIKE ? OR t.description LIKE ?)';
+        $types .= 'ss';
+        $params[] = $like;
+        $params[] = $like;
+    }
     if ($sql === '') {
         $sql = '1=1';
     }
     return ['sql' => ($w !== '' ? $w . ' AND ' : '') . $sql, 'types' => $types, 'params' => $params];
+}
+
+/** Rincian total transaksi per kategori untuk arah 'in' atau 'out' dalam rentang filter. */
+function cash_category_breakdown(array $f, string $direction = 'out'): array
+{
+    finance_ensure_schema();
+    $ef = $f;
+    $ef['direction'] = $direction === 'in' ? 'in' : 'out';
+    $tw = cash_tx_where($ef);
+    $sql = "SELECT COALESCE(NULLIF(TRIM(t.category), ''), 'Tanpa Kategori') AS category,
+                   COUNT(*) AS tx_count,
+                   COALESCE(SUM(t.amount), 0) AS total_amount
+              FROM cash_transactions t
+             WHERE {$tw['sql']}
+             GROUP BY category
+             ORDER BY total_amount DESC, category ASC";
+    $st = db()->prepare($sql);
+    if ($tw['types'] !== '') {
+        $st->bind_param($tw['types'], ...$tw['params']);
+    }
+    $st->execute();
+    $rows = $st->get_result()->fetch_all(MYSQLI_ASSOC);
+    $st->close();
+    return $rows;
+}
+
+/** Rincian total pengeluaran per kategori dalam rentang filter. */
+function cash_expense_category_breakdown(array $f): array
+{
+    return cash_category_breakdown($f, 'out');
+}
+
+/** Rincian total pemasukan per kategori dalam rentang filter. */
+function cash_income_category_breakdown(array $f): array
+{
+    return cash_category_breakdown($f, 'in');
+}
+
+/** Daftar unik kategori (preset + transaksi yang sudah ada) untuk filter/datalist. */
+function cash_distinct_categories(array $f, string $direction = 'out'): array
+{
+    finance_ensure_schema();
+    $presets = $direction === 'in' ? array_keys(cash_income_categories()) : array_keys(cash_expense_categories());
+    $cf = [
+        'from'       => '',
+        'to'         => '',
+        'method'     => 0,
+        'direction'  => in_array($direction, ['in', 'out'], true) ? $direction : 'all',
+        'company_id' => (int) ($f['company_id'] ?? 0),
+        'category'   => '',
+        'q'          => '',
+    ];
+    $tw = cash_tx_where($cf, false);
+    $sql = "SELECT DISTINCT TRIM(t.category) AS category
+              FROM cash_transactions t
+             WHERE {$tw['sql']}
+               AND t.category IS NOT NULL AND TRIM(t.category) <> ''
+             ORDER BY category ASC";
+    $st = db()->prepare($sql);
+    if ($tw['types'] !== '') {
+        $st->bind_param($tw['types'], ...$tw['params']);
+    }
+    $st->execute();
+    $dbCats = array_column($st->get_result()->fetch_all(MYSQLI_ASSOC), 'category');
+    $st->close();
+
+    $custom = [];
+    foreach ($dbCats as $dc) {
+        $dc = trim((string) $dc);
+        if ($dc !== '' && !in_array($dc, $presets, true)) {
+            $custom[] = $dc;
+        }
+    }
+    natcasesort($custom);
+    return array_values(array_merge($presets, $custom));
 }
 
 /** Daftar metode pembayaran aktif untuk dropdown/filter Buku Kas. */

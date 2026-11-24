@@ -675,214 +675,323 @@ document.addEventListener('DOMContentLoaded', function () {
     if (!f || !f.querySelectorAll) return;
     f.querySelectorAll(sel).forEach(applyNorm);
   }, true);
-
-  // Global Quick Search (Ctrl+K / Topbar Search)
-  (function initGlobalQuickSearch() {
-    const modalEl = document.getElementById('globalSearchModal');
-    const triggerEl = document.getElementById('globalSearchTrigger');
-    const inputEl = document.getElementById('globalSearchInput');
-    const resultsEl = document.getElementById('globalSearchResults');
-    const spinnerEl = document.getElementById('globalSearchSpinner');
-    const metaEl = document.getElementById('globalSearchMeta');
-    if (!modalEl || !inputEl || !resultsEl || !window.bootstrap?.Modal) return;
-
-    const appBase = String(window.__VST_APP_URL || '').replace(/\/+$/, '');
-    const esc = (s) => String(s == null ? '' : s)
-      .replace(/&/g, '&amp;')
-      .replace(/</g, '&lt;')
-      .replace(/>/g, '&gt;')
-      .replace(/"/g, '&quot;')
-      .replace(/'/g, '&#39;');
-
-    // Bangun indeks menu yang sudah difilter RBAC di DOM sidebar
-    const menuItems = [];
-    const seenUrls = new Set();
-    document.querySelectorAll('#sidebar ul.nav a.nav-link[href]').forEach(function (a) {
-      const href = a.getAttribute('href') || '';
-      if (!href || href === '#' || href.startsWith('#') || href.startsWith('javascript:') || a.hasAttribute('data-bs-toggle') || seenUrls.has(href)) return;
-      seenUrls.add(href);
-      const label = (a.textContent || '').replace(/\s+/g, ' ').trim();
-      if (!label || /keluar/i.test(label)) return;
-      const grpEl = a.closest('.collapse');
-      const grpBtn = grpEl ? document.querySelector('[href="#' + grpEl.id + '"]') : null;
-      const grpLabel = grpBtn ? (grpBtn.textContent || '').replace(/\s+/g, ' ').trim() : 'Menu Utama';
-      const iconEl = a.querySelector('i.bi');
-      const iconCls = iconEl ? Array.from(iconEl.classList).find(c => c.startsWith('bi-')) || 'bi-arrow-right-short' : 'bi-arrow-right-short';
-      menuItems.push({ title: label, subtitle: grpLabel, badge: 'Menu', url: href, icon: iconCls });
-    });
-    if (window.__VST_CAN_DISPATCH && appBase) {
-      const gmHref = appBase + '/pages/dispatch/manifest_group.php';
-      if (!seenUrls.has(gmHref)) {
-        menuItems.push({ title: 'Manifest Gabungan Armada', subtitle: 'Operasional & Armada', badge: 'Cetak', url: gmHref, icon: 'bi-card-checklist' });
-      }
-    }
-
-    let debounceTimer = null;
-    let activeAbort = null;
-    let activeIdx = 0;
-
-    function getNavItems() {
-      return Array.from(resultsEl.querySelectorAll('a.gs-result-item'));
-    }
-
-    function setActiveIndex(nextIdx) {
-      const list = getNavItems();
-      if (!list.length) { activeIdx = -1; return; }
-      activeIdx = ((nextIdx % list.length) + list.length) % list.length;
-      list.forEach((el, idx) => {
-        el.classList.toggle('is-active', idx === activeIdx);
-      });
-      list[activeIdx].scrollIntoView({ block: 'nearest' });
-    }
-
-    function filterLocalMenus(q) {
-      const ql = q.trim().toLowerCase();
-      if (!ql) return menuItems.slice(0, 6);
-      return menuItems.filter(m =>
-        m.title.toLowerCase().includes(ql) || m.subtitle.toLowerCase().includes(ql)
-      ).slice(0, 5);
-    }
-
-    function renderGroups(menuMatches, apiGroups, q) {
-      const allGroups = [];
-      if (menuMatches.length > 0) {
-        allGroups.push({
-          key: 'menus',
-          label: q.trim() ? 'Menu & Halaman' : 'Navigasi Cepat',
-          icon: 'bi-compass',
-          items: menuMatches
-        });
-      }
-      if (Array.isArray(apiGroups)) {
-        apiGroups.forEach(g => allGroups.push(g));
-      }
-
-      if (!allGroups.length) {
-        resultsEl.innerHTML = '<div class="gs-empty small text-body-secondary text-center py-4">Tidak ada hasil yang cocok untuk "' + esc(q) + '".</div>';
-        if (metaEl) metaEl.textContent = '0 hasil';
-        return;
-      }
-
-      let html = '';
-      let totalCnt = 0;
-      allGroups.forEach(grp => {
-        const items = Array.isArray(grp.items) ? grp.items : [];
-        if (!items.length) return;
-        html += '<div class="gs-group-label px-2 py-1">'
-          + '<i class="bi ' + esc(grp.icon || 'bi-folder') + ' me-1" aria-hidden="true"></i>' + esc(grp.label || '')
-          + '</div>';
-        items.forEach(it => {
-          totalCnt++;
-          html += '<a href="' + esc(it.url || '#') + '" class="gs-result-item d-flex align-items-center justify-content-between gap-2 px-3 py-2 rounded-2 text-decoration-none">'
-            + '<div class="min-w-0">'
-            + '<div class="fw-semibold small text-body text-truncate">' + esc(it.title || '-') + '</div>'
-            + (it.subtitle ? '<div class="text-body-secondary text-truncate" style="font-size:.74rem">' + esc(it.subtitle) + '</div>' : '')
-            + '</div>'
-            + (it.badge ? '<span class="badge bg-body-secondary text-body border fw-normal flex-shrink-0">' + esc(it.badge) + '</span>' : '')
-            + '</a>';
-        });
-      });
-      resultsEl.innerHTML = html;
-      setActiveIndex(0);
-      if (metaEl) metaEl.textContent = totalCnt + ' hasil';
-    }
-
-    function renderSearchSkeleton(q) {
-      let rows = '<div class="vst-skel-search"><div class="vst-skel-bar mb-2"></div>';
-      for (let i = 0; i < 3; i++) {
-        rows += '<div class="vst-skel-search-row">'
-          + '<span class="vst-skel vst-skel-line" style="width:' + (68 - i * 10) + '%"></span>'
-          + '<span class="vst-skel vst-skel-line mb-0" style="width:' + (46 - i * 6) + '%;height:9px"></span>'
-          + '</div>';
-      }
-      rows += '</div>';
-      const menuMatches = filterLocalMenus(q);
-      if (menuMatches.length > 0) {
-        renderGroups(menuMatches, [], q);
-        resultsEl.insertAdjacentHTML('beforeend', rows);
-      } else {
-        resultsEl.innerHTML = rows;
-      }
-      if (metaEl) metaEl.textContent = 'Mencari…';
-    }
-
-    async function runSearch(q) {
-      const trimmed = q.trim();
-      const menuMatches = filterLocalMenus(trimmed);
-      if (trimmed.length < 2) {
-        if (activeAbort) { activeAbort.abort(); activeAbort = null; }
-        if (spinnerEl) spinnerEl.classList.add('d-none');
-        renderGroups(menuMatches, [], trimmed);
-        return;
-      }
-
-      renderSearchSkeleton(trimmed);
-      if (activeAbort) activeAbort.abort();
-      activeAbort = new AbortController();
-      if (spinnerEl) spinnerEl.classList.remove('d-none');
-
-      try {
-        const res = await fetch(appBase + '/pages/search/global.php?q=' + encodeURIComponent(trimmed), {
-          credentials: 'same-origin',
-          signal: activeAbort.signal
-        });
-        const data = await res.json().catch(() => ({}));
-        if (inputEl.value.trim() !== trimmed) return;
-        renderGroups(menuMatches, (res.ok && data.ok && Array.isArray(data.groups)) ? data.groups : [], trimmed);
-      } catch (err) {
-        if (err && err.name === 'AbortError') return;
-      } finally {
-        if (spinnerEl) spinnerEl.classList.add('d-none');
-      }
-    }
-
-    function openGlobalSearch() {
-      runSearch(inputEl.value);
-      const inst = bootstrap.Modal.getOrCreateInstance(modalEl);
-      inst.show();
-    }
-
-    if (triggerEl) {
-      triggerEl.addEventListener('click', openGlobalSearch);
-    }
-
-    modalEl.addEventListener('shown.bs.modal', function () {
-      window.requestAnimationFrame(function () {
-        inputEl.focus();
-        inputEl.select();
-      });
-    });
-
-    inputEl.addEventListener('input', function () {
-      clearTimeout(debounceTimer);
-      debounceTimer = setTimeout(() => runSearch(inputEl.value), 220);
-    });
-
-    inputEl.addEventListener('keydown', function (e) {
-      const list = getNavItems();
-      if (e.key === 'ArrowDown') {
-        e.preventDefault();
-        if (list.length) setActiveIndex(activeIdx + 1);
-      } else if (e.key === 'ArrowUp') {
-        e.preventDefault();
-        if (list.length) setActiveIndex(activeIdx - 1);
-      } else if (e.key === 'Enter') {
-        if (list.length && activeIdx >= 0 && list[activeIdx]) {
-          e.preventDefault();
-          window.location.href = list[activeIdx].href;
-        }
-      }
-    });
-
-    document.addEventListener('keydown', function (e) {
-      if ((e.ctrlKey || e.metaKey) && !e.shiftKey && !e.altKey && String(e.key || '').toLowerCase() === 'k') {
-        e.preventDefault();
-        if (modalEl.classList.contains('show')) {
-          bootstrap.Modal.getOrCreateInstance(modalEl).hide();
-        } else {
-          openGlobalSearch();
-        }
-      }
-    });
-  })();
 });
+
+// ── Global Interactive Loading System (Progress Bar + Shimmer Workspace + Button Spinner) ──
+(function initInteractiveLoader() {
+  if (window.vstLoader) return;
+
+  const DOWNLOAD_RE = /export\.php|_export\.php|print\.php|manifest\.php|[?&](format|export)=(pdf|csv|xlsx)|[?&](download|template)=1/i;
+  const NAV_STORAGE_KEY = 'vst_nav_pending';
+
+  const progressEl = document.getElementById('vstNavProgress');
+  const barEl      = progressEl ? progressEl.querySelector('.vst-nav-progress-bar') : null;
+  const overlayEl  = document.getElementById('vstPageLoader');
+  const titleEl    = document.getElementById('vstPageLoaderTitle');
+  const subEl      = document.getElementById('vstPageLoaderSub');
+
+  let barVal       = 0;
+  let barTimer     = null;
+  let finishTimer  = null;
+  let pulseTimer   = null;
+  let overlayTimer = null;
+  let safetyTimer  = null;
+  let fetchInFlight = 0;
+  const busyButtons = new Set();
+
+  function setBarScale(v) {
+    barVal = Math.max(0, Math.min(1, v));
+    if (barEl) barEl.style.transform = 'scaleX(' + barVal + ')';
+  }
+
+  function startBar() {
+    if (!progressEl || !barEl) return;
+    window.clearTimeout(finishTimer);
+    progressEl.classList.add('is-active');
+    if (barVal < 0.22) setBarScale(0.22);
+    if (barTimer) return;
+    barTimer = window.setInterval(function () {
+      if (barVal < 0.52) setBarScale(0.52);
+      else if (barVal < 0.78) setBarScale(0.78);
+      else if (barVal < 0.88) setBarScale(0.88);
+      else if (barVal < 0.94) setBarScale(barVal + 0.015);
+    }, 260);
+  }
+
+  function finishBar() {
+    if (!progressEl || !barEl) return;
+    window.clearInterval(barTimer);
+    barTimer = null;
+    window.clearTimeout(finishTimer);
+    setBarScale(1);
+    finishTimer = window.setTimeout(function () {
+      progressEl.classList.remove('is-active');
+      window.setTimeout(function () {
+        if (!progressEl.classList.contains('is-active')) setBarScale(0);
+      }, 240);
+    }, 180);
+  }
+
+  function pulseBar(ms) {
+    window.clearTimeout(pulseTimer);
+    startBar();
+    pulseTimer = window.setTimeout(finishBar, Math.max(400, Number(ms) || 1400));
+  }
+
+  function hideOverlay() {
+    window.clearTimeout(overlayTimer);
+    overlayTimer = null;
+    window.clearTimeout(safetyTimer);
+    safetyTimer = null;
+    if (!overlayEl) return;
+    overlayEl.classList.remove('is-active');
+    overlayEl.setAttribute('aria-hidden', 'true');
+  }
+
+  function showOverlay(title, sub, immediate) {
+    if (!overlayEl) return;
+    if (titleEl) titleEl.textContent = title || 'Memuat halaman…';
+    if (subEl) subEl.textContent = sub || 'Menyiapkan data workspace…';
+    window.clearTimeout(overlayTimer);
+    window.clearTimeout(safetyTimer);
+    const activate = function () {
+      overlayEl.classList.add('is-active');
+      overlayEl.setAttribute('aria-hidden', 'false');
+    };
+    if (immediate) {
+      activate();
+    } else {
+      overlayTimer = window.setTimeout(activate, 90);
+    }
+    safetyTimer = window.setTimeout(resetAll, 12000);
+  }
+
+  function setButtonLoading(btn, label) {
+    if (!btn) return;
+    if (btn.dataset.vstOrigHtml === undefined) {
+      btn.dataset.vstOrigHtml = btn.innerHTML;
+      btn.dataset.vstOrigMinWidth = btn.style.minWidth || '';
+      const rect = btn.getBoundingClientRect();
+      if (rect && rect.width > 0) {
+        btn.style.minWidth = Math.ceil(rect.width) + 'px';
+      }
+    }
+    const rectW = btn.getBoundingClientRect().width;
+    const rawText = (label || btn.getAttribute('data-loading-text') || btn.textContent || '').replace(/\s+/g, ' ').trim();
+    const isIconOnly = btn.textContent.replace(/\s+/g, '').trim() === '' && rectW > 0 && rectW < 48;
+
+    const frag = document.createDocumentFragment();
+    const sp = document.createElement('span');
+    sp.className = isIconOnly ? 'spinner-border spinner-border-sm' : 'spinner-border spinner-border-sm me-1';
+    sp.setAttribute('role', 'status');
+    sp.setAttribute('aria-hidden', 'true');
+    frag.appendChild(sp);
+    if (!isIconOnly) {
+      const txt = document.createElement('span');
+      txt.textContent = rawText || 'Memproses…';
+      frag.appendChild(txt);
+    }
+
+    btn.replaceChildren(frag);
+    btn.classList.add('vst-btn-loading');
+    btn.setAttribute('aria-busy', 'true');
+    busyButtons.add(btn);
+  }
+
+  function clearButtonLoading(btn) {
+    if (!btn || btn.dataset.vstOrigHtml === undefined) return;
+    btn.innerHTML = btn.dataset.vstOrigHtml;
+    delete btn.dataset.vstOrigHtml;
+    btn.style.minWidth = btn.dataset.vstOrigMinWidth || '';
+    delete btn.dataset.vstOrigMinWidth;
+    btn.classList.remove('vst-btn-loading');
+    btn.removeAttribute('aria-busy');
+    busyButtons.delete(btn);
+  }
+
+  function resetAll() {
+    window.clearTimeout(pulseTimer);
+    fetchInFlight = 0;
+    hideOverlay();
+    window.clearInterval(barTimer);
+    barTimer = null;
+    window.clearTimeout(finishTimer);
+    if (progressEl) progressEl.classList.remove('is-active');
+    setBarScale(0);
+    document.querySelectorAll('form[data-vst-submitting="1"]').forEach(function (f) {
+      delete f.dataset.vstSubmitting;
+    });
+    Array.from(busyButtons).forEach(clearButtonLoading);
+  }
+
+  function markPending() {
+    try {
+      sessionStorage.setItem(NAV_STORAGE_KEY, JSON.stringify({ ts: Date.now() }));
+    } catch (err) {}
+  }
+
+  // 1. Interceptor klik tautan internal (bubble phase agar menghormati preventDefault / confirm)
+  document.addEventListener('click', function (e) {
+    if (e.defaultPrevented || e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
+    const a = e.target && e.target.closest ? e.target.closest('a[href]') : null;
+    if (!a) return;
+    if (a.hasAttribute('download') || a.hasAttribute('data-bs-toggle') || a.hasAttribute('data-no-loader')) return;
+    const tgt = (a.getAttribute('target') || '').trim().toLowerCase();
+    if (tgt && tgt !== '_self') return;
+
+    const rawHref = (a.getAttribute('href') || '').trim();
+    if (!rawHref || rawHref.startsWith('#') || /^(javascript|mailto|tel|blob|data):/i.test(rawHref)) return;
+
+    let url;
+    try {
+      url = new URL(a.href, window.location.href);
+    } catch (err) {
+      return;
+    }
+    if (url.origin !== window.location.origin) return;
+    if (url.href === window.location.href || (url.pathname === window.location.pathname && url.search === window.location.search && url.hash !== '')) {
+      return;
+    }
+
+    if (DOWNLOAD_RE.test(url.pathname + url.search)) {
+      pulseBar(1500);
+      return;
+    }
+
+    const isSidebar = !!a.closest('#sidebar');
+    const linkTxt = (a.textContent || '').replace(/\s+/g, ' ').trim();
+    let title = 'Memuat halaman…';
+    let sub   = 'Menyiapkan data halaman…';
+
+    if (/\/logout\.php$/i.test(url.pathname)) {
+      title = 'Mengakhiri sesi…';
+      sub   = 'Keluar dari sistem secara aman…';
+    } else if (isSidebar && linkTxt) {
+      title = 'Memuat ' + linkTxt + '…';
+      sub   = 'Menyiapkan data modul…';
+    } else if (a.closest('.topbar-dropdown, .topbar-pill')) {
+      title = linkTxt ? ('Membuka ' + linkTxt + '…') : 'Memuat halaman…';
+      sub   = 'Menyiapkan tampilan workspace…';
+    } else if (linkTxt && linkTxt.length <= 42) {
+      title = 'Membuka ' + linkTxt + '…';
+    }
+
+    markPending();
+    startBar();
+    showOverlay(title, sub, isSidebar);
+  }, false);
+
+  // 2. Interceptor submit form standar (bubble phase, tanpa disable tombol agar name/value tetap terkirim)
+  document.addEventListener('submit', function (e) {
+    if (e.defaultPrevented) return;
+    const form = e.target;
+    if (!form || form.tagName !== 'FORM') return;
+    if (form.hasAttribute('data-no-loader') || form.hasAttribute('data-ajax')) return;
+    const tgt = (form.getAttribute('target') || '').trim().toLowerCase();
+    if (tgt && tgt !== '_self') return;
+
+    const actionStr = form.getAttribute('action') || window.location.href;
+    if (DOWNLOAD_RE.test(actionStr)) {
+      pulseBar(1500);
+      return;
+    }
+
+    if (form.dataset.vstSubmitting === '1') {
+      e.preventDefault();
+      return;
+    }
+
+    let btn = e.submitter || null;
+    if (!btn && form.id && window.CSS && CSS.escape) {
+      btn = document.querySelector('button[type="submit"][form="' + CSS.escape(form.id) + '"]');
+    }
+    if (!btn) {
+      btn = form.querySelector('button[type="submit"], button:not([type]), input[type="submit"]');
+    }
+
+    form.dataset.vstSubmitting = '1';
+    const method = String(form.getAttribute('method') || 'get').toLowerCase();
+    let title = 'Memproses permintaan…';
+    let sub   = 'Mohon tunggu sebentar…';
+    let btnText = (btn && btn.getAttribute('data-loading-text')) || 'Memproses…';
+
+    if (/\/companies\/switch\.php/i.test(actionStr)) {
+      const compLabel = btn ? (btn.textContent || '').replace(/\s+/g, ' ').trim() : '';
+      title   = compLabel ? ('Beralih ke ' + compLabel + '…') : 'Beralih perusahaan…';
+      sub     = 'Memuat konteks data perusahaan aktif…';
+      btnText = 'Mengalihkan…';
+    } else if (/delete\.php/i.test(actionStr)) {
+      title   = 'Menghapus data…';
+      sub     = 'Memperbarui basis data sistem…';
+      btnText = 'Menghapus…';
+    } else if (method === 'get') {
+      title   = 'Menerapkan filter…';
+      sub     = 'Menyaring data sesuai kriteria…';
+      btnText = (btn && btn.getAttribute('data-loading-text')) || 'Memfilter…';
+    } else {
+      title   = 'Menyimpan perubahan…';
+      sub     = 'Mengirim data ke server…';
+      btnText = (btn && btn.getAttribute('data-loading-text')) || 'Menyimpan…';
+    }
+
+    markPending();
+    if (btn && btn.tagName === 'BUTTON') {
+      setButtonLoading(btn, btnText);
+    }
+    startBar();
+    showOverlay(title, sub, method === 'post');
+
+    window.setTimeout(function () {
+      if (form.dataset.vstSubmitting === '1') {
+        delete form.dataset.vstSubmitting;
+        if (btn) clearButtonLoading(btn);
+        hideOverlay();
+      }
+    }, 15000);
+  }, false);
+
+  // 3. Tracking fetch() same-origin untuk progress bar atas
+  if (typeof window.fetch === 'function' && !window.__vstFetchWrapped) {
+    window.__vstFetchWrapped = true;
+    const origFetch = window.fetch.bind(window);
+    window.fetch = function (input, init) {
+      let sameOrigin = false;
+      try {
+        const rawUrl = typeof input === 'string' ? input : (input && input.url ? input.url : '');
+        if (rawUrl) {
+          sameOrigin = new URL(rawUrl, window.location.href).origin === window.location.origin;
+        }
+      } catch (err) {}
+
+      if (!sameOrigin) {
+        return origFetch(input, init);
+      }
+
+      fetchInFlight++;
+      startBar();
+      return origFetch(input, init).finally(function () {
+        fetchInFlight = Math.max(0, fetchInFlight - 1);
+        if (fetchInFlight === 0) finishBar();
+      });
+    };
+  }
+
+  // 4. Pemulihan otomatis saat bfcache Back/Forward atau tombol Escape
+  window.addEventListener('pageshow', resetAll);
+  document.addEventListener('keydown', function (e) {
+    if (e.key === 'Escape' && overlayEl && overlayEl.classList.contains('is-active')) {
+      resetAll();
+    }
+  });
+
+  window.vstLoader = {
+    start: function (title, sub, withOverlay) {
+      startBar();
+      if (withOverlay) showOverlay(title, sub, true);
+    },
+    done: resetAll,
+    pulse: pulseBar,
+    setButtonLoading: setButtonLoading,
+    clearButtonLoading: clearButtonLoading
+  };
+})();

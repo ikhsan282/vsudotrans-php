@@ -201,8 +201,6 @@ function master_tables(): array
             'unique' => 'company_or_null', // company_id NULL = berlaku semua perusahaan
             'fields' => [
                 mf_code(), mf_name(), mf_level(),
-                ['col' => 'basic_salary', 'label' => 'Standar Gaji Pokok', 'list_label' => 'Gaji Pokok', 'type' => 'money', 'required' => false, 'perm' => 'payroll.view'],
-                ['col' => 'daily_allowance', 'label' => 'Standar Uang Harian', 'list_label' => 'Uang Harian', 'type' => 'money', 'required' => false, 'perm' => 'payroll.view'],
                 mf_note(), mf_active(),
             ],
             'blockers' => [

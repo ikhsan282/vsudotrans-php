@@ -405,9 +405,6 @@ foreach ($rows as $row) {
             : APP_URL . '/pages/dispatch/manifest.php?type=' . $kind . '&booking_id=' . $id)
         : null;
     $vehIdInt = (int) ($row['vehicle_id'] ?? 0);
-    $groupManifestUrl = ($status !== 'cancelled' && $vehIdInt > 0)
-        ? (APP_URL . '/pages/dispatch/manifest_group.php?vehicle_id=' . $vehIdInt . '&date=' . urlencode($rawStart))
-        : null;
     $rowCanManage = $kind === 'rental' ? $rentalCanManage : $travelCanManage;
 
     $events[] = [
@@ -481,7 +478,6 @@ foreach ($rows as $row) {
             'note'                => trim((string) ($row['note'] ?? '')),
             'detail_url'          => $detailUrl,
             'manifest_url'        => $manifestUrl,
-            'group_manifest_url'  => $groupManifestUrl,
             'details'             => implode(' · ', $details),
         ],
     ];

@@ -1,51 +1,281 @@
 <?php
-require_once __DIR__ . '/finance_sync.php';
-
 /**
- * Payroll service — gaji karyawan per periode bulanan.
+ * Layanan Komponen Gaji (`salary_components` & `employee_salary_components`).
  *
- * Alur: draft (generate) -> final (dikunci angkanya) -> paid (sudah dibayar).
- * Nilai gaji pokok, uang harian, hari hadir, dan potongan disimpan per item
- * di payroll_items.
+ * Alur:
+ *   Master Komponen (`salary_components`) -> Penugasan ke Karyawan bermasa berlaku (`employee_salary_components`).
  *
- * Kontrak: sukses -> return array, error -> throw. Semua fungsi company-scoped
+ * Kontrak: sukses -> return array/int, error -> throw. Semua fungsi company-scoped
  * (is_super_admin() boleh lintas perusahaan).
  */
 
-/** Nama bulan Indonesia, 1-12. */
-function payroll_month_name(int $m): string
+/** Urai input nominal uang (`3.200.000`, `3.200.000,50`, `3200000.50`, >= 0). */
+function payroll_parse_money($raw): float
 {
-    $names = [1 => 'Januari', 'Februari', 'Maret', 'April', 'Mei', 'Juni',
-        'Juli', 'Agustus', 'September', 'Oktober', 'November', 'Desember'];
-    return $names[$m] ?? ('Bulan ' . $m);
+    $s = trim(str_ireplace(['Rp', ' '], '', (string) $raw));
+    if ($s === '') {
+        return 0.0;
+    }
+    if (preg_match('/^-?\d+\.\d{1,2}$/', $s)) {
+        return max(0.0, (float) $s);
+    }
+    $s = str_replace(['.', ','], ['', '.'], $s);
+    return max(0.0, (float) $s);
 }
 
-/** Label periode: "Oktober 2026". */
-function payroll_period_label(array $p): string
+/** Validasi tanggal strict Y-m-d. */
+function payroll_valid_ymd(string $raw): bool
 {
-    return payroll_month_name((int) $p['period_month']) . ' ' . (int) $p['period_year'];
+    $d = DateTime::createFromFormat('Y-m-d', $raw);
+    return $d !== false && $d->format('Y-m-d') === $raw;
 }
 
-/** Rumus gaji bersih. Satu tempat, dipakai generate & update. */
-function payroll_net(float $basic, float $daily, int $days, float $deductions): float
+/** Daftar kategori komponen gaji. */
+function payroll_component_categories(): array
 {
-    return round($basic + ($daily * $days) - $deductions, 2);
+    return [
+        'earning'   => 'Pendapatan (+)',
+        'deduction' => 'Potongan (-)',
+    ];
 }
 
-function payroll_status_badge(string $s): string
+/** Daftar basis perhitungan komponen gaji. */
+function payroll_component_bases(): array
 {
-    $map = ['draft' => 'secondary', 'final' => 'info', 'paid' => 'success'];
-    $label = ['draft' => 'Draft', 'final' => 'Final', 'paid' => 'Dibayar'];
-    return '<span class="badge bg-' . ($map[$s] ?? 'secondary') . '">' . e($label[$s] ?? $s) . '</span>';
+    return [
+        'monthly' => 'Tetap Bulanan',
+        'daily'   => 'Per Hari Hadir',
+    ];
 }
 
-/** Periode + jumlah item & total gaji bersih. null bila tidak ada. */
-function payroll_period_find(int $id): ?array
+function payroll_component_category_badge(string $cat): string
 {
-    $st = db()->prepare('SELECT p.*,
-            (SELECT COUNT(*) FROM payroll_items i WHERE i.payroll_period_id = p.id) AS item_count,
-            (SELECT COALESCE(SUM(i.net_salary),0) FROM payroll_items i WHERE i.payroll_period_id = p.id) AS total_net
-        FROM payroll_periods p WHERE p.id = ? LIMIT 1');
+    if ($cat === 'deduction') {
+        return '<span class="badge bg-danger-subtle text-danger-emphasis border border-danger-subtle">Potongan (-)</span>';
+    }
+    return '<span class="badge bg-success-subtle text-success-emphasis border border-success-subtle">Pendapatan (+)</span>';
+}
+
+function payroll_component_basis_badge(string $basis): string
+{
+    if ($basis === 'daily') {
+        return '<span class="badge bg-info-subtle text-info-emphasis border border-info-subtle">Per Hari Hadir</span>';
+    }
+    return '<span class="badge bg-primary-subtle text-primary-emphasis border border-primary-subtle">Tetap Bulanan</span>';
+}
+
+/** Hitung status masa berlaku penugasan (`active|upcoming|expired`) relatif terhadap tanggal acuan. */
+function payroll_assignment_status(array $row, ?string $ref_date = null): string
+{
+    $ref  = $ref_date ?: date('Y-m-d');
+    $from = (string) ($row['effective_from'] ?? '');
+    $to   = trim((string) ($row['effective_to'] ?? ''));
+    if ($from !== '' && $from > $ref) {
+        return 'upcoming';
+    }
+    if ($to !== '' && $to < $ref) {
+        return 'expired';
+    }
+    return 'active';
+}
+
+function payroll_assignment_status_badge(string $status): string
+{
+    return match ($status) {
+        'upcoming' => '<span class="badge bg-warning-subtle text-warning-emphasis border border-warning-subtle">Akan Datang</span>',
+        'expired'  => '<span class="badge bg-secondary-subtle text-secondary-emphasis border border-secondary-subtle">Berakhir</span>',
+        default    => '<span class="badge bg-success-subtle text-success-emphasis border border-success-subtle">Aktif</span>',
+    };
+}
+
+/**
+ * Pastikan 2 tabel komponen gaji ada, seed 6 komponen awal per perusahaan bila kosong,
+ * serta migrasikan nilai `employees.basic_salary` / `daily_allowance` lama secara aman.
+ */
+function payroll_ensure_salary_schema(): void
+{
+    static $checked = false;
+    if ($checked) {
+        return;
+    }
+    $checked = true;
+    $db = db();
+
+    $db->query("CREATE TABLE IF NOT EXISTS `salary_components` (
+        `id` INT(11) NOT NULL AUTO_INCREMENT,
+        `company_id` INT(11) DEFAULT NULL COMMENT 'NULL = berlaku semua perusahaan',
+        `code` VARCHAR(20) NOT NULL,
+        `name` VARCHAR(255) NOT NULL,
+        `category` ENUM('earning','deduction') NOT NULL DEFAULT 'earning',
+        `calc_basis` ENUM('monthly','daily') NOT NULL DEFAULT 'monthly',
+        `note` VARCHAR(2000) DEFAULT NULL,
+        `is_active` TINYINT(1) NOT NULL DEFAULT 1,
+        `created_user` VARCHAR(255) DEFAULT NULL,
+        `created_date` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        `modified_user` VARCHAR(255) DEFAULT NULL,
+        `modified_date` DATETIME DEFAULT NULL,
+        PRIMARY KEY (`id`),
+        UNIQUE KEY `uq_salary_components_code` (`company_id`, `code`),
+        KEY `ix_salary_components_company` (`company_id`),
+        CONSTRAINT `fk_salary_components_company` FOREIGN KEY (`company_id`) REFERENCES `companies` (`id`) ON DELETE CASCADE
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci");
+
+    $db->query("CREATE TABLE IF NOT EXISTS `employee_salary_components` (
+        `id` INT(11) NOT NULL AUTO_INCREMENT,
+        `company_id` INT(11) NOT NULL,
+        `employee_id` INT(11) NOT NULL,
+        `salary_component_id` INT(11) NOT NULL,
+        `amount` DECIMAL(18,2) NOT NULL DEFAULT 0,
+        `effective_from` DATE NOT NULL,
+        `effective_to` DATE DEFAULT NULL,
+        `note` VARCHAR(500) DEFAULT NULL,
+        `created_user` VARCHAR(255) DEFAULT NULL,
+        `created_date` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        `modified_user` VARCHAR(255) DEFAULT NULL,
+        `modified_date` DATETIME DEFAULT NULL,
+        PRIMARY KEY (`id`),
+        KEY `ix_esc_comp_emp` (`company_id`, `employee_id`),
+        KEY `ix_esc_component` (`salary_component_id`),
+        KEY `ix_esc_emp_comp_dates` (`employee_id`, `salary_component_id`, `effective_from`, `effective_to`),
+        CONSTRAINT `fk_esc_company` FOREIGN KEY (`company_id`) REFERENCES `companies` (`id`) ON DELETE CASCADE,
+        CONSTRAINT `fk_esc_employee` FOREIGN KEY (`employee_id`) REFERENCES `employees` (`id`) ON DELETE CASCADE,
+        CONSTRAINT `fk_esc_component` FOREIGN KEY (`salary_component_id`) REFERENCES `salary_components` (`id`) ON DELETE RESTRICT
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci");
+
+    $defaultSeeds = [
+        ['GAPOK',    'Gaji Pokok',          'earning',   'monthly', 'Komponen pendapatan gaji pokok bulanan'],
+        ['UH',       'Uang Harian',         'earning',   'daily',   'Komponen uang hadir harian per hari masuk'],
+        ['TUNJ-JBT', 'Tunjangan Jabatan',   'earning',   'monthly', 'Tunjangan tetap berdasarkan jabatan'],
+        ['TUNJ-TRN', 'Tunjangan Transport', 'earning',   'monthly', 'Tunjangan operasional & transport bulanan'],
+        ['TUNJ-MKN', 'Uang Makan',          'earning',   'daily',   'Tunjangan makan per hari hadir'],
+        ['POT-BPJS', 'Potongan BPJS',       'deduction', 'monthly', 'Iuran potongan BPJS bulanan'],
+    ];
+
+    $companies = $db->query('SELECT id FROM companies WHERE is_active = 1 ORDER BY id ASC')->fetch_all(MYSQLI_ASSOC);
+    $stChk = $db->prepare('SELECT COUNT(*) FROM salary_components WHERE company_id = ?');
+    $stIns = $db->prepare('INSERT IGNORE INTO salary_components (company_id, code, name, category, calc_basis, note, is_active, created_user) VALUES (?, ?, ?, ?, ?, ?, 1, ?)');
+    $sysUser = 'system';
+    foreach ($companies as $comp) {
+        $cid = (int) $comp['id'];
+        $stChk->bind_param('i', $cid);
+        $stChk->execute();
+        $cnt = (int) $stChk->get_result()->fetch_row()[0];
+        if ($cnt === 0) {
+            foreach ($defaultSeeds as [$sCode, $sName, $sCat, $sBasis, $sNote]) {
+                $stIns->bind_param('issssss', $cid, $sCode, $sName, $sCat, $sBasis, $sNote, $sysUser);
+                $stIns->execute();
+            }
+        }
+    }
+    $stChk->close();
+    $stIns->close();
+
+    // Migrasi satu kali data lama employees.basic_salary & employees.daily_allowance (bila kolom masih ada)
+    $hasEmpBasic = ($resB = $db->query("SHOW COLUMNS FROM `employees` LIKE 'basic_salary'")) && $resB->num_rows > 0;
+    $hasEmpDaily = ($resD = $db->query("SHOW COLUMNS FROM `employees` LIKE 'daily_allowance'")) && $resD->num_rows > 0;
+    if ($hasEmpBasic && $hasEmpDaily) {
+        $oldRows = $db->query('SELECT id, company_id, join_date, basic_salary, daily_allowance FROM employees WHERE basic_salary > 0 OR daily_allowance > 0')->fetch_all(MYSQLI_ASSOC);
+        if ($oldRows) {
+            $stEmpCnt  = $db->prepare('SELECT COUNT(*) FROM employee_salary_components WHERE employee_id = ?');
+            $stFindSc  = $db->prepare('SELECT id FROM salary_components WHERE (company_id = ? OR company_id IS NULL) AND code = ? ORDER BY company_id IS NULL ASC, id ASC LIMIT 1');
+            $stMakeSc  = $db->prepare('INSERT IGNORE INTO salary_components (company_id, code, name, category, calc_basis, note, is_active, created_user) VALUES (?, ?, ?, ?, ?, ?, 1, ?)');
+            $stEscIns  = $db->prepare('INSERT INTO employee_salary_components (company_id, employee_id, salary_component_id, amount, effective_from, effective_to, note, created_user) VALUES (?, ?, ?, ?, ?, NULL, ?, ?)');
+            $migNote   = 'Migrasi otomatis dari data gaji awal';
+
+            $resolveCompId = static function (int $cid, string $code, string $name, string $cat, string $basis) use ($stFindSc, $stMakeSc, $db, $sysUser): int {
+                $stFindSc->bind_param('is', $cid, $code);
+                $stFindSc->execute();
+                $found = $stFindSc->get_result()->fetch_row();
+                if ($found) {
+                    return (int) $found[0];
+                }
+                $note = $name . ' (auto-migrasi)';
+                $stMakeSc->bind_param('issssss', $cid, $code, $name, $cat, $basis, $note, $sysUser);
+                $stMakeSc->execute();
+                $insId = (int) $db->insert_id;
+                if ($insId > 0) {
+                    return $insId;
+                }
+                $stFindSc->bind_param('is', $cid, $code);
+                $stFindSc->execute();
+                $found2 = $stFindSc->get_result()->fetch_row();
+                return $found2 ? (int) $found2[0] : 0;
+            };
+
+            foreach ($oldRows as $er) {
+                $eid = (int) $er['id'];
+                $ecid = (int) $er['company_id'];
+                $stEmpCnt->bind_param('i', $eid);
+                $stEmpCnt->execute();
+                $existingCnt = (int) $stEmpCnt->get_result()->fetch_row()[0];
+                if ($existingCnt > 0) {
+                    continue;
+                }
+                $effFrom = (!empty($er['join_date']) && $er['join_date'] !== '0000-00-00') ? (string) $er['join_date'] : date('Y-m-d');
+                $basicAmt = (float) $er['basic_salary'];
+                $dailyAmt = (float) $er['daily_allowance'];
+                if ($basicAmt > 0) {
+                    $gapokId = $resolveCompId($ecid, 'GAPOK', 'Gaji Pokok', 'earning', 'monthly');
+                    if ($gapokId > 0) {
+                        $stEscIns->bind_param('iiidsss', $ecid, $eid, $gapokId, $basicAmt, $effFrom, $migNote, $sysUser);
+                        $stEscIns->execute();
+                    }
+                }
+                if ($dailyAmt > 0) {
+                    $uhId = $resolveCompId($ecid, 'UH', 'Uang Harian', 'earning', 'daily');
+                    if ($uhId > 0) {
+                        $stEscIns->bind_param('iiidsss', $ecid, $eid, $uhId, $dailyAmt, $effFrom, $migNote, $sysUser);
+                        $stEscIns->execute();
+                    }
+                }
+            }
+            $stEmpCnt->close();
+            $stFindSc->close();
+            $stMakeSc->close();
+            $stEscIns->close();
+        }
+    }
+}
+
+/** Opsi komponen gaji milik perusahaan + global. */
+function payroll_component_options(?int $company_id, bool $only_active = true): array
+{
+    payroll_ensure_salary_schema();
+    $db = db();
+    $where = [];
+    $types = '';
+    $params = [];
+    if ($company_id !== null && $company_id > 0) {
+        $where[] = '(sc.company_id = ? OR sc.company_id IS NULL)';
+        $types  .= 'i';
+        $params[] = $company_id;
+    }
+    if ($only_active) {
+        $where[] = 'sc.is_active = 1';
+    }
+    $sql = 'SELECT sc.*, co.code AS company_code, co.name AS company_name
+            FROM salary_components sc
+            LEFT JOIN companies co ON co.id = sc.company_id'
+        . ($where ? ' WHERE ' . implode(' AND ', $where) : '')
+        . ' ORDER BY sc.category ASC, sc.calc_basis ASC, sc.code ASC, sc.name ASC';
+    $st = $db->prepare($sql);
+    if ($params) {
+        $st->bind_param($types, ...$params);
+    }
+    $st->execute();
+    $rows = $st->get_result()->fetch_all(MYSQLI_ASSOC);
+    $st->close();
+    return $rows;
+}
+
+/** Cari satu komponen gaji berdasarkan id. */
+function payroll_component_find(int $id): ?array
+{
+    payroll_ensure_salary_schema();
+    $st = db()->prepare('SELECT sc.*, co.code AS company_code, co.name AS company_name
+        FROM salary_components sc
+        LEFT JOIN companies co ON co.id = sc.company_id
+        WHERE sc.id = ? LIMIT 1');
     $st->bind_param('i', $id);
     $st->execute();
     $row = $st->get_result()->fetch_assoc();
@@ -53,248 +283,484 @@ function payroll_period_find(int $id): ?array
     return $row ?: null;
 }
 
-/** Item gaji satu periode, urut nama karyawan. */
-function payroll_items(int $period_id): array
+/** Daftar komponen gaji berfilter lengkap dengan jumlah penugasan aktif. */
+function payroll_component_list(?int $company_id, string $q = '', string $category = '', string $basis = '', ?int $is_active = null): array
 {
-    $st = db()->prepare("SELECT i.*, e.code AS employee_code, e.name AS employee_name, e.bank_name, e.account_number,
-            e.job_position
-        FROM payroll_items i JOIN employees e ON e.id = i.employee_id
-        WHERE i.payroll_period_id = ? ORDER BY e.name");
-    $st->bind_param('i', $period_id);
+    payroll_ensure_salary_schema();
+    $db = db();
+    $where = [];
+    $types = '';
+    $params = [];
+    $today = date('Y-m-d');
+
+    if ($company_id !== null && $company_id > 0) {
+        $where[] = '(sc.company_id = ? OR sc.company_id IS NULL)';
+        $types  .= 'i';
+        $params[] = $company_id;
+    }
+    if ($q !== '') {
+        $where[] = '(sc.code LIKE ? OR sc.name LIKE ?)';
+        $types  .= 'ss';
+        $like = '%' . $q . '%';
+        $params[] = $like;
+        $params[] = $like;
+    }
+    if (in_array($category, ['earning', 'deduction'], true)) {
+        $where[] = 'sc.category = ?';
+        $types  .= 's';
+        $params[] = $category;
+    }
+    if (in_array($basis, ['monthly', 'daily'], true)) {
+        $where[] = 'sc.calc_basis = ?';
+        $types  .= 's';
+        $params[] = $basis;
+    }
+    if ($is_active !== null) {
+        $where[] = 'sc.is_active = ?';
+        $types  .= 'i';
+        $params[] = $is_active ? 1 : 0;
+    }
+
+    $activeCountSub = ($company_id !== null && $company_id > 0)
+        ? '(SELECT COUNT(*) FROM employee_salary_components esc WHERE esc.salary_component_id = sc.id AND esc.company_id = ' . (int) $company_id . ' AND esc.effective_from <= \'' . $today . '\' AND (esc.effective_to IS NULL OR esc.effective_to >= \'' . $today . '\'))'
+        : '(SELECT COUNT(*) FROM employee_salary_components esc WHERE esc.salary_component_id = sc.id AND esc.effective_from <= \'' . $today . '\' AND (esc.effective_to IS NULL OR esc.effective_to >= \'' . $today . '\'))';
+
+    $totalUseSub = '(SELECT COUNT(*) FROM employee_salary_components esc2 WHERE esc2.salary_component_id = sc.id)';
+
+    $sql = "SELECT sc.*, co.code AS company_code, co.name AS company_name,
+                {$activeCountSub} AS active_assignments,
+                {$totalUseSub} AS total_assignments
+            FROM salary_components sc
+            LEFT JOIN companies co ON co.id = sc.company_id"
+        . ($where ? ' WHERE ' . implode(' AND ', $where) : '')
+        . ' ORDER BY sc.company_id IS NULL DESC, co.code ASC, sc.category ASC, sc.calc_basis ASC, sc.code ASC';
+
+    $st = $db->prepare($sql);
+    if ($params) {
+        $st->bind_param($types, ...$params);
+    }
     $st->execute();
     $rows = $st->get_result()->fetch_all(MYSQLI_ASSOC);
     $st->close();
     return $rows;
 }
 
-/** Karyawan aktif perusahaan (scoped) beserta gaji pokok & uang harian (atau fallback dari master job_titles). */
-function payroll_active_employees(int $company_id): array
+/** Simpan master komponen gaji (insert/update). Validasi tenant & keunikan kode. */
+function payroll_component_save(int $id, array $in, ?int $company_id, ?string $user): int
 {
+    payroll_ensure_salary_schema();
     $db = db();
-    $hasEmpBasic = false;
-    $resCol = $db->query("SHOW COLUMNS FROM `employees` LIKE 'basic_salary'");
-    if ($resCol && $resCol->num_rows > 0) {
-        $hasEmpBasic = true;
+
+    $code     = strtoupper(trim((string) ($in['code'] ?? '')));
+    $name     = trim((string) ($in['name'] ?? ''));
+    $category = trim((string) ($in['category'] ?? 'earning'));
+    $basis    = trim((string) ($in['calc_basis'] ?? 'monthly'));
+    $note     = trim((string) ($in['note'] ?? ''));
+    $isActive = isset($in['is_active']) ? ((int) $in['is_active'] ? 1 : 0) : 1;
+
+    if ($code === '') {
+        throw new InvalidArgumentException('Kode komponen gaji wajib diisi.');
     }
-    $hasTitleBasic = false;
-    $resJtCol = $db->query("SHOW COLUMNS FROM `job_titles` LIKE 'basic_salary'");
-    if ($resJtCol && $resJtCol->num_rows > 0) {
-        $hasTitleBasic = true;
+    if (strlen($code) > 20) {
+        throw new InvalidArgumentException('Kode komponen gaji maksimal 20 karakter.');
+    }
+    if ($name === '') {
+        throw new InvalidArgumentException('Nama komponen gaji wajib diisi.');
+    }
+    if (!in_array($category, ['earning', 'deduction'], true)) {
+        throw new InvalidArgumentException('Kategori komponen tidak valid.');
+    }
+    if (!in_array($basis, ['monthly', 'daily'], true)) {
+        throw new InvalidArgumentException('Basis perhitungan tidak valid.');
     }
 
-    $titleMap = [];
-    if ($hasTitleBasic) {
-        $stJt = $db->prepare('SELECT name, basic_salary, daily_allowance FROM job_titles WHERE is_active = 1 AND (company_id = ? OR company_id IS NULL)');
-        $stJt->bind_param('i', $company_id);
-        $stJt->execute();
-        foreach ($stJt->get_result()->fetch_all(MYSQLI_ASSOC) as $jt) {
-            $titleMap[$jt['name']] = $jt;
+    $targetCid = ($company_id !== null && $company_id > 0) ? $company_id : null;
+    if ($targetCid === null && !is_super_admin()) {
+        throw new RuntimeException('Hanya Super Admin yang dapat membuat atau mengubah komponen global.');
+    }
+    if ($targetCid !== null) {
+        assert_company_access($targetCid);
+    }
+
+    if ($id > 0) {
+        $existing = payroll_component_find($id);
+        if (!$existing) {
+            throw new RuntimeException('Komponen gaji tidak ditemukan.');
         }
-        $stJt->close();
+        if ($existing['company_id'] !== null) {
+            assert_company_access((int) $existing['company_id']);
+        } elseif (!is_super_admin()) {
+            throw new RuntimeException('Hanya Super Admin yang dapat mengubah komponen global.');
+        }
+        $targetCid = $existing['company_id'] !== null ? (int) $existing['company_id'] : null;
     }
 
-    $cols = $hasEmpBasic ? 'id, name, job_title, basic_salary, daily_allowance' : 'id, name, job_title';
-    $st = $db->prepare("SELECT {$cols} FROM employees WHERE company_id = ? AND status = 'aktif' ORDER BY name");
-    $st->bind_param('i', $company_id);
+    if ($targetCid === null) {
+        $stU = $db->prepare('SELECT id FROM salary_components WHERE company_id IS NULL AND code = ? AND id <> ? LIMIT 1');
+        $stU->bind_param('si', $code, $id);
+    } else {
+        $stU = $db->prepare('SELECT id FROM salary_components WHERE company_id = ? AND code = ? AND id <> ? LIMIT 1');
+        $stU->bind_param('isi', $targetCid, $code, $id);
+    }
+    $stU->execute();
+    $dup = $stU->get_result()->fetch_row();
+    $stU->close();
+    if ($dup) {
+        throw new InvalidArgumentException("Kode komponen '{$code}' sudah digunakan.");
+    }
+
+    $noteVal = $note !== '' ? $note : null;
+    if ($id === 0) {
+        $st = $db->prepare('INSERT INTO salary_components (company_id, code, name, category, calc_basis, note, is_active, created_user) VALUES (?, ?, ?, ?, ?, ?, ?, ?)');
+        $st->bind_param('isssssis', $targetCid, $code, $name, $category, $basis, $noteVal, $isActive, $user);
+        $st->execute();
+        $newId = (int) $st->insert_id;
+        $st->close();
+        return $newId;
+    }
+
+    $st = $db->prepare('UPDATE salary_components SET code = ?, name = ?, category = ?, calc_basis = ?, note = ?, is_active = ?, modified_user = ?, modified_date = NOW() WHERE id = ?');
+    $st->bind_param('sssssisi', $code, $name, $category, $basis, $noteVal, $isActive, $user, $id);
+    $st->execute();
+    $st->close();
+    return $id;
+}
+
+/** Hapus komponen gaji jika tidak lagi dipakai oleh penugasan karyawan. */
+function payroll_component_delete(int $id): void
+{
+    payroll_ensure_salary_schema();
+    $row = payroll_component_find($id);
+    if (!$row) {
+        throw new RuntimeException('Komponen gaji tidak ditemukan.');
+    }
+    if ($row['company_id'] !== null) {
+        assert_company_access((int) $row['company_id']);
+    } elseif (!is_super_admin()) {
+        throw new RuntimeException('Hanya Super Admin yang dapat menghapus komponen global.');
+    }
+
+    $db = db();
+    $stCnt = $db->prepare('SELECT COUNT(*) FROM employee_salary_components WHERE salary_component_id = ?');
+    $stCnt->bind_param('i', $id);
+    $stCnt->execute();
+    $cnt = (int) $stCnt->get_result()->fetch_row()[0];
+    $stCnt->close();
+    if ($cnt > 0) {
+        throw new RuntimeException("Komponen '{$row['name']}' tidak dapat dihapus karena masih digunakan pada {$cnt} penugasan gaji karyawan.");
+    }
+
+    $stDel = $db->prepare('DELETE FROM salary_components WHERE id = ?');
+    $stDel->bind_param('i', $id);
+    $stDel->execute();
+    $stDel->close();
+}
+
+/** Cari satu baris penugasan komponen gaji karyawan. */
+function payroll_assignment_find(int $id): ?array
+{
+    payroll_ensure_salary_schema();
+    $st = db()->prepare('SELECT esc.*, sc.code AS component_code, sc.name AS component_name, sc.category, sc.calc_basis,
+            e.code AS employee_code, e.name AS employee_name
+        FROM employee_salary_components esc
+        JOIN salary_components sc ON sc.id = esc.salary_component_id
+        JOIN employees e ON e.id = esc.employee_id
+        WHERE esc.id = ? LIMIT 1');
+    $st->bind_param('i', $id);
+    $st->execute();
+    $row = $st->get_result()->fetch_assoc();
+    $st->close();
+    return $row ?: null;
+}
+
+/** Daftar penugasan komponen gaji milik satu karyawan (opsional filter status: active|upcoming|expired). */
+function payroll_employee_assignments(int $employee_id, int $company_id, string $status_filter = ''): array
+{
+    payroll_ensure_salary_schema();
+    $st = db()->prepare('SELECT esc.*, sc.code AS component_code, sc.name AS component_name, sc.category, sc.calc_basis, sc.is_active AS component_active
+        FROM employee_salary_components esc
+        JOIN salary_components sc ON sc.id = esc.salary_component_id
+        WHERE esc.employee_id = ? AND esc.company_id = ?
+        ORDER BY sc.category ASC, sc.calc_basis ASC, sc.name ASC, esc.effective_from DESC, esc.id DESC');
+    $st->bind_param('ii', $employee_id, $company_id);
     $st->execute();
     $rows = $st->get_result()->fetch_all(MYSQLI_ASSOC);
     $st->close();
 
-    foreach ($rows as &$r) {
-        $empBasic = (float) ($r['basic_salary'] ?? 0);
-        $empDaily = (float) ($r['daily_allowance'] ?? 0);
-        $jt = $titleMap[$r['job_title'] ?? ''] ?? null;
-        $r['eff_basic_salary']    = $empBasic > 0 ? $empBasic : (float) ($jt['basic_salary'] ?? 0);
-        $r['eff_daily_allowance'] = $empDaily > 0 ? $empDaily : (float) ($jt['daily_allowance'] ?? 0);
+    $today = date('Y-m-d');
+    $out = [];
+    foreach ($rows as $r) {
+        $stCode = payroll_assignment_status($r, $today);
+        $r['eff_status'] = $stCode;
+        if ($status_filter !== '' && $stCode !== $status_filter) {
+            continue;
+        }
+        $out[] = $r;
     }
-    unset($r);
+    return $out;
+}
 
-    return $rows;
+/** Daftar penugasan komponen gaji lintas karyawan perusahaan (untuk halaman manajemen terpusat). */
+function payroll_company_assignments(?int $company_id, int $employee_id = 0, int $component_id = 0, string $status_filter = ''): array
+{
+    payroll_ensure_salary_schema();
+    $db = db();
+    $where = [];
+    $types = '';
+    $params = [];
+
+    if ($company_id !== null && $company_id > 0) {
+        $where[] = 'esc.company_id = ?';
+        $types  .= 'i';
+        $params[] = $company_id;
+    }
+    if ($employee_id > 0) {
+        $where[] = 'esc.employee_id = ?';
+        $types  .= 'i';
+        $params[] = $employee_id;
+    }
+    if ($component_id > 0) {
+        $where[] = 'esc.salary_component_id = ?';
+        $types  .= 'i';
+        $params[] = $component_id;
+    }
+
+    $sql = 'SELECT esc.*,
+                sc.code AS component_code, sc.name AS component_name, sc.category, sc.calc_basis, sc.is_active AS component_active,
+                e.code AS employee_code, e.name AS employee_name, e.job_title, e.status AS employee_status,
+                co.code AS company_code, co.name AS company_name
+            FROM employee_salary_components esc
+            JOIN salary_components sc ON sc.id = esc.salary_component_id
+            JOIN employees e ON e.id = esc.employee_id
+            LEFT JOIN companies co ON co.id = esc.company_id'
+        . ($where ? ' WHERE ' . implode(' AND ', $where) : '')
+        . ' ORDER BY e.name ASC, sc.category ASC, sc.name ASC, esc.effective_from DESC, esc.id DESC';
+
+    $st = $db->prepare($sql);
+    if ($params) {
+        $st->bind_param($types, ...$params);
+    }
+    $st->execute();
+    $rows = $st->get_result()->fetch_all(MYSQLI_ASSOC);
+    $st->close();
+
+    $today = date('Y-m-d');
+    $out = [];
+    foreach ($rows as $r) {
+        $stCode = payroll_assignment_status($r, $today);
+        $r['eff_status'] = $stCode;
+        if ($status_filter !== '' && $stCode !== $status_filter) {
+            continue;
+        }
+        $out[] = $r;
+    }
+    return $out;
 }
 
 /**
- * Buat periode + satu item per karyawan aktif. Semua dalam satu transaksi.
+ * Ambil komponen efektif karyawan yang tumpang tindih dengan rentang tanggal [$period_start, $period_end].
+ * Bila ada lebih dari satu penugasan komponen yang sama di rentang tersebut, ambil yang effective_from terbaru.
  *
- * @return array{period_id:int, items:int}
+ * @return array{components: list<array<string,mixed>>, monthly_earning: float, daily_earning: float, monthly_deduction: float, daily_deduction: float}
  */
-function payroll_generate(int $company_id, int $year, int $month, ?string $user): array
+function payroll_employee_effective_components(int $employee_id, int $company_id, string $period_start, string $period_end): array
 {
-    if ($month < 1 || $month > 12) {
-        throw new InvalidArgumentException('Bulan harus 1-12.');
-    }
-    if ($year < 2000 || $year > 2100) {
-        throw new InvalidArgumentException('Tahun di luar rentang wajar (2000-2100).');
-    }
+    payroll_ensure_salary_schema();
+    $st = db()->prepare('SELECT esc.id, esc.salary_component_id, esc.amount, esc.effective_from, esc.effective_to,
+            sc.code AS component_code, sc.name AS component_name, sc.category, sc.calc_basis
+        FROM employee_salary_components esc
+        JOIN salary_components sc ON sc.id = esc.salary_component_id
+        WHERE esc.employee_id = ? AND esc.company_id = ? AND sc.is_active = 1
+          AND esc.effective_from <= ?
+          AND (esc.effective_to IS NULL OR esc.effective_to >= ?)
+        ORDER BY esc.effective_from DESC, esc.id DESC');
+    $st->bind_param('iiss', $employee_id, $company_id, $period_end, $period_start);
+    $st->execute();
+    $raw = $st->get_result()->fetch_all(MYSQLI_ASSOC);
+    $st->close();
 
-    $db = db();
-    $db->begin_transaction();
-    try {
-        // Cek duplikat di dalam transaksi; UNIQUE (company_id, year, month) jadi jaring terakhir.
-        $st = $db->prepare('SELECT id FROM payroll_periods WHERE company_id = ? AND period_year = ? AND period_month = ?');
-        $st->bind_param('iii', $company_id, $year, $month);
-        $st->execute();
-        $exists = $st->get_result()->fetch_row();
-        $st->close();
-        if ($exists) {
-            throw new RuntimeException('Periode ' . payroll_month_name($month) . " $year sudah ada.");
+    $seen = [];
+    $components = [];
+    $monthlyEarning   = 0.0;
+    $dailyEarning     = 0.0;
+    $monthlyDeduction = 0.0;
+    $dailyDeduction   = 0.0;
+
+    foreach ($raw as $r) {
+        $cidKey = (int) $r['salary_component_id'];
+        if (isset($seen[$cidKey])) {
+            continue;
         }
+        $seen[$cidKey] = true;
+        $amt   = (float) $r['amount'];
+        $cat   = (string) $r['category'];
+        $basis = (string) $r['calc_basis'];
 
-        $st = $db->prepare('INSERT INTO payroll_periods (company_id, period_year, period_month, status, created_user) VALUES (?, ?, ?, \'draft\', ?)');
-        $st->bind_param('iiis', $company_id, $year, $month, $user);
-        $st->execute();
-        $period_id = (int) $st->insert_id;
-        $st->close();
-
-        $employees = payroll_active_employees($company_id);
-
-        $st = $db->prepare('INSERT INTO payroll_items
-            (payroll_period_id, employee_id, company_id, basic_salary, daily_allowance, days_present, deductions, net_salary, created_user)
-            VALUES (?, ?, ?, ?, ?, 0, 0, ?, ?)');
-        foreach ($employees as $e) {
-            $basic = (float) ($e['eff_basic_salary'] ?? 0);
-            $daily = (float) ($e['eff_daily_allowance'] ?? 0);
-            $net = payroll_net($basic, $daily, 0, 0.0);
-            $eid = (int) $e['id'];
-            $st->bind_param('iiiddds', $period_id, $eid, $company_id, $basic, $daily, $net, $user);
-            $st->execute();
+        if ($cat === 'deduction') {
+            if ($basis === 'daily') {
+                $dailyDeduction += $amt;
+            } else {
+                $monthlyDeduction += $amt;
+            }
+        } else {
+            if ($basis === 'daily') {
+                $dailyEarning += $amt;
+            } else {
+                $monthlyEarning += $amt;
+            }
         }
-        $st->close();
-
-        $db->commit();
-    } catch (Throwable $ex) {
-        $db->rollback();
-        throw $ex;
+        $components[] = $r;
     }
 
-    return ['period_id' => $period_id, 'items' => count($employees)];
-}
-
-/** Periode milik perusahaan ini? throw bila bukan. */
-function payroll_period_assert(int $period_id, int $company_id): array
-{
-    $period = payroll_period_find($period_id);
-    if (!$period) {
-        throw new RuntimeException('Periode payroll tidak ditemukan.');
-    }
-    if ((int) $period['company_id'] !== $company_id && !is_super_admin()) {
-        throw new RuntimeException('Periode bukan milik perusahaan aktif.');
-    }
-    return $period;
+    return [
+        'components'        => $components,
+        'monthly_earning'   => round($monthlyEarning, 2),
+        'daily_earning'     => round($dailyEarning, 2),
+        'monthly_deduction' => round($monthlyDeduction, 2),
+        'daily_deduction'   => round($dailyDeduction, 2),
+    ];
 }
 
 /**
- * Ubah komponen gaji satu item, lalu hitung ulang gaji bersih.
- * Ditolak bila periode sudah 'paid'.
+ * Simpan / assign komponen gaji ke karyawan dengan masa berlaku dan nominal.
+ * Jika `$auto_close_prev = true`, penugasan sebelumnya yang masih terbuka (effective_to NULL & effective_from < baru)
+ * otomatis ditutup menjadi H-1 sebelum penugasan baru disimpan.
  */
-function payroll_item_update(int $period_id, int $company_id, int $item_id, int $days_present, float $deductions, ?string $note, ?string $user, ?float $basic_salary = null, ?float $daily_allowance = null): array
-{
-    if ($days_present < 0 || $days_present > 31) {
-        throw new InvalidArgumentException('Hari hadir harus 0-31.');
+function payroll_assignment_save(
+    int $id,
+    int $company_id,
+    int $employee_id,
+    int $component_id,
+    float $amount,
+    string $effective_from,
+    ?string $effective_to,
+    ?string $note,
+    ?string $user,
+    bool $auto_close_prev = false
+): int {
+    payroll_ensure_salary_schema();
+    if ($amount < 0) {
+        throw new InvalidArgumentException('Nominal komponen gaji tidak boleh negatif.');
     }
-    if ($deductions < 0) {
-        throw new InvalidArgumentException('Potongan tidak boleh negatif.');
+    $effective_from = trim($effective_from);
+    if (!payroll_valid_ymd($effective_from)) {
+        throw new InvalidArgumentException('Tanggal mulai berlaku wajib diisi dengan format YYYY-MM-DD.');
     }
-    if ($basic_salary !== null && $basic_salary < 0) {
-        throw new InvalidArgumentException('Gaji pokok tidak boleh negatif.');
+    $effective_to = $effective_to !== null ? trim($effective_to) : null;
+    if ($effective_to === '') {
+        $effective_to = null;
     }
-    if ($daily_allowance !== null && $daily_allowance < 0) {
-        throw new InvalidArgumentException('Uang harian tidak boleh negatif.');
+    if ($effective_to !== null) {
+        if (!payroll_valid_ymd($effective_to)) {
+            throw new InvalidArgumentException('Tanggal berakhir berlaku tidak valid (YYYY-MM-DD).');
+        }
+        if ($effective_to < $effective_from) {
+            throw new InvalidArgumentException('Tanggal berakhir tidak boleh lebih awal dari tanggal mulai berlaku.');
+        }
     }
 
     $db = db();
-    $db->begin_transaction();
-    try {
-        $period = payroll_period_assert($period_id, $company_id);
-        if ($period['status'] === 'paid') {
-            throw new RuntimeException('Periode sudah dibayar — item tidak bisa diubah.');
-        }
-
-        $st = $db->prepare('SELECT id, basic_salary, daily_allowance FROM payroll_items WHERE id = ? AND payroll_period_id = ? AND company_id = ? FOR UPDATE');
-        $st->bind_param('iii', $item_id, $period_id, $company_id);
-        $st->execute();
-        $item = $st->get_result()->fetch_assoc();
-        $st->close();
-        if (!$item) {
-            throw new RuntimeException('Item gaji tidak ditemukan pada periode ini.');
-        }
-
-        $eff_basic = $basic_salary !== null ? $basic_salary : (float) $item['basic_salary'];
-        $eff_daily = $daily_allowance !== null ? $daily_allowance : (float) $item['daily_allowance'];
-
-        $net = payroll_net($eff_basic, $eff_daily, $days_present, $deductions);
-        $st = $db->prepare('UPDATE payroll_items SET basic_salary = ?, daily_allowance = ?, days_present = ?, deductions = ?, net_salary = ?, note = ?, modified_user = ?, modified_date = NOW() WHERE id = ?');
-        $st->bind_param('ddiddssi', $eff_basic, $eff_daily, $days_present, $deductions, $net, $note, $user, $item_id);
-        $st->execute();
-        $st->close();
-
-        $db->commit();
-    } catch (Throwable $ex) {
-        $db->rollback();
-        throw $ex;
+    // Validasi tenant employee & akses komponen
+    $stEmp = $db->prepare('SELECT id, company_id FROM employees WHERE id = ? LIMIT 1');
+    $stEmp->bind_param('i', $employee_id);
+    $stEmp->execute();
+    $empRow = $stEmp->get_result()->fetch_assoc();
+    $stEmp->close();
+    if (!$empRow || (int) $empRow['company_id'] !== $company_id) {
+        throw new RuntimeException('Karyawan tidak ditemukan pada perusahaan ini.');
     }
 
-    return ['item_id' => $item_id, 'basic_salary' => $eff_basic, 'daily_allowance' => $eff_daily, 'days_present' => $days_present, 'deductions' => $deductions, 'net_salary' => $net];
-}
+    $stSc = $db->prepare('SELECT id, company_id, name FROM salary_components WHERE id = ? LIMIT 1');
+    $stSc->bind_param('i', $component_id);
+    $stSc->execute();
+    $scRow = $stSc->get_result()->fetch_assoc();
+    $stSc->close();
+    if (!$scRow || ($scRow['company_id'] !== null && (int) $scRow['company_id'] !== $company_id)) {
+        throw new RuntimeException('Komponen gaji tidak tersedia untuk perusahaan ini.');
+    }
 
-/**
- * Transisi status periode: draft -> final -> paid. Tidak ada transisi mundur,
- * dan status 'paid' bersifat final.
- */
-function payroll_period_set_status(int $period_id, int $company_id, string $status, ?string $user, bool $record_cash = true): void
-{
-    $allowed = ['draft' => 'final', 'final' => 'paid'];
-    $db = db();
+    $noteVal = ($note !== null && trim($note) !== '') ? mb_substr(trim($note), 0, 500) : null;
+
     $db->begin_transaction();
     try {
-        $period = payroll_period_assert($period_id, $company_id);
-        $from = (string) $period['status'];
-        if (($allowed[$from] ?? null) !== $status) {
-            throw new RuntimeException('Transisi status ' . $from . ' -> ' . $status . ' tidak diizinkan.');
-        }
-        $st = $db->prepare('UPDATE payroll_periods SET status = ?, modified_user = ?, modified_date = NOW() WHERE id = ? AND company_id = ?');
-        $st->bind_param('ssii', $status, $user, $period_id, $company_id);
-        $st->execute();
-        $st->close();
-
-        // Jika status diubah menjadi 'paid' & pencatatan kas aktif, catat pengeluaran kas otomatis ke Buku Kas
-        if ($status === 'paid' && $record_cash) {
-            // Hitung total gaji bersih periode ini
-            $n_st = $db->prepare('SELECT COALESCE(SUM(net_salary), 0) AS total_net, COUNT(*) AS total_items FROM payroll_items WHERE payroll_period_id = ? AND company_id = ?');
-            $n_st->bind_param('ii', $period_id, $company_id);
-            $n_st->execute();
-            $p_totals = $n_st->get_result()->fetch_assoc();
-            $n_st->close();
-
-            $total_paid = (float) ($p_totals['total_net'] ?? 0);
-            if ($total_paid > 0) {
-                finance_ensure_schema();
-                $srcType = 'payroll_period';
-                $chkTx = $db->prepare('SELECT id FROM cash_transactions WHERE company_id = ? AND source_type = ? AND source_id = ? LIMIT 1');
-                $chkTx->bind_param('isi', $company_id, $srcType, $period_id);
-                $chkTx->execute();
-                $alreadyTx = $chkTx->get_result()->fetch_assoc();
-                $chkTx->close();
-
-                if (!$alreadyTx) {
-                    $c_date = date('Y-m-d');
-                    $c_dir  = 'out';
-                    $c_cat  = 'Gaji Karyawan';
-                    $period_lbl = payroll_period_label($period);
-                    $c_desc = 'Payroll Periode ' . $period_lbl . ' (' . (int) ($p_totals['total_items'] ?? 0) . ' karyawan)';
-                    $null_method = null;
-                    $t_st = $db->prepare('INSERT INTO cash_transactions
-                        (company_id, date, direction, amount, category, description, payment_method_id, source_type, source_id, created_user, created_date)
-                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW())');
-                    $t_st->bind_param('issdssisis', $company_id, $c_date, $c_dir, $total_paid, $c_cat, $c_desc, $null_method, $srcType, $period_id, $user);
-                    $t_st->execute();
-                    $t_st->close();
-                }
+        if ($id > 0) {
+            $stChk = $db->prepare('SELECT id, company_id, employee_id FROM employee_salary_components WHERE id = ? FOR UPDATE');
+            $stChk->bind_param('i', $id);
+            $stChk->execute();
+            $curRow = $stChk->get_result()->fetch_assoc();
+            $stChk->close();
+            if (!$curRow || (int) $curRow['company_id'] !== $company_id) {
+                throw new RuntimeException('Penugasan komponen tidak ditemukan pada perusahaan ini.');
             }
         }
 
+        if ($auto_close_prev) {
+            $closeDate = date('Y-m-d', strtotime($effective_from . ' -1 day'));
+            $stPrev = $db->prepare('SELECT id FROM employee_salary_components WHERE employee_id = ? AND salary_component_id = ? AND id <> ? AND effective_to IS NULL AND effective_from < ? FOR UPDATE');
+            $stPrev->bind_param('iiis', $employee_id, $component_id, $id, $effective_from);
+            $stPrev->execute();
+            $prevIds = array_column($stPrev->get_result()->fetch_all(MYSQLI_ASSOC), 'id');
+            $stPrev->close();
+
+            if ($prevIds) {
+                $stUpdPrev = $db->prepare('UPDATE employee_salary_components SET effective_to = ?, modified_user = ?, modified_date = NOW() WHERE id = ?');
+                foreach ($prevIds as $pidPrev) {
+                    $pidInt = (int) $pidPrev;
+                    $stUpdPrev->bind_param('ssi', $closeDate, $user, $pidInt);
+                    $stUpdPrev->execute();
+                }
+                $stUpdPrev->close();
+            }
+        }
+
+        // Cek bentrok rentang tanggal pada (employee_id, salary_component_id)
+        $stOv = $db->prepare('SELECT id, effective_from, effective_to
+            FROM employee_salary_components
+            WHERE employee_id = ? AND salary_component_id = ? AND id <> ?
+              AND (effective_to IS NULL OR effective_to >= ?)
+              AND (? IS NULL OR effective_from <= ?)
+            LIMIT 1');
+        $stOv->bind_param('iiisss', $employee_id, $component_id, $id, $effective_from, $effective_to, $effective_to);
+        $stOv->execute();
+        $ov = $stOv->get_result()->fetch_assoc();
+        $stOv->close();
+        if ($ov) {
+            $ovToLbl = $ov['effective_to'] ? (string) $ov['effective_to'] : 'tanpa batas';
+            throw new RuntimeException("Masa berlaku bentrok dengan penugasan #{$ov['id']} ({$ov['effective_from']} s/d {$ovToLbl}). Aktifkan penutupan periode sebelumnya atau ubah tanggal.");
+        }
+
+        if ($id === 0) {
+            $stIns = $db->prepare('INSERT INTO employee_salary_components (company_id, employee_id, salary_component_id, amount, effective_from, effective_to, note, created_user) VALUES (?, ?, ?, ?, ?, ?, ?, ?)');
+            $stIns->bind_param('iiidssss', $company_id, $employee_id, $component_id, $amount, $effective_from, $effective_to, $noteVal, $user);
+            $stIns->execute();
+            $resId = (int) $stIns->insert_id;
+            $stIns->close();
+        } else {
+            $stUpd = $db->prepare('UPDATE employee_salary_components SET employee_id = ?, salary_component_id = ?, amount = ?, effective_from = ?, effective_to = ?, note = ?, modified_user = ?, modified_date = NOW() WHERE id = ? AND company_id = ?');
+            $stUpd->bind_param('iidssssii', $employee_id, $component_id, $amount, $effective_from, $effective_to, $noteVal, $user, $id, $company_id);
+            $stUpd->execute();
+            $stUpd->close();
+            $resId = $id;
+        }
+
         $db->commit();
+        return $resId;
     } catch (Throwable $ex) {
         $db->rollback();
         throw $ex;
+    }
+}
+
+/** Hapus satu baris penugasan komponen gaji karyawan (terjaga company_id). */
+function payroll_assignment_delete(int $id, int $company_id): void
+{
+    payroll_ensure_salary_schema();
+    $st = db()->prepare('DELETE FROM employee_salary_components WHERE id = ? AND company_id = ?');
+    $st->bind_param('ii', $id, $company_id);
+    $st->execute();
+    $aff = $st->affected_rows;
+    $st->close();
+    if ($aff === 0) {
+        throw new RuntimeException('Penugasan komponen gaji tidak ditemukan atau bukan milik perusahaan ini.');
     }
 }

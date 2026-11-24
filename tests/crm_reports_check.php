@@ -1,8 +1,8 @@
 <?php
 /**
  * Integration & HTTP check for Points 1, 2, and 5:
- *   1B: Sidebar shortcut `Manifest Gabungan` -> pages/dispatch/manifest_group.php
- *   2 : CRM Mini (`passengers/detail.php`), Global Search URL, Viewer RBAC,
+ *   1B: Pastikan menu Manifest Gabungan tidak lagi tampil di sidebar
+ *   2 : CRM Mini (`passengers/detail.php`), Viewer RBAC,
  *       cross-company 403, & 1-click repeat order prefill (Travel + Rental)
  *   5 : Reports Period Presets & Category Breakdown + filtering + CSV/XLSX/PDF exports
  *
@@ -213,15 +213,18 @@ try {
         cr_check($loginAs($jarViewer, $viewerUser, 'Viewer@1234'), 'Login Viewer company 1 berhasil');
     }
 
-    echo "2. Verifikasi Point 1B (Sidebar Manifest Gabungan)...\n";
+    echo "2. Verifikasi Point 1B (Sidebar & Topbar tidak menampilkan Manifest Gabungan / Cari Cepat)...\n";
     $dashAfter = $httpGet($jarAdmin, '/pages/dashboard/index.php');
     cr_check($dashAfter['code'] === 200, 'Dashboard HTTP 200');
     cr_check(
-        str_contains($dashAfter['body'], 'pages/dispatch/manifest_group.php') && str_contains($dashAfter['body'], 'Manifest Gabungan'),
-        'Sidebar menampilkan link Manifest Gabungan -> pages/dispatch/manifest_group.php'
+        !str_contains($dashAfter['body'], 'pages/dispatch/manifest_group.php')
+        && !str_contains($dashAfter['body'], 'Manifest Gabungan')
+        && !str_contains($dashAfter['body'], 'globalSearchTrigger')
+        && !str_contains($dashAfter['body'], 'globalSearchModal'),
+        'Sidebar tidak menampilkan Manifest Gabungan dan Topbar tidak menampilkan Cari Cepat'
     );
 
-    echo "3. Verifikasi Point 2 (CRM Pelanggan + Viewer RBAC + Global Search + Repeat Order)...\n";
+    echo "3. Verifikasi Point 2 (CRM Pelanggan + Viewer RBAC + Repeat Order)...\n";
     $paxIdx = $httpGet($jarAdmin, '/pages/transport/passengers/index.php?q=' . urlencode($paxCode1));
     cr_check($paxIdx['code'] === 200, 'passengers/index.php HTTP 200');
     cr_check(
@@ -231,18 +234,6 @@ try {
     cr_check(
         str_contains($paxIdx['body'], 'title="Lihat Profil &amp; Riwayat"') && str_contains($paxIdx['body'], 'aria-label="Lihat Profil &amp; Riwayat"'),
         'passengers/index.php memiliki tombol eye icon-only dengan title & aria-label'
-    );
-
-    $gs = $httpGet($jarAdmin, '/pages/search/global.php?q=' . urlencode($paxCode1));
-    $gsPaxUrl = '';
-    foreach (($gs['json']['groups'] ?? []) as $g) {
-        if (($g['key'] ?? '') === 'passengers') {
-            $gsPaxUrl = (string) ($g['items'][0]['url'] ?? '');
-        }
-    }
-    cr_check(
-        str_contains($gsPaxUrl, '/pages/transport/passengers/detail.php?id=' . $paxId1),
-        "global search mengarahkan penumpang ke detail.php (got: {$gsPaxUrl})"
     );
 
     $detAdmin = $httpGet($jarAdmin, '/pages/transport/passengers/detail.php?id=' . $paxId1);

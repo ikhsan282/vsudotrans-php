@@ -86,7 +86,6 @@ $statusUpdateUrl = APP_URL . '/pages/dispatch/calendar_status.php';
 $assignUrl = APP_URL . '/pages/dispatch/calendar_assign.php';
 $rescheduleUrl = APP_URL . '/pages/dispatch/calendar_reschedule.php';
 $availCheckUrl = APP_URL . '/pages/transport/availability_check.php';
-$groupManifestBaseUrl = APP_URL . '/pages/dispatch/manifest_group.php';
 $csrfToken = csrf_token();
 ?>
 <main class="p-2 px-lg-2 py-lg-3 w-100 flex-grow-1 ops-calendar-page">
@@ -259,11 +258,6 @@ $csrfToken = csrf_token();
                     <label for="cal-jump-date" class="small text-body-secondary mb-0 text-nowrap">Ke Tanggal:</label>
                     <input type="date" id="cal-jump-date" class="form-control form-control-sm ops-cal-jump-input"
                            aria-label="Lompat ke tanggal" title="Lompat langsung ke tanggal tertentu">
-                    <a href="<?= e($groupManifestBaseUrl) ?>" id="cal-group-manifest-btn" target="_blank" rel="noopener"
-                       class="btn btn-sm btn-outline-primary text-nowrap"
-                       title="Buka Manifest Gabungan sesuai tanggal &amp; armada terpilih">
-                        <i class="bi bi-card-checklist me-1" aria-hidden="true"></i>Manifest Armada
-                    </a>
                 </div>
             </div>
 
@@ -310,7 +304,7 @@ $csrfToken = csrf_token();
 </main>
 
 <!-- Modal Pratinjau & Aksi Cepat Jadwal Operasional -->
-<div class="modal fade" id="calEventModal" tabindex="-1" aria-labelledby="calEventModalTitle" aria-hidden="true">
+<div class="modal fade" id="calEventModal" tabindex="-1" aria-labelledby="calEventModalTitle" aria-hidden="true" data-bs-focus="false">
     <div class="modal-dialog modal-dialog-centered modal-dialog-scrollable modal-fullscreen-sm-down ops-cal-modal-dialog">
         <div class="modal-content ops-cal-modal border-0 shadow-lg overflow-hidden">
             <div class="modal-header ops-cal-modal-header flex-column align-items-stretch gap-2 border-bottom">
@@ -452,14 +446,8 @@ $csrfToken = csrf_token();
             </div>
             <div class="modal-footer ops-cal-modal-footer py-2 px-3 d-flex flex-wrap justify-content-between gap-2 border-top">
                 <div class="d-flex flex-wrap gap-2">
-                    <button type="button" id="calModalCopyDriverBtn" class="btn btn-sm btn-outline-primary">
-                        <i class="bi bi-clipboard me-1" aria-hidden="true"></i>Salin Info Sopir
-                    </button>
                     <a href="#" id="calModalManifestBtn" target="_blank" rel="noopener" class="btn btn-sm btn-outline-secondary d-none">
                         <i class="bi bi-printer me-1" aria-hidden="true"></i>Cetak Surat Jalan
-                    </a>
-                    <a href="#" id="calModalGroupManifestBtn" target="_blank" rel="noopener" class="btn btn-sm btn-outline-success d-none">
-                        <i class="bi bi-card-checklist me-1" aria-hidden="true"></i>Manifest Armada
                     </a>
                 </div>
                 <div class="d-flex gap-2 ms-auto">
@@ -551,7 +539,6 @@ document.addEventListener('DOMContentLoaded', function () {
     const assignUrl = <?= json_encode($assignUrl, JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT) ?>;
     const rescheduleUrl = <?= json_encode($rescheduleUrl, JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT) ?>;
     const availCheckUrl = <?= json_encode($availCheckUrl, JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT) ?>;
-    const groupManifestBaseUrl = <?= json_encode($groupManifestBaseUrl, JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT) ?>;
     const csrfToken = <?= json_encode($csrfToken, JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT) ?>;
     const travelFormBase = <?= json_encode(APP_URL . '/pages/travel/bookings/form.php', JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT) ?>;
     const rentalFormBase = <?= json_encode(APP_URL . '/pages/rental/bookings/form.php', JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT) ?>;
@@ -1090,11 +1077,6 @@ document.addEventListener('DOMContentLoaded', function () {
 
         renderModalQuickStatusButtons(p);
 
-        const copyBtn = document.getElementById('calModalCopyDriverBtn');
-        if (copyBtn) {
-            copyBtn.innerHTML = '<i class="bi bi-clipboard me-1" aria-hidden="true"></i>Salin Info Sopir';
-        }
-
         const detailBtn = document.getElementById('calModalDetailBtn');
         detailBtn.href = p.detail_url || fcEvent.url || '#';
 
@@ -1104,16 +1086,6 @@ document.addEventListener('DOMContentLoaded', function () {
             manifestBtn.classList.remove('d-none');
         } else {
             manifestBtn.classList.add('d-none');
-        }
-
-        const groupManifestBtn = document.getElementById('calModalGroupManifestBtn');
-        if (groupManifestBtn) {
-            if (p.group_manifest_url && p.status !== 'cancelled') {
-                groupManifestBtn.href = p.group_manifest_url;
-                groupManifestBtn.classList.remove('d-none');
-            } else {
-                groupManifestBtn.classList.add('d-none');
-            }
         }
 
         setupModalQuickAssign(p);
@@ -1136,6 +1108,59 @@ document.addEventListener('DOMContentLoaded', function () {
 
     let lastAssignAvailData = null;
 
+    const getAssignVal = (el) => {
+        if (!el) return '0';
+        const raw = el.tomselect ? el.tomselect.getValue() : el.value;
+        return String(raw || '0');
+    };
+
+    const ensureQuickAssignTs = (el, placeholder) => {
+        if (!el || !window.initTsSelect || !window.TomSelect) return null;
+        if (el.tomselect) return el.tomselect;
+        return window.initTsSelect(el, {
+            allowEmptyOption: true,
+            create: false,
+            maxOptions: 300,
+            dropdownParent: 'body',
+            placeholder: placeholder || 'Cari...',
+            searchField: ['text', 'plate', 'phone'],
+            sortField: [{ field: '$score' }, { field: '$order' }]
+        });
+    };
+
+    const closeQuickAssignDropdowns = () => {
+        ['calModalAssignVehicle', 'calModalAssignDriver'].forEach(id => {
+            const el = document.getElementById(id);
+            if (el && el.tomselect) el.tomselect.close();
+        });
+    };
+
+    const syncAssignSelect = (sel, items, selectedVal, placeholder) => {
+        if (!sel) return;
+        const valStr = String(selectedVal || '0');
+        sel.replaceChildren();
+        items.forEach(it => {
+            const o = document.createElement('option');
+            o.value = String(it.value);
+            o.textContent = String(it.text || '');
+            o.dataset.baseLabel = String(it.baseLabel || it.text || '');
+            if (it.plate) o.dataset.plate = String(it.plate);
+            if (it.phone) o.dataset.phone = String(it.phone);
+            sel.appendChild(o);
+        });
+        sel.value = valStr;
+
+        const ts = ensureQuickAssignTs(sel, placeholder);
+        if (ts) {
+            ts.close();
+            ts.clear(true);
+            ts.clearOptions();
+            items.forEach(it => ts.addOption(Object.assign({}, it)));
+            ts.refreshOptions(false);
+            ts.setValue(valStr, true);
+        }
+    };
+
     const refreshAssignConflictBanner = () => {
         const warnEl = document.getElementById('calModalAssignAvailWarn');
         const selV = document.getElementById('calModalAssignVehicle');
@@ -1144,8 +1169,8 @@ document.addEventListener('DOMContentLoaded', function () {
         const avail = lastAssignAvailData || {};
         const busyV = avail.busy_vehicles || {};
         const busyD = avail.busy_employees || {};
-        const vId = selV ? String(selV.value || '0') : '0';
-        const dId = selD ? String(selD.value || '0') : '0';
+        const vId = getAssignVal(selV);
+        const dId = getAssignVal(selD);
         const msgs = [];
         if (vId !== '0' && vId !== '' && busyV[vId]) {
             const m = busyV[vId];
@@ -1187,14 +1212,30 @@ document.addEventListener('DOMContentLoaded', function () {
             lastAssignAvailData = data;
             const busyV = data.busy_vehicles || {};
             const busyD = data.busy_employees || {};
-            Array.from(selV.options).forEach(opt => {
-                if (!opt.dataset.baseLabel) opt.dataset.baseLabel = opt.textContent;
-                opt.textContent = busyV[opt.value] ? (opt.dataset.baseLabel + ' [Sedang Bertugas]') : opt.dataset.baseLabel;
-            });
-            Array.from(selD.options).forEach(opt => {
-                if (!opt.dataset.baseLabel) opt.dataset.baseLabel = opt.textContent;
-                opt.textContent = busyD[opt.value] ? (opt.dataset.baseLabel + ' [Sedang Bertugas]') : opt.dataset.baseLabel;
-            });
+            const updateBusyOptions = (sel, busyMap) => {
+                if (!sel) return;
+                if (sel.tomselect) {
+                    const ts = sel.tomselect;
+                    Object.keys(ts.options || {}).forEach(val => {
+                        const opt = ts.options[val];
+                        if (!opt) return;
+                        const base = opt.baseLabel || opt.text || '';
+                        const nextText = (val !== '0' && busyMap[val]) ? (base + ' [Sedang Bertugas]') : base;
+                        if (opt.text !== nextText) {
+                            ts.updateOption(val, Object.assign({}, opt, { baseLabel: base, text: nextText }));
+                        }
+                    });
+                    ts.refreshOptions(false);
+                    ts.refreshItems();
+                } else {
+                    Array.from(sel.options).forEach(opt => {
+                        if (!opt.dataset.baseLabel) opt.dataset.baseLabel = opt.textContent;
+                        opt.textContent = (opt.value !== '0' && busyMap[opt.value]) ? (opt.dataset.baseLabel + ' [Sedang Bertugas]') : opt.dataset.baseLabel;
+                    });
+                }
+            };
+            updateBusyOptions(selV, busyV);
+            updateBusyOptions(selD, busyD);
             refreshAssignConflictBanner();
         } catch (e) {}
     };
@@ -1206,51 +1247,35 @@ document.addEventListener('DOMContentLoaded', function () {
         if (!selV || !selD) return;
         const cid = Number(p.company_id || 0);
 
-        selV.replaceChildren();
-        const optV0 = document.createElement('option');
-        optV0.value = '0';
-        optV0.textContent = '— Belum Ada Armada —';
-        selV.appendChild(optV0);
+        const vehItems = [{ value: '0', text: '— Belum Ada Armada —', baseLabel: '— Belum Ada Armada —', plate: '' }];
         const curVid = Number(p.vehicle_id || 0);
         let foundCurV = curVid === 0;
         assignVehiclesData.forEach(v => {
             if (cid > 0 && Number(v.company_id) !== cid) return;
-            const o = document.createElement('option');
-            o.value = String(v.id);
-            o.textContent = v.name || v.vehicle_number || ('Armada #' + v.id);
+            const label = v.name || v.vehicle_number || ('Armada #' + v.id);
             if (Number(v.id) === curVid) foundCurV = true;
-            selV.appendChild(o);
+            vehItems.push({ value: String(v.id), text: label, baseLabel: label, plate: String(v.vehicle_number || '') });
         });
         if (!foundCurV && curVid > 0) {
-            const extraV = document.createElement('option');
-            extraV.value = String(curVid);
-            extraV.textContent = [p.vehicle_number, p.brand_name, p.vehicle_category].filter(Boolean).join(' · ') || ('Armada #' + curVid);
-            selV.appendChild(extraV);
+            const extraLbl = [p.vehicle_number, p.brand_name, p.vehicle_category].filter(Boolean).join(' · ') || ('Armada #' + curVid);
+            vehItems.push({ value: String(curVid), text: extraLbl, baseLabel: extraLbl, plate: String(p.vehicle_number || '') });
         }
-        selV.value = String(curVid);
+        syncAssignSelect(selV, vehItems, String(curVid), 'Cari armada / plat nomor...');
 
-        selD.replaceChildren();
-        const optD0 = document.createElement('option');
-        optD0.value = '0';
-        optD0.textContent = '— Belum Ada Sopir —';
-        selD.appendChild(optD0);
+        const drvItems = [{ value: '0', text: '— Belum Ada Sopir —', baseLabel: '— Belum Ada Sopir —', phone: '' }];
         const curDid = Number(p.driver_id || 0);
         let foundCurD = curDid === 0;
         assignDriversData.forEach(d => {
             if (cid > 0 && Number(d.company_id) !== cid) return;
-            const o = document.createElement('option');
-            o.value = String(d.id);
-            o.textContent = d.name + (d.job_position && d.job_position.toLowerCase() !== 'driver' && d.job_position.toLowerCase() !== 'sopir' ? ' (' + d.job_position + ')' : '');
+            const label = d.name + (d.job_position && d.job_position.toLowerCase() !== 'driver' && d.job_position.toLowerCase() !== 'sopir' ? ' (' + d.job_position + ')' : '');
             if (Number(d.id) === curDid) foundCurD = true;
-            selD.appendChild(o);
+            drvItems.push({ value: String(d.id), text: label, baseLabel: label, phone: String(d.phone || '') });
         });
         if (!foundCurD && curDid > 0) {
-            const extraD = document.createElement('option');
-            extraD.value = String(curDid);
-            extraD.textContent = p.driver || ('Sopir #' + curDid);
-            selD.appendChild(extraD);
+            const extraDLbl = p.driver || ('Sopir #' + curDid);
+            drvItems.push({ value: String(curDid), text: extraDLbl, baseLabel: extraDLbl, phone: String(p.driver_phone || '') });
         }
-        selD.value = String(curDid);
+        syncAssignSelect(selD, drvItems, String(curDid), 'Cari sopir / no. HP...');
     };
 
     function setupModalQuickAssign(props) {
@@ -1264,6 +1289,7 @@ document.addEventListener('DOMContentLoaded', function () {
         if (toggleBtn) toggleBtn.classList.toggle('d-none', !editableAssign);
         if (!box) return;
         if (!editableAssign) {
+            closeQuickAssignDropdowns();
             box.classList.add('d-none');
             return;
         }
@@ -1272,6 +1298,7 @@ document.addEventListener('DOMContentLoaded', function () {
             box.classList.remove('d-none');
             checkQuickAssignAvailability(p);
         } else {
+            closeQuickAssignDropdowns();
             box.classList.add('d-none');
         }
     }
@@ -1377,7 +1404,6 @@ document.addEventListener('DOMContentLoaded', function () {
                 const jumpYmd = formatYmdLocal(calendar.getDate());
                 if (jumpYmd && elJumpDate.value !== jumpYmd) elJumpDate.value = jumpYmd;
             }
-            updateToolbarGroupManifestLink();
             syncUrlState();
         },
         events: function (fetchInfo, successCallback, failureCallback) {
@@ -1626,21 +1652,6 @@ document.addEventListener('DOMContentLoaded', function () {
         }
     });
 
-    function updateToolbarGroupManifestLink() {
-        const btn = document.getElementById('cal-group-manifest-btn');
-        if (!btn) return;
-        const curDate = (calendar && typeof calendar.getDate === 'function')
-            ? formatYmdLocal(calendar.getDate())
-            : (elJumpDate && isValidYmd(elJumpDate.value) ? elJumpDate.value : '');
-        const vid = getSelectValue(elVehicle);
-        const kVal = elKind ? elKind.value : 'all';
-        const qs = new URLSearchParams();
-        if (curDate) qs.set('date', curDate);
-        if (vid && Number(vid) > 0) qs.set('vehicle_id', vid);
-        if (kVal === 'travel' || kVal === 'rental') qs.set('kind', kVal);
-        btn.href = groupManifestBaseUrl + (qs.toString() ? ('?' + qs.toString()) : '');
-    }
-
     function showCalSuccessBanner(msg) {
         const b = document.getElementById('cal-success-banner');
         const t = document.getElementById('cal-success-text');
@@ -1785,14 +1796,25 @@ document.addEventListener('DOMContentLoaded', function () {
                 setAssignFeedback('', '');
                 populateQuickAssignOptions(activeModalProps);
                 checkQuickAssignAvailability(activeModalProps);
+            } else {
+                closeQuickAssignDropdowns();
             }
         });
     }
     if (assignCancelBtn) {
         assignCancelBtn.addEventListener('click', () => {
+            closeQuickAssignDropdowns();
             const box = document.getElementById('calModalQuickAssignBox');
             if (box) box.classList.add('d-none');
         });
+    }
+    const calEventModalEl = document.getElementById('calEventModal');
+    if (calEventModalEl) {
+        calEventModalEl.addEventListener('hide.bs.modal', closeQuickAssignDropdowns);
+        const modalBodyEl = calEventModalEl.querySelector('.modal-body');
+        if (modalBodyEl) {
+            modalBodyEl.addEventListener('scroll', closeQuickAssignDropdowns, { passive: true });
+        }
     }
     if (assignVehSel) assignVehSel.addEventListener('change', refreshAssignConflictBanner);
     if (assignDrvSel) assignDrvSel.addEventListener('change', refreshAssignConflictBanner);
@@ -1801,8 +1823,8 @@ document.addEventListener('DOMContentLoaded', function () {
         assignSaveBtn.addEventListener('click', async () => {
             if (!activeModalProps) return;
             const p = activeModalProps;
-            const vVal = assignVehSel ? String(assignVehSel.value || '0') : '0';
-            const dVal = assignDrvSel ? String(assignDrvSel.value || '0') : '0';
+            const vVal = getAssignVal(assignVehSel);
+            const dVal = getAssignVal(assignDrvSel);
             const clearDriver = Number(p.driver_id || 0) > 0 && Number(dVal) === 0;
             const origHtml = assignSaveBtn.innerHTML;
             assignSaveBtn.disabled = true;
@@ -1837,7 +1859,6 @@ document.addEventListener('DOMContentLoaded', function () {
                 p.needs_dispatch = !!data.needs_dispatch;
                 p.status = data.status || p.status;
                 p.status_label = data.status_label || p.status_label;
-                p.group_manifest_url = data.group_manifest_url || null;
 
                 const vehEl = document.getElementById('calModalVehicle');
                 const vehParts = [];
@@ -1862,15 +1883,6 @@ document.addEventListener('DOMContentLoaded', function () {
                 if (stBadge) {
                     stBadge.textContent = p.status_label || '';
                     stBadge.className = statusBadgeClass[p.status] || 'badge rounded-pill bg-secondary';
-                }
-                const gManifestBtn = document.getElementById('calModalGroupManifestBtn');
-                if (gManifestBtn) {
-                    if (p.group_manifest_url && p.status !== 'cancelled') {
-                        gManifestBtn.href = p.group_manifest_url;
-                        gManifestBtn.classList.remove('d-none');
-                    } else {
-                        gManifestBtn.classList.add('d-none');
-                    }
                 }
                 renderModalQuickStatusButtons(p);
                 setModalFeedback('success', data.message || 'Penugasan berhasil disimpan.');
@@ -1947,55 +1959,6 @@ document.addEventListener('DOMContentLoaded', function () {
         }
     }
 
-    const copyBtnEl = document.getElementById('calModalCopyDriverBtn');
-    if (copyBtnEl) {
-        copyBtnEl.addEventListener('click', async () => {
-            if (!activeModalProps) return;
-            const p = activeModalProps;
-            const vehStr = [p.vehicle_category, p.brand_name, p.vehicle_number].filter(Boolean).join(' · ') || 'Belum ditentukan';
-            const lines = [
-                '[' + (p.kind_label || 'Travel') + (p.category_name ? ' · ' + p.category_name : '') + '] ' + (p.document_number || '-'),
-                'Jadwal: ' + (p.period_label || '-'),
-                'Pelanggan: ' + (p.passenger || '-') + (p.extra_pax > 0 ? ' (+' + p.extra_pax + ' lain)' : '') + (p.passenger_phone ? ' (' + p.passenger_phone + ')' : ''),
-                'Rute: ' + (p.route_label || '-'),
-                p.pickup_address ? ('Jemput: ' + p.pickup_address) : null,
-                p.delivery_address ? ('Antar: ' + p.delivery_address) : null,
-                'Armada: ' + vehStr,
-                'Sopir: ' + (p.driver ? (p.driver + (p.driver_phone ? ' (' + p.driver_phone + ')' : '')) : 'Belum ditugaskan'),
-                'Pembayaran: ' + (p.payment_label || '-') + (p.balance_amount > 0 && p.status !== 'cancelled' ? ' (Sisa ' + (p.balance_fmt || 'Rp 0') + ')' : ''),
-                p.note ? ('Catatan: ' + p.note) : null
-            ].filter(Boolean).join('\n');
-
-            let copied = false;
-            try {
-                if (navigator.clipboard && window.isSecureContext) {
-                    await navigator.clipboard.writeText(lines);
-                    copied = true;
-                }
-            } catch (e) {}
-            if (!copied) {
-                try {
-                    const ta = document.createElement('textarea');
-                    ta.value = lines;
-                    ta.style.position = 'fixed';
-                    ta.style.opacity = '0';
-                    document.body.appendChild(ta);
-                    ta.select();
-                    copied = document.execCommand('copy');
-                    document.body.removeChild(ta);
-                } catch (e) {}
-            }
-            if (copied) {
-                copyBtnEl.innerHTML = '<i class="bi bi-check2 me-1" aria-hidden="true"></i>Tersalin!';
-                setTimeout(() => {
-                    copyBtnEl.innerHTML = '<i class="bi bi-clipboard me-1" aria-hidden="true"></i>Salin Info Sopir';
-                }, 1800);
-            } else {
-                setModalFeedback('error', 'Browser tidak mengizinkan salin otomatis.');
-            }
-        });
-    }
-
     const dateCreateModalEl = document.getElementById('calDateCreateModal');
     if (dateCreateModalEl) {
         dateCreateModalEl.addEventListener('hidden.bs.modal', () => {
@@ -2014,7 +1977,6 @@ document.addEventListener('DOMContentLoaded', function () {
             lastFetchedEvents = null;
         }
         syncChipAndKpiStates();
-        updateToolbarGroupManifestLink();
         syncUrlState();
         calendar.refetchEvents();
     };

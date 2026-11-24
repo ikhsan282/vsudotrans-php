@@ -775,8 +775,6 @@ if ($cleanAllTransactions) {
             'booking_status_history',
             'trip_assignments',
             'trip_schedules',
-            'payroll_items',
-            'payroll_periods',
             'wa_outbox',
             'bot_request_logs',
             'travel_ticket_bookings',

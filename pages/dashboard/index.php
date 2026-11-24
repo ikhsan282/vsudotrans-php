@@ -100,6 +100,10 @@ if (can('travel.manage') && active_company_id() !== null) {
 if (can('rental.manage') && active_company_id() !== null) {
     $dash_actions[] = ['label' => 'Sewa Unit', 'icon' => 'plus-lg', 'href' => 'pages/rental/bookings/form.php', 'class' => 'btn btn-outline-primary btn-sm'];
 }
+if (can('finance.manage') && (active_company_id() !== null || is_super_admin())) {
+    $dash_actions[] = ['label' => 'Pemasukan',   'icon' => 'plus-circle', 'href' => 'pages/finance/incomes/form.php?return=dashboard',  'class' => 'btn btn-outline-success btn-sm'];
+    $dash_actions[] = ['label' => 'Pengeluaran', 'icon' => 'dash-circle', 'href' => 'pages/finance/expenses/form.php?return=dashboard', 'class' => 'btn btn-outline-danger btn-sm'];
+}
 
 $active = 'dashboard';
 $title  = 'Dashboard';
@@ -249,7 +253,17 @@ require __DIR__ . '/../../includes/header.php';
                     Kas Keluar: <strong><?= e(rupiah($cash_sum['month_out'])) ?></strong>
                 </span>
             </div>
-            <div class="d-flex flex-wrap gap-3 small">
+            <div class="d-flex flex-wrap align-items-center gap-3 small">
+                <?php if (can('finance.manage')): ?>
+                    <a href="<?= e(APP_URL) ?>/pages/finance/incomes/form.php?return=dashboard" class="btn btn-outline-success btn-sm py-0 px-2">
+                        <i class="bi bi-plus-lg me-1"></i>Catat Pemasukan
+                    </a>
+                    <a href="<?= e(APP_URL) ?>/pages/finance/expenses/form.php?return=dashboard" class="btn btn-outline-danger btn-sm py-0 px-2">
+                        <i class="bi bi-plus-lg me-1"></i>Catat Pengeluaran
+                    </a>
+                <?php endif; ?>
+                <a href="<?= e(APP_URL) ?>/pages/finance/incomes/index.php" class="text-decoration-none text-success">Pemasukan →</a>
+                <a href="<?= e(APP_URL) ?>/pages/finance/expenses/index.php" class="text-decoration-none text-danger">Pengeluaran →</a>
                 <a href="<?= e(APP_URL) ?>/pages/finance/cash/index.php" class="text-decoration-none">Buku Kas →</a>
                 <a href="<?= e(APP_URL) ?>/pages/reports/finance.php" class="text-decoration-none">Laporan Keuangan →</a>
             </div>

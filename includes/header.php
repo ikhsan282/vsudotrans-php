@@ -58,8 +58,46 @@ $showSplitReveal = !empty($_SESSION['vst_login_reveal']);
 if ($showSplitReveal) {
     unset($_SESSION['vst_login_reveal']);
 }
-if ($showSplitReveal):
 ?>
+<div id="vstNavProgress" class="vst-nav-progress" aria-hidden="true"><div class="vst-nav-progress-bar"></div></div>
+<?php if (!$showSplitReveal): ?>
+<script>
+  (function () {
+    try {
+      var raw = sessionStorage.getItem('vst_nav_pending');
+      if (!raw) return;
+      sessionStorage.removeItem('vst_nav_pending');
+      var data = JSON.parse(raw);
+      if (!data || !data.ts || (Date.now() - data.ts) > 8000) return;
+      document.documentElement.classList.add('vst-nav-arriving');
+      var nav = document.getElementById('vstNavProgress');
+      var bar = nav ? nav.querySelector('.vst-nav-progress-bar') : null;
+      if (nav && bar) {
+        nav.classList.add('is-active');
+        bar.style.transform = 'scaleX(0.82)';
+        var finish = function () {
+          window.requestAnimationFrame(function () {
+            bar.style.transform = 'scaleX(1)';
+            window.setTimeout(function () {
+              nav.classList.remove('is-active');
+              window.setTimeout(function () { bar.style.transform = 'scaleX(0)'; }, 240);
+            }, 180);
+          });
+        };
+        if (document.readyState === 'loading') {
+          document.addEventListener('DOMContentLoaded', finish, { once: true });
+        } else {
+          finish();
+        }
+      }
+      window.setTimeout(function () {
+        document.documentElement.classList.remove('vst-nav-arriving');
+      }, 320);
+    } catch (e) {}
+  })();
+</script>
+<?php endif; ?>
+<?php if ($showSplitReveal): ?>
 <div id="vstSplitReveal" class="vst-lgo-overlay" role="status" aria-live="polite" aria-label="Membuka workspace">
     <div class="vst-lgo-half vst-lgo-half--l" aria-hidden="true"></div>
     <div class="vst-lgo-half vst-lgo-half--r" aria-hidden="true"></div>
@@ -107,12 +145,6 @@ if ($showSplitReveal):
         </div>
 
         <div class="ms-auto d-flex align-items-center gap-2 flex-shrink-0">
-            <button type="button" id="globalSearchTrigger" class="topbar-search-btn"
-                    title="Pencarian Cepat Global (Ctrl+K)" aria-label="Pencarian Cepat Global">
-                <i class="bi bi-search" aria-hidden="true"></i>
-                <span class="d-none d-md-inline topbar-search-placeholder">Cari cepat...</span>
-                <kbd class="d-none d-lg-inline topbar-search-kbd">Ctrl+K</kbd>
-            </button>
             <div class="dropdown">
                 <button class="topbar-pill dropdown-toggle" type="button" data-bs-toggle="dropdown" aria-expanded="false" title="Perusahaan Aktif: <?= e($activeName) ?>">
                     <span class="topbar-company-dot" aria-hidden="true"></span>
@@ -167,5 +199,32 @@ if ($showSplitReveal):
         </div>
     </div>
     <div id="sidebarOverlay" class="sidebar-overlay"></div>
+    <div id="vstPageLoader" class="vst-page-loader" role="status" aria-live="polite" aria-hidden="true">
+        <div class="vst-pl-card">
+            <div class="vst-skel-bar"></div>
+            <div class="vst-pl-head">
+                <div class="vst-pl-emblem" aria-hidden="true">
+                    <span class="vst-lgo-ring"></span>
+                    <span class="vst-pl-logo">
+                        <img src="<?= e(APP_URL) ?>/assets/brand/logo-transmandiri.png" alt="">
+                    </span>
+                </div>
+                <div class="min-w-0 flex-grow-1">
+                    <div class="vst-pl-title" id="vstPageLoaderTitle">Memuat halaman…</div>
+                    <div class="vst-pl-sub" id="vstPageLoaderSub">Menyiapkan data workspace…</div>
+                </div>
+            </div>
+            <div class="vst-pl-skel-kpis" aria-hidden="true">
+                <span class="vst-skel vst-pl-kpi"></span>
+                <span class="vst-skel vst-pl-kpi"></span>
+                <span class="vst-skel vst-pl-kpi"></span>
+            </div>
+            <div class="vst-pl-skel-rows" aria-hidden="true">
+                <span class="vst-skel vst-skel-line" style="width:88%"></span>
+                <span class="vst-skel vst-skel-line" style="width:72%"></span>
+                <span class="vst-skel vst-skel-line mb-0" style="width:58%"></span>
+            </div>
+        </div>
+    </div>
     <div class="flash-wrap"><?= flash_html() ?></div>
     <div class="content-main-row">

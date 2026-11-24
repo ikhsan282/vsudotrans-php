@@ -52,8 +52,7 @@ $menu = [
     ['key' => 'dashboard', 'section' => 'Utama', 'label' => 'Dashboard', 'icon' => 'speedometer2', 'href' => 'pages/dashboard/index.php', 'perm' => null],
 
     // ── OPERASIONAL & ARMADA ────────────────────────────────────────────────
-    ['key' => 'dispatch',       'section' => 'Operasional & Armada', 'label' => 'Kalender Operasional', 'icon' => 'calendar2-check', 'href' => 'pages/dispatch/calendar.php',       'perm' => 'dispatch.view'],
-    ['key' => 'manifest_group', 'section' => 'Operasional & Armada', 'label' => 'Manifest Gabungan',    'icon' => 'card-checklist',  'href' => 'pages/dispatch/manifest_group.php', 'perm' => ['dispatch.view', 'travel.view', 'rental.view']],
+    ['key' => 'dispatch', 'section' => 'Operasional & Armada', 'label' => 'Kalender Operasional', 'icon' => 'calendar2-check', 'href' => 'pages/dispatch/calendar.php', 'perm' => 'dispatch.view'],
     ['key' => 'travel', 'section' => 'Operasional & Armada', 'label' => 'Travel', 'icon' => 'bus-front', 'perm' => 'travel.view', 'sub' => [
         ['label' => 'Pemesanan Tiket Perjalanan', 'href' => 'pages/travel/bookings/index.php',  'perms' => 'travel.view'],
     ]],
@@ -73,18 +72,21 @@ $menu = [
     ]],
 
     // ── KEUANGAN & AKUNTANSI ────────────────────────────────────────────────
-    ['key' => 'finance', 'section' => 'Keuangan & Akuntansi', 'label' => 'Keuangan', 'icon' => 'cash-coin', 'perm' => null, 'sub' => [
-        ['label' => 'Buku Kas',           'href' => 'pages/finance/cash/index.php',             'perms' => 'finance.view'],
-        ['label' => 'Metode Pembayaran',  'href' => 'pages/finance/payment_methods/index.php',  'perms' => 'finance.view'],
+    ['key' => 'finance', 'keys' => ['finance', 'incomes', 'expenses'], 'section' => 'Keuangan & Akuntansi', 'label' => 'Keuangan', 'icon' => 'cash-coin', 'perm' => null, 'sub' => [
+        ['label' => 'Buku Kas',          'href' => 'pages/finance/cash/index.php',            'perms' => 'finance.view'],
+        ['key' => 'incomes',  'label' => 'Pemasukan',   'href' => 'pages/finance/incomes/index.php',  'perms' => 'finance.view'],
+        ['key' => 'expenses', 'label' => 'Pengeluaran', 'href' => 'pages/finance/expenses/index.php', 'perms' => 'finance.view'],
+        ['label' => 'Metode Pembayaran', 'href' => 'pages/finance/payment_methods/index.php', 'perms' => 'finance.view'],
     ]],
 
-    // ── SDM & PAYROLL ───────────────────────────────────────────────────────
-    ['key' => 'employees',  'section' => 'SDM & Payroll', 'label' => 'Karyawan',  'icon' => 'person-vcard',   'href' => 'pages/employees/index.php',       'perm' => 'employees.view'],
-    ['key' => 'payroll',    'section' => 'SDM & Payroll', 'label' => 'Payroll',   'icon' => 'cash-stack',     'href' => 'pages/payroll/periods/index.php', 'perm' => 'payroll.view'],
-    ['key' => 'hr',         'section' => 'SDM & Payroll', 'label' => 'Master HR', 'icon' => 'briefcase',      'perm' => 'hr.view', 'sub' => [
+    // ── SDM ─────────────────────────────────────────────────────────────────
+    ['key' => 'employees',  'section' => 'SDM', 'label' => 'Karyawan',  'icon' => 'person-vcard', 'href' => 'pages/employees/index.php', 'perm' => 'employees.view'],
+    ['key' => 'hr', 'keys' => ['hr', 'salary_components', 'salary_assignments'], 'section' => 'SDM', 'label' => 'Master HR', 'icon' => 'briefcase', 'perm' => ['hr.view', 'payroll.view'], 'sub' => [
         ['label' => 'Jabatan',             'href' => 'pages/hr/job_titles/index.php',              'perms' => 'hr.view'],
         ['label' => 'Posisi',              'href' => 'pages/hr/job_positions/index.php',           'perms' => 'hr.view'],
         ['label' => 'Struktur Organisasi', 'href' => 'pages/hr/organization_structures/index.php', 'perms' => 'hr.view'],
+        ['key' => 'salary_components',  'label' => 'Komponen Gaji',      'href' => 'pages/hr/salary_components/index.php',       'perms' => 'payroll.view'],
+        ['key' => 'salary_assignments', 'label' => 'Penugasan Komponen', 'href' => 'pages/hr/salary_components/assignments.php', 'perms' => 'payroll.view'],
     ]],
 
     // ── LAPORAN ─────────────────────────────────────────────────────────────

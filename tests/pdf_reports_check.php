@@ -1,6 +1,6 @@
 <?php
 /**
- * Self-check: Cetak/PDF laporan, invoice, slip payroll (HTTP + isi + RBAC + audit).
+ * Self-check: Cetak/PDF laporan & invoice (HTTP + isi + RBAC + audit).
  * Butuh DB dev + server HTTP 8090. Jalankan: /opt/data/bin/php -c /opt/data/cache/scratch/localdb/php.ini tests/pdf_reports_check.php
  * ENV: PDF_BASE (default http://127.0.0.1:8090/vsudotrans), PDF_USER/PDF_PASS_FILE.
  */

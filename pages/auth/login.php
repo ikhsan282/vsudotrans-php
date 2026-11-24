@@ -206,7 +206,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 </div>
                 <div class="lgx-tile lgx-tile--dsp" data-k="2" aria-hidden="true">
                     <span class="lgx-ti"><i class="bi bi-calendar2-check"></i></span>
-                    <span class="lgx-tt"><b>Kalender Dispatch</b><small>Assign sopir &amp; manifest</small></span>
+                    <span class="lgx-tt"><b>Kalender Dispatch</b><small>Assign sopir &amp; surat jalan</small></span>
                 </div>
                 <div class="lgx-tile lgx-tile--fin" data-k="3" aria-hidden="true">
                     <span class="lgx-ti"><i class="bi bi-qr-code-scan"></i></span>

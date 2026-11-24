@@ -15,8 +15,14 @@ if (is_super_admin()) {
 $fmt = (string) ($_GET['format'] ?? 'xlsx');
 $fmt = in_array($fmt, ['csv', 'xlsx', 'pdf', 'html'], true) ? $fmt : 'xlsx';
 $sub = 'Periode ' . $f['from'] . ' s/d ' . $f['to'];
+$isOutOnly = $f['direction'] === 'out';
+$isInOnly  = $f['direction'] === 'in';
+$rptTitle  = $isOutOnly ? 'Daftar Pengeluaran' : ($isInOnly ? 'Daftar Pemasukan' : 'Buku Kas');
 $table = cash_export_table($f);
-$base = 'Buku Kas ' . $f['from'] . ' s-d ' . $f['to'];
+if (($isOutOnly || $isInOnly) && isset($table[0][0])) {
+    $table[0][0] = $rptTitle;
+}
+$base = ($isOutOnly ? 'Pengeluaran ' : ($isInOnly ? 'Pemasukan ' : 'Buku Kas ')) . $f['from'] . ' s-d ' . $f['to'];
 
 // Header download dual-form: ASCII fallback + filename* UTF-8 (spasi/karakter Indonesia aman).
 function send_download_headers(string $base, string $ext, string $mime): void
@@ -31,7 +37,7 @@ function send_download_headers(string $base, string $ext, string $mime): void
 
 if ($fmt === 'pdf' || $fmt === 'html') {
     require_once __DIR__ . '/../../reports/_print.php';
-    rpt_send($table, 'Buku Kas', $base, $sub, null, 'portrait', 'finance.cash.print');
+    rpt_send($table, $rptTitle, $base, $sub, null, 'portrait', 'finance.cash.print');
 }
 
 if ($fmt === 'csv') {

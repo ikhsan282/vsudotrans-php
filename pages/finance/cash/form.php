@@ -16,7 +16,7 @@ if ($id > 0) {
         redirect('pages/finance/cash/index.php');
     }
     if (!empty($row['source_type'])) {
-        flash('error', 'Transaksi hasil sinkronisasi otomatis hanya dapat diubah dari Invoice/Booking/Payroll asal.');
+        flash('error', 'Transaksi hasil sinkronisasi otomatis hanya dapat diubah dari Invoice atau Booking asal.');
         redirect('pages/finance/cash/index.php');
     }
     $cid = (int) $row['company_id'];
@@ -37,10 +37,14 @@ if ($id > 0) {
         $cid = require_active_company();
     }
 }
+$reqDir = (string) ($_GET['direction'] ?? 'in');
+if (!isset(cash_directions()[$reqDir])) {
+    $reqDir = 'in';
+}
 $form = [
     'payment_method_id' => (string) ($row['payment_method_id'] ?? ''),
     'date'              => (string) ($row['date'] ?? date('Y-m-d')),
-    'direction'         => (string) ($row['direction'] ?? 'in'),
+    'direction'         => (string) ($row['direction'] ?? $reqDir),
     'amount'            => $row !== null ? (string) $row['amount'] : '',
     'category'          => (string) ($row['category'] ?? ''),
     'description'       => (string) ($row['description'] ?? ''),
@@ -52,8 +56,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     foreach (array_keys($form) as $k) {
         $form[$k] = trim((string) ($_POST[$k] ?? ''));
     }
-    // Koma/titik ribuan diterima agar nilai tempel dari Excel tidak ditolak.
-    $form['amount'] = str_replace(['.', ','], ['', '.'], (string) ($_POST['amount'] ?? ''));
+    $form['amount'] = (string) cash_parse_amount($_POST['amount'] ?? '');
     $errors = cash_tx_validate($form, $cid);
     if (!$errors) {
         cash_tx_save($id, $form, $cid, $_SESSION['username'] ?? null);
@@ -66,7 +69,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
 $methods = cash_method_list($cid);
 $active = 'finance';
-$title  = ($id > 0 ? 'Ubah' : 'Tambah') . ' Transaksi Kas';
+$title  = $id > 0
+    ? 'Ubah Transaksi Kas'
+    : ($form['direction'] === 'out' ? 'Tambah Pengeluaran (Kas Keluar)' : 'Tambah Pemasukan (Kas Masuk)');
 require __DIR__ . '/../../../includes/header.php';
 ?>
 <main class="p-2 p-md-3">
@@ -163,8 +168,18 @@ require __DIR__ . '/../../../includes/header.php';
                                     <div class="rnt-row">
                                         <div class="rnt-label">Kategori</div>
                                         <div class="rnt-field">
-                                            <input class="form-control form-control-sm" id="category" name="category" maxlength="50" value="<?= e($form['category']) ?>"
-                                                   placeholder="mis. setoran, bbm, gaji, sewa">
+                                            <input class="form-control form-control-sm" id="category" name="category" list="cashCategoryList" maxlength="50" value="<?= e($form['category']) ?>"
+                                                   placeholder="mis. BBM, Tol &amp; Parkir, Setoran Modal">
+                                            <datalist id="cashCategoryList">
+                                                <?php
+                                                $initCatList = $form['direction'] === 'out'
+                                                    ? array_keys(cash_expense_categories())
+                                                    : array_keys(cash_income_categories());
+                                                foreach ($initCatList as $cOpt):
+                                                ?>
+                                                    <option value="<?= e($cOpt) ?>"></option>
+                                                <?php endforeach; ?>
+                                            </datalist>
                                         </div>
                                     </div>
                                     <div class="rnt-row rnt-row-top">
@@ -187,4 +202,25 @@ require __DIR__ . '/../../../includes/header.php';
         </div>
     </form>
 </main>
+<script>
+document.addEventListener('DOMContentLoaded', function () {
+    var dirSel = document.getElementById('direction');
+    var dl = document.getElementById('cashCategoryList');
+    if (!dirSel || !dl) return;
+    var map = {
+        'in': <?= json_encode(array_keys(cash_income_categories()), JSON_UNESCAPED_UNICODE) ?>,
+        'out': <?= json_encode(array_keys(cash_expense_categories()), JSON_UNESCAPED_UNICODE) ?>
+    };
+    function refreshCats() {
+        var list = map[dirSel.value] || map['in'];
+        dl.innerHTML = '';
+        list.forEach(function (v) {
+            var opt = document.createElement('option');
+            opt.value = v;
+            dl.appendChild(opt);
+        });
+    }
+    dirSel.addEventListener('change', refreshCats);
+});
+</script>
 <?php require __DIR__ . '/../../../includes/footer.php'; ?>

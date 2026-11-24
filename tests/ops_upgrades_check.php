@@ -3,11 +3,11 @@
  * Integration & HTTP verification for the operational upgrade suite:
  *   1. Seeded MTM Multi-Day Rental Bookings
  *   2. Calendar Quick Assign (CSRF, 409 overlap check, save & restore)
- *   3. Manifest Gabungan Armada (HTML & PDF generation)
+ *   3. Penghapusan Manifest Gabungan Armada (berkas & endpoint sudah tidak ada / 404)
  *   4. Calendar Drag & Drop Reschedule (CSRF, done-lock, 409 overlap, save & restore)
  *   5. Travel & Rental index filters (category_id, pay_status, badges, icon-only print)
  *   6. Dashboard KPI drill-downs, Calendar status pills, Perlu Tindakan widget
- *   7. Global Quick Search API (auth, company scope, Travel/Rental/Passenger/Vehicle/Employee hits)
+ *   7. Penghapusan Global Quick Search (topbar trigger/modal & endpoint global.php 404)
  *
  * Usage: php tests/ops_upgrades_check.php [base_url]
  */
@@ -106,9 +106,7 @@ ou_check(
     'Booking sample #1 (115020261118) berstatus done'
 );
 
-echo "2. Verifikasi Global Search 401 sebelum login & Login Super Admin...\n";
-$unauthSearch = $httpGet(null, '/pages/search/global.php?q=1151');
-ou_check($unauthSearch['code'] === 401, 'Global search menolak permintaan tanpa login (HTTP 401)');
+echo "2. Verifikasi Login Super Admin & Halaman Kalender...\n";
 
 $loginPage = $httpGet($jar, '/pages/auth/login.php');
 preg_match('/name="csrf_token"\s+value="([^"]+)"/', $loginPage['body'], $mCsrf);
@@ -207,17 +205,10 @@ if ($csrf !== '' && isset($byDoc['115420261128'], $byDoc['115120261122'])) {
     ]);
 }
 
-echo "5. Verifikasi Manifest Gabungan Armada (HTML & PDF)...\n";
-$mgHtml = $httpGet($jar, '/pages/dispatch/manifest_group.php?date=2026-11-23');
-ou_check(
-    $mgHtml['code'] === 200
-    && str_contains($mgHtml['body'], 'MANIFEST GABUNGAN ARMADA')
-    && str_contains($mgHtml['body'], '115120261122')
-    && str_contains($mgHtml['body'], '115220261123'),
-    'manifest_group.php HTML menampilkan gabungan jadwal Rental aktif pada 2026-11-23'
-);
-$mgPdf = $httpGet($jar, '/pages/dispatch/manifest_group.php?date=2026-11-23&format=pdf');
-ou_check($mgPdf['code'] === 200 && str_starts_with($mgPdf['body'], '%PDF-'), 'manifest_group.php?format=pdf menghasilkan berkas PDF valid (%PDF-)');
+echo "5. Verifikasi Penghapusan Manifest Gabungan Armada...\n";
+ou_check(!is_file(__DIR__ . '/../pages/dispatch/manifest_group.php'), 'Berkas pages/dispatch/manifest_group.php sudah dihapus');
+$mgRemoved = $httpGet($jar, '/pages/dispatch/manifest_group.php?date=2026-11-23');
+ou_check($mgRemoved['code'] === 404, 'Endpoint manifest_group.php mengembalikan HTTP 404');
 
 echo "6. Verifikasi Filter Kategori & Pembayaran pada Daftar Travel & Rental...\n";
 $trIdx = $httpGet($jar, '/pages/travel/bookings/index.php?pay_status=paid');
@@ -238,7 +229,7 @@ ou_check(
     'Daftar Pemesanan Rental menyaring pay_status=partial dan menampilkan badge pembayaran & kategori'
 );
 
-echo "7. Verifikasi Dashboard Action Hub & Global Quick Search...\n";
+echo "7. Verifikasi Dashboard Action Hub & Penghapusan Global Quick Search...\n";
 $dash = $httpGet($jar, '/pages/dashboard/index.php');
 ou_check(
     $dash['code'] === 200
@@ -246,27 +237,14 @@ ou_check(
     && str_contains($dash['body'], 'Perlu Tindakan Operasional')
     && str_contains($dash['body'], '115420261128')
     && str_contains($dash['body'], 'calendar.php?view=listMonth&amp;status=scheduled')
-    && str_contains($dash['body'], 'globalSearchTrigger')
-    && str_contains($dash['body'], 'globalSearchModal'),
-    'Dashboard memuat KPI drill-down, pill ke Kalender, widget Perlu Tindakan, dan Global Quick Search trigger/modal'
+    && !str_contains($dash['body'], 'globalSearchTrigger')
+    && !str_contains($dash['body'], 'globalSearchModal'),
+    'Dashboard memuat KPI drill-down, pill ke Kalender, widget Perlu Tindakan, tanpa Global Quick Search trigger/modal'
 );
 
-$gs = $httpGet($jar, '/pages/search/global.php?q=115120261122');
-ou_check(
-    $gs['code'] === 200
-    && !empty($gs['json']['ok'])
-    && (int) ($gs['json']['total'] ?? 0) >= 1
-    && $gs['json']['groups'][0]['key'] === 'rental',
-    'Global Quick Search menemukan booking Rental multi-hari 115120261122'
-);
-
-$gsVeh = $httpGet($jar, '/pages/search/global.php?q=B+7101');
-ou_check(
-    $gsVeh['code'] === 200
-    && !empty($gsVeh['json']['ok'])
-    && (int) ($gsVeh['json']['total'] ?? 0) >= 1,
-    'Global Quick Search menemukan kendaraan B 7101 MTM'
-);
+ou_check(!is_file(__DIR__ . '/../pages/search/global.php'), 'Berkas pages/search/global.php sudah dihapus');
+$gsRemoved = $httpGet($jar, '/pages/search/global.php?q=115120261122');
+ou_check($gsRemoved['code'] === 404, 'Endpoint pages/search/global.php mengembalikan HTTP 404');
 
 @unlink($jar);
 @unlink($jarAnon);

@@ -14,8 +14,8 @@
     },
     {
       no: '03',
-      title: 'Kalender Dispatch & Surat Jalan Gabungan.',
-      desc: 'Penjadwalan sopir, drag-and-drop jadwal, serta cetak manifest armada dalam satu layar.'
+      title: 'Kalender Dispatch & Surat Jalan.',
+      desc: 'Penjadwalan sopir, drag-and-drop jadwal, serta cetak surat jalan dalam satu layar.'
     },
     {
       no: '04',

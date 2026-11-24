@@ -11,7 +11,7 @@ CREATE DATABASE IF NOT EXISTS `vsudotrans` CHARACTER SET utf8mb4 COLLATE utf8mb4
 USE `vsudotrans`;
 
 SET FOREIGN_KEY_CHECKS = 0;
-DROP TABLE IF EXISTS `audit_trails`, `login_attempts`, `user_permissions`, `user_companies`, `employees`, `users`, `roles`, `permissions`, `branches`, `companies`, `groups`, `role_permissions`, `banks`, `countries`, `provinces`, `cities`, `districts`, `villages`, `unit_measures`, `brand_vehicles`, `category_vehicles`, `model_units`, `vehicles`, `rute_radius_districts`, `rute_schedules`, `rute_tariffs`, `rutes`, `schedules`, `passengers`, `trip_schedules`, `travel_ticket_bookings`, `rental_car_bookings`, `rental_car_regulation_employees`, `booking_passengers`, `booking_status_history`, `trip_assignments`, `premi_configs`, `booking_cost_lines`, `document_sequences`, `payment_methods`, `payment_channels`, `payment_gateway_orders`, `bot_request_logs`, `invoices`, `invoice_revisions`, `job_titles`, `job_positions`, `organization_structures`, `payroll_periods`, `payroll_items`, `cash_transactions`, `wa_settings`, `wa_outbox`;
+DROP TABLE IF EXISTS `audit_trails`, `login_attempts`, `user_permissions`, `user_companies`, `employees`, `users`, `roles`, `permissions`, `branches`, `companies`, `groups`, `role_permissions`, `banks`, `countries`, `provinces`, `cities`, `districts`, `villages`, `unit_measures`, `brand_vehicles`, `category_vehicles`, `model_units`, `vehicles`, `rute_radius_districts`, `rute_schedules`, `rute_tariffs`, `rutes`, `schedules`, `passengers`, `trip_schedules`, `travel_ticket_bookings`, `rental_car_bookings`, `rental_car_regulation_employees`, `booking_passengers`, `booking_status_history`, `trip_assignments`, `premi_configs`, `booking_cost_lines`, `document_sequences`, `payment_methods`, `payment_channels`, `payment_gateway_orders`, `bot_request_logs`, `invoices`, `invoice_revisions`, `job_titles`, `job_positions`, `organization_structures`, `employee_salary_components`, `salary_components`, `cash_transactions`, `wa_settings`, `wa_outbox`;
 SET FOREIGN_KEY_CHECKS = 1;
 SET NAMES utf8mb4;
 
@@ -213,8 +213,6 @@ CREATE TABLE `employees` (
   `job_title` VARCHAR(100) DEFAULT NULL,
   `job_position` VARCHAR(100) DEFAULT NULL,
   `organization_structure` VARCHAR(100) DEFAULT NULL,
-  `basic_salary` DECIMAL(18,2) NOT NULL DEFAULT 0,
-  `daily_allowance` DECIMAL(18,2) NOT NULL DEFAULT 0,
   `bank_name` VARCHAR(100) DEFAULT NULL,
   `account_number` VARCHAR(50) DEFAULT NULL,
   `account_name` VARCHAR(100) DEFAULT NULL,
@@ -1253,8 +1251,6 @@ CREATE TABLE `job_titles` (
   `code` VARCHAR(15) NOT NULL,
   `name` VARCHAR(255) NOT NULL,
   `level` INT(11) NOT NULL DEFAULT 0,
-  `basic_salary` DECIMAL(18,2) NOT NULL DEFAULT 0 COMMENT 'Standar gaji pokok per bulan',
-  `daily_allowance` DECIMAL(18,2) NOT NULL DEFAULT 0 COMMENT 'Standar uang harian per hari hadir',
   `note` VARCHAR(2000) DEFAULT NULL,
   `is_active` TINYINT(1) NOT NULL DEFAULT 1,
   `created_user` VARCHAR(255) DEFAULT NULL,
@@ -1313,46 +1309,47 @@ CREATE TABLE `organization_structures` (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- ---------------------------------------------------------------------
--- MODUL PAYROLL (gaji per periode bulanan)
+-- MODUL KOMPONEN GAJI (master komponen & penugasan bermasa berlaku)
 -- ---------------------------------------------------------------------
-CREATE TABLE `payroll_periods` (
+CREATE TABLE `salary_components` (
   `id` INT(11) NOT NULL AUTO_INCREMENT,
-  `company_id` INT(11) NOT NULL,
-  `period_year` SMALLINT(6) NOT NULL,
-  `period_month` TINYINT(4) NOT NULL,
-  `status` ENUM('draft','final','paid') NOT NULL DEFAULT 'draft',
+  `company_id` INT(11) DEFAULT NULL COMMENT 'NULL = berlaku semua perusahaan',
+  `code` VARCHAR(20) NOT NULL,
+  `name` VARCHAR(255) NOT NULL,
+  `category` ENUM('earning','deduction') NOT NULL DEFAULT 'earning',
+  `calc_basis` ENUM('monthly','daily') NOT NULL DEFAULT 'monthly',
   `note` VARCHAR(2000) DEFAULT NULL,
+  `is_active` TINYINT(1) NOT NULL DEFAULT 1,
   `created_user` VARCHAR(255) DEFAULT NULL,
   `created_date` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
   `modified_user` VARCHAR(255) DEFAULT NULL,
   `modified_date` DATETIME DEFAULT NULL,
   PRIMARY KEY (`id`),
-  UNIQUE KEY `uq_payroll_periods_company_period` (`company_id`, `period_year`, `period_month`),
-  CONSTRAINT `fk_payroll_periods_company` FOREIGN KEY (`company_id`) REFERENCES `companies` (`id`) ON DELETE RESTRICT
+  UNIQUE KEY `uq_salary_components_code` (`company_id`, `code`),
+  KEY `ix_salary_components_company` (`company_id`),
+  CONSTRAINT `fk_salary_components_company` FOREIGN KEY (`company_id`) REFERENCES `companies` (`id`) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
-CREATE TABLE `payroll_items` (
+CREATE TABLE `employee_salary_components` (
   `id` INT(11) NOT NULL AUTO_INCREMENT,
-  `payroll_period_id` INT(11) NOT NULL,
-  `employee_id` INT(11) NOT NULL,
   `company_id` INT(11) NOT NULL,
-  `basic_salary` DECIMAL(18,2) NOT NULL DEFAULT 0 COMMENT 'salinan gaji pokok grade saat generate',
-  `daily_allowance` DECIMAL(18,2) NOT NULL DEFAULT 0,
-  `days_present` INT(11) NOT NULL DEFAULT 0,
-  `deductions` DECIMAL(18,2) NOT NULL DEFAULT 0,
-  `net_salary` DECIMAL(18,2) NOT NULL DEFAULT 0,
-  `note` VARCHAR(2000) DEFAULT NULL,
+  `employee_id` INT(11) NOT NULL,
+  `salary_component_id` INT(11) NOT NULL,
+  `amount` DECIMAL(18,2) NOT NULL DEFAULT 0,
+  `effective_from` DATE NOT NULL,
+  `effective_to` DATE DEFAULT NULL,
+  `note` VARCHAR(500) DEFAULT NULL,
   `created_user` VARCHAR(255) DEFAULT NULL,
   `created_date` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
   `modified_user` VARCHAR(255) DEFAULT NULL,
   `modified_date` DATETIME DEFAULT NULL,
   PRIMARY KEY (`id`),
-  KEY `ix_payroll_items_period` (`payroll_period_id`),
-  KEY `ix_payroll_items_employee` (`employee_id`),
-  KEY `ix_payroll_items_company` (`company_id`),
-  CONSTRAINT `fk_payroll_items_period` FOREIGN KEY (`payroll_period_id`) REFERENCES `payroll_periods` (`id`) ON DELETE CASCADE,
-  CONSTRAINT `fk_payroll_items_employee` FOREIGN KEY (`employee_id`) REFERENCES `employees` (`id`) ON DELETE RESTRICT,
-  CONSTRAINT `fk_payroll_items_company` FOREIGN KEY (`company_id`) REFERENCES `companies` (`id`) ON DELETE RESTRICT
+  KEY `ix_esc_comp_emp` (`company_id`, `employee_id`),
+  KEY `ix_esc_component` (`salary_component_id`),
+  KEY `ix_esc_emp_comp_dates` (`employee_id`, `salary_component_id`, `effective_from`, `effective_to`),
+  CONSTRAINT `fk_esc_company` FOREIGN KEY (`company_id`) REFERENCES `companies` (`id`) ON DELETE CASCADE,
+  CONSTRAINT `fk_esc_employee` FOREIGN KEY (`employee_id`) REFERENCES `employees` (`id`) ON DELETE CASCADE,
+  CONSTRAINT `fk_esc_component` FOREIGN KEY (`salary_component_id`) REFERENCES `salary_components` (`id`) ON DELETE RESTRICT
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 
@@ -1377,8 +1374,8 @@ INSERT INTO `permissions` (`name`, `description`, `module`) VALUES
 ('dispatch.manage', 'Kelola Penjadwalan driver', 'dispatch'),
 ('finance.view',   'Lihat Keuangan',   'finance'),
 ('finance.manage', 'Kelola Keuangan', 'finance'),
-('payroll.view',   'Lihat Payroll',   'payroll'),
-('payroll.manage', 'Kelola Payroll', 'payroll');
+('payroll.view',   'Lihat Komponen Gaji',   'payroll'),
+('payroll.manage', 'Kelola Komponen Gaji', 'payroll');
 
 -- Super Admin: semua permission baru
 INSERT INTO `role_permissions` (`role_id`, `permission_id`)

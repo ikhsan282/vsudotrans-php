@@ -1,7 +1,7 @@
 <?php
 /**
  * Seeder contoh booking Rental Multi-Hari realistis pada perusahaan MTM (company_id = 1)
- * agar Kalender Operasional, Manifest Armada, Filter Pembayaran, dan Dashboard tampil lengkap.
+ * agar Kalender Operasional, Filter Pembayaran, dan Dashboard tampil lengkap.
  * Tidak menyentuh data `travel_ticket_bookings`.
  *
  * Penggunaan CLI:

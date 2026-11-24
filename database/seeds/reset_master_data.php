@@ -114,11 +114,11 @@ $categorySeeds = [
 ];
 
 $jobTitleSeeds = [
-    ['JBT-DIR', 'Direktur',                 1, 12000000.0, 150000.0, 'Pimpinan tertinggi perusahaan'],
-    ['JBT-MGR', 'Manajer',                  2,  8000000.0, 100000.0, 'Manajer divisi operasional / keuangan'],
-    ['JBT-SPV', 'Supervisor / Koordinator', 3,  5500000.0,  75000.0, 'Koordinator lapangan dan armada'],
-    ['JBT-STF', 'Staff / Admin',            4,  4000000.0,  50000.0, 'Staff administrasi, tiket, CS & kasir'],
-    ['JBT-OPR', 'Kru Operasional',          5,  3000000.0,  50000.0, 'Driver, kernet, dan mekanik armada'],
+    ['JBT-DIR', 'Direktur',                 1, 'Pimpinan tertinggi perusahaan'],
+    ['JBT-MGR', 'Manajer',                  2, 'Manajer divisi operasional / keuangan'],
+    ['JBT-SPV', 'Supervisor / Koordinator', 3, 'Koordinator lapangan dan armada'],
+    ['JBT-STF', 'Staff / Admin',            4, 'Staff administrasi, tiket, CS & kasir'],
+    ['JBT-OPR', 'Kru Operasional',          5, 'Driver, kernet, dan mekanik armada'],
 ];
 
 $jobPositionSeeds = [
@@ -292,7 +292,7 @@ try {
     $stBr  = $db->prepare('INSERT INTO brand_vehicles (company_id, code, name, note, is_active, created_user) VALUES (?, ?, ?, ?, 1, ?)');
     $stMd  = $db->prepare('INSERT INTO model_units (company_id, brand_id, code, name, note, is_active, created_user) VALUES (?, ?, ?, ?, ?, 1, ?)');
     $stCat = $db->prepare('INSERT INTO category_vehicles (company_id, code, name, service_type, pricing_unit, note, is_active, created_user) VALUES (?, ?, ?, ?, ?, ?, 1, ?)');
-    $stJt  = $db->prepare('INSERT INTO job_titles (company_id, code, name, level, basic_salary, daily_allowance, note, is_active, created_user) VALUES (?, ?, ?, ?, ?, ?, ?, 1, ?)');
+    $stJt  = $db->prepare('INSERT INTO job_titles (company_id, code, name, level, note, is_active, created_user) VALUES (?, ?, ?, ?, ?, 1, ?)');
     $stJp  = $db->prepare('INSERT INTO job_positions (company_id, job_title_id, parent_id, code, name, level, is_active, created_user) VALUES (?, ?, ?, ?, ?, ?, 1, ?)');
     $stOrg = $db->prepare('INSERT INTO organization_structures (company_id, parent_id, code, name, level, is_active, created_user) VALUES (?, ?, ?, ?, ?, 1, ?)');
     $stReg = $db->prepare("INSERT INTO rental_car_regulation_employees (company_id, category_vehicle_id, trip, start_date, end_date, type, amount, note, created_user) VALUES (?, ?, 1, '2026-01-01', '9999-12-31', 'Komisi', ?, ?, ?)");
@@ -325,8 +325,8 @@ try {
         }
 
         $newTitles = [];
-        foreach ($jobTitleSeeds as [$jtCode, $jtName, $jtLvl, $jtSal, $jtAllw, $jtNote]) {
-            $stJt->bind_param('issiddss', $cid, $jtCode, $jtName, $jtLvl, $jtSal, $jtAllw, $jtNote, $actor);
+        foreach ($jobTitleSeeds as [$jtCode, $jtName, $jtLvl, $jtNote]) {
+            $stJt->bind_param('ississ', $cid, $jtCode, $jtName, $jtLvl, $jtNote, $actor);
             $stJt->execute();
             $newTitles[$jtCode] = (int) $db->insert_id;
         }
