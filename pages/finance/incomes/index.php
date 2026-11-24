@@ -220,11 +220,12 @@ require __DIR__ . '/../../../includes/header.php';
                             <?php endif; ?>
                         </td>
                         <td class="text-nowrap"><?= !empty($r['method_name']) ? e((string) $r['method_name']) : '<span class="text-muted">-</span>' ?></td>
-                        <td><?= !empty($r['description']) ? e((string) $r['description']) : '<span class="text-muted">-</span>' ?></td>
+                        <td><?= cash_vehicle_badge_html($r) ?><?= !empty($r['description']) ? e((string) $r['description']) : (!empty($r['vehicle_number']) ? '' : '<span class="text-muted">-</span>') ?></td>
                         <td class="text-end text-nowrap fw-semibold text-success">
                             <?= e('+ ' . rupiah((float) $r['amount'])) ?>
                         </td>
                         <td class="text-end text-nowrap">
+                            <?= cash_proof_action_html($r) ?>
                             <?php if (can('finance.manage')): ?>
                                 <?php if ($isAuto): ?>
                                     <span class="text-muted small" title="Transaksi tersinkron otomatis dari sumber (Invoice/Booking)"><i class="bi bi-lock-fill"></i></span>

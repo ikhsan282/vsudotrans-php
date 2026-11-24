@@ -171,23 +171,98 @@ function fin_cash_summary(array $f): array
             COALESCE(SUM(CASE WHEN t.direction = 'in' AND t.source_type = 'booking_payment' THEN t.amount ELSE 0 END), 0) AS in_booking,
             COALESCE(SUM(CASE WHEN t.direction = 'in' AND (t.source_type IS NULL OR t.source_type <> 'booking_payment') THEN t.amount ELSE 0 END), 0) AS in_other,
             COALESCE(SUM(CASE WHEN t.direction = 'out' AND t.source_type = 'payroll_period' THEN t.amount ELSE 0 END), 0) AS out_payroll,
+            COALESCE(SUM(CASE WHEN t.direction = 'out' AND t.source_type = 'crew_commission' THEN t.amount ELSE 0 END), 0) AS out_commission,
             COALESCE(SUM(CASE WHEN t.direction = 'out' AND (t.source_type IS NULL OR t.source_type <> 'payroll_period') THEN t.amount ELSE 0 END), 0) AS out_other
         FROM cash_transactions t
         WHERE " . ($w !== '' ? $w . ' AND ' : '') . 't.date BETWEEN ? AND ?';
     $r = report_run($sql, $wt . 'ss', array_merge($wp, [$f['from'], $f['to']]))[0] ?? [];
-    $inB  = (float) ($r['in_booking'] ?? 0);
-    $inO  = (float) ($r['in_other'] ?? 0);
-    $outP = (float) ($r['out_payroll'] ?? 0);
-    $outO = (float) ($r['out_other'] ?? 0);
+    $inB   = (float) ($r['in_booking'] ?? 0);
+    $inO   = (float) ($r['in_other'] ?? 0);
+    $outP  = (float) ($r['out_payroll'] ?? 0);
+    $outC  = (float) ($r['out_commission'] ?? 0);
+    $outO  = (float) ($r['out_other'] ?? 0);
+    $outTot = $outP + $outO;
     return [
-        'in_booking'    => $inB,
-        'in_other'      => $inO,
-        'in_total'      => $inB + $inO,
-        'out_payroll'   => $outP,
-        'out_other'     => $outO,
-        'out_total'     => $outP + $outO,
-        'net_cash_flow' => ($inB + $inO) - ($outP + $outO),
+        'in_booking'     => $inB,
+        'in_other'       => $inO,
+        'in_total'       => $inB + $inO,
+        'out_payroll'    => $outP,
+        'out_commission' => $outC,
+        'out_other'      => $outO,
+        'out_operating'  => max(0.0, $outTot - $outC),
+        'out_total'      => $outTot,
+        'net_cash_flow'  => ($inB + $inO) - $outTot,
     ];
+}
+
+/** Rincian pengeluaran Buku Kas per kategori dalam rentang filter. */
+function fin_cash_expense_by_category(array $f): array
+{
+    [$w, $wt, $wp] = fin_company_scope('t.company_id', $f);
+    $sql = "SELECT COALESCE(NULLIF(TRIM(t.category), ''), 'Tanpa Kategori') AS category,
+                   COUNT(*) AS tx_count,
+                   COALESCE(SUM(t.amount), 0) AS amount,
+                   COALESCE(SUM(CASE WHEN t.source_type = 'crew_commission' THEN t.amount ELSE 0 END), 0) AS commission_amount
+              FROM cash_transactions t
+             WHERE " . ($w !== '' ? $w . ' AND ' : '') . "t.direction = 'out' AND t.date BETWEEN ? AND ?
+             GROUP BY category
+             ORDER BY amount DESC, category ASC";
+    $rows = report_run($sql, $wt . 'ss', array_merge($wp, [$f['from'], $f['to']]));
+    $grand = 0.0;
+    foreach ($rows as $r) {
+        $grand += (float) ($r['amount'] ?? 0);
+    }
+    foreach ($rows as &$r) {
+        $amt = (float) ($r['amount'] ?? 0);
+        $r['tx_count']          = (int) ($r['tx_count'] ?? 0);
+        $r['amount']            = $amt;
+        $r['commission_amount'] = (float) ($r['commission_amount'] ?? 0);
+        $r['share_pct']         = $grand > 0 ? round(($amt * 100) / $grand, 1) : 0.0;
+    }
+    unset($r);
+    return $rows;
+}
+
+/** Total kolom <tfoot> tabel Pengeluaran Kas per Kategori. */
+function fin_expense_category_totals(array $rows): array
+{
+    $t = ['tx_count' => 0, 'amount' => 0.0, 'commission_amount' => 0.0];
+    foreach ($rows as $r) {
+        $t['tx_count']          += (int) ($r['tx_count'] ?? 0);
+        $t['amount']            += (float) ($r['amount'] ?? 0);
+        $t['commission_amount'] += (float) ($r['commission_amount'] ?? 0);
+    }
+    return $t;
+}
+
+/** Rincian pengeluaran Buku Kas per armada/unit (transaksi yang tertaut vehicle_id). */
+function fin_cash_expense_by_vehicle(array $f): array
+{
+    [$w, $wt, $wp] = fin_company_scope('t.company_id', $f);
+    $sql = "SELECT v.id AS vehicle_id,
+                   v.vehicle_number,
+                   COALESCE(v.vehicle_category, '') AS vehicle_category,
+                   COUNT(*) AS tx_count,
+                   COALESCE(SUM(t.amount), 0) AS amount
+              FROM cash_transactions t
+              JOIN vehicles v ON v.id = t.vehicle_id
+             WHERE " . ($w !== '' ? $w . ' AND ' : '') . "t.direction = 'out' AND t.vehicle_id IS NOT NULL AND t.vehicle_id > 0 AND t.date BETWEEN ? AND ?
+             GROUP BY v.id, v.vehicle_number, v.vehicle_category
+             ORDER BY amount DESC, v.vehicle_number ASC";
+    $rows = report_run($sql, $wt . 'ss', array_merge($wp, [$f['from'], $f['to']]));
+    $grand = 0.0;
+    foreach ($rows as $r) {
+        $grand += (float) ($r['amount'] ?? 0);
+    }
+    foreach ($rows as &$r) {
+        $amt = (float) ($r['amount'] ?? 0);
+        $r['vehicle_id'] = (int) ($r['vehicle_id'] ?? 0);
+        $r['tx_count']   = (int) ($r['tx_count'] ?? 0);
+        $r['amount']     = $amt;
+        $r['share_pct']  = $grand > 0 ? round(($amt * 100) / $grand, 1) : 0.0;
+    }
+    unset($r);
+    return $rows;
 }
 
 /**
@@ -366,18 +441,41 @@ function fin_category_totals(array $rows): array
 /** Semua angka laporan keuangan sekaligus — halaman & export identik. */
 function fin_all(array $f, ?int $unpaid_limit = 200): array
 {
-    $rev  = fin_revenue($f);
-    $cost = fin_cost_total($f);
+    $rev        = fin_revenue($f);
+    $cost       = fin_cost_total($f);
+    $gross      = $rev['total'] - $cost;
+    $cash       = fin_cash_summary($f);
+    $expCats    = fin_cash_expense_by_category($f);
+    $expVehs    = fin_cash_expense_by_vehicle($f);
+    $inOther    = (float) ($cash['in_other'] ?? 0);
+    $outOp      = (float) ($cash['out_operating'] ?? 0);
+    $netProfit  = $gross + $inOther - $outOp;
+    $baseRev    = (float) $rev['total'] + $inOther;
+    $netMargin  = $baseRev > 0 ? round(($netProfit * 100) / $baseRev, 1) : 0.0;
+
     return [
-        'revenue'      => $rev,
-        'cost_total'   => $cost,
-        'gross_profit' => $rev['total'] - $cost,
-        'cost_types'   => fin_cost_by_type($f),
-        'categories'   => fin_by_category($f),
-        'unpaid'       => fin_unpaid($f, $unpaid_limit),
-        'monthly'      => fin_monthly($f),
-        'daily'        => fin_daily($f),
-        'cash'         => fin_cash_summary($f),
+        'revenue'            => $rev,
+        'cost_total'         => $cost,
+        'gross_profit'       => $gross,
+        'net_profit'         => $netProfit,
+        'net_summary'        => [
+            'revenue_total'  => (float) $rev['total'],
+            'trip_cost'      => $cost,
+            'gross_profit'   => $gross,
+            'in_other'       => $inOther,
+            'out_operating'  => $outOp,
+            'out_commission' => (float) ($cash['out_commission'] ?? 0),
+            'net_profit'     => $netProfit,
+            'net_margin_pct' => $netMargin,
+        ],
+        'cost_types'         => fin_cost_by_type($f),
+        'expense_categories' => $expCats,
+        'expense_vehicles'   => $expVehs,
+        'categories'         => fin_by_category($f),
+        'unpaid'             => fin_unpaid($f, $unpaid_limit),
+        'monthly'            => fin_monthly($f),
+        'daily'              => fin_daily($f),
+        'cash'               => $cash,
     ];
 }
 

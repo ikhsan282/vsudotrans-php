@@ -1003,6 +1003,8 @@ CREATE TABLE `booking_cost_lines` (
   `premi_value` DECIMAL(18,2) NOT NULL DEFAULT 0,
   `premi_amount` DECIMAL(18,2) NOT NULL DEFAULT 0,
   `note` VARCHAR(2000) DEFAULT NULL,
+  `paid_cash_tx_id` INT(11) DEFAULT NULL COMMENT 'id cash_transactions pembayaran komisi kru',
+  `paid_at` DATETIME DEFAULT NULL COMMENT 'waktu pencairan komisi kru',
   `created_user` VARCHAR(255) DEFAULT NULL,
   `created_date` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
   `modified_user` VARCHAR(255) DEFAULT NULL,
@@ -1014,6 +1016,7 @@ CREATE TABLE `booking_cost_lines` (
   KEY `ix_bcl_employee` (`employee_id`),
   KEY `ix_bcl_company` (`company_id`),
   KEY `ix_bcl_payment_method` (`payment_method_id`),
+  KEY `ix_bcl_paid_tx` (`paid_cash_tx_id`),
   CONSTRAINT `fk_bcl_company` FOREIGN KEY (`company_id`) REFERENCES `companies` (`id`) ON DELETE RESTRICT,
   CONSTRAINT `fk_bcl_employee` FOREIGN KEY (`employee_id`) REFERENCES `employees` (`id`) ON DELETE SET NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
@@ -1190,15 +1193,18 @@ CREATE TABLE `cash_transactions` (
   `category` VARCHAR(50) DEFAULT NULL,
   `description` VARCHAR(1000) DEFAULT NULL,
   `payment_method_id` INT(11) DEFAULT NULL,
-  `source_type` VARCHAR(30) DEFAULT NULL COMMENT 'booking_payment|payroll_period|NULL=manual',
-  `source_id` INT(11) DEFAULT NULL COMMENT 'id booking_cost_lines / payroll_periods',
+  `vehicle_id` INT(11) DEFAULT NULL COMMENT 'opsional relasi ke vehicles.id',
+  `source_type` VARCHAR(30) DEFAULT NULL COMMENT 'booking_payment|crew_commission|NULL=manual',
+  `source_id` INT(11) DEFAULT NULL COMMENT 'id booking_cost_lines',
+  `proof_blob_path` VARCHAR(255) DEFAULT NULL COMMENT 'path berkas bukti struk/nota di Azure Blob Storage',
   `created_user` VARCHAR(255) DEFAULT NULL,
   `created_date` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
   `modified_user` VARCHAR(255) DEFAULT NULL,
   `modified_date` DATETIME DEFAULT NULL,
   PRIMARY KEY (`id`),
   KEY `ix_cashtx_company_date` (`company_id`, `date`),
-  KEY `ix_cashtx_source` (`source_type`, `source_id`)
+  KEY `ix_cashtx_source` (`source_type`, `source_id`),
+  KEY `ix_cashtx_vehicle` (`company_id`, `vehicle_id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 CREATE TABLE `invoices` (

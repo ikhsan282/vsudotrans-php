@@ -12,19 +12,32 @@ $f = fin_report_filter($_GET);
 $compScope = company_filter_scope('company_id', $_GET);
 $data = fin_all($f);
 
-$rev    = $data['revenue'];
-$costs  = $data['cost_types'];
-$ct     = fin_cost_totals($costs);
-$unpaid = $data['unpaid'];
-$ut     = fin_unpaid_totals($unpaid);
-$mo     = $data['monthly'];
-$cash   = $data['cash'] ?? ['in_total' => 0, 'in_booking' => 0, 'in_other' => 0, 'out_total' => 0, 'out_payroll' => 0, 'out_other' => 0, 'net_cash_flow' => 0];
+$rev     = $data['revenue'];
+$costs   = $data['cost_types'];
+$ct      = fin_cost_totals($costs);
+$expCats = $data['expense_categories'] ?? [];
+$expCt   = fin_expense_category_totals($expCats);
+$expVehs = $data['expense_vehicles'] ?? [];
+$netSum  = $data['net_summary'] ?? [
+    'revenue_total' => (float) $rev['total'],
+    'trip_cost' => (float) $data['cost_total'],
+    'gross_profit' => (float) $data['gross_profit'],
+    'in_other' => 0.0,
+    'out_operating' => 0.0,
+    'out_commission' => 0.0,
+    'net_profit' => (float) ($data['net_profit'] ?? $data['gross_profit']),
+    'net_margin_pct' => 0.0,
+];
+$unpaid  = $data['unpaid'];
+$ut      = fin_unpaid_totals($unpaid);
+$mo      = $data['monthly'];
+$cash    = $data['cash'] ?? ['in_total' => 0, 'in_booking' => 0, 'in_other' => 0, 'out_total' => 0, 'out_payroll' => 0, 'out_commission' => 0, 'out_operating' => 0, 'out_other' => 0, 'net_cash_flow' => 0];
 
 $cards = [
-    ['Laba Kotor Trip',   rupiah($data['gross_profit']), $data['gross_profit'] >= 0 ? 'success' : 'danger', 'graph-up-arrow'],
-    ['Pendapatan Booking', rupiah($rev['total']),        'primary', 'cash-stack'],
-    ['Biaya Operasional',  rupiah($data['cost_total']),  'warning', 'receipt-cutoff'],
-    ['Piutang Pelanggan',  rupiah($rev['receivable']),   'info', 'hourglass-split'],
+    ['Laba Bersih Operasional', rupiah((float) $netSum['net_profit']), $netSum['net_profit'] >= 0 ? 'success' : 'danger', 'award'],
+    ['Laba Kotor Trip',         rupiah((float) $data['gross_profit']), $data['gross_profit'] >= 0 ? 'primary' : 'danger', 'graph-up-arrow'],
+    ['Pendapatan Booking',      rupiah((float) $rev['total']),        'info', 'cash-stack'],
+    ['Pengeluaran Kas (Periode)', rupiah((float) $cash['out_total']), 'danger', 'receipt-cutoff'],
 ];
 
 $header_actions = report_header_actions('pages/reports/finance_export.php', $f);
@@ -105,6 +118,9 @@ require __DIR__ . '/../../includes/header.php';
                 <a class="btn btn-outline-danger btn-sm py-0 px-2" href="<?= e(APP_URL) ?>/pages/finance/expenses/index.php?from=<?= e($f['from']) ?>&to=<?= e($f['to']) ?><?= is_super_admin() ? '&company_id=' . (int) ($f['filter_company_id'] ?? 0) : '' ?>">
                     Pengeluaran <i class="bi bi-arrow-right-short"></i>
                 </a>
+                <a class="btn btn-outline-warning btn-sm py-0 px-2" href="<?= e(APP_URL) ?>/pages/finance/commissions/index.php?from=<?= e($f['from']) ?>&to=<?= e($f['to']) ?><?= is_super_admin() ? '&company_id=' . (int) ($f['filter_company_id'] ?? 0) : '' ?>">
+                    Komisi Kru <i class="bi bi-arrow-right-short"></i>
+                </a>
                 <a class="btn btn-outline-primary btn-sm py-0 px-2" href="<?= e(APP_URL) ?>/pages/finance/cash/index.php?from=<?= e($f['from']) ?>&to=<?= e($f['to']) ?><?= is_super_admin() ? '&company_id=' . (int) ($f['filter_company_id'] ?? 0) : '' ?>">
                     Buka Buku Kas <i class="bi bi-arrow-right-short"></i>
                 </a>
@@ -120,11 +136,10 @@ require __DIR__ . '/../../includes/header.php';
                 <div class="col-6 col-md-3">
                     <div class="small text-muted">Kas Keluar (Periode)</div>
                     <div class="fw-bold text-danger"><?= e(rupiah((float) $cash['out_total'])) ?></div>
-                    <?php if ((float) $cash['out_payroll'] > 0): ?>
-                        <div class="text-muted" style="font-size:.75rem;">Gaji: <?= e(rupiah((float) $cash['out_payroll'])) ?> · Non-Booking: <?= e(rupiah((float) $cash['out_other'])) ?></div>
-                    <?php else: ?>
-                        <div class="text-muted" style="font-size:.75rem;">Total pengeluaran kas tercatat</div>
-                    <?php endif; ?>
+                    <div class="text-muted" style="font-size:.75rem;">
+                        Operasional: <?= e(rupiah((float) ($cash['out_operating'] ?? $cash['out_other']))) ?>
+                        <?php if ((float) ($cash['out_commission'] ?? 0) > 0): ?> · Komisi Kru: <?= e(rupiah((float) $cash['out_commission'])) ?><?php endif; ?>
+                    </div>
                 </div>
                 <div class="col-6 col-md-3">
                     <div class="small text-muted">Arus Kas Bersih</div>
@@ -132,11 +147,53 @@ require __DIR__ . '/../../includes/header.php';
                     <div class="text-muted" style="font-size:.75rem;">Kas Masuk − Kas Keluar</div>
                 </div>
                 <div class="col-6 col-md-3">
-                    <div class="small text-muted">Total Terbayar Booking</div>
-                    <div class="fw-bold"><?= e(rupiah($rev['paid'])) ?></div>
-                    <div class="text-muted" style="font-size:.75rem;">Dari tagihan <?= e(rupiah($rev['total'])) ?></div>
+                    <div class="small text-muted">Piutang / Terbayar Booking</div>
+                    <div class="fw-bold text-info-emphasis"><?= e(rupiah((float) $rev['receivable'])) ?></div>
+                    <div class="text-muted" style="font-size:.75rem;">Terbayar <?= e(rupiah($rev['paid'])) ?> dari <?= e(rupiah($rev['total'])) ?></div>
                 </div>
             </div>
+        </div>
+    </div>
+
+    <div class="card shadow-sm border-0 mb-3" id="laba-bersih-operasional">
+        <div class="card-header bg-white d-flex justify-content-between align-items-center flex-wrap gap-2">
+            <span class="fw-semibold"><i class="bi bi-calculator me-1 text-primary"></i>Ringkasan Laba Bersih Operasional</span>
+            <span class="badge <?= $netSum['net_profit'] >= 0 ? 'bg-success-subtle text-success border border-success-subtle' : 'bg-danger-subtle text-danger border border-danger-subtle' ?>">
+                Margin Bersih <?= e(number_format((float) $netSum['net_margin_pct'], 1, ',', '.')) ?>%
+            </span>
+        </div>
+        <div class="card-body py-2">
+            <div class="row g-2 align-items-center text-center text-md-start">
+                <div class="col-6 col-lg-2">
+                    <div class="small text-muted">Pendapatan Booking</div>
+                    <div class="fw-semibold text-primary"><?= e(rupiah((float) $netSum['revenue_total'])) ?></div>
+                </div>
+                <div class="col-6 col-lg-2">
+                    <div class="small text-muted">− Biaya Trip</div>
+                    <div class="fw-semibold text-warning-emphasis"><?= e(rupiah((float) $netSum['trip_cost'])) ?></div>
+                </div>
+                <div class="col-6 col-lg-2">
+                    <div class="small text-muted">= Laba Kotor Trip</div>
+                    <div class="fw-semibold"><?= e(rupiah((float) $netSum['gross_profit'])) ?></div>
+                </div>
+                <div class="col-6 col-lg-2">
+                    <div class="small text-muted">+ Pemasukan Kas Lain</div>
+                    <div class="fw-semibold text-success"><?= e(rupiah((float) $netSum['in_other'])) ?></div>
+                </div>
+                <div class="col-6 col-lg-2">
+                    <div class="small text-muted">− Pengeluaran Kas Ops</div>
+                    <div class="fw-semibold text-danger"><?= e(rupiah((float) $netSum['out_operating'])) ?></div>
+                </div>
+                <div class="col-6 col-lg-2">
+                    <div class="small text-muted">= Laba Bersih Ops</div>
+                    <div class="fs-6 fw-bold text-<?= $netSum['net_profit'] >= 0 ? 'success' : 'danger' ?>"><?= e(rupiah((float) $netSum['net_profit'])) ?></div>
+                </div>
+            </div>
+            <?php if ((float) ($netSum['out_commission'] ?? 0) > 0): ?>
+            <div class="text-muted mt-2 pt-2 border-top" style="font-size:.78rem;">
+                <i class="bi bi-info-circle me-1"></i>Pencairan Komisi Kru pada Buku Kas sebesar <strong><?= e(rupiah((float) $netSum['out_commission'])) ?></strong> sudah tercermin di Biaya Operasional Trip sehingga tidak dikurangkan dua kali pada Laba Bersih Operasional.
+            </div>
+            <?php endif; ?>
         </div>
     </div>
 
@@ -296,6 +353,109 @@ require __DIR__ . '/../../includes/header.php';
                     </tr>
                 </tfoot>
             </table>
+        </div>
+    </div>
+
+    <div class="row g-3 mb-3" id="pengeluaran-kas-kategori">
+        <div class="col-12 <?= $expVehs ? 'col-xl-7' : 'col-xl-6' ?>">
+            <div class="card shadow-sm border-0 h-100">
+                <div class="card-header bg-white d-flex justify-content-between align-items-center flex-wrap gap-2">
+                    <span class="fw-semibold"><i class="bi bi-tags me-1 text-danger"></i>Pengeluaran Kas per Kategori</span>
+                    <span class="small text-muted">Total <?= e(rupiah($expCt['amount'])) ?> (<?= (int) $expCt['tx_count'] ?> transaksi)</span>
+                </div>
+                <div class="table-responsive">
+                    <table class="table table-sm table-hover mb-0 align-middle">
+                        <thead><tr>
+                            <th>Kategori Pengeluaran</th>
+                            <th class="text-end">Transaksi</th>
+                            <th class="text-end">Jumlah</th>
+                            <th class="text-end">Porsi</th>
+                        </tr></thead>
+                        <tbody>
+                        <?php foreach ($expCats as $ec):
+                            $ecCat  = (string) $ec['category'];
+                            $ecHref = APP_URL . '/pages/finance/expenses/index.php?from=' . urlencode($f['from'])
+                                . '&to=' . urlencode($f['to'])
+                                . '&category=' . urlencode($ecCat)
+                                . (is_super_admin() ? '&company_id=' . (int) ($f['filter_company_id'] ?? 0) : '');
+                        ?>
+                            <tr>
+                                <td>
+                                    <a href="<?= e($ecHref) ?>" class="text-decoration-none fw-medium"><?= e($ecCat) ?></a>
+                                </td>
+                                <td class="text-end"><?= (int) $ec['tx_count'] ?></td>
+                                <td class="text-end text-danger fw-semibold"><?= e(rupiah((float) $ec['amount'])) ?></td>
+                                <td class="text-end"><?= e(number_format((float) $ec['share_pct'], 1, ',', '.')) ?>%</td>
+                            </tr>
+                        <?php endforeach; ?>
+                        <?php if (!$expCats): ?>
+                            <tr><td colspan="4" class="text-center text-muted py-3">Belum ada pengeluaran tercatat pada Buku Kas pada periode ini.</td></tr>
+                        <?php endif; ?>
+                        </tbody>
+                        <?php if ($expCats): ?>
+                        <tfoot class="table-light fw-semibold">
+                            <tr>
+                                <td>Total</td>
+                                <td class="text-end"><?= (int) $expCt['tx_count'] ?></td>
+                                <td class="text-end text-danger"><?= e(rupiah($expCt['amount'])) ?></td>
+                                <td class="text-end">100,0%</td>
+                            </tr>
+                        </tfoot>
+                        <?php endif; ?>
+                    </table>
+                </div>
+            </div>
+        </div>
+        <div class="col-12 <?= $expVehs ? 'col-xl-5' : 'col-xl-6' ?>">
+            <?php if ($expVehs): ?>
+            <div class="card shadow-sm border-0 h-100">
+                <div class="card-header bg-white d-flex justify-content-between align-items-center flex-wrap gap-2">
+                    <span class="fw-semibold"><i class="bi bi-truck me-1 text-primary"></i>Pengeluaran Kas per Armada</span>
+                    <span class="small text-muted"><?= count($expVehs) ?> unit</span>
+                </div>
+                <div class="table-responsive">
+                    <table class="table table-sm table-hover mb-0 align-middle">
+                        <thead><tr>
+                            <th>No. Polisi</th>
+                            <th class="text-end">Transaksi</th>
+                            <th class="text-end">Jumlah</th>
+                            <th class="text-end">Porsi</th>
+                        </tr></thead>
+                        <tbody>
+                        <?php foreach ($expVehs as $ev):
+                            $evHref = APP_URL . '/pages/finance/expenses/index.php?from=' . urlencode($f['from'])
+                                . '&to=' . urlencode($f['to'])
+                                . '&vehicle_id=' . (int) $ev['vehicle_id']
+                                . (is_super_admin() ? '&company_id=' . (int) ($f['filter_company_id'] ?? 0) : '');
+                        ?>
+                            <tr>
+                                <td>
+                                    <a href="<?= e($evHref) ?>" class="text-decoration-none fw-medium font-monospace"><?= e((string) $ev['vehicle_number']) ?></a>
+                                    <?php if (!empty($ev['vehicle_category'])): ?>
+                                        <span class="small text-muted ms-1"><?= e((string) $ev['vehicle_category']) ?></span>
+                                    <?php endif; ?>
+                                </td>
+                                <td class="text-end"><?= (int) $ev['tx_count'] ?></td>
+                                <td class="text-end text-danger fw-semibold"><?= e(rupiah((float) $ev['amount'])) ?></td>
+                                <td class="text-end"><?= e(number_format((float) $ev['share_pct'], 1, ',', '.')) ?>%</td>
+                            </tr>
+                        <?php endforeach; ?>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+            <?php else: ?>
+            <div class="card shadow-sm border-0 h-100">
+                <div class="card-header bg-white fw-semibold"><i class="bi bi-bar-chart me-1 text-danger"></i>Distribusi Pengeluaran Kas</div>
+                <div class="card-body">
+                    <?php if (!$expCats): ?>
+                        <div class="text-center text-muted py-4">Tidak ada pengeluaran kas pada periode ini.</div>
+                    <?php else: ?>
+                        <canvas id="finCashExpCat" height="220"></canvas>
+                    <?php endif; ?>
+                </div>
+            </div>
+            <?php endif; ?>
         </div>
     </div>
 
@@ -539,6 +699,34 @@ require __DIR__ . '/../../includes/header.php';
         datasets: [{
           label: 'Biaya',
           data: <?= json_encode(array_map('floatval', array_column($costs, 'amount'))) ?>,
+          backgroundColor: 'rgba(220,53,69,.78)',
+          borderRadius: 4
+        }]
+      },
+      options: {
+        indexAxis: 'y',
+        plugins: {
+          legend: { display: false },
+          tooltip: { callbacks: { label: c => fmt(c.parsed.x) } }
+        },
+        scales: {
+          x: { ticks: { color: initPal.text, callback: jt }, grid: { color: initPal.grid } },
+          y: { ticks: { color: initPal.text }, grid: { color: initPal.grid } }
+        }
+      }
+    }));
+  }
+
+  // 3b) Pengeluaran Kas per Kategori (jika canvas tampil)
+  const elCashExpCat = document.getElementById('finCashExpCat');
+  if (elCashExpCat) {
+    charts.push(new Chart(elCashExpCat, {
+      type: 'bar',
+      data: {
+        labels: <?= json_encode(array_column($expCats, 'category'), JSON_UNESCAPED_UNICODE) ?>,
+        datasets: [{
+          label: 'Pengeluaran Kas',
+          data: <?= json_encode(array_map('floatval', array_column($expCats, 'amount'))) ?>,
           backgroundColor: 'rgba(220,53,69,.78)',
           borderRadius: 4
         }]

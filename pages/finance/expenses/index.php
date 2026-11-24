@@ -24,8 +24,10 @@ $sum  = cash_summary($f);
 $breakdownFilter = $f;
 $breakdownFilter['category'] = '';
 $breakdown = cash_expense_category_breakdown($breakdownFilter);
+$vehBreakdown = cash_expense_vehicle_breakdown($f);
 
 $methods       = cash_method_list($filter_cid);
+$vehiclesOpt   = cash_vehicle_list($filter_cid);
 $categoriesOpt = cash_distinct_categories($f, 'out');
 $topCat        = $breakdown[0] ?? null;
 $avgOut        = $p['total'] > 0 ? ($sum['total_out'] / $p['total']) : 0.0;
@@ -39,6 +41,9 @@ $qsParams = [
 ];
 if ($f['category'] !== '') {
     $qsParams['category'] = $f['category'];
+}
+if (!empty($f['vehicle_id'])) {
+    $qsParams['vehicle_id'] = (int) $f['vehicle_id'];
 }
 if ($f['q'] !== '') {
     $qsParams['q'] = $f['q'];
@@ -54,6 +59,10 @@ $page_qs = http_build_query($qsParams);
 $chipBaseParams = $qsParams;
 unset($chipBaseParams['category']);
 $chipBaseQs = http_build_query($chipBaseParams);
+
+$vehChipBaseParams = $qsParams;
+unset($vehChipBaseParams['vehicle_id']);
+$vehChipBaseQs = http_build_query($vehChipBaseParams);
 
 $cards = [
     ['Total Pengeluaran', rupiah($sum['total_out']), 'danger', 'arrow-up-circle'],
@@ -95,7 +104,7 @@ require __DIR__ . '/../../../includes/header.php';
         <div class="card-body py-2 px-3">
             <form class="row g-2 align-items-end erp-filter-bar erp-filter-bar-wide" method="get">
                 <?php if (is_super_admin()): ?>
-                <div class="col-12 col-sm-6 col-lg-2">
+                <div class="col-12 col-sm-6 col-lg-2 erp-filter-item">
                     <label class="form-label small mb-1">Perusahaan</label>
                     <select class="form-select form-select-sm" name="company_id" onchange="this.form.submit()">
                         <option value="0"<?= $filter_cid === 0 ? ' selected' : '' ?>>Semua Perusahaan</option>
@@ -106,15 +115,15 @@ require __DIR__ . '/../../../includes/header.php';
                     </select>
                 </div>
                 <?php endif; ?>
-                <div class="col-6 col-sm-6 col-lg-2">
+                <div class="col-6 col-sm-6 col-lg-2 erp-filter-date">
                     <label class="form-label small mb-1">Dari Tanggal</label>
                     <input type="text" class="form-control form-control-sm bg-white flatpickr-date" data-flatpickr-auto placeholder="dd-MMM-yyyy" name="from" value="<?= e($f['from']) ?>">
                 </div>
-                <div class="col-6 col-sm-6 col-lg-2">
+                <div class="col-6 col-sm-6 col-lg-2 erp-filter-date">
                     <label class="form-label small mb-1">Sampai Tanggal</label>
                     <input type="text" class="form-control form-control-sm bg-white flatpickr-date" data-flatpickr-auto placeholder="dd-MMM-yyyy" name="to" value="<?= e($f['to']) ?>">
                 </div>
-                <div class="col-6 col-sm-6 col-lg-2">
+                <div class="col-6 col-sm-6 col-lg-2 erp-filter-item">
                     <label class="form-label small mb-1">Kategori</label>
                     <select class="form-select form-select-sm" name="category" onchange="this.form.submit()">
                         <option value="">Semua kategori</option>
@@ -123,13 +132,28 @@ require __DIR__ . '/../../../includes/header.php';
                         <?php endforeach; ?>
                     </select>
                 </div>
-                <div class="col-6 col-sm-6 col-lg-2">
+                <div class="col-6 col-sm-6 col-lg-2 erp-filter-item">
                     <label class="form-label small mb-1">Metode</label>
                     <select class="form-select form-select-sm" name="method" onchange="this.form.submit()">
                         <option value="0">Semua metode</option>
                         <?php foreach ($methods as $m): ?>
                             <option value="<?= (int) $m['id'] ?>"<?= (int) $m['id'] === $f['method'] ? ' selected' : '' ?>>
                                 <?= e((string) $m['name']) ?></option>
+                        <?php endforeach; ?>
+                    </select>
+                </div>
+                <div class="col-6 col-sm-6 col-lg-2 erp-filter-item">
+                    <label class="form-label small mb-1">Armada</label>
+                    <select class="form-select form-select-sm ts-select" name="vehicle_id" onchange="this.form.submit()">
+                        <option value="0">Semua armada</option>
+                        <?php foreach ($vehiclesOpt as $vOpt):
+                            $vIdOpt = (int) $vOpt['id'];
+                            $vLbl = trim((string) ($vOpt['vehicle_number'] ?? ''));
+                            if (!empty($vOpt['vehicle_category'])) {
+                                $vLbl .= ' · ' . $vOpt['vehicle_category'];
+                            }
+                        ?>
+                            <option value="<?= $vIdOpt ?>"<?= $vIdOpt === (int) $f['vehicle_id'] ? ' selected' : '' ?>><?= e($vLbl) ?></option>
                         <?php endforeach; ?>
                     </select>
                 </div>
@@ -142,7 +166,7 @@ require __DIR__ . '/../../../includes/header.php';
                 </div>
                 <?= ui_filter_actions(
                     APP_URL . '/pages/finance/expenses/index.php',
-                    ($f['from'] !== date('Y-m-01') || $f['to'] !== date('Y-m-t') || $f['method'] > 0 || $f['category'] !== '' || $f['q'] !== '' || (is_super_admin() && $filter_cid !== (active_company_id() ?? 0)))
+                    ($f['from'] !== date('Y-m-01') || $f['to'] !== date('Y-m-t') || $f['method'] > 0 || !empty($f['vehicle_id']) || $f['category'] !== '' || $f['q'] !== '' || (is_super_admin() && $filter_cid !== (active_company_id() ?? 0)))
                 ) ?>
             </form>
         </div>
@@ -164,25 +188,49 @@ require __DIR__ . '/../../../includes/header.php';
         <?php endforeach; ?>
     </div>
 
-    <?php if ($breakdown): ?>
+    <?php if ($breakdown || $vehBreakdown): ?>
     <div class="card shadow-sm border-0 mb-3">
-        <div class="card-body py-2 px-3 d-flex flex-wrap align-items-center gap-2">
-            <span class="small fw-semibold text-muted me-1"><i class="bi bi-tags me-1"></i>Per Kategori:</span>
-            <?php if ($f['category'] !== ''): ?>
-                <a href="<?= e(APP_URL . '/pages/finance/expenses/index.php' . ($chipBaseQs !== '' ? '?' . $chipBaseQs : '')) ?>"
-                   class="badge rounded-pill bg-secondary text-white text-decoration-none px-2 py-1">Semua</a>
+        <div class="card-body py-2 px-3 d-flex flex-column gap-2">
+            <?php if ($breakdown): ?>
+            <div class="d-flex flex-wrap align-items-center gap-2">
+                <span class="small fw-semibold text-muted me-1"><i class="bi bi-tags me-1"></i>Per Kategori:</span>
+                <?php if ($f['category'] !== ''): ?>
+                    <a href="<?= e(APP_URL . '/pages/finance/expenses/index.php' . ($chipBaseQs !== '' ? '?' . $chipBaseQs : '')) ?>"
+                       class="badge rounded-pill bg-secondary text-white text-decoration-none px-2 py-1">Semua</a>
+                <?php endif; ?>
+                <?php foreach ($breakdown as $bd):
+                    $bdCat = (string) $bd['category'];
+                    $isSel = $f['category'] === $bdCat;
+                    $chipHref = APP_URL . '/pages/finance/expenses/index.php?' . ($chipBaseQs !== '' ? $chipBaseQs . '&' : '') . 'category=' . urlencode($bdCat);
+                ?>
+                    <a href="<?= e($chipHref) ?>"
+                       class="badge rounded-pill text-decoration-none px-2 py-1 border <?= $isSel ? 'bg-danger text-white border-danger' : 'bg-danger-subtle text-danger-emphasis border-danger-subtle' ?>">
+                        <?= e($bdCat) ?>: <strong><?= e(rupiah((float) $bd['total_amount'])) ?></strong>
+                        <span class="opacity-75">(<?= (int) $bd['tx_count'] ?>)</span>
+                    </a>
+                <?php endforeach; ?>
+            </div>
             <?php endif; ?>
-            <?php foreach ($breakdown as $bd):
-                $bdCat = (string) $bd['category'];
-                $isSel = $f['category'] === $bdCat;
-                $chipHref = APP_URL . '/pages/finance/expenses/index.php?' . ($chipBaseQs !== '' ? $chipBaseQs . '&' : '') . 'category=' . urlencode($bdCat);
-            ?>
-                <a href="<?= e($chipHref) ?>"
-                   class="badge rounded-pill text-decoration-none px-2 py-1 border <?= $isSel ? 'bg-danger text-white border-danger' : 'bg-danger-subtle text-danger-emphasis border-danger-subtle' ?>">
-                    <?= e($bdCat) ?>: <strong><?= e(rupiah((float) $bd['total_amount'])) ?></strong>
-                    <span class="opacity-75">(<?= (int) $bd['tx_count'] ?>)</span>
-                </a>
-            <?php endforeach; ?>
+            <?php if ($vehBreakdown): ?>
+            <div class="d-flex flex-wrap align-items-center gap-2">
+                <span class="small fw-semibold text-muted me-1"><i class="bi bi-truck me-1"></i>Per Armada:</span>
+                <?php if (!empty($f['vehicle_id'])): ?>
+                    <a href="<?= e(APP_URL . '/pages/finance/expenses/index.php' . ($vehChipBaseQs !== '' ? '?' . $vehChipBaseQs : '')) ?>"
+                       class="badge rounded-pill bg-secondary text-white text-decoration-none px-2 py-1">Semua</a>
+                <?php endif; ?>
+                <?php foreach ($vehBreakdown as $vb):
+                    $vbId = (int) $vb['vehicle_id'];
+                    $isVehSel = (int) $f['vehicle_id'] === $vbId;
+                    $vehHref = APP_URL . '/pages/finance/expenses/index.php?' . ($vehChipBaseQs !== '' ? $vehChipBaseQs . '&' : '') . 'vehicle_id=' . $vbId;
+                ?>
+                    <a href="<?= e($vehHref) ?>"
+                       class="badge rounded-pill text-decoration-none px-2 py-1 border <?= $isVehSel ? 'bg-dark text-white border-dark' : 'bg-light text-dark border-secondary-subtle' ?>">
+                        <span class="font-monospace"><?= e((string) $vb['vehicle_number']) ?></span>: <strong><?= e(rupiah((float) $vb['total_amount'])) ?></strong>
+                        <span class="opacity-75">(<?= (int) $vb['tx_count'] ?>)</span>
+                    </a>
+                <?php endforeach; ?>
+            </div>
+            <?php endif; ?>
         </div>
     </div>
     <?php endif; ?>
@@ -209,18 +257,21 @@ require __DIR__ . '/../../../includes/header.php';
                         <?php if ($show_comp_col): ?><td><span class="badge bg-light text-dark border"><?= e((string) ($r['company_code'] ?? '-')) ?></span></td><?php endif; ?>
                         <td class="text-nowrap">
                             <span class="badge bg-danger-subtle text-danger-emphasis border border-danger-subtle"><?= e((string) ($r['category'] ?: 'Tanpa Kategori')) ?></span>
-                            <?php if ($srcType === 'payroll_period'): ?>
+                            <?php if ($srcType === 'crew_commission'): ?>
+                                <a class="badge bg-warning-subtle text-warning-emphasis border border-warning-subtle text-decoration-none ms-1" href="../commissions/index.php" title="Dari pencairan Komisi Sopir & Kru"><i class="bi bi-people-fill me-1"></i>Komisi Kru</a>
+                            <?php elseif ($srcType === 'payroll_period'): ?>
                                 <span class="badge bg-info-subtle text-info-emphasis border ms-1">Auto Gaji</span>
                             <?php elseif ($isAuto): ?>
                                 <span class="badge bg-secondary-subtle text-secondary border ms-1">Auto</span>
                             <?php endif; ?>
                         </td>
                         <td class="text-nowrap"><?= !empty($r['method_name']) ? e((string) $r['method_name']) : '<span class="text-muted">-</span>' ?></td>
-                        <td><?= !empty($r['description']) ? e((string) $r['description']) : '<span class="text-muted">-</span>' ?></td>
+                        <td><?= cash_vehicle_badge_html($r) ?><?= !empty($r['description']) ? e((string) $r['description']) : ($r['vehicle_number'] ? '' : '<span class="text-muted">-</span>') ?></td>
                         <td class="text-end text-nowrap fw-semibold text-danger">
                             <?= e('− ' . rupiah((float) $r['amount'])) ?>
                         </td>
                         <td class="text-end text-nowrap">
+                            <?= cash_proof_action_html($r) ?>
                             <?php if (can('finance.manage')): ?>
                                 <?php if ($isAuto): ?>
                                     <span class="text-muted small" title="Transaksi tersinkron otomatis"><i class="bi bi-lock-fill"></i></span>

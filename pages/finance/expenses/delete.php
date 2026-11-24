@@ -15,6 +15,8 @@ if (!$row) {
     flash('error', 'Data pengeluaran tidak ditemukan.');
 } elseif (($row['direction'] ?? '') !== 'out') {
     flash('error', 'Transaksi pemasukan tidak dapat dihapus melalui menu Pengeluaran.');
+} elseif (($row['source_type'] ?? '') === 'crew_commission') {
+    flash('error', 'Pencairan komisi kru hanya dapat dibatalkan melalui menu Komisi Sopir & Kru.');
 } elseif (!empty($row['source_type'])) {
     flash('error', 'Transaksi sinkronisasi otomatis tidak dapat dihapus manual.');
 } else {
@@ -25,6 +27,9 @@ if (!$row) {
     $deleted = $st->affected_rows;
     $st->close();
     if ($deleted > 0) {
+        if (!empty($row['proof_blob_path'])) {
+            azure_blob_delete((string) $row['proof_blob_path']);
+        }
         audit('kas.expense.delete', 'Hapus pengeluaran #' . $id . ' ' . ($row['date'] ?? '') . ' [' . ($row['category'] ?? '') . '] ' . rupiah((float) $row['amount']));
         flash('success', 'Data pengeluaran berhasil dihapus.');
     } else {

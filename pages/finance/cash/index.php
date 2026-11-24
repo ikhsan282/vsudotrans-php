@@ -161,6 +161,8 @@ require __DIR__ . '/../../../includes/header.php';
                                 <a class="badge bg-primary-subtle text-primary border text-decoration-none ms-1" href="<?= e($refBookHref) ?>" title="Sumber otomatis dari pembayaran pemesanan (Invoice #<?= (int) ($r['ref_invoice_id'] ?? 0) ?>)"><i class="bi bi-link-45deg"></i>Auto Booking</a>
                             <?php elseif ($srcType === 'booking_payment'): ?>
                                 <span class="badge bg-primary-subtle text-primary border ms-1">Auto Booking</span>
+                            <?php elseif ($srcType === 'crew_commission'): ?>
+                                <a class="badge bg-warning-subtle text-warning-emphasis border border-warning-subtle text-decoration-none ms-1" href="../commissions/index.php" title="Dari pencairan Komisi Sopir & Kru"><i class="bi bi-people-fill me-1"></i>Komisi Kru</a>
                             <?php elseif ($srcType === 'payroll_period'): ?>
                                 <span class="badge bg-info-subtle text-info-emphasis border ms-1">Auto Gaji</span>
                             <?php elseif ($isAuto): ?>
@@ -168,11 +170,12 @@ require __DIR__ . '/../../../includes/header.php';
                             <?php endif; ?>
                         </td>
                         <td class="text-nowrap"><?= !empty($r['method_name']) ? e((string) $r['method_name']) : '<span class="text-muted">-</span>' ?></td>
-                        <td><?= e((string) $r['description']) ?></td>
+                        <td><?= cash_vehicle_badge_html($r) ?><?= e((string) $r['description']) ?></td>
                         <td class="text-end text-nowrap fw-semibold <?= $r['direction'] === 'in' ? 'text-success' : 'text-danger' ?>">
                             <?= e(($r['direction'] === 'in' ? '+' : '−') . ' ' . rupiah((float) $r['amount'])) ?>
                         </td>
                         <td class="text-end text-nowrap">
+                            <?= cash_proof_action_html($r) ?>
                             <?php if (can('finance.manage')): ?>
                                 <?php if ($isAuto): ?>
                                     <span class="text-muted small" title="Transaksi tersinkron otomatis dari sumber (Invoice/Booking)"><i class="bi bi-lock-fill"></i></span>

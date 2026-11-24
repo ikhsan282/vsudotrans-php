@@ -17,7 +17,7 @@ function finance_ensure_schema(): void
 {
     static $checked = false;
     $hasSess = session_status() === PHP_SESSION_ACTIVE;
-    if ($checked || ($hasSess && !empty($_SESSION['_vst_schema_fin_v2']))) {
+    if ($checked || ($hasSess && !empty($_SESSION['_vst_schema_fin_v3']))) {
         $checked = true;
         return;
     }
@@ -38,15 +38,43 @@ function finance_ensure_schema(): void
         }
         $db->query('ALTER TABLE `cash_transactions` DROP COLUMN `cash_account_id`');
     }
+    if (empty($txCols['vehicle_id'])) {
+        $db->query("ALTER TABLE `cash_transactions` ADD COLUMN `vehicle_id` INT(11) DEFAULT NULL COMMENT 'opsional relasi ke vehicles.id' AFTER `payment_method_id`");
+    }
     if (empty($txCols['source_type'])) {
-        $db->query("ALTER TABLE `cash_transactions` ADD COLUMN `source_type` VARCHAR(30) DEFAULT NULL COMMENT 'booking_payment|payroll_period|NULL=manual' AFTER `payment_method_id`");
+        $db->query("ALTER TABLE `cash_transactions` ADD COLUMN `source_type` VARCHAR(30) DEFAULT NULL COMMENT 'booking_payment|crew_commission|NULL=manual' AFTER `vehicle_id`");
     }
     if (empty($txCols['source_id'])) {
-        $db->query("ALTER TABLE `cash_transactions` ADD COLUMN `source_id` INT(11) DEFAULT NULL COMMENT 'id booking_cost_lines / payroll_periods' AFTER `source_type`");
+        $db->query("ALTER TABLE `cash_transactions` ADD COLUMN `source_id` INT(11) DEFAULT NULL COMMENT 'id booking_cost_lines' AFTER `source_type`");
+    }
+    if (empty($txCols['proof_blob_path'])) {
+        $db->query("ALTER TABLE `cash_transactions` ADD COLUMN `proof_blob_path` VARCHAR(255) DEFAULT NULL COMMENT 'path berkas bukti struk/nota di Azure Blob Storage' AFTER `source_id`");
     }
     $idxRes = $db->query("SHOW INDEX FROM `cash_transactions` WHERE Key_name = 'ix_cashtx_source'");
     if ($idxRes && $idxRes->num_rows === 0) {
         $db->query('ALTER TABLE `cash_transactions` ADD KEY `ix_cashtx_source` (`source_type`, `source_id`)');
+    }
+    $vehIdxRes = $db->query("SHOW INDEX FROM `cash_transactions` WHERE Key_name = 'ix_cashtx_vehicle'");
+    if ($vehIdxRes && $vehIdxRes->num_rows === 0) {
+        $db->query('ALTER TABLE `cash_transactions` ADD KEY `ix_cashtx_vehicle` (`company_id`, `vehicle_id`)');
+    }
+
+    $bclCols = [];
+    $bclRes = $db->query('SHOW COLUMNS FROM `booking_cost_lines`');
+    if ($bclRes) {
+        while ($c = $bclRes->fetch_assoc()) {
+            $bclCols[(string) $c['Field']] = true;
+        }
+    }
+    if (empty($bclCols['paid_cash_tx_id'])) {
+        $db->query("ALTER TABLE `booking_cost_lines` ADD COLUMN `paid_cash_tx_id` INT(11) DEFAULT NULL COMMENT 'id cash_transactions pembayaran komisi kru' AFTER `note`");
+    }
+    if (empty($bclCols['paid_at'])) {
+        $db->query("ALTER TABLE `booking_cost_lines` ADD COLUMN `paid_at` DATETIME DEFAULT NULL COMMENT 'waktu pencairan komisi kru' AFTER `paid_cash_tx_id`");
+    }
+    $bclIdxRes = $db->query("SHOW INDEX FROM `booking_cost_lines` WHERE Key_name = 'ix_bcl_paid_tx'");
+    if ($bclIdxRes && $bclIdxRes->num_rows === 0) {
+        $db->query('ALTER TABLE `booking_cost_lines` ADD KEY `ix_bcl_paid_tx` (`paid_cash_tx_id`)');
     }
 
     $pmCols = [];
@@ -64,7 +92,7 @@ function finance_ensure_schema(): void
     $db->query('DROP TABLE IF EXISTS `cash_accounts`');
 
     if ($hasSess) {
-        $_SESSION['_vst_schema_fin_v2'] = 1;
+        $_SESSION['_vst_schema_fin_v3'] = 1;
     }
 }
 

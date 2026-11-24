@@ -18,6 +18,14 @@ $data = fin_all($f, null);
 $rev     = $data['revenue'];
 $costs   = $data['cost_types'];
 $ct      = fin_cost_totals($costs);
+$expCats = $data['expense_categories'] ?? [];
+$expCt   = fin_expense_category_totals($expCats);
+$expVehs = $data['expense_vehicles'] ?? [];
+$netSum  = $data['net_summary'] ?? [
+    'in_other' => 0.0,
+    'out_operating' => 0.0,
+    'net_profit' => (float) ($data['net_profit'] ?? $data['gross_profit']),
+];
 $catRows = $data['categories'] ?? [];
 $ftCat   = fin_category_totals($catRows);
 $unpaid  = $data['unpaid'];
@@ -27,9 +35,13 @@ $dt     = fin_daily_totals($daily);
 $cash   = $data['cash'] ?? ['in_total' => 0, 'out_total' => 0, 'net_cash_flow' => 0];
 
 $table = [];
-array_unshift($table, ['Ringkasan', ''], ['Laba Kotor Trip', (float) $data['gross_profit']],
+array_unshift($table, ['Ringkasan', ''],
+    ['Laba Kotor Trip', (float) $data['gross_profit']],
     ['Pendapatan Booking Total', (float) $rev['total']],
     ['Biaya Operasional Trip Total', (float) $data['cost_total']],
+    ['Pemasukan Kas Lain (Non-Booking)', (float) $netSum['in_other']],
+    ['Pengeluaran Kas Operasional (Non-Komisi Trip)', (float) $netSum['out_operating']],
+    ['Laba Bersih Operasional', (float) $netSum['net_profit']],
     ['Terbayar Booking', (float) $rev['paid']],
     ['Piutang', (float) $rev['receivable']],
     ['Kas Masuk (Buku Kas)', (float) $cash['in_total']],
@@ -78,6 +90,38 @@ foreach ($costs as $r) {
 }
 $table[] = ['TOTAL', (int) $ct['n_lines'], (float) $ct['amount']];
 $table[] = [''];
+
+$table[] = ['Pengeluaran Kas per Kategori', ''];
+$table[] = ['Kategori', 'Transaksi', 'Jumlah', 'Porsi (%)'];
+foreach ($expCats as $ec) {
+    $table[] = [
+        (string) $ec['category'],
+        (int) $ec['tx_count'],
+        (float) $ec['amount'],
+        (float) $ec['share_pct'],
+    ];
+}
+$table[] = ['TOTAL', (int) $expCt['tx_count'], (float) $expCt['amount'], $expCt['amount'] > 0 ? 100.0 : 0.0];
+$table[] = [''];
+
+if ($expVehs) {
+    $table[] = ['Pengeluaran Kas per Armada', ''];
+    $table[] = ['No. Polisi', 'Kategori Unit', 'Transaksi', 'Jumlah'];
+    $evTotCnt = 0;
+    $evTotAmt = 0.0;
+    foreach ($expVehs as $ev) {
+        $evTotCnt += (int) $ev['tx_count'];
+        $evTotAmt += (float) $ev['amount'];
+        $table[] = [
+            (string) $ev['vehicle_number'],
+            (string) $ev['vehicle_category'],
+            (int) $ev['tx_count'],
+            (float) $ev['amount'],
+        ];
+    }
+    $table[] = ['TOTAL', '', $evTotCnt, $evTotAmt];
+    $table[] = [''];
+}
 
 $table[] = ['', 'Rekap Harian (Pemasukan & Pengeluaran)'];
 $table[] = ['Tanggal', 'Kas Masuk', 'Kas Keluar', 'Arus Kas Bersih', 'Omzet Booking', 'Biaya Trip', 'Laba Kotor Trip'];

@@ -70,17 +70,20 @@ if ($row === null) {
 
 $form = [
     'payment_method_id' => (string) ($row['payment_method_id'] ?? ''),
+    'vehicle_id'        => (string) ($row['vehicle_id'] ?? ($_GET['vehicle_id'] ?? '')),
     'date'              => (string) ($row['date'] ?? date('Y-m-d')),
     'amount_raw'        => $row !== null ? number_format((float) $row['amount'], 0, ',', '.') : '',
     'category_preset'   => $initPreset,
     'category_custom'   => $initCustom,
     'description'       => (string) ($row['description'] ?? ''),
 ];
+$existingProof = (string) ($row['proof_blob_path'] ?? '');
 
 $errors = [];
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     verify_csrf();
     $form['payment_method_id'] = trim((string) ($_POST['payment_method_id'] ?? ''));
+    $form['vehicle_id']        = trim((string) ($_POST['vehicle_id'] ?? ''));
     $form['date']              = trim((string) ($_POST['date'] ?? ''));
     $form['amount_raw']        = trim((string) ($_POST['amount'] ?? ''));
     $form['category_preset']   = trim((string) ($_POST['category_preset'] ?? ''));
@@ -98,13 +101,24 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
     $savePayload = [
         'payment_method_id' => $form['payment_method_id'],
+        'vehicle_id'        => $form['vehicle_id'],
         'date'              => $form['date'],
         'direction'         => 'out',
         'amount'            => (string) $parsedAmount,
         'category'          => $chosenCategory,
         'description'       => $form['description'],
+        'proof_blob_path'   => $existingProof,
     ];
     $errors = array_merge($errors, cash_tx_validate($savePayload, $cid));
+
+    if (!$errors) {
+        $proofRes = cash_handle_proof_upload($cid, 'expenses', $existingProof, !empty($_POST['remove_proof']));
+        if (!empty($proofRes['error'])) {
+            $errors[] = $proofRes['error'];
+        } else {
+            $savePayload['proof_blob_path'] = $proofRes['path'];
+        }
+    }
 
     if (!$errors) {
         $savedId = cash_tx_save($id, $savePayload, $cid, $_SESSION['username'] ?? null);
@@ -121,8 +135,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     }
 }
 
-$methods = cash_method_list($cid);
-$active  = 'expenses';
+$methods  = cash_method_list($cid);
+$vehicles = cash_vehicle_list($cid);
+$active   = 'expenses';
 $title   = ($id > 0 ? 'Ubah' : 'Tambah') . ' Pengeluaran';
 $isCustomMode = $form['category_preset'] === '__custom__';
 require __DIR__ . '/../../../includes/header.php';
@@ -141,7 +156,7 @@ require __DIR__ . '/../../../includes/header.php';
     <?php if ($errors): ?>
         <div class="alert alert-danger py-2 mb-2"><?php foreach ($errors as $err): ?><div><?= e($err) ?></div><?php endforeach; ?></div>
     <?php endif; ?>
-    <form method="post" action="form.php<?= $id > 0 ? '?id=' . $id : '' ?>" id="formExpense">
+    <form method="post" action="form.php<?= $id > 0 ? '?id=' . $id : '' ?>" id="formExpense" enctype="multipart/form-data">
         <?= csrf_field() ?>
         <input type="hidden" name="id" value="<?= $id ?>">
         <input type="hidden" name="return" value="<?= e($returnKey) ?>">
@@ -201,13 +216,14 @@ require __DIR__ . '/../../../includes/header.php';
                                             </select>
                                         </div>
                                     </div>
+                                    <?= cash_render_vehicle_row($vehicles, $form['vehicle_id']) ?>
                                 </div>
                             </div>
                         </div>
 
                         <div class="col-lg-6">
                             <div class="rnt-panel h-100 mb-0">
-                                <div class="rnt-panel-header"><i class="bi bi-tags"></i> Kategori &amp; Keterangan</div>
+                                <div class="rnt-panel-header"><i class="bi bi-tags"></i> Kategori, Keterangan &amp; Bukti</div>
                                 <div class="rnt-panel-body">
                                     <div class="rnt-row">
                                         <div class="rnt-label">Kategori <span class="text-danger">*</span></div>
@@ -239,6 +255,7 @@ require __DIR__ . '/../../../includes/header.php';
                                             </div>
                                         </div>
                                     </div>
+                                    <?= cash_render_proof_row($existingProof) ?>
                                 </div>
                             </div>
                         </div>

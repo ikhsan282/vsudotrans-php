@@ -72,10 +72,11 @@ $menu = [
     ]],
 
     // ── KEUANGAN & AKUNTANSI ────────────────────────────────────────────────
-    ['key' => 'finance', 'keys' => ['finance', 'incomes', 'expenses'], 'section' => 'Keuangan & Akuntansi', 'label' => 'Keuangan', 'icon' => 'cash-coin', 'perm' => null, 'sub' => [
+    ['key' => 'finance', 'keys' => ['finance', 'incomes', 'expenses', 'commissions'], 'section' => 'Keuangan & Akuntansi', 'label' => 'Keuangan', 'icon' => 'cash-coin', 'perm' => null, 'sub' => [
         ['label' => 'Buku Kas',          'href' => 'pages/finance/cash/index.php',            'perms' => 'finance.view'],
-        ['key' => 'incomes',  'label' => 'Pemasukan',   'href' => 'pages/finance/incomes/index.php',  'perms' => 'finance.view'],
-        ['key' => 'expenses', 'label' => 'Pengeluaran', 'href' => 'pages/finance/expenses/index.php', 'perms' => 'finance.view'],
+        ['key' => 'incomes',     'label' => 'Pemasukan',          'href' => 'pages/finance/incomes/index.php',     'perms' => 'finance.view'],
+        ['key' => 'expenses',    'label' => 'Pengeluaran',        'href' => 'pages/finance/expenses/index.php',    'perms' => 'finance.view'],
+        ['key' => 'commissions', 'label' => 'Komisi Sopir & Kru', 'href' => 'pages/finance/commissions/index.php', 'perms' => 'finance.view'],
         ['label' => 'Metode Pembayaran', 'href' => 'pages/finance/payment_methods/index.php', 'perms' => 'finance.view'],
     ]],
 

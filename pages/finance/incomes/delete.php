@@ -25,6 +25,9 @@ if (!$row) {
     $deleted = $st->affected_rows;
     $st->close();
     if ($deleted > 0) {
+        if (!empty($row['proof_blob_path'])) {
+            azure_blob_delete((string) $row['proof_blob_path']);
+        }
         audit('kas.income.delete', 'Hapus pemasukan #' . $id . ' ' . ($row['date'] ?? '') . ' [' . ($row['category'] ?? '') . '] ' . rupiah((float) $row['amount']));
         flash('success', 'Data pemasukan berhasil dihapus.');
     } else {
