@@ -47,12 +47,11 @@ try {
     $marker2 = 'INC_CHK_CUS_' . getmypid();
 
     $uid1 = cash_tx_save(0, [
-        'payment_method_id' => '',
-        'date'              => $today,
-        'direction'         => 'in',
-        'amount'            => '345000',
-        'category'          => 'Setoran Modal',
-        'description'       => $marker1,
+        'date'        => $today,
+        'direction'   => 'in',
+        'amount'      => '345000',
+        'category'    => 'Setoran Modal',
+        'description' => $marker1,
     ], 1, 'inc-check');
     $tmpIds[] = $uid1;
 
@@ -117,30 +116,28 @@ try {
     $csrf = $mCsrf1[1] ?? '';
 
     $postPreset = $http($jarAdmin, '/pages/finance/incomes/form.php', [
-        'csrf_token'        => $csrf,
-        'id'                => '0',
-        'return'            => 'incomes',
-        'date'              => $today,
-        'amount'            => '500.000',
-        'payment_method_id' => '',
-        'category_preset'   => 'Setoran Modal',
-        'category_custom'   => '',
-        'description'       => $marker1,
+        'csrf_token'      => $csrf,
+        'id'              => '0',
+        'return'          => 'incomes',
+        'date'            => $today,
+        'amount'          => '500.000',
+        'category_preset' => 'Setoran Modal',
+        'category_custom' => '',
+        'description'     => $marker1,
     ]);
     inc_ok($postPreset['code'] === 302, 'POST form pemasukan preset (Setoran Modal Rp 500.000) berhasil 302');
 
     $incFrm2 = $http($jarAdmin, '/pages/finance/incomes/form.php');
     preg_match('/name="csrf_token"\s+value="([^"]+)"/', $incFrm2['body'], $mCsrf2);
     $postCustom = $http($jarAdmin, '/pages/finance/incomes/form.php', [
-        'csrf_token'        => $mCsrf2[1] ?? $csrf,
-        'id'                => '0',
-        'return'            => 'incomes',
-        'date'              => $today,
-        'amount'            => '125.000',
-        'payment_method_id' => '',
-        'category_preset'   => '__custom__',
-        'category_custom'   => 'Komisi Mitra Uji',
-        'description'       => $marker2,
+        'csrf_token'      => $mCsrf2[1] ?? $csrf,
+        'id'              => '0',
+        'return'          => 'incomes',
+        'date'            => $today,
+        'amount'          => '125.000',
+        'category_preset' => '__custom__',
+        'category_custom' => 'Komisi Mitra Uji',
+        'description'     => $marker2,
     ]);
     inc_ok($postCustom['code'] === 302, 'POST form pemasukan kategori kustom (Komisi Mitra Uji Rp 125.000) berhasil 302');
 
@@ -166,15 +163,14 @@ try {
         inc_ok($editGet['code'] === 200 && str_contains($editGet['body'], '500.000'), 'GET incomes/form.php?id=' . $editTargetId . ' HTTP 200 memuat nilai awal');
         preg_match('/name="csrf_token"\s+value="([^"]+)"/', $editGet['body'], $mCsrfUpd);
         $updRes = $http($jarAdmin, '/pages/finance/incomes/form.php?id=' . $editTargetId, [
-            'csrf_token'        => $mCsrfUpd[1] ?? $csrf,
-            'id'                => (string) $editTargetId,
-            'return'            => 'incomes',
-            'date'              => $today,
-            'amount'            => '550.000',
-            'payment_method_id' => '',
-            'category_preset'   => 'Pendapatan Lainnya',
-            'category_custom'   => '',
-            'description'       => $marker1,
+            'csrf_token'      => $mCsrfUpd[1] ?? $csrf,
+            'id'              => (string) $editTargetId,
+            'return'          => 'incomes',
+            'date'            => $today,
+            'amount'          => '550.000',
+            'category_preset' => 'Pendapatan Lainnya',
+            'category_custom' => '',
+            'description'     => $marker1,
         ]);
         $afterUpd = $db->query("SELECT category, amount FROM cash_transactions WHERE id = {$editTargetId}")->fetch_assoc();
         inc_ok(

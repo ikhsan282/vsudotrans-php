@@ -170,14 +170,6 @@ require __DIR__ . '/../../includes/header.php';
 $vehActions = [
     ['label' => 'Kembali', 'icon' => 'arrow-left', 'href' => 'pages/vehicles/index.php', 'class' => 'btn btn-outline-secondary btn-sm'],
 ];
-if ($id > 0 && can('finance.view')) {
-    $vehActions[] = [
-        'label' => 'Riwayat Pengeluaran',
-        'icon'  => 'receipt-cutoff',
-        'href'  => 'pages/finance/expenses/index.php?vehicle_id=' . $id . '&from=' . date('Y-01-01') . '&to=' . date('Y-12-31'),
-        'class' => 'btn btn-outline-danger btn-sm',
-    ];
-}
 if ($canManage) {
     $vehActions[] = ['label' => 'Simpan', 'icon' => 'check2-circle', 'type' => 'submit', 'form' => 'formVehicle', 'class' => 'btn btn-primary btn-sm px-3'];
 }

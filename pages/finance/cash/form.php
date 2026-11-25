@@ -1,6 +1,6 @@
 <?php
 /**
- * Buku Kas: input/ubah transaksi (tanggal, arah, jumlah, metode bayar opsional, kategori, keterangan).
+ * Buku Kas: input/ubah transaksi (tanggal, arah, jumlah, kategori, keterangan, bukti opsional).
  */
 require_once __DIR__ . '/../../../config/config.php';
 require_permission('finance.manage');
@@ -42,13 +42,11 @@ if (!isset(cash_directions()[$reqDir])) {
     $reqDir = 'in';
 }
 $form = [
-    'payment_method_id' => (string) ($row['payment_method_id'] ?? ''),
-    'vehicle_id'        => (string) ($row['vehicle_id'] ?? ''),
-    'date'              => (string) ($row['date'] ?? date('Y-m-d')),
-    'direction'         => (string) ($row['direction'] ?? $reqDir),
-    'amount'            => $row !== null ? (string) $row['amount'] : '',
-    'category'          => (string) ($row['category'] ?? ''),
-    'description'       => (string) ($row['description'] ?? ''),
+    'date'        => (string) ($row['date'] ?? date('Y-m-d')),
+    'direction'   => (string) ($row['direction'] ?? $reqDir),
+    'amount'      => $row !== null ? (string) $row['amount'] : '',
+    'category'    => (string) ($row['category'] ?? ''),
+    'description' => (string) ($row['description'] ?? ''),
 ];
 $existingProof = (string) ($row['proof_blob_path'] ?? '');
 
@@ -79,8 +77,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     }
 }
 
-$methods  = cash_method_list($cid);
-$vehicles = cash_vehicle_list($cid);
 $active = 'finance';
 $title  = $id > 0
     ? 'Ubah Transaksi Kas'
@@ -136,18 +132,6 @@ require __DIR__ . '/../../../includes/header.php';
                                     </div>
                                     <?php endif; ?>
                                     <div class="rnt-row">
-                                        <div class="rnt-label">Metode Pembayaran</div>
-                                        <div class="rnt-field">
-                                            <select class="form-select form-select-sm" id="payment_method_id" name="payment_method_id">
-                                                <option value="">— opsional (Tunai/Transfer/dll) —</option>
-                                                <?php foreach ($methods as $m): ?>
-                                                    <option value="<?= (int) $m['id'] ?>"<?= (int) $form['payment_method_id'] === (int) $m['id'] ? ' selected' : '' ?>>
-                                                        <?= e((string) $m['name']) ?></option>
-                                                <?php endforeach; ?>
-                                            </select>
-                                        </div>
-                                    </div>
-                                    <div class="rnt-row">
                                         <div class="rnt-label">Tanggal <span class="text-danger">*</span></div>
                                         <div class="rnt-field">
                                             <input class="form-control form-control-sm bg-white flatpickr-date" type="text" id="date" name="date" data-flatpickr-auto placeholder="dd-MMM-yyyy" value="<?= e($form['date']) ?>" required>
@@ -170,7 +154,6 @@ require __DIR__ . '/../../../includes/header.php';
                                                    value="<?= e($form['amount']) ?>" required>
                                         </div>
                                     </div>
-                                    <?= cash_render_vehicle_row($vehicles, $form['vehicle_id']) ?>
                                 </div>
                             </div>
                         </div>

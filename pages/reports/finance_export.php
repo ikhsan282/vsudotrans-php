@@ -20,7 +20,6 @@ $costs   = $data['cost_types'];
 $ct      = fin_cost_totals($costs);
 $expCats = $data['expense_categories'] ?? [];
 $expCt   = fin_expense_category_totals($expCats);
-$expVehs = $data['expense_vehicles'] ?? [];
 $netSum  = $data['net_summary'] ?? [
     'in_other' => 0.0,
     'out_operating' => 0.0,
@@ -103,25 +102,6 @@ foreach ($expCats as $ec) {
 }
 $table[] = ['TOTAL', (int) $expCt['tx_count'], (float) $expCt['amount'], $expCt['amount'] > 0 ? 100.0 : 0.0];
 $table[] = [''];
-
-if ($expVehs) {
-    $table[] = ['Pengeluaran Kas per Armada', ''];
-    $table[] = ['No. Polisi', 'Kategori Unit', 'Transaksi', 'Jumlah'];
-    $evTotCnt = 0;
-    $evTotAmt = 0.0;
-    foreach ($expVehs as $ev) {
-        $evTotCnt += (int) $ev['tx_count'];
-        $evTotAmt += (float) $ev['amount'];
-        $table[] = [
-            (string) $ev['vehicle_number'],
-            (string) $ev['vehicle_category'],
-            (int) $ev['tx_count'],
-            (float) $ev['amount'],
-        ];
-    }
-    $table[] = ['TOTAL', '', $evTotCnt, $evTotAmt];
-    $table[] = [''];
-}
 
 $table[] = ['', 'Rekap Harian (Pemasukan & Pengeluaran)'];
 $table[] = ['Tanggal', 'Kas Masuk', 'Kas Keluar', 'Arus Kas Bersih', 'Omzet Booking', 'Biaya Trip', 'Laba Kotor Trip'];

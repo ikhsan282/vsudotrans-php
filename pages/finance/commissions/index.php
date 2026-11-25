@@ -24,7 +24,6 @@ $empRecap = comm_by_employee($f);
 
 $payCid   = active_company_id() ?? $filter_cid;
 $empOpts  = comm_employee_options($filter_cid);
-$methods  = $payCid > 0 ? cash_method_list($payCid) : [];
 $curQs    = comm_build_qs($f);
 
 $empChipBase = $f;
@@ -237,20 +236,11 @@ require __DIR__ . '/../../../includes/header.php';
                         <label class="form-label small mb-1" for="pay_date">Tanggal Bayar</label>
                         <input type="text" class="form-control form-control-sm bg-white flatpickr-date" data-flatpickr-auto id="pay_date" name="pay_date" value="<?= e(date('Y-m-d')) ?>" required>
                     </div>
-                    <div class="col-6 col-lg-2">
-                        <label class="form-label small mb-1" for="pay_method_id">Metode</label>
-                        <select class="form-select form-select-sm" id="pay_method_id" name="payment_method_id">
-                            <option value="">— opsional —</option>
-                            <?php foreach ($methods as $m): ?>
-                                <option value="<?= (int) $m['id'] ?>"><?= e((string) $m['name']) ?></option>
-                            <?php endforeach; ?>
-                        </select>
-                    </div>
-                    <div class="col-6 col-lg-2">
+                    <div class="col-6 col-lg-3">
                         <label class="form-label small mb-1" for="comm_proof_file">Bukti Transfer</label>
                         <input type="file" class="form-control form-control-sm" id="comm_proof_file" name="proof_file" accept="image/*,application/pdf">
                     </div>
-                    <div class="col-6 col-lg-2">
+                    <div class="col-12 col-lg-3">
                         <label class="form-label small mb-1" for="comm_note">Catatan</label>
                         <input type="text" class="form-control form-control-sm" id="comm_note" name="note" maxlength="300" placeholder="mis. Transfer BCA batch 1">
                     </div>
@@ -338,7 +328,6 @@ require __DIR__ . '/../../../includes/header.php';
                                 <span class="badge bg-success-subtle text-success border border-success-subtle">Lunas</span>
                                 <div class="small text-muted">
                                     <?= e(!empty($r['cash_paid_date']) ? tanggal_indo((string) $r['cash_paid_date']) : '-') ?>
-                                    <?= !empty($r['paid_method_name']) ? '· ' . e((string) $r['paid_method_name']) : '' ?>
                                     <span class="font-monospace">(#<?= (int) $r['paid_cash_tx_id'] ?>)</span>
                                 </div>
                             <?php else: ?>

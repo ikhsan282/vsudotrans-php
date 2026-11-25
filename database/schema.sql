@@ -1192,8 +1192,6 @@ CREATE TABLE `cash_transactions` (
   `amount` DECIMAL(18,2) NOT NULL,
   `category` VARCHAR(50) DEFAULT NULL,
   `description` VARCHAR(1000) DEFAULT NULL,
-  `payment_method_id` INT(11) DEFAULT NULL,
-  `vehicle_id` INT(11) DEFAULT NULL COMMENT 'opsional relasi ke vehicles.id',
   `source_type` VARCHAR(30) DEFAULT NULL COMMENT 'booking_payment|crew_commission|NULL=manual',
   `source_id` INT(11) DEFAULT NULL COMMENT 'id booking_cost_lines',
   `proof_blob_path` VARCHAR(255) DEFAULT NULL COMMENT 'path berkas bukti struk/nota di Azure Blob Storage',
@@ -1203,8 +1201,7 @@ CREATE TABLE `cash_transactions` (
   `modified_date` DATETIME DEFAULT NULL,
   PRIMARY KEY (`id`),
   KEY `ix_cashtx_company_date` (`company_id`, `date`),
-  KEY `ix_cashtx_source` (`source_type`, `source_id`),
-  KEY `ix_cashtx_vehicle` (`company_id`, `vehicle_id`)
+  KEY `ix_cashtx_source` (`source_type`, `source_id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 CREATE TABLE `invoices` (

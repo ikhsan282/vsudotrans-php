@@ -54,12 +54,11 @@ try {
     $marker2 = 'EXP_CHK_CUS_' . getmypid();
 
     $uid1 = cash_tx_save(0, [
-        'payment_method_id' => '',
-        'date'              => $today,
-        'direction'         => 'out',
-        'amount'            => '123456',
-        'category'          => 'BBM',
-        'description'       => $marker1,
+        'date'        => $today,
+        'direction'   => 'out',
+        'amount'      => '123456',
+        'category'    => 'BBM',
+        'description' => $marker1,
     ], 1, 'exp-check');
     $tmpIds[] = $uid1;
     exp_ok($uid1 > 0, "Simpan pengeluaran unit #{$uid1} berhasil");
@@ -128,30 +127,28 @@ try {
     $csrf = $mCsrf1[1] ?? '';
 
     $postPreset = $http($jarAdmin, '/pages/finance/expenses/form.php', [
-        'csrf_token'        => $csrf,
-        'id'                => '0',
-        'return'            => 'expenses',
-        'date'              => $today,
-        'amount'            => '275.000',
-        'payment_method_id' => '',
-        'category_preset'   => 'BBM',
-        'category_custom'   => '',
-        'description'       => $marker1,
+        'csrf_token'      => $csrf,
+        'id'              => '0',
+        'return'          => 'expenses',
+        'date'            => $today,
+        'amount'          => '275.000',
+        'category_preset' => 'BBM',
+        'category_custom' => '',
+        'description'     => $marker1,
     ]);
     exp_ok($postPreset['code'] === 302, 'POST form pengeluaran kategori preset (BBM Rp 275.000) berhasil 302');
 
     $expFrm2 = $http($jarAdmin, '/pages/finance/expenses/form.php');
     preg_match('/name="csrf_token"\s+value="([^"]+)"/', $expFrm2['body'], $mCsrf2);
     $postCustom = $http($jarAdmin, '/pages/finance/expenses/form.php', [
-        'csrf_token'        => $mCsrf2[1] ?? $csrf,
-        'id'                => '0',
-        'return'            => 'expenses',
-        'date'              => $today,
-        'amount'            => '85.000',
-        'payment_method_id' => '',
-        'category_preset'   => '__custom__',
-        'category_custom'   => 'Cuci Armada Uji',
-        'description'       => $marker2,
+        'csrf_token'      => $mCsrf2[1] ?? $csrf,
+        'id'              => '0',
+        'return'          => 'expenses',
+        'date'            => $today,
+        'amount'          => '85.000',
+        'category_preset' => '__custom__',
+        'category_custom' => 'Cuci Armada Uji',
+        'description'     => $marker2,
     ]);
     exp_ok($postCustom['code'] === 302, 'POST form pengeluaran kategori kustom (Cuci Armada Uji Rp 85.000) berhasil 302');
 

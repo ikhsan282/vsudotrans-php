@@ -1,11 +1,10 @@
 <?php
 /**
- * Integration, Azure Blob Upload, RBAC & Report Reconciliation check untuk Poin 1, 2, 3:
- *   - Poin 1: Upload bukti struk/nota (Azure Blob) + relasi opsional armada (vehicle_id)
- *             pada Pemasukan, Pengeluaran, Buku Kas, & hapus blob saat delete.
- *   - Poin 2: Rekap & Pembayaran Komisi Sopir/Kru + auto Kas Keluar + pembatalan pencairan + RBAC.
- *   - Poin 3: Pengeluaran Kas per Kategori, per Armada, dan Laba Bersih Operasional
- *             (tanpa double-counting crew_commission) di halaman & export Laporan Keuangan.
+ * Integration, Azure Blob Upload, RBAC & Report Reconciliation check:
+ *   - Bukti struk/nota (Azure Blob) & form ringkas tanpa payment_method_id / vehicle_id
+ *   - Rekap & Pembayaran Komisi Sopir/Kru + auto Kas Keluar + pembatalan pencairan + RBAC
+ *   - Pengeluaran Kas per Kategori & Laba Bersih Operasional
+ *     (tanpa double-counting crew_commission) di halaman & export Laporan Keuangan.
  *
  * Usage: C:\xampp\php\php.exe tests/finance_points_123_check.php [base_url]
  */
@@ -98,23 +97,16 @@ $_SESSION['is_super_admin'] = true;
 $_SESSION['company_id']     = 1;
 
 try {
-    $today   = date('Y-m-d');
-    $veh1    = $db->query('SELECT id, vehicle_number FROM vehicles WHERE company_id = 1 AND is_active = 1 ORDER BY id ASC LIMIT 1')->fetch_assoc();
-    $veh1Id  = (int) ($veh1['id'] ?? 0);
-    $veh1No  = (string) ($veh1['vehicle_number'] ?? '');
-    $vehOth  = (int) ($db->query('SELECT id FROM vehicles WHERE company_id <> 1 LIMIT 1')->fetch_column() ?: 0);
+    $today  = date('Y-m-d');
+    $veh1Id = (int) ($db->query('SELECT id FROM vehicles WHERE company_id = 1 AND is_active = 1 ORDER BY id ASC LIMIT 1')->fetch_column() ?: 0);
 
-    echo "=== POIN 1: Armada (vehicle_id) & Upload Bukti Struk ===\n";
-    fp_ok($veh1Id > 0, "Kendaraan company 1 tersedia untuk uji (#{$veh1Id} {$veh1No})");
-    if ($vehOth > 0) {
-        $errsCrossVeh = cash_tx_validate([
-            'date'       => $today,
-            'direction'  => 'out',
-            'amount'     => '100000',
-            'vehicle_id' => (string) $vehOth,
-        ], 1);
-        fp_ok(count($errsCrossVeh) >= 1, "Validasi menolak vehicle_id milik tenant lain (#{$vehOth})");
-    }
+    echo "=== POIN 1: Skema Kas Ringkas & Upload Bukti Struk (Azure Blob) ===\n";
+    $hasRemovedCols = (int) $db->query(
+        "SELECT COUNT(*) FROM information_schema.columns
+          WHERE table_schema = DATABASE() AND table_name = 'cash_transactions'
+            AND column_name IN ('payment_method_id', 'vehicle_id')"
+    )->fetch_row()[0];
+    fp_ok($hasRemovedCols === 0, 'Kolom payment_method_id & vehicle_id sudah terhapus dari cash_transactions');
 
     fp_ok($loginAs($jarAdmin, 'superadmin', 'P@ssw0rd'), 'Login Super Admin HTTP OK');
     $dash = $http($jarAdmin, '/pages/dashboard/index.php');
@@ -122,33 +114,32 @@ try {
         $http($jarAdmin, '/pages/companies/switch.php', ['csrf_token' => $mSw[1], 'company_id' => '1']);
     }
 
-    // Uji upload bukti + relasi armada pada form Pengeluaran
+    // Uji form Pengeluaran ringkas (enctype multipart + bukti, tanpa payment_method_id/vehicle_id)
     $expForm = $http($jarAdmin, '/pages/finance/expenses/form.php');
     fp_ok(
         $expForm['code'] === 200
         && str_contains($expForm['body'], 'enctype="multipart/form-data"')
-        && str_contains($expForm['body'], 'name="vehicle_id"')
-        && str_contains($expForm['body'], 'name="proof_file"'),
-        'Form Pengeluaran memuat enctype multipart, select Armada (.ts-select), dan input Bukti Struk'
+        && str_contains($expForm['body'], 'name="proof_file"')
+        && !str_contains($expForm['body'], 'name="payment_method_id"')
+        && !str_contains($expForm['body'], 'name="vehicle_id"'),
+        'Form Pengeluaran ringkas memuat enctype multipart & Bukti Struk tanpa Metode Pembayaran / Armada'
     );
     preg_match('/name="csrf_token"\s+value="([^"]+)"/', $expForm['body'], $mcExp);
 
     $markerExp = 'FP123_EXP_' . getmypid();
     $postExp = $http($jarAdmin, '/pages/finance/expenses/form.php', [
-        'csrf_token'        => $mcExp[1] ?? '',
-        'id'                => '0',
-        'return'            => 'expenses',
-        'date'              => $today,
-        'amount'            => '185.000',
-        'payment_method_id' => '',
-        'vehicle_id'        => (string) $veh1Id,
-        'category_preset'   => 'BBM',
-        'category_custom'   => '',
-        'description'       => $markerExp,
+        'csrf_token'      => $mcExp[1] ?? '',
+        'id'              => '0',
+        'return'          => 'expenses',
+        'date'            => $today,
+        'amount'          => '185.000',
+        'category_preset' => 'BBM',
+        'category_custom' => '',
+        'description'     => $markerExp,
     ], ['proof_file' => $imgTmp]);
-    fp_ok($postExp['code'] === 302, 'POST Pengeluaran + relasi armada + upload bukti PNG berhasil (302)');
+    fp_ok($postExp['code'] === 302, 'POST Pengeluaran + upload bukti PNG berhasil (302)');
 
-    $stE = $db->prepare('SELECT id, vehicle_id, proof_blob_path FROM cash_transactions WHERE company_id = 1 AND description = ? LIMIT 1');
+    $stE = $db->prepare('SELECT id, proof_blob_path FROM cash_transactions WHERE company_id = 1 AND description = ? LIMIT 1');
     $stE->bind_param('s', $markerExp);
     $stE->execute();
     $rowExp = $stE->get_result()->fetch_assoc();
@@ -161,44 +152,50 @@ try {
         $tmpBlobs[] = (string) $rowExp['proof_blob_path'];
     }
     fp_ok(
-        $expTxId > 0 && (int) ($rowExp['vehicle_id'] ?? 0) === $veh1Id && !empty($rowExp['proof_blob_path']),
-        'cash_transactions menyimpan vehicle_id=' . $veh1Id . ' & proof_blob_path Azure Blob (' . ($rowExp['proof_blob_path'] ?? '-') . ')'
+        $expTxId > 0 && !empty($rowExp['proof_blob_path']),
+        'cash_transactions menyimpan proof_blob_path Azure Blob (' . ($rowExp['proof_blob_path'] ?? '-') . ')'
     );
 
-    // Cek daftar Pengeluaran filter by vehicle_id menampilkan plat armada & ikon Lihat Bukti
-    $expIdx = $http($jarAdmin, '/pages/finance/expenses/index.php?from=' . urlencode($today) . '&to=' . urlencode($today) . '&vehicle_id=' . $veh1Id);
+    // Cek daftar Pengeluaran ringkas tanpa Metode/Armada & menampilkan ikon Lihat Bukti
+    $expIdx = $http($jarAdmin, '/pages/finance/expenses/index.php?from=' . urlencode($today) . '&to=' . urlencode($today));
     fp_ok(
         $expIdx['code'] === 200
         && str_contains($expIdx['body'], $markerExp)
-        && str_contains($expIdx['body'], $veh1No)
         && str_contains($expIdx['body'], 'title="Lihat Bukti Struk/Nota"')
-        && str_contains($expIdx['body'], 'Per Armada:'),
-        'Daftar Pengeluaran filter vehicle_id menampilkan plat unit, chip Per Armada, dan tombol Lihat Bukti'
+        && !str_contains($expIdx['body'], 'name="method"')
+        && !str_contains($expIdx['body'], 'name="vehicle_id"'),
+        'Daftar Pengeluaran bebas dari filter Metode/Armada dan menampilkan tombol Lihat Bukti'
     );
 
-    // Cek Export Buku Kas / Pengeluaran memuat [PLAT] di kolom keterangan
-    $csvExp = $http($jarAdmin, '/pages/finance/cash/export.php?direction=out&format=csv&from=' . urlencode($today) . '&to=' . urlencode($today) . '&vehicle_id=' . $veh1Id);
-    fp_ok($csvExp['code'] === 200 && str_contains($csvExp['body'], '[' . $veh1No . ']'), 'Export CSV memuat [' . $veh1No . '] pada kolom Keterangan');
+    // Cek Export Buku Kas / Pengeluaran memakai format 5 kolom tanpa Metode
+    $csvExp = $http($jarAdmin, '/pages/finance/cash/export.php?direction=out&format=csv&from=' . urlencode($today) . '&to=' . urlencode($today));
+    fp_ok(
+        $csvExp['code'] === 200
+        && str_contains($csvExp['body'], $markerExp)
+        && !str_contains($csvExp['body'], 'Tanggal,Metode,'),
+        'Export CSV Pengeluaran format 5 kolom ringkas berjalan normal'
+    );
 
-    // Uji kendaraan detail menampilkan link Riwayat Pengeluaran
-    $vehDet = $http($jarAdmin, '/pages/vehicles/detail.php?id=' . $veh1Id);
-    fp_ok($vehDet['code'] === 200 && str_contains($vehDet['body'], 'Riwayat Pengeluaran'), 'Detail Kendaraan menautkan tombol Riwayat Pengeluaran');
-
-    // Uji Pemasukan + Upload Bukti
+    // Uji Pemasukan ringkas + Upload Bukti
     $incForm = $http($jarAdmin, '/pages/finance/incomes/form.php');
+    fp_ok(
+        $incForm['code'] === 200
+        && str_contains($incForm['body'], 'name="proof_file"')
+        && !str_contains($incForm['body'], 'name="payment_method_id"')
+        && !str_contains($incForm['body'], 'name="vehicle_id"'),
+        'Form Pemasukan ringkas bebas dari Metode Pembayaran & Armada'
+    );
     preg_match('/name="csrf_token"\s+value="([^"]+)"/', $incForm['body'], $mcInc);
     $markerInc = 'FP123_INC_' . getmypid();
     $postInc = $http($jarAdmin, '/pages/finance/incomes/form.php', [
-        'csrf_token'        => $mcInc[1] ?? '',
-        'id'                => '0',
-        'return'            => 'incomes',
-        'date'              => $today,
-        'amount'            => '320.000',
-        'payment_method_id' => '',
-        'vehicle_id'        => '',
-        'category_preset'   => 'Setoran Modal',
-        'category_custom'   => '',
-        'description'       => $markerInc,
+        'csrf_token'      => $mcInc[1] ?? '',
+        'id'              => '0',
+        'return'          => 'incomes',
+        'date'            => $today,
+        'amount'          => '320.000',
+        'category_preset' => 'Setoran Modal',
+        'category_custom' => '',
+        'description'     => $markerInc,
     ], ['proof_file' => $imgTmp]);
     fp_ok($postInc['code'] === 302, 'POST Pemasukan + upload bukti PNG berhasil (302)');
 
@@ -283,10 +280,9 @@ try {
         'csrf_token'        => $mcComm[1] ?? '',
         'company_id'        => '1',
         'return_qs'         => 'from=' . $today . '&to=' . $today . '&employee_id=' . $tmpEmpId,
-        'pay_date'          => $today,
-        'payment_method_id' => '',
-        'note'              => 'Pencairan Uji FP123',
-        'line_ids'          => array_map('strval', $tmpCostIds),
+        'pay_date' => $today,
+        'note'     => 'Pencairan Uji FP123',
+        'line_ids' => array_map('strval', $tmpCostIds),
     ], ['proof_file' => $imgTmp]);
     fp_ok($payRes['code'] === 302, 'POST commissions/pay.php mencairkan 2 baris komisi (302)');
 
@@ -328,7 +324,7 @@ try {
     $stillCommTx = (int) $db->query("SELECT COUNT(*) FROM cash_transactions WHERE id = {$commTxId}")->fetch_row()[0];
     fp_ok($guardDel['code'] === 302 && $stillCommTx === 1, 'Guard: pencairan komisi kru tidak bisa dihapus manual lewat expenses/delete.php');
 
-    echo "\n=== POIN 3: Pengeluaran per Kategori, Armada & Laba Bersih Operasional ===\n";
+    echo "\n=== POIN 3: Pengeluaran per Kategori & Laba Bersih Operasional ===\n";
     $_SESSION['role_name'] = 'Admin Perusahaan';
     $_SESSION['company_id'] = 1;
     $fFin = fin_report_filter(['from' => $today, 'to' => $today, 'booking_type' => 'all']);
@@ -338,7 +334,8 @@ try {
     // BUKAN cash['out_operating'], karena Rp 200.000 sudah masuk ke trip cost_total!
     $expSumCats = fin_expense_category_totals($finAll['expense_categories']);
     fp_ok(
-        isset($finAll['expense_categories'], $finAll['expense_vehicles'], $finAll['net_profit'], $finAll['net_summary'])
+        isset($finAll['expense_categories'], $finAll['net_profit'], $finAll['net_summary'])
+        && !isset($finAll['expense_vehicles'])
         && abs($expSumCats['amount'] - (float) $finAll['cash']['out_total']) < 0.01,
         'fin_all() menyertakan expense_categories & totalnya cocok 100% dengan cash.out_total (' . rupiah($expSumCats['amount']) . ')'
     );
@@ -355,9 +352,9 @@ try {
         $rptHtml['code'] === 200
         && str_contains($rptHtml['body'], 'Ringkasan Laba Bersih Operasional')
         && str_contains($rptHtml['body'], 'Pengeluaran Kas per Kategori')
-        && str_contains($rptHtml['body'], 'Pengeluaran Kas per Armada')
-        && str_contains($rptHtml['body'], $veh1No),
-        'Laporan Keuangan HTML memuat Laba Bersih Operasional, Pengeluaran per Kategori & Pengeluaran per Armada'
+        && str_contains($rptHtml['body'], 'Distribusi Pengeluaran Kas')
+        && !str_contains($rptHtml['body'], 'Pengeluaran Kas per Armada'),
+        'Laporan Keuangan HTML memuat Laba Bersih Operasional, Pengeluaran per Kategori & Distribusi Pengeluaran Kas'
     );
 
     $rptCsv = $http($jarAdmin, '/pages/reports/finance_export.php?from=' . urlencode($today) . '&to=' . urlencode($today) . '&format=csv');

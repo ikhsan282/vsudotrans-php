@@ -17,7 +17,6 @@ $costs   = $data['cost_types'];
 $ct      = fin_cost_totals($costs);
 $expCats = $data['expense_categories'] ?? [];
 $expCt   = fin_expense_category_totals($expCats);
-$expVehs = $data['expense_vehicles'] ?? [];
 $netSum  = $data['net_summary'] ?? [
     'revenue_total' => (float) $rev['total'],
     'trip_cost' => (float) $data['cost_total'],
@@ -357,7 +356,7 @@ require __DIR__ . '/../../includes/header.php';
     </div>
 
     <div class="row g-3 mb-3" id="pengeluaran-kas-kategori">
-        <div class="col-12 <?= $expVehs ? 'col-xl-7' : 'col-xl-6' ?>">
+        <div class="col-12 col-xl-6">
             <div class="card shadow-sm border-0 h-100">
                 <div class="card-header bg-white d-flex justify-content-between align-items-center flex-wrap gap-2">
                     <span class="fw-semibold"><i class="bi bi-tags me-1 text-danger"></i>Pengeluaran Kas per Kategori</span>
@@ -406,45 +405,7 @@ require __DIR__ . '/../../includes/header.php';
                 </div>
             </div>
         </div>
-        <div class="col-12 <?= $expVehs ? 'col-xl-5' : 'col-xl-6' ?>">
-            <?php if ($expVehs): ?>
-            <div class="card shadow-sm border-0 h-100">
-                <div class="card-header bg-white d-flex justify-content-between align-items-center flex-wrap gap-2">
-                    <span class="fw-semibold"><i class="bi bi-truck me-1 text-primary"></i>Pengeluaran Kas per Armada</span>
-                    <span class="small text-muted"><?= count($expVehs) ?> unit</span>
-                </div>
-                <div class="table-responsive">
-                    <table class="table table-sm table-hover mb-0 align-middle">
-                        <thead><tr>
-                            <th>No. Polisi</th>
-                            <th class="text-end">Transaksi</th>
-                            <th class="text-end">Jumlah</th>
-                            <th class="text-end">Porsi</th>
-                        </tr></thead>
-                        <tbody>
-                        <?php foreach ($expVehs as $ev):
-                            $evHref = APP_URL . '/pages/finance/expenses/index.php?from=' . urlencode($f['from'])
-                                . '&to=' . urlencode($f['to'])
-                                . '&vehicle_id=' . (int) $ev['vehicle_id']
-                                . (is_super_admin() ? '&company_id=' . (int) ($f['filter_company_id'] ?? 0) : '');
-                        ?>
-                            <tr>
-                                <td>
-                                    <a href="<?= e($evHref) ?>" class="text-decoration-none fw-medium font-monospace"><?= e((string) $ev['vehicle_number']) ?></a>
-                                    <?php if (!empty($ev['vehicle_category'])): ?>
-                                        <span class="small text-muted ms-1"><?= e((string) $ev['vehicle_category']) ?></span>
-                                    <?php endif; ?>
-                                </td>
-                                <td class="text-end"><?= (int) $ev['tx_count'] ?></td>
-                                <td class="text-end text-danger fw-semibold"><?= e(rupiah((float) $ev['amount'])) ?></td>
-                                <td class="text-end"><?= e(number_format((float) $ev['share_pct'], 1, ',', '.')) ?>%</td>
-                            </tr>
-                        <?php endforeach; ?>
-                        </tbody>
-                    </table>
-                </div>
-            </div>
-            <?php else: ?>
+        <div class="col-12 col-xl-6">
             <div class="card shadow-sm border-0 h-100">
                 <div class="card-header bg-white fw-semibold"><i class="bi bi-bar-chart me-1 text-danger"></i>Distribusi Pengeluaran Kas</div>
                 <div class="card-body">
@@ -455,7 +416,6 @@ require __DIR__ . '/../../includes/header.php';
                     <?php endif; ?>
                 </div>
             </div>
-            <?php endif; ?>
         </div>
     </div>
 

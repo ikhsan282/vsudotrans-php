@@ -1,6 +1,6 @@
 <?php
 /**
- * Buku Kas: filter rentang tanggal + metode bayar + arah, kartu saldo akhir/masuk/keluar/awal,
+ * Buku Kas: filter rentang tanggal + arah, kartu saldo akhir/masuk/keluar/awal,
  * tabel transaksi dengan paginasi, tombol export CSV/XLSX/PDF/Cetak.
  */
 require_once __DIR__ . '/../../../config/config.php';
@@ -19,19 +19,11 @@ if (is_super_admin()) {
 $p = paginate(cash_tx_count($f), (int) ($_GET['page'] ?? 1));
 $rows = cash_tx_list($f, $p['per_page'], $p['offset']);
 $sum = cash_summary($f);
-$methods = cash_method_list($filter_cid);
-$method_name = '';
-foreach ($methods as $m) {
-    if ((int) $m['id'] === $f['method']) {
-        $method_name = (string) $m['name'];
-    }
-}
 
 $qsParams = [
     'format'    => 'csv',
     'from'      => $f['from'],
     'to'        => $f['to'],
-    'method'    => $f['method'],
     'direction' => $f['direction'],
 ];
 if (is_super_admin()) {
@@ -43,8 +35,7 @@ unset($qsParams['format']);
 $page_qs = http_build_query($qsParams);
 
 $cards = [
-    ['Saldo Akhir' . ($method_name !== '' ? ' (' . $method_name . ')' : ''),
-        rupiah($sum['balance']), 'primary', 'wallet2'],
+    ['Saldo Akhir', rupiah($sum['balance']), 'primary', 'wallet2'],
     ['Total Masuk', rupiah($sum['total_in']), 'success', 'arrow-down-circle'],
     ['Total Keluar', rupiah($sum['total_out']), 'danger', 'arrow-up-circle'],
     ['Saldo Awal (sblm ' . date('d M', strtotime($f['from'])) . ')', rupiah($sum['opening']), 'secondary', 'flag'],
@@ -97,16 +88,6 @@ require __DIR__ . '/../../../includes/header.php';
                     <input type="text" class="form-control form-control-sm bg-white flatpickr-date" data-flatpickr-auto placeholder="dd-MMM-yyyy" name="to" value="<?= e($f['to']) ?>">
                 </div>
                 <div class="col-12 col-sm-6 col-lg-2">
-                    <label class="form-label small mb-1">Metode</label>
-                    <select class="form-select form-select-sm" name="method">
-                        <option value="0">Semua metode</option>
-                        <?php foreach ($methods as $m): ?>
-                            <option value="<?= (int) $m['id'] ?>"<?= (int) $m['id'] === $f['method'] ? ' selected' : '' ?>>
-                                <?= e((string) $m['name']) ?></option>
-                        <?php endforeach; ?>
-                    </select>
-                </div>
-                <div class="col-12 col-sm-6 col-lg-2">
                     <label class="form-label small mb-1">Arah</label>
                     <select class="form-select form-select-sm" name="direction">
                         <option value="all">Semua</option>
@@ -115,7 +96,7 @@ require __DIR__ . '/../../../includes/header.php';
                         <?php endforeach; ?>
                     </select>
                 </div>
-                <?= ui_filter_actions(APP_URL . '/pages/finance/cash/index.php', ($f['from'] !== date('Y-m-01') || $f['to'] !== date('Y-m-t') || $f['method'] > 0 || $f['direction'] !== 'all' || (is_super_admin() && $filter_cid !== (active_company_id() ?? 0)))) ?>
+                <?= ui_filter_actions(APP_URL . '/pages/finance/cash/index.php', ($f['from'] !== date('Y-m-01') || $f['to'] !== date('Y-m-t') || $f['direction'] !== 'all' || (is_super_admin() && $filter_cid !== (active_company_id() ?? 0)))) ?>
             </form>
         </div>
     </div>
@@ -141,7 +122,7 @@ require __DIR__ . '/../../../includes/header.php';
             <table class="table table-hover mb-0 align-middle">
                 <thead class="table-light"><tr>
                     <th>Tanggal</th><?php if ($show_comp_col): ?><th>Perusahaan</th><?php endif; ?><th>Arah</th><th>Kategori</th>
-                    <th>Metode</th><th>Keterangan</th><th class="text-end">Nominal</th><th class="text-end">Aksi</th>
+                    <th>Keterangan</th><th class="text-end">Nominal</th><th class="text-end">Aksi</th>
                 </tr></thead>
                 <tbody>
                 <?php foreach ($rows as $r):
@@ -169,8 +150,7 @@ require __DIR__ . '/../../../includes/header.php';
                                 <span class="badge bg-secondary-subtle text-secondary border ms-1">Auto</span>
                             <?php endif; ?>
                         </td>
-                        <td class="text-nowrap"><?= !empty($r['method_name']) ? e((string) $r['method_name']) : '<span class="text-muted">-</span>' ?></td>
-                        <td><?= cash_vehicle_badge_html($r) ?><?= e((string) $r['description']) ?></td>
+                        <td><?= e((string) $r['description']) ?></td>
                         <td class="text-end text-nowrap fw-semibold <?= $r['direction'] === 'in' ? 'text-success' : 'text-danger' ?>">
                             <?= e(($r['direction'] === 'in' ? '+' : '−') . ' ' . rupiah((float) $r['amount'])) ?>
                         </td>
@@ -192,12 +172,12 @@ require __DIR__ . '/../../../includes/header.php';
                     </tr>
                 <?php endforeach; ?>
                 <?php if (!$rows): ?>
-                    <tr><td colspan="<?= $show_comp_col ? 8 : 7 ?>" class="text-center text-muted py-4">Tidak ada transaksi pada periode ini.</td></tr>
+                    <tr><td colspan="<?= $show_comp_col ? 7 : 6 ?>" class="text-center text-muted py-4">Tidak ada transaksi pada periode ini.</td></tr>
                 <?php endif; ?>
                 </tbody>
                 <tfoot class="table-light fw-semibold">
                     <tr>
-                        <td colspan="<?= $show_comp_col ? 6 : 5 ?>">Masuk − Keluar pada rentang (<?= (int) $p['total'] ?> transaksi)</td>
+                        <td colspan="<?= $show_comp_col ? 5 : 4 ?>">Masuk − Keluar pada rentang (<?= (int) $p['total'] ?> transaksi)</td>
                         <td class="text-end text-nowrap"><?= e(rupiah($sum['total_in'] - $sum['total_out'])) ?></td>
                         <td></td>
                     </tr>

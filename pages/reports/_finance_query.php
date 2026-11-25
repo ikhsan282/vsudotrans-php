@@ -235,36 +235,6 @@ function fin_expense_category_totals(array $rows): array
     return $t;
 }
 
-/** Rincian pengeluaran Buku Kas per armada/unit (transaksi yang tertaut vehicle_id). */
-function fin_cash_expense_by_vehicle(array $f): array
-{
-    [$w, $wt, $wp] = fin_company_scope('t.company_id', $f);
-    $sql = "SELECT v.id AS vehicle_id,
-                   v.vehicle_number,
-                   COALESCE(v.vehicle_category, '') AS vehicle_category,
-                   COUNT(*) AS tx_count,
-                   COALESCE(SUM(t.amount), 0) AS amount
-              FROM cash_transactions t
-              JOIN vehicles v ON v.id = t.vehicle_id
-             WHERE " . ($w !== '' ? $w . ' AND ' : '') . "t.direction = 'out' AND t.vehicle_id IS NOT NULL AND t.vehicle_id > 0 AND t.date BETWEEN ? AND ?
-             GROUP BY v.id, v.vehicle_number, v.vehicle_category
-             ORDER BY amount DESC, v.vehicle_number ASC";
-    $rows = report_run($sql, $wt . 'ss', array_merge($wp, [$f['from'], $f['to']]));
-    $grand = 0.0;
-    foreach ($rows as $r) {
-        $grand += (float) ($r['amount'] ?? 0);
-    }
-    foreach ($rows as &$r) {
-        $amt = (float) ($r['amount'] ?? 0);
-        $r['vehicle_id'] = (int) ($r['vehicle_id'] ?? 0);
-        $r['tx_count']   = (int) ($r['tx_count'] ?? 0);
-        $r['amount']     = $amt;
-        $r['share_pct']  = $grand > 0 ? round(($amt * 100) / $grand, 1) : 0.0;
-    }
-    unset($r);
-    return $rows;
-}
-
 /**
  * Rincian tagihan belum lunas (sisa > 0), urut sisa terbesar.
  * $limit menahan tabel HTML; export memakai $limit = null (semua baris).
@@ -446,7 +416,6 @@ function fin_all(array $f, ?int $unpaid_limit = 200): array
     $gross      = $rev['total'] - $cost;
     $cash       = fin_cash_summary($f);
     $expCats    = fin_cash_expense_by_category($f);
-    $expVehs    = fin_cash_expense_by_vehicle($f);
     $inOther    = (float) ($cash['in_other'] ?? 0);
     $outOp      = (float) ($cash['out_operating'] ?? 0);
     $netProfit  = $gross + $inOther - $outOp;
@@ -470,7 +439,6 @@ function fin_all(array $f, ?int $unpaid_limit = 200): array
         ],
         'cost_types'         => fin_cost_by_type($f),
         'expense_categories' => $expCats,
-        'expense_vehicles'   => $expVehs,
         'categories'         => fin_by_category($f),
         'unpaid'             => fin_unpaid($f, $unpaid_limit),
         'monthly'            => fin_monthly($f),

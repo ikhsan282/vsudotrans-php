@@ -1,6 +1,6 @@
 <?php
 /**
- * Daftar Pemasukan: filter rentang tanggal, kategori, metode bayar & pencarian;
+ * Daftar Pemasukan: filter rentang tanggal, kategori & pencarian;
  * ringkasan total, breakdown per kategori, serta export CSV/XLSX/PDF/Cetak.
  */
 require_once __DIR__ . '/../../../config/config.php';
@@ -25,7 +25,6 @@ $breakdownFilter = $f;
 $breakdownFilter['category'] = '';
 $breakdown = cash_income_category_breakdown($breakdownFilter);
 
-$methods       = cash_method_list($filter_cid);
 $categoriesOpt = cash_distinct_categories($f, 'in');
 $topCat        = $breakdown[0] ?? null;
 $avgIn         = $p['total'] > 0 ? ($sum['total_in'] / $p['total']) : 0.0;
@@ -34,7 +33,6 @@ $qsParams = [
     'format'    => 'csv',
     'from'      => $f['from'],
     'to'        => $f['to'],
-    'method'    => $f['method'],
     'direction' => 'in',
 ];
 if ($f['category'] !== '') {
@@ -114,22 +112,12 @@ require __DIR__ . '/../../../includes/header.php';
                     <label class="form-label small mb-1">Sampai Tanggal</label>
                     <input type="text" class="form-control form-control-sm bg-white flatpickr-date" data-flatpickr-auto placeholder="dd-MMM-yyyy" name="to" value="<?= e($f['to']) ?>">
                 </div>
-                <div class="col-6 col-sm-6 col-lg-2">
+                <div class="col-6 col-sm-6 col-lg-2 erp-filter-item">
                     <label class="form-label small mb-1">Kategori</label>
                     <select class="form-select form-select-sm" name="category" onchange="this.form.submit()">
                         <option value="">Semua kategori</option>
                         <?php foreach ($categoriesOpt as $catOpt): ?>
                             <option value="<?= e($catOpt) ?>"<?= $f['category'] === $catOpt ? ' selected' : '' ?>><?= e($catOpt) ?></option>
-                        <?php endforeach; ?>
-                    </select>
-                </div>
-                <div class="col-6 col-sm-6 col-lg-2">
-                    <label class="form-label small mb-1">Metode</label>
-                    <select class="form-select form-select-sm" name="method" onchange="this.form.submit()">
-                        <option value="0">Semua metode</option>
-                        <?php foreach ($methods as $m): ?>
-                            <option value="<?= (int) $m['id'] ?>"<?= (int) $m['id'] === $f['method'] ? ' selected' : '' ?>>
-                                <?= e((string) $m['name']) ?></option>
                         <?php endforeach; ?>
                     </select>
                 </div>
@@ -142,7 +130,7 @@ require __DIR__ . '/../../../includes/header.php';
                 </div>
                 <?= ui_filter_actions(
                     APP_URL . '/pages/finance/incomes/index.php',
-                    ($f['from'] !== date('Y-m-01') || $f['to'] !== date('Y-m-t') || $f['method'] > 0 || $f['category'] !== '' || $f['q'] !== '' || (is_super_admin() && $filter_cid !== (active_company_id() ?? 0)))
+                    ($f['from'] !== date('Y-m-01') || $f['to'] !== date('Y-m-t') || $f['category'] !== '' || $f['q'] !== '' || (is_super_admin() && $filter_cid !== (active_company_id() ?? 0)))
                 ) ?>
             </form>
         </div>
@@ -194,7 +182,6 @@ require __DIR__ . '/../../../includes/header.php';
                     <th>Tanggal</th>
                     <?php if ($show_comp_col): ?><th>Perusahaan</th><?php endif; ?>
                     <th>Kategori</th>
-                    <th>Metode</th>
                     <th>Keterangan</th>
                     <th class="text-end">Nominal</th>
                     <th class="text-end">Aksi</th>
@@ -219,8 +206,7 @@ require __DIR__ . '/../../../includes/header.php';
                                 <span class="badge bg-secondary-subtle text-secondary border ms-1">Auto</span>
                             <?php endif; ?>
                         </td>
-                        <td class="text-nowrap"><?= !empty($r['method_name']) ? e((string) $r['method_name']) : '<span class="text-muted">-</span>' ?></td>
-                        <td><?= cash_vehicle_badge_html($r) ?><?= !empty($r['description']) ? e((string) $r['description']) : (!empty($r['vehicle_number']) ? '' : '<span class="text-muted">-</span>') ?></td>
+                        <td><?= !empty($r['description']) ? e((string) $r['description']) : '<span class="text-muted">-</span>' ?></td>
                         <td class="text-end text-nowrap fw-semibold text-success">
                             <?= e('+ ' . rupiah((float) $r['amount'])) ?>
                         </td>
@@ -243,7 +229,7 @@ require __DIR__ . '/../../../includes/header.php';
                 <?php endforeach; ?>
                 <?php if (!$rows): ?>
                     <tr>
-                        <td colspan="<?= $show_comp_col ? 7 : 6 ?>" class="text-center text-muted py-4">
+                        <td colspan="<?= $show_comp_col ? 6 : 5 ?>" class="text-center text-muted py-4">
                             <div>Belum ada pemasukan tercatat pada periode &amp; filter ini.</div>
                             <?php if (can('finance.manage')): ?>
                                 <a href="<?= e(APP_URL) ?>/pages/finance/incomes/form.php" class="btn btn-sm btn-outline-success mt-2">
@@ -256,7 +242,7 @@ require __DIR__ . '/../../../includes/header.php';
                 </tbody>
                 <tfoot class="table-light fw-semibold">
                     <tr>
-                        <td colspan="<?= $show_comp_col ? 5 : 4 ?>">Total Pemasukan pada rentang (<?= (int) $p['total'] ?> transaksi)</td>
+                        <td colspan="<?= $show_comp_col ? 4 : 3 ?>">Total Pemasukan pada rentang (<?= (int) $p['total'] ?> transaksi)</td>
                         <td class="text-end text-nowrap text-success"><?= e(rupiah($sum['total_in'])) ?></td>
                         <td></td>
                     </tr>

@@ -32,8 +32,7 @@ function comm_joins_sql(): string
                ON bcl.booking_type = 'rental' AND rb.id = bcl.booking_id AND rb.company_id = bcl.company_id
         LEFT JOIN employees e ON e.id = NULLIF(bcl.employee_id, 0)
         LEFT JOIN vehicles v ON v.id = NULLIF(COALESCE(tb.vehicle_id, rb.vehicle_id), 0)
-        LEFT JOIN cash_transactions ct ON ct.id = NULLIF(bcl.paid_cash_tx_id, 0) AND ct.company_id = bcl.company_id
-        LEFT JOIN payment_methods pm ON pm.id = NULLIF(ct.payment_method_id, 0)";
+        LEFT JOIN cash_transactions ct ON ct.id = NULLIF(bcl.paid_cash_tx_id, 0) AND ct.company_id = bcl.company_id";
 }
 
 /** Normalisasi filter halaman Komisi Sopir & Kru. */
@@ -238,8 +237,7 @@ function comm_list(array $f, ?int $limit = null, int $offset = 0): array
                 e.job_position,
                 v.vehicle_number,
                 ct.date AS cash_paid_date,
-                ct.proof_blob_path AS cash_proof_blob_path,
-                pm.name AS paid_method_name
+                ct.proof_blob_path AS cash_proof_blob_path
             {$joins}
             WHERE {$cw['sql']}
             ORDER BY (bcl.paid_cash_tx_id IS NOT NULL) ASC, trip_date DESC, bcl.id DESC";
@@ -327,15 +325,6 @@ function comm_pay_lines(int $company_id, array $lineIds, array $opts, ?string $u
         throw new InvalidArgumentException('Tanggal pembayaran tidak valid.');
     }
 
-    $pmRaw = (int) ($opts['payment_method_id'] ?? 0);
-    $pmId  = null;
-    if ($pmRaw > 0) {
-        if (!cash_method_ok($pmRaw, $company_id)) {
-            throw new InvalidArgumentException('Metode pembayaran tidak valid untuk perusahaan ini.');
-        }
-        $pmId = $pmRaw;
-    }
-
     $proofPath = isset($opts['proof_blob_path']) && trim((string) $opts['proof_blob_path']) !== ''
         ? mb_substr(trim((string) $opts['proof_blob_path']), 0, 255)
         : null;
@@ -353,14 +342,9 @@ function comm_pay_lines(int $company_id, array $lineIds, array $opts, ?string $u
         $stLock = $db->prepare(
             "SELECT bcl.id, bcl.booking_type, bcl.booking_id, bcl.cost_type,
                     {$amtExpr} AS commission_amount,
-                    COALESCE(NULLIF(TRIM(e.name), ''), bcl.cost_type) AS crew_label,
-                    COALESCE(tb.vehicle_id, rb.vehicle_id, 0) AS booking_vehicle_id
+                    COALESCE(NULLIF(TRIM(e.name), ''), bcl.cost_type) AS crew_label
                FROM booking_cost_lines bcl
                LEFT JOIN employees e ON e.id = NULLIF(bcl.employee_id, 0)
-               LEFT JOIN travel_ticket_bookings tb
-                      ON bcl.booking_type = 'travel' AND tb.id = bcl.booking_id AND tb.company_id = bcl.company_id
-               LEFT JOIN rental_car_bookings rb
-                      ON bcl.booking_type = 'rental' AND rb.id = bcl.booking_id AND rb.company_id = bcl.company_id
               WHERE bcl.company_id = ?
                 AND bcl.id IN ({$ph})
                 AND bcl.cost_type <> 'payment'
@@ -376,7 +360,6 @@ function comm_pay_lines(int $company_id, array $lineIds, array $opts, ?string $u
         $validIds    = [];
         $totalAmount = 0.0;
         $crewNames   = [];
-        $vehIds      = [];
         foreach ($lockedRows as $lr) {
             $amt = (float) ($lr['commission_amount'] ?? 0);
             if ($amt <= 0) {
@@ -388,10 +371,6 @@ function comm_pay_lines(int $company_id, array $lineIds, array $opts, ?string $u
             if ($lbl !== '' && !in_array($lbl, $crewNames, true)) {
                 $crewNames[] = $lbl;
             }
-            $vid = (int) ($lr['booking_vehicle_id'] ?? 0);
-            if ($vid > 0) {
-                $vehIds[$vid] = $vid;
-            }
         }
 
         if (!$validIds || $totalAmount <= 0) {
@@ -399,7 +378,6 @@ function comm_pay_lines(int $company_id, array $lineIds, array $opts, ?string $u
         }
 
         $firstLineId = $validIds[0];
-        $singleVehId = count($vehIds) === 1 ? (int) reset($vehIds) : null;
         $crewPreview = implode(', ', array_slice($crewNames, 0, 3));
         if (count($crewNames) > 3) {
             $crewPreview .= ' (+' . (count($crewNames) - 3) . ' lainnya)';
@@ -414,18 +392,16 @@ function comm_pay_lines(int $company_id, array $lineIds, array $opts, ?string $u
 
         $stIns = $db->prepare(
             "INSERT INTO cash_transactions
-                (company_id, date, direction, amount, category, description, payment_method_id, vehicle_id, source_type, source_id, proof_blob_path, created_user, created_date)
-             VALUES (?, ?, 'out', ?, ?, ?, ?, ?, 'crew_commission', ?, ?, ?, ?)"
+                (company_id, date, direction, amount, category, description, source_type, source_id, proof_blob_path, created_user, created_date)
+             VALUES (?, ?, 'out', ?, ?, ?, 'crew_commission', ?, ?, ?, ?)"
         );
         $stIns->bind_param(
-            'isdssiiisss',
+            'isdssisss',
             $company_id,
             $payDate,
             $totalAmount,
             $category,
             $txDesc,
-            $pmId,
-            $singleVehId,
             $firstLineId,
             $proofPath,
             $userStr,

@@ -44,10 +44,9 @@ if (!empty($proofRes['error'])) {
 
 try {
     $res = comm_pay_lines($cid, $lineIds, [
-        'pay_date'          => trim((string) ($_POST['pay_date'] ?? date('Y-m-d'))),
-        'payment_method_id' => trim((string) ($_POST['payment_method_id'] ?? '')),
-        'note'              => trim((string) ($_POST['note'] ?? '')),
-        'proof_blob_path'   => $proofRes['path'] ?? null,
+        'pay_date'        => trim((string) ($_POST['pay_date'] ?? date('Y-m-d'))),
+        'note'            => trim((string) ($_POST['note'] ?? '')),
+        'proof_blob_path' => $proofRes['path'] ?? null,
     ], $_SESSION['username'] ?? null);
 
     audit(

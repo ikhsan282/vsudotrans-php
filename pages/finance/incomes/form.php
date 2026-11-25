@@ -74,26 +74,22 @@ $amtFmt  = $row !== null
     : '';
 
 $form = [
-    'payment_method_id' => (string) ($row['payment_method_id'] ?? ''),
-    'vehicle_id'        => (string) ($row['vehicle_id'] ?? ''),
-    'date'              => (string) ($row['date'] ?? date('Y-m-d')),
-    'amount_raw'        => $amtFmt,
-    'category_preset'   => $initPreset,
-    'category_custom'   => $initCustom,
-    'description'       => (string) ($row['description'] ?? ''),
+    'date'            => (string) ($row['date'] ?? date('Y-m-d')),
+    'amount_raw'      => $amtFmt,
+    'category_preset' => $initPreset,
+    'category_custom' => $initCustom,
+    'description'     => (string) ($row['description'] ?? ''),
 ];
 $existingProof = (string) ($row['proof_blob_path'] ?? '');
 
 $errors = [];
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     verify_csrf();
-    $form['payment_method_id'] = trim((string) ($_POST['payment_method_id'] ?? ''));
-    $form['vehicle_id']        = trim((string) ($_POST['vehicle_id'] ?? ''));
-    $form['date']              = trim((string) ($_POST['date'] ?? ''));
-    $form['amount_raw']        = trim((string) ($_POST['amount'] ?? ''));
-    $form['category_preset']   = trim((string) ($_POST['category_preset'] ?? ''));
-    $form['category_custom']   = trim((string) ($_POST['category_custom'] ?? ''));
-    $form['description']       = trim((string) ($_POST['description'] ?? ''));
+    $form['date']            = trim((string) ($_POST['date'] ?? ''));
+    $form['amount_raw']      = trim((string) ($_POST['amount'] ?? ''));
+    $form['category_preset'] = trim((string) ($_POST['category_preset'] ?? ''));
+    $form['category_custom'] = trim((string) ($_POST['category_custom'] ?? ''));
+    $form['description']     = trim((string) ($_POST['description'] ?? ''));
 
     $chosenCategory = $form['category_preset'] === '__custom__'
         ? $form['category_custom']
@@ -105,14 +101,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     }
 
     $savePayload = [
-        'payment_method_id' => $form['payment_method_id'],
-        'vehicle_id'        => $form['vehicle_id'],
-        'date'              => $form['date'],
-        'direction'         => 'in',
-        'amount'            => (string) $parsedAmount,
-        'category'          => $chosenCategory,
-        'description'       => $form['description'],
-        'proof_blob_path'   => $existingProof,
+        'date'            => $form['date'],
+        'direction'       => 'in',
+        'amount'          => (string) $parsedAmount,
+        'category'        => $chosenCategory,
+        'description'     => $form['description'],
+        'proof_blob_path' => $existingProof,
     ];
     $errors = array_merge($errors, cash_tx_validate($savePayload, $cid));
 
@@ -140,9 +134,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     }
 }
 
-$methods  = cash_method_list($cid);
-$vehicles = cash_vehicle_list($cid);
-$active   = 'incomes';
+$active = 'incomes';
 $title   = ($id > 0 ? 'Ubah' : 'Tambah') . ' Pemasukan';
 $isCustomMode = $form['category_preset'] === '__custom__';
 require __DIR__ . '/../../../includes/header.php';
@@ -209,19 +201,6 @@ require __DIR__ . '/../../../includes/header.php';
                                                    placeholder="mis. 500.000" value="<?= e($form['amount_raw']) ?>" required>
                                         </div>
                                     </div>
-                                    <div class="rnt-row">
-                                        <div class="rnt-label">Metode Pembayaran</div>
-                                        <div class="rnt-field">
-                                            <select class="form-select form-select-sm" id="payment_method_id" name="payment_method_id">
-                                                <option value="">— opsional (Tunai/Transfer/dll) —</option>
-                                                <?php foreach ($methods as $m): ?>
-                                                    <option value="<?= (int) $m['id'] ?>"<?= (int) $form['payment_method_id'] === (int) $m['id'] ? ' selected' : '' ?>>
-                                                        <?= e((string) $m['name']) ?></option>
-                                                <?php endforeach; ?>
-                                            </select>
-                                        </div>
-                                    </div>
-                                    <?= cash_render_vehicle_row($vehicles, $form['vehicle_id']) ?>
                                 </div>
                             </div>
                         </div>

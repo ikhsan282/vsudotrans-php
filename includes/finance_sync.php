@@ -17,7 +17,7 @@ function finance_ensure_schema(): void
 {
     static $checked = false;
     $hasSess = session_status() === PHP_SESSION_ACTIVE;
-    if ($checked || ($hasSess && !empty($_SESSION['_vst_schema_fin_v3']))) {
+    if ($checked || ($hasSess && !empty($_SESSION['_vst_schema_fin_v4']))) {
         $checked = true;
         return;
     }
@@ -38,11 +38,18 @@ function finance_ensure_schema(): void
         }
         $db->query('ALTER TABLE `cash_transactions` DROP COLUMN `cash_account_id`');
     }
-    if (empty($txCols['vehicle_id'])) {
-        $db->query("ALTER TABLE `cash_transactions` ADD COLUMN `vehicle_id` INT(11) DEFAULT NULL COMMENT 'opsional relasi ke vehicles.id' AFTER `payment_method_id`");
+    $vehIdxRes = $db->query("SHOW INDEX FROM `cash_transactions` WHERE Key_name = 'ix_cashtx_vehicle'");
+    if ($vehIdxRes && $vehIdxRes->num_rows > 0) {
+        $db->query('ALTER TABLE `cash_transactions` DROP INDEX `ix_cashtx_vehicle`');
+    }
+    if (!empty($txCols['vehicle_id'])) {
+        $db->query('ALTER TABLE `cash_transactions` DROP COLUMN `vehicle_id`');
+    }
+    if (!empty($txCols['payment_method_id'])) {
+        $db->query('ALTER TABLE `cash_transactions` DROP COLUMN `payment_method_id`');
     }
     if (empty($txCols['source_type'])) {
-        $db->query("ALTER TABLE `cash_transactions` ADD COLUMN `source_type` VARCHAR(30) DEFAULT NULL COMMENT 'booking_payment|crew_commission|NULL=manual' AFTER `vehicle_id`");
+        $db->query("ALTER TABLE `cash_transactions` ADD COLUMN `source_type` VARCHAR(30) DEFAULT NULL COMMENT 'booking_payment|crew_commission|NULL=manual' AFTER `description`");
     }
     if (empty($txCols['source_id'])) {
         $db->query("ALTER TABLE `cash_transactions` ADD COLUMN `source_id` INT(11) DEFAULT NULL COMMENT 'id booking_cost_lines' AFTER `source_type`");
@@ -53,10 +60,6 @@ function finance_ensure_schema(): void
     $idxRes = $db->query("SHOW INDEX FROM `cash_transactions` WHERE Key_name = 'ix_cashtx_source'");
     if ($idxRes && $idxRes->num_rows === 0) {
         $db->query('ALTER TABLE `cash_transactions` ADD KEY `ix_cashtx_source` (`source_type`, `source_id`)');
-    }
-    $vehIdxRes = $db->query("SHOW INDEX FROM `cash_transactions` WHERE Key_name = 'ix_cashtx_vehicle'");
-    if ($vehIdxRes && $vehIdxRes->num_rows === 0) {
-        $db->query('ALTER TABLE `cash_transactions` ADD KEY `ix_cashtx_vehicle` (`company_id`, `vehicle_id`)');
     }
 
     $bclCols = [];
@@ -92,7 +95,7 @@ function finance_ensure_schema(): void
     $db->query('DROP TABLE IF EXISTS `cash_accounts`');
 
     if ($hasSess) {
-        $_SESSION['_vst_schema_fin_v3'] = 1;
+        $_SESSION['_vst_schema_fin_v4'] = 1;
     }
 }
 
@@ -344,12 +347,12 @@ function finance_sync_invoice_payments_to_cash(
 
     $insTx = $db->prepare(
         "INSERT INTO cash_transactions
-            (company_id, date, direction, amount, category, description, payment_method_id, source_type, source_id, created_user, created_date)
-         VALUES (?, ?, 'in', ?, ?, ?, ?, 'booking_payment', ?, ?, ?)"
+            (company_id, date, direction, amount, category, description, source_type, source_id, created_user, created_date)
+         VALUES (?, ?, 'in', ?, ?, ?, 'booking_payment', ?, ?, ?)"
     );
     $updTx = $db->prepare(
         'UPDATE cash_transactions
-            SET date = ?, amount = ?, category = ?, description = ?, payment_method_id = ?, modified_user = ?, modified_date = NOW()
+            SET date = ?, amount = ?, category = ?, description = ?, modified_user = ?, modified_date = NOW()
           WHERE id = ? AND company_id = ?'
     );
     $updBclPm = $db->prepare('UPDATE booking_cost_lines SET payment_method_id = ? WHERE id = ? AND company_id = ?');
@@ -374,7 +377,6 @@ function finance_sync_invoice_payments_to_cash(
                 $updBclPm->execute();
             }
         }
-        $pmIdParam = $pmId > 0 ? $pmId : null;
 
         $rawDate   = (string) ($ln['created_date'] ?? '');
         $txDate    = preg_match('/^\d{4}-\d{2}-\d{2}/', $rawDate) ? substr($rawDate, 0, 10) : date('Y-m-d');
@@ -385,10 +387,10 @@ function finance_sync_invoice_payments_to_cash(
 
         if (!empty($existingMap[$bclId])) {
             $txId = $existingMap[$bclId];
-            $updTx->bind_param('sdssisii', $txDate, $amount, $category, $txDesc, $pmIdParam, $txUser, $txId, $company_id);
+            $updTx->bind_param('sdsssii', $txDate, $amount, $category, $txDesc, $txUser, $txId, $company_id);
             $updTx->execute();
         } else {
-            $insTx->bind_param('isdssiiss', $company_id, $txDate, $amount, $category, $txDesc, $pmIdParam, $bclId, $txUser, $txCreated);
+            $insTx->bind_param('isdssiss', $company_id, $txDate, $amount, $category, $txDesc, $bclId, $txUser, $txCreated);
             $insTx->execute();
         }
     }

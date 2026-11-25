@@ -83,16 +83,16 @@ try {
     ok(abs(cash_summary($f_in)['balance'] - 700000) < 0.01, 'filter arah=in: saldo tetap 700.000 (bukan saldo terfilter)');
     ok(cash_tx_list(cash_filter(['from' => '2026-12-01', 'to' => '2026-12-31', 'company_id' => (string) $CID_A])) === [], 'rentang kosong: tidak ada baris');
 
-    $fx = cash_filter(['from' => 'bukan-tanggal', 'to' => '', 'method' => 'abc', 'direction' => 'xxx', 'company_id' => (string) $CID_A]);
-    ok($fx['direction'] === 'all' && $fx['method'] === 0 && preg_match('/^\d{4}-\d{2}-\d{2}$/', $fx['from']),
-        'filter ngawur (tanggal/metode/arah) → default aman');
+    $fx = cash_filter(['from' => 'bukan-tanggal', 'to' => '', 'direction' => 'xxx', 'company_id' => (string) $CID_A]);
+    ok($fx['direction'] === 'all' && preg_match('/^\d{4}-\d{2}-\d{2}$/', $fx['from']),
+        'filter ngawur (tanggal/arah) → default aman');
     $err = null;
     try { cash_tx_list($fx); cash_summary($fx); } catch (Throwable $e) { $err = $e->getMessage(); }
     ok($err === null, 'filter ngawur: tidak ada SQL error');
 
     // --- (c) Validasi ---
     $base = ['date' => '2026-10-15', 'direction' => 'in', 'amount' => '1000'];
-    ok(cash_tx_validate($base, $CID_A) === [], 'input valid: tidak ada error (tanpa akun kas)');
+    ok(cash_tx_validate($base, $CID_A) === [], 'input valid: tidak ada error');
     ok(count(cash_tx_validate(['date' => '2026-10-15', 'direction' => 'in', 'amount' => '0'], $CID_A)) === 1, 'jumlah 0 ditolak');
     ok(count(cash_tx_validate(['date' => '2026-10-15', 'direction' => 'out', 'amount' => '-5'], $CID_A)) === 1, 'jumlah negatif ditolak');
     ok(count(cash_tx_validate(['date' => '2026-10-15', 'direction' => 'out', 'amount' => 'abc'], $CID_A)) === 1, 'jumlah bukan angka ditolak');
@@ -101,7 +101,6 @@ try {
     ok(count(cash_tx_validate(['date' => '2026-10-15', 'direction' => 'xx', 'amount' => '10'], $CID_A)) === 1, 'arah selain in/out ditolak');
     ok(count(cash_tx_validate($base + ['category' => str_repeat('x', 51)], $CID_A)) === 1, 'kategori > 50 karakter ditolak');
     ok(count(cash_tx_validate($base + ['description' => str_repeat('x', 1001)], $CID_A)) === 1, 'keterangan > 1000 karakter ditolak');
-    ok(count(cash_tx_validate($base + ['payment_method_id' => 99999999], $CID_A)) === 1, 'metode pembayaran tidak dikenal ditolak');
 
     $new_id = cash_tx_save(0, $base + ['category' => 'cek'], $CID_A, 'cash-check');
     ok($new_id > 0, "cash_tx_save insert id baru ($new_id)");
@@ -147,10 +146,10 @@ try {
     $flat = array_merge(...array_map(static fn($r) => array_map('strval', $r), $tbl));
     ok(in_array('2026-10-05', $flat, true) && in_array('Masuk Cek', $flat, true), 'export: baris transaksi ada');
     ok(!in_array('2026-11-20', $flat, true), 'export: baris di luar rentang tidak ikut');
-    ok(array_values(array_filter($tbl, static fn($r) => ($r[5] ?? null) === -200000.0)) !== [], 'export: nominal keluar bertanda minus (-200000)');
+    ok(array_values(array_filter($tbl, static fn($r) => ($r[4] ?? null) === -200000.0)) !== [], 'export: nominal keluar bertanda minus (-200000)');
     $last = $tbl[count($tbl) - 1];
-    ok($last[0] === 'Saldo Akhir' && abs((float) $last[5] - 696000) < 0.01, 'export: baris Saldo Akhir = 696.000');
-    ok(!in_array('Akun', $tbl[2], true) && in_array('Metode', $tbl[2], true), 'export: kolom Akun diganti Metode');
+    ok($last[0] === 'Saldo Akhir' && abs((float) $last[4] - 696000) < 0.01, 'export: baris Saldo Akhir = 696.000');
+    ok($tbl[2] === ['Tanggal', 'Arah', 'Kategori', 'Keterangan', 'Nominal'], 'export: header 5 kolom ringkas tanpa Metode');
 
     // --- (e) Hapus bersih ---
     $_SESSION['role_name'] = 'Admin Perusahaan';
@@ -178,6 +177,8 @@ try {
     ok($hasAcc === 0, 'tabel cash_accounts sudah tidak ada');
     $hasCol = (int) $c->query("SELECT COUNT(*) FROM information_schema.columns WHERE table_schema = DATABASE() AND table_name = 'cash_transactions' AND column_name = 'cash_account_id'")->fetch_row()[0];
     ok($hasCol === 0, 'kolom cash_transactions.cash_account_id sudah tidak ada');
+    $hasPmVeh = (int) $c->query("SELECT COUNT(*) FROM information_schema.columns WHERE table_schema = DATABASE() AND table_name = 'cash_transactions' AND column_name IN ('payment_method_id', 'vehicle_id')")->fetch_row()[0];
+    ok($hasPmVeh === 0, 'kolom cash_transactions.payment_method_id & vehicle_id sudah dihapus');
     $fk = (int) $c->query("SELECT COUNT(*) FROM information_schema.table_constraints
         WHERE table_schema = DATABASE() AND constraint_type = 'FOREIGN KEY' AND table_name = 'cash_transactions'")->fetch_row()[0];
     ok($fk === 0, 'tanpa FOREIGN KEY (mengikuti pola booking_cost_lines)');
