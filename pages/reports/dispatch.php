@@ -15,7 +15,7 @@ $header_actions = report_header_actions('pages/reports/dispatch_export.php', $f)
 $sum = $data['summary'];
 $drv = $data['drivers'];
 $det = $data['details'];
-$dt  = dispatch_totals($drv, ['tugas', 'selesai', 'berjalan', 'hari']);
+$dt  = dispatch_totals($drv, ['tugas', 'selesai', 'berjalan', 'hari', 'komisi']);
 
 $cards = [
     ['Total Penugasan',      $sum['total'],    'primary', 'clipboard-check'],
@@ -78,13 +78,21 @@ require __DIR__ . '/../../includes/header.php';
     </div>
 
     <div class="card shadow-sm border-0 mb-3">
-        <div class="card-header bg-white fw-semibold">Beban Kerja per Driver</div>
+        <div class="card-header bg-white d-flex justify-content-between align-items-center flex-wrap gap-2">
+            <span class="fw-semibold">Beban Kerja &amp; Hak Komisi per Driver</span>
+            <?php if (can('finance.manage')): ?>
+                <a class="btn btn-outline-danger btn-sm py-0 px-2" href="<?= e(APP_URL) ?>/pages/finance/expenses/form.php?category=<?= urlencode('Biaya Komisi Karyawan') ?>">
+                    <i class="bi bi-cash-coin me-1"></i>Catat Bayar Komisi
+                </a>
+            <?php endif; ?>
+        </div>
         <div class="table-responsive">
             <table class="table table-sm table-hover mb-0 align-middle">
                 <thead><tr>
                     <th>Driver</th><th>Kode</th>
                     <th class="text-end">Tugas</th><th class="text-end">Selesai</th>
                     <th class="text-end">Berjalan</th><th class="text-end">Hari Bertugas</th>
+                    <th class="text-end">Hak Komisi</th>
                 </tr></thead>
                 <tbody>
                 <?php foreach ($drv as $r): ?>
@@ -95,10 +103,11 @@ require __DIR__ . '/../../includes/header.php';
                         <td class="text-end"><?= (int) $r['selesai'] ?></td>
                         <td class="text-end"><?= (int) $r['berjalan'] ?></td>
                         <td class="text-end"><?= (int) $r['hari'] ?></td>
+                        <td class="text-end fw-semibold text-nowrap"><?= e(rupiah((float) ($r['komisi'] ?? 0))) ?></td>
                     </tr>
                 <?php endforeach; ?>
                 <?php if (!$drv): ?>
-                    <tr><td colspan="6" class="text-center text-muted py-3">Tidak ada penugasan driver pada periode ini.</td></tr>
+                    <tr><td colspan="7" class="text-center text-muted py-3">Tidak ada penugasan atau hak komisi pada periode ini.</td></tr>
                 <?php endif; ?>
                 </tbody>
                 <tfoot class="table-light fw-semibold">
@@ -108,6 +117,7 @@ require __DIR__ . '/../../includes/header.php';
                         <td class="text-end"><?= (int) $dt['selesai'] ?></td>
                         <td class="text-end"><?= (int) $dt['berjalan'] ?></td>
                         <td class="text-end"><?= (int) $dt['hari'] ?></td>
+                        <td class="text-end text-nowrap"><?= e(rupiah((float) ($dt['komisi'] ?? 0))) ?></td>
                     </tr>
                 </tfoot>
             </table>

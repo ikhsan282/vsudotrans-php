@@ -16,7 +16,7 @@ $data = dispatch_all($f);
 $sum = $data['summary'];
 $drv = $data['drivers'];
 $det = $data['details'];
-$dt  = dispatch_totals($drv, ['tugas', 'selesai', 'berjalan', 'hari']);
+$dt  = dispatch_totals($drv, ['tugas', 'selesai', 'berjalan', 'hari', 'komisi']);
 
 $jenis = static fn(string $t): string => $t === 'rental' ? 'Rental' : 'Travel';
 
@@ -24,15 +24,15 @@ $table = [];
 array_unshift($table, ['Ringkasan', ''], ['Periode', $f['from'] . ' s/d ' . $f['to']],
     ['Jenis Booking', $f['booking_type']], ['Total Penugasan', $sum['total']],
     ['Selesai', $sum['selesai']], ['Sedang Jalan', $sum['berjalan']],
-    ['Driver Aktif', $sum['driver']], ['']);
+    ['Driver Aktif', $sum['driver']], ['Total Hak Komisi', (float) ($sum['total_komisi'] ?? 0)], ['']);
 
-$table[] = ['Beban Kerja per Driver', ''];
-$table[] = ['Driver', 'Kode', 'Tugas', 'Selesai', 'Berjalan', 'Hari Bertugas'];
+$table[] = ['Beban Kerja & Hak Komisi per Driver', ''];
+$table[] = ['Driver', 'Kode', 'Tugas', 'Selesai', 'Berjalan', 'Hari Bertugas', 'Hak Komisi'];
 foreach ($drv as $r) {
     $table[] = [(string) $r['name'], (string) $r['code'], (int) $r['tugas'],
-        (int) $r['selesai'], (int) $r['berjalan'], (int) $r['hari']];
+        (int) $r['selesai'], (int) $r['berjalan'], (int) $r['hari'], (float) ($r['komisi'] ?? 0)];
 }
-$table[] = ['TOTAL', '', $dt['tugas'], $dt['selesai'], $dt['berjalan'], $dt['hari']];
+$table[] = ['TOTAL', '', $dt['tugas'], $dt['selesai'], $dt['berjalan'], $dt['hari'], (float) ($dt['komisi'] ?? 0)];
 $table[] = [''];
 
 $table[] = ['Detail Penugasan', ''];

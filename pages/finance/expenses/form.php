@@ -58,11 +58,17 @@ $masterCats    = cash_master_categories('out', $cid, true);
 $validCatNames = array_column($masterCats, 'name');
 $existingCat   = trim((string) ($row['category'] ?? ''));
 
+$prefillCat = $row === null ? trim((string) ($_GET['category'] ?? '')) : '';
+if ($prefillCat !== '' && !in_array($prefillCat, $validCatNames, true)) {
+    $prefillCat = '';
+}
+$prefillDesc = $row === null ? trim((string) ($_GET['description'] ?? '')) : '';
+
 $form = [
     'date'            => (string) ($row['date'] ?? date('Y-m-d')),
     'amount_raw'      => $row !== null ? number_format((float) $row['amount'], 0, ',', '.') : '',
-    'category_preset' => $row !== null ? $existingCat : '',
-    'description'     => (string) ($row['description'] ?? ''),
+    'category_preset' => $row !== null ? $existingCat : $prefillCat,
+    'description'     => (string) ($row['description'] ?? $prefillDesc),
 ];
 $existingProof = (string) ($row['proof_blob_path'] ?? '');
 

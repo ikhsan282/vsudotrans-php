@@ -157,13 +157,7 @@ require __DIR__ . '/../../../includes/header.php';
                         <?php if ($show_comp_col): ?><td><span class="badge bg-light text-dark border"><?= e((string) ($r['company_code'] ?? '-')) ?></span></td><?php endif; ?>
                         <td class="text-nowrap">
                             <span><?= e((string) ($r['category'] ?: 'Tanpa Kategori')) ?></span>
-                            <?php if ($srcType === 'crew_commission' && !empty($r['ref_booking_id'])):
-                                $refCrewHref = '../../' . ($r['ref_booking_type'] === 'rental' ? 'rental' : 'travel') . '/bookings/detail.php?id=' . (int) $r['ref_booking_id'] . '&tab=crew#tab-crew';
-                            ?>
-                                <a class="badge bg-warning-subtle text-warning-emphasis border border-warning-subtle text-decoration-none ms-1" href="<?= e($refCrewHref) ?>" title="Tersinkron otomatis dari penugasan kru pada pemesanan"><i class="bi bi-link-45deg"></i>Komisi Kru</a>
-                            <?php elseif ($srcType === 'crew_commission'): ?>
-                                <span class="badge bg-warning-subtle text-warning-emphasis border border-warning-subtle ms-1">Komisi Kru</span>
-                            <?php elseif ($srcType === 'booking_bbm' && !empty($r['ref_booking_id'])):
+                            <?php if ($srcType === 'booking_bbm' && !empty($r['ref_booking_id'])):
                                 $refBbmHref = '../../rental/bookings/detail.php?id=' . (int) $r['ref_booking_id'] . '&tab=crew#tab-crew';
                             ?>
                                 <a class="badge bg-info-subtle text-info-emphasis border border-info-subtle text-decoration-none ms-1" href="<?= e($refBbmHref) ?>" title="Tersinkron otomatis dari BBM pemesanan rental"><i class="bi bi-link-45deg"></i>Auto BBM</a>

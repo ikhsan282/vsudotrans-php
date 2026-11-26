@@ -48,7 +48,7 @@ function dispatch_assign_source(array $f, string $alias = 'ta'): array
     return ['where' => $cond, 'types' => $types, 'params' => $params];
 }
 
-/** Kartu ringkasan: total penugasan, selesai, berjalan, driver aktif. */
+/** Kartu ringkasan: total penugasan, selesai, berjalan, driver aktif, dan total hak komisi. */
 function dispatch_summary(array $f): array
 {
     $s = dispatch_assign_source($f);
@@ -58,19 +58,69 @@ function dispatch_summary(array $f): array
         COUNT(DISTINCT ta.employee_id) AS driver
         FROM trip_assignments ta WHERE {$s['where']}", $s['types'], $s['params']);
     $x = $r[0] ?? [];
+    $commMap = dispatch_driver_commissions($f);
     return [
-        'total'    => (int) ($x['total'] ?? 0),
-        'selesai'  => (int) ($x['selesai'] ?? 0),
-        'berjalan' => (int) ($x['berjalan'] ?? 0),
-        'driver'   => (int) ($x['driver'] ?? 0),
+        'total'        => (int) ($x['total'] ?? 0),
+        'selesai'      => (int) ($x['selesai'] ?? 0),
+        'berjalan'     => (int) ($x['berjalan'] ?? 0),
+        'driver'       => (int) ($x['driver'] ?? 0),
+        'total_komisi' => round(array_sum($commMap), 2),
     ];
 }
 
-/** Beban kerja per driver: jumlah tugas, selesai, berjalan, hari bertugas. */
+/**
+ * Rekap hak komisi per karyawan (`employee_id`) dari `booking_cost_lines`
+ * pada rentang tanggal trip, mengecualikan booking berstatus 'cancelled'.
+ *
+ * @return array<int, float>
+ */
+function dispatch_driver_commissions(array $f): array
+{
+    [$w, $wt, $wp] = report_scope('bcl.company_id', $f);
+    $dateExpr = "CASE WHEN bcl.booking_type = 'rental'
+                      THEN COALESCE(rb.start_date, rb.date, DATE(bcl.created_date))
+                      ELSE COALESCE(tb.date, DATE(bcl.created_date))
+                 END";
+    $notCancelled = "COALESCE((SELECT bsh.to_status FROM booking_status_history bsh
+        WHERE bsh.booking_type = bcl.booking_type AND bsh.booking_id = bcl.booking_id
+        ORDER BY bsh.changed_at DESC, bsh.id DESC LIMIT 1), 'draft') <> 'cancelled'";
+
+    $sql = "SELECT bcl.employee_id, COALESCE(SUM(bcl.amount), 0) AS komisi
+              FROM booking_cost_lines bcl
+              LEFT JOIN travel_ticket_bookings tb
+                     ON bcl.booking_type = 'travel' AND tb.id = bcl.booking_id AND tb.company_id = bcl.company_id
+              LEFT JOIN rental_car_bookings rb
+                     ON bcl.booking_type = 'rental' AND rb.id = bcl.booking_id AND rb.company_id = bcl.company_id
+             WHERE " . ($w !== '' ? $w . ' AND ' : '') . "bcl.cost_type <> 'payment'
+               AND bcl.employee_id IS NOT NULL AND bcl.employee_id > 0
+               AND bcl.amount > 0
+               AND {$dateExpr} BETWEEN ? AND ?
+               AND {$notCancelled}";
+    $types  = $wt . 'ss';
+    $params = array_merge($wp, [$f['from'], $f['to']]);
+    if (($f['booking_type'] ?? 'all') !== 'all') {
+        $sql .= ' AND bcl.booking_type = ?';
+        $types .= 's';
+        $params[] = $f['booking_type'];
+    }
+    $sql .= ' GROUP BY bcl.employee_id';
+
+    $rows = report_run($sql, $types, $params);
+    $map  = [];
+    foreach ($rows as $row) {
+        $empId = (int) ($row['employee_id'] ?? 0);
+        if ($empId > 0) {
+            $map[$empId] = round((float) ($row['komisi'] ?? 0), 2);
+        }
+    }
+    return $map;
+}
+
+/** Beban kerja & hak komisi per driver/kru: jumlah tugas, selesai, berjalan, hari bertugas, dan komisi. */
 function dispatch_driver_load(array $f): array
 {
     $s = dispatch_assign_source($f);
-    return report_run("SELECT e.id, e.name, e.code,
+    $rows = report_run("SELECT e.id, e.name, e.code,
         COUNT(*) AS tugas,
         COALESCE(SUM(ta.ended_at IS NOT NULL), 0) AS selesai,
         COALESCE(SUM(ta.ended_at IS NULL), 0) AS berjalan,
@@ -80,6 +130,45 @@ function dispatch_driver_load(array $f): array
         WHERE {$s['where']}
         GROUP BY e.id, e.name, e.code
         ORDER BY tugas DESC, e.name ASC", $s['types'], $s['params']);
+
+    $commMap = dispatch_driver_commissions($f);
+    $seen    = [];
+    foreach ($rows as &$r) {
+        $empId = (int) ($r['id'] ?? 0);
+        $seen[$empId] = true;
+        $r['komisi']  = (float) ($commMap[$empId] ?? 0.0);
+    }
+    unset($r);
+
+    // Sertakan karyawan/kru (mis. kernet/montir atau driver dengan komisi tanpa row trip_assignments) yang memiliki komisi > 0.
+    $missingIds = [];
+    foreach ($commMap as $empId => $amt) {
+        if ($amt > 0 && empty($seen[$empId])) {
+            $missingIds[] = (int) $empId;
+        }
+    }
+    if ($missingIds) {
+        $ph   = implode(',', array_fill(0, count($missingIds), '?'));
+        $emps = report_run(
+            "SELECT id, name, code FROM employees WHERE id IN ({$ph}) ORDER BY name ASC",
+            str_repeat('i', count($missingIds)),
+            $missingIds
+        );
+        foreach ($emps as $em) {
+            $empId  = (int) $em['id'];
+            $rows[] = [
+                'id'       => $empId,
+                'name'     => (string) ($em['name'] ?? ''),
+                'code'     => (string) ($em['code'] ?? ''),
+                'tugas'    => 0,
+                'selesai'  => 0,
+                'berjalan' => 0,
+                'hari'     => 0,
+                'komisi'   => (float) ($commMap[$empId] ?? 0.0),
+            ];
+        }
+    }
+    return $rows;
 }
 
 /** Detail penugasan per periode (1 baris = 1 penugasan). */
@@ -161,7 +250,11 @@ function dispatch_totals(array $rows, array $keys): array
     $t = array_fill_keys($keys, 0);
     foreach ($rows as $r) {
         foreach ($keys as $k) {
-            $t[$k] += (int) $r[$k];
+            if ($k === 'komisi') {
+                $t[$k] = (float) $t[$k] + (float) ($r[$k] ?? 0);
+            } else {
+                $t[$k] += (int) ($r[$k] ?? 0);
+            }
         }
     }
     return $t;

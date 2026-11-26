@@ -17,7 +17,7 @@ function finance_ensure_schema(): void
 {
     static $checked = false;
     $hasSess = session_status() === PHP_SESSION_ACTIVE;
-    if ($checked || ($hasSess && !empty($_SESSION['_vst_schema_fin_v10']))) {
+    if ($checked || ($hasSess && !empty($_SESSION['_vst_schema_fin_v11']))) {
         $checked = true;
         return;
     }
@@ -146,12 +146,14 @@ function finance_ensure_schema(): void
 
     $db->query("UPDATE `cash_categories` SET `name` = 'Biaya Komisi Karyawan', `note` = 'Biaya komisi karyawan / sopir & kru' WHERE `company_id` IS NULL AND `code` = 'CROKARY' AND `name` = 'Biaya Komisi Karyawan & BBM'");
     $db->query("UPDATE `cash_transactions` SET `category` = 'Biaya Komisi Karyawan' WHERE `category` = 'Biaya Komisi Karyawan & BBM'");
+    // Pola B Keuangan: komisi kru dicatat sebagai hak di booking & Laporan Driver,
+    // tidak lagi otomatis memotong Buku Kas sebelum dibayarkan manual di Pengeluaran.
+    $db->query("DELETE FROM `cash_transactions` WHERE `source_type` = 'crew_commission'");
 
     if ($hasSess) {
-        $_SESSION['_vst_schema_fin_v10'] = 1;
+        $_SESSION['_vst_schema_fin_v11'] = 1;
     }
     finance_ensure_global_cash_categories();
-    finance_backfill_booking_crew_to_cash();
     finance_backfill_booking_bbm_to_cash();
 }
 
@@ -546,9 +548,9 @@ function finance_unsync_booking_crew(string $booking_type, int $booking_id, int 
 }
 
 /**
- * Sinkronkan penugasan kru/komisi pada `booking_cost_lines` (yang sudah di-assign ke `employee_id > 0`
- * dengan `amount > 0`) secara otomatis ke Pengeluaran / Buku Kas (`cash_transactions`, `source_type='crew_commission'`).
- * Booking berstatus 'cancelled' otomatis dihapus/tidak disinkronkan.
+ * Pola B Keuangan: komisi sopir/kru dicatat di `booking_cost_lines` sebagai hak kru
+ * & direkap di Laporan Driver, sedangkan pencairannya dicatat manual di Pengeluaran.
+ * Helper ini dipertahankan untuk membersihkan sisa entri `crew_commission` lama bila ada.
  */
 function finance_sync_booking_crew_to_cash(
     string $booking_type,
@@ -556,165 +558,12 @@ function finance_sync_booking_crew_to_cash(
     int $company_id,
     ?string $user = null
 ): void {
-    if ($booking_id <= 0 || $company_id <= 0) {
-        return;
-    }
-    $booking_type = $booking_type === 'rental' ? 'rental' : 'travel';
-    finance_ensure_schema();
-    $db = db();
-
-    $table   = $booking_type === 'rental' ? 'rental_car_bookings' : 'travel_ticket_bookings';
-    $dateCol = $booking_type === 'rental' ? 'start_date' : 'date';
-    $stBk = $db->prepare("SELECT document_number, {$dateCol} AS trip_date FROM {$table} WHERE id = ? AND company_id = ? LIMIT 1");
-    $stBk->bind_param('ii', $booking_id, $company_id);
-    $stBk->execute();
-    $bk = $stBk->get_result()->fetch_assoc();
-    $stBk->close();
-    if (!$bk) {
-        finance_unsync_booking_crew($booking_type, $booking_id, $company_id);
-        return;
-    }
-
-    $stHist = $db->prepare(
-        'SELECT to_status FROM booking_status_history
-          WHERE booking_type = ? AND booking_id = ?
-          ORDER BY changed_at DESC, id DESC LIMIT 1'
-    );
-    $stHist->bind_param('si', $booking_type, $booking_id);
-    $stHist->execute();
-    $histRow = $stHist->get_result()->fetch_assoc();
-    $stHist->close();
-    if ($histRow && (string) ($histRow['to_status'] ?? '') === 'cancelled') {
-        finance_unsync_booking_crew($booking_type, $booking_id, $company_id);
-        return;
-    }
-
-    $stLines = $db->prepare(
-        "SELECT bcl.id, bcl.cost_type, bcl.amount, bcl.created_user, bcl.created_date,
-                e.name AS employee_name
-           FROM booking_cost_lines bcl
-           LEFT JOIN employees e ON e.id = bcl.employee_id
-          WHERE bcl.company_id = ? AND bcl.booking_type = ? AND bcl.booking_id = ?
-            AND bcl.cost_type <> 'payment'
-            AND bcl.employee_id IS NOT NULL AND bcl.employee_id > 0
-            AND bcl.amount > 0
-          ORDER BY bcl.id ASC"
-    );
-    $stLines->bind_param('isi', $company_id, $booking_type, $booking_id);
-    $stLines->execute();
-    $lines = $stLines->get_result()->fetch_all(MYSQLI_ASSOC);
-    $stLines->close();
-
-    if (!$lines) {
-        finance_unsync_booking_crew($booking_type, $booking_id, $company_id);
-        return;
-    }
-
-    $ids = array_map(static fn (array $r): int => (int) $r['id'], $lines);
-    $ph  = implode(',', array_fill(0, count($ids), '?'));
-
-    // Hapus baris crew_commission lama milik booking ini yang tidak lagi ada di $ids
-    $stPrune = $db->prepare(
-        "DELETE ct FROM cash_transactions ct
-           JOIN booking_cost_lines bcl ON ct.source_type = 'crew_commission' AND ct.source_id = bcl.id
-          WHERE bcl.booking_type = ? AND bcl.booking_id = ? AND bcl.company_id = ? AND ct.company_id = ?
-            AND bcl.id NOT IN ({$ph})"
-    );
-    $stPrune->bind_param('siii' . str_repeat('i', count($ids)), $booking_type, $booking_id, $company_id, $company_id, ...$ids);
-    $stPrune->execute();
-    $stPrune->close();
-
-    $src   = 'crew_commission';
-    $stEx  = $db->prepare("SELECT id, source_id FROM cash_transactions WHERE source_type = ? AND source_id IN ({$ph})");
-    $stEx->bind_param('s' . str_repeat('i', count($ids)), $src, ...$ids);
-    $stEx->execute();
-    $existingMap = [];
-    foreach ($stEx->get_result()->fetch_all(MYSQLI_ASSOC) as $ex) {
-        $existingMap[(int) $ex['source_id']] = (int) $ex['id'];
-    }
-    $stEx->close();
-
-    $rawTripDate = (string) ($bk['trip_date'] ?? '');
-    $txDate      = preg_match('/^\d{4}-\d{2}-\d{2}/', $rawTripDate) ? substr($rawTripDate, 0, 10) : date('Y-m-d');
-    $docNo       = trim((string) ($bk['document_number'] ?? ''));
-    $category    = 'Biaya Komisi Karyawan';
-
-    $insTx = $db->prepare(
-        "INSERT INTO cash_transactions
-            (company_id, date, direction, amount, category, description, source_type, source_id, created_user, created_date)
-         VALUES (?, ?, 'out', ?, ?, ?, 'crew_commission', ?, ?, ?)"
-    );
-    $updTx = $db->prepare(
-        'UPDATE cash_transactions
-            SET date = ?, amount = ?, category = ?, description = ?, modified_user = ?, modified_date = NOW()
-          WHERE id = ? AND company_id = ?'
-    );
-
-    foreach ($lines as $ln) {
-        $bclId  = (int) $ln['id'];
-        $amount = round((float) $ln['amount'], 2);
-        if ($amount <= 0) {
-            continue;
-        }
-        $ctype   = trim((string) ($ln['cost_type'] ?? 'Komisi'));
-        $empName = trim((string) ($ln['employee_name'] ?? ''));
-        $txDesc  = mb_substr(
-            'Komisi ' . $ctype . ($empName !== '' ? ' · ' . $empName : '') . ($docNo !== '' ? ' (' . $docNo . ')' : ''),
-            0,
-            1000
-        );
-        $txUser    = (string) ($user ?: ($ln['created_user'] ?? 'system'));
-        $txCreated = !empty($ln['created_date']) ? (string) $ln['created_date'] : date('Y-m-d H:i:s');
-
-        if (!empty($existingMap[$bclId])) {
-            $txId = $existingMap[$bclId];
-            $updTx->bind_param('sdsssii', $txDate, $amount, $category, $txDesc, $txUser, $txId, $company_id);
-            $updTx->execute();
-        } else {
-            $insTx->bind_param('isdssiss', $company_id, $txDate, $amount, $category, $txDesc, $bclId, $txUser, $txCreated);
-            $insTx->execute();
-        }
-    }
-
-    $insTx->close();
-    $updTx->close();
+    finance_unsync_booking_crew($booking_type, $booking_id, $company_id);
 }
 
-/**
- * Backfill idempoten penugasan kru booking yang sudah ada ke Pengeluaran (`cash_transactions`).
- */
+/** No-op: Pola B tidak men-backfill komisi kru ke Buku Kas. */
 function finance_backfill_booking_crew_to_cash(): void
 {
-    static $done = false;
-    if ($done) {
-        return;
-    }
-    $done = true;
-
-    $db  = db();
-    $res = $db->query(
-        "SELECT DISTINCT bcl.booking_type, bcl.booking_id, bcl.company_id
-           FROM booking_cost_lines bcl
-           LEFT JOIN cash_transactions ct
-                  ON ct.source_type = 'crew_commission' AND ct.source_id = bcl.id
-          WHERE bcl.cost_type <> 'payment'
-            AND bcl.employee_id IS NOT NULL AND bcl.employee_id > 0
-            AND bcl.amount > 0
-            AND ct.id IS NULL"
-    );
-    if (!$res) {
-        return;
-    }
-    $targets = $res->fetch_all(MYSQLI_ASSOC);
-    $res->close();
-    foreach ($targets as $t) {
-        finance_sync_booking_crew_to_cash(
-            (string) $t['booking_type'],
-            (int) $t['booking_id'],
-            (int) $t['company_id'],
-            null
-        );
-    }
 }
 
 /**

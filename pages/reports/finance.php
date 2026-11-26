@@ -198,7 +198,7 @@ require __DIR__ . '/../../includes/header.php';
                 }
             ?>
             <div class="text-muted mt-2 pt-2 border-top" style="font-size:.78rem;">
-                <i class="bi bi-info-circle me-1"></i>Pengeluaran otomatis dari booking pada Buku Kas sebesar <strong><?= e(rupiah($tripSyncedAmt)) ?></strong><?= $syncedParts ? ' (' . e(implode(' · ', $syncedParts)) . ')' : '' ?> sudah tercermin di Biaya Trip sehingga tidak dikurangkan dua kali pada Laba Bersih Operasional.
+                <i class="bi bi-info-circle me-1"></i>Pengeluaran kas terkait biaya trip sebesar <strong><?= e(rupiah($tripSyncedAmt)) ?></strong><?= $syncedParts ? ' (' . e(implode(' · ', $syncedParts)) . ')' : '' ?> sudah tercermin di Biaya Trip sehingga tidak dikurangkan dua kali pada Laba Bersih Operasional.
             </div>
             <?php endif; ?>
         </div>

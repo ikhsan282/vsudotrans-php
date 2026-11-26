@@ -12,16 +12,17 @@ $fails = 0;
 function ok(bool $c, string $msg): void { global $fails; echo ($c ? '  ok  ' : '  FAIL') . "  $msg\n"; if (!$c) $fails++; }
 
 $c = db();
-// Rentang uji khusus fixture (Desember 2026) — DB dev berisi data QA di Oktober,
-// sehingga angka persis hanya bisa dijamin pada rentang yang hanya berisi fixture ini.
-$FROM = '2026-12-01';
-$TO   = '2026-12-31';
+// Rentang uji khusus fixture (Desember 2028 — bulan kosong jauh di depan seed/QA),
+// sehingga angka persis dapat dijamin tanpa tercampur data operasional lain.
+$FROM = '2028-12-01';
+$TO   = '2028-12-31';
 
 // --- Fixture: perusahaan B (991) + booking + biaya, agar scoping & angka teruji sendiri.
 // Id fixture memakai rentang >= 990 (di luar data seed) supaya tahan dijalankan berulang.
 $cleanup = static function () use ($c): void {
     $c->query("DELETE FROM cash_transactions WHERE id >= 990000 OR created_user = 'fin-check'");
     $c->query("DELETE FROM booking_cost_lines WHERE id >= 990000 OR created_user = 'fin-check'");
+    $c->query("DELETE FROM booking_status_history WHERE changed_by = 'fin-check'");
     $c->query("DELETE FROM trip_assignments WHERE id >= 990000 OR reason = 'fin-check'");
     $c->query("DELETE FROM travel_ticket_bookings WHERE id >= 990000 OR document_number LIKE 'TRV-FCHK%'");
     $c->query("DELETE FROM rental_car_bookings WHERE id >= 990000 OR document_number LIKE 'RNT-FCHK%'");
@@ -72,9 +73,9 @@ $c->query("INSERT INTO booking_cost_lines (id, company_id, booking_type, booking
            (990031, 1, 'travel', 990010, 'a',   'Premi fchk', 150000, 'fin-check', '$FROM 10:01:00'),
            (990032, 1, 'rental', 990011, 'bbm', 'BBM rental fchk', 250000, 'fin-check', '$FROM 10:02:00'),
            (990033, 991, 'travel', 990020, 'bbm', 'BBM fchk B', 999999, 'fin-check', '$FROM 10:03:00')");
-// Biaya DI LUAR rentang (harus diabaikan).
+// Biaya DI LUAR rentang (booking yatim dengan created_date di luar rentang -> harus diabaikan).
 $c->query("INSERT INTO booking_cost_lines (id, company_id, booking_type, booking_id, cost_type, description, amount, created_user, created_date)
-    VALUES (990034, 1, 'travel', 990010, 'bbm', 'BBM luar rentang', 5000000, 'fin-check', '2026-11-30 23:59:59')");
+    VALUES (990034, 1, 'travel', 990099, 'bbm', 'BBM luar rentang', 5000000, 'fin-check', '2028-11-30 23:59:59')");
 
 // Assignment + kendaraan + karyawan milik perusahaan 1 untuk uji operasional.
 $c->query("INSERT INTO vehicles (id, company_id, brand_id, model_unit_id, category_vehicle_id,
@@ -87,7 +88,7 @@ $c->query("INSERT INTO trip_assignments (id, company_id, booking_type, booking_i
            (990011, 1, 'rental', 990011, 990010, NULL, '$FROM 08:00:00', NULL, 'fin-check', 'fin-check')");
 
 // Transaksi kas (perusahaan 1 pada 2 hari + perusahaan 991 + luar rentang).
-$DAY2 = '2026-12-02';
+$DAY2 = '2028-12-02';
 finance_ensure_schema(); // pastikan skema tanpa akun kas/bank
 $c->query("INSERT INTO cash_transactions (id, company_id, date, direction, amount, category, description, source_type, created_user)
     VALUES (990001, 1,   '$FROM', 'in',  400000, 'booking',     'DP Travel fchk',  'booking_payment', 'fin-check'),
@@ -96,7 +97,7 @@ $c->query("INSERT INTO cash_transactions (id, company_id, date, direction, amoun
            (990004, 1,   '$DAY2', 'out', 500000, 'payroll',     'Bayar gaji fchk', 'payroll_period',  'fin-check'),
            (990005, 991, '$FROM', 'in',  888888, 'booking',     'Kas masuk B',     'booking_payment', 'fin-check'),
            (990006, 991, '$FROM', 'out', 111111, 'operasional', 'Kas keluar B',    NULL,              'fin-check'),
-           (990007, 1,   '2026-11-30', 'in', 9999999, 'lainnya', 'Luar rentang',   NULL,              'fin-check')");
+           (990007, 1,   '2028-11-30', 'in', 9999999, 'lainnya', 'Luar rentang',   NULL,              'fin-check')");
 
 try {
     // ---------- A. Super Admin: angka persis vs query langsung DB ----------
@@ -241,7 +242,39 @@ try {
     ok(abs($d1[1]['in_other'] - 250000) < 0.01 && abs($d1[1]['out_payroll'] - 500000) < 0.01 && abs($d1[1]['net_cash_flow'] - (-250000)) < 0.01,
         '(f) hari-2 company 1: kas masuk lain 250k, gaji 500k, arus kas -250k');
     ok(abs($dt1['in_total'] - 650000) < 0.01 && abs($dt1['out_total'] - 650000) < 0.01 && abs($dt1['net_cash_flow']) < 0.01,
-        '(f) total daily company 1 konsisten (luar rentang 2026-11-30 terabaikan)');
+        '(f) total daily company 1 konsisten (luar rentang 2028-11-30 terabaikan)');
+
+    // ---------- E. Poin 1 (tanggal trip) & Poin 2 (kecualikan cancelled) ----------
+    // Booking dibuat 28 Nov tapi berangkat 05 Des (komisi ikut periode Des, bukan Nov),
+    // plus booking Travel & Rental status 'cancelled' beserta biaya & BBM-nya harus dikecualikan.
+    $c->query("INSERT INTO travel_ticket_bookings
+        (id, company_id, branch_id, document_number, date, time, pickup_point_district_id, delivery_point_district_id,
+         total_price, total_payment, passenger_id, created_user, created_date)
+        VALUES (990013, 1, 1, 'TRV-FCHK-P1', '2028-12-05', '08:00:00', 1, 1, 500000, 500000, 991, 'fin-check', '2028-11-28 10:00:00'),
+               (990014, 1, 1, 'TRV-FCHK-CXL', '$FROM', '09:00:00', 1, 1, 900000, 0, 991, 'fin-check', '$FROM 09:00:00')");
+    $c->query("INSERT INTO rental_car_bookings
+        (id, company_id, branch_id, document_number, date, start_date, end_date, time,
+         pickup_point_district_id, delivery_point_district_id, bbm, total_price, total_payment, passenger_id, created_user)
+        VALUES (990015, 1, 1, 'RNT-FCHK-CXL', '$FROM', '$FROM', '$TO', '09:00:00', 1, 1, 150000, 1800000, 0, 991, 'fin-check')");
+    $c->query("INSERT INTO booking_cost_lines (id, company_id, booking_type, booking_id, cost_type, description, amount, created_user, created_date)
+        VALUES (990035, 1, 'travel', 990013, 'Sopir', 'Komisi berangkat Des', 100000, 'fin-check', '2028-11-28 10:05:00'),
+               (990036, 1, 'travel', 990014, 'Sopir', 'Komisi booking batal', 120000, 'fin-check', '$FROM 09:05:00')");
+    $c->query("INSERT INTO booking_status_history (booking_type, booking_id, company_id, from_status, to_status, reason, changed_at, changed_by)
+        VALUES ('travel', 990014, 1, 'draft', 'cancelled', 'Uji batal laporan', NOW(), 'fin-check'),
+               ('rental', 990015, 1, 'draft', 'cancelled', 'Uji batal rental laporan', NOW(), 'fin-check')");
+
+    $_SESSION['role_name'] = 'Admin Perusahaan';
+    $_SESSION['company_id'] = 1;
+    $fDec = report_filter(['from' => '2028-12-01', 'to' => '2028-12-31', 'booking_type' => 'all']);
+    $fNov = report_filter(['from' => '2028-11-25', 'to' => '2028-11-29', 'booking_type' => 'all']);
+    $revDec = fin_revenue($fDec);
+    $costDec = fin_cost_total($fDec);
+    $costNov = fin_cost_total($fNov);
+    $unpDocs = array_column(fin_unpaid($fDec, null), 'document_number');
+    ok(abs($revDec['total'] - 4000000) < 0.01, '(g) Poin 2: pendapatan Des hanya booking aktif (3.5jt + 500k = 4jt; 900k & 1.8jt cancelled dikecualikan)');
+    ok(abs($costDec - 800000) < 0.01, '(g) Poin 1 & 2: biaya Des 800k (700k + 100k trip 5 Des walau input 28 Nov; 120k & 150k cancelled dikecualikan)');
+    ok(abs($costNov - 0) < 0.01, '(g) Poin 1: biaya booking 5 Des yang diinput 28 Nov TIDAK masuk laporan Nov (' . $costNov . ')');
+    ok(!in_array('TRV-FCHK-CXL', $unpDocs, true) && !in_array('RNT-FCHK-CXL', $unpDocs, true), '(g) Poin 2: booking cancelled tidak masuk daftar piutang');
 
 } finally {
     $cleanup();

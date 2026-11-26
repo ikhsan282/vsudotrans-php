@@ -513,7 +513,7 @@ function cash_tx_list(array $f, ?int $limit = null, int $offset = 0): array
             CASE WHEN t.source_type = 'booking_bbm' THEN t.source_id ELSE COALESCE(inv.booking_id, bcl.booking_id) END AS ref_booking_id
         FROM cash_transactions t
         LEFT JOIN companies c ON c.id = t.company_id
-        LEFT JOIN booking_cost_lines bcl ON t.source_type IN ('booking_payment', 'crew_commission') AND bcl.id = t.source_id
+        LEFT JOIN booking_cost_lines bcl ON t.source_type = 'booking_payment' AND bcl.id = t.source_id
         LEFT JOIN invoices inv ON t.source_type = 'booking_payment' AND bcl.description = CONCAT('INV#', inv.id)
         WHERE " . $tw['sql'] . ' ORDER BY t.date ASC, t.id ASC';
     $types = $tw['types'];

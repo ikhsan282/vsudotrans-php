@@ -371,7 +371,6 @@ function booking_change_status(string $type, int $booking_id, int $company_id, s
             $stT->execute();
             $stT->close();
 
-            finance_unsync_booking_crew($type, $booking_id, $company_id);
             if ($type === 'rental') {
                 finance_unsync_booking_bbm($booking_id, $company_id);
             }
@@ -401,7 +400,6 @@ function booking_change_status(string $type, int $booking_id, int $company_id, s
                 $uInv->execute();
                 $uInv->close();
             }
-            finance_sync_booking_crew_to_cash($type, $booking_id, $company_id, $user);
             if ($type === 'rental') {
                 finance_sync_booking_bbm_to_cash($booking_id, $company_id, $user);
             }
@@ -527,7 +525,6 @@ function booking_reschedule(string $type, int $booking_id, int $company_id, stri
         if ($from !== 'rescheduled') {
             booking_insert_history($type, $booking_id, $company_id, $from, 'rescheduled', $reason, $user);
         }
-        finance_sync_booking_crew_to_cash($type, $booking_id, $company_id, $user);
         if ($type === 'rental') {
             finance_sync_booking_bbm_to_cash($booking_id, $company_id, $user);
         }
@@ -728,8 +725,7 @@ function booking_crew_sync(string $type, int $booking_id, int $company_id, float
 {
     $table = booking_table($type);
     $db = db();
-    // Hapus sinkronisasi kas lama lalu hapus baris biaya kru/non-payment lama pada booking ini
-    finance_unsync_booking_crew($type, $booking_id, $company_id);
+    // Hapus baris biaya kru/non-payment lama pada booking ini
     $del = $db->prepare("DELETE FROM booking_cost_lines WHERE booking_type = ? AND booking_id = ? AND company_id = ? AND cost_type <> 'payment'");
     $del->bind_param('sii', $type, $booking_id, $company_id);
     $del->execute();
@@ -788,7 +784,6 @@ function booking_crew_sync(string $type, int $booking_id, int $company_id, float
     $up->execute();
     $up->close();
 
-    finance_sync_booking_crew_to_cash($type, $booking_id, $company_id, $user);
     if ($type === 'rental') {
         finance_sync_booking_bbm_to_cash($booking_id, $company_id, $user);
     }

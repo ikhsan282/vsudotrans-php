@@ -128,6 +128,8 @@ try {
     $docs = array_column($det, 'document_number');
     ok(in_array('TRV-DRCHK01', $docs, true) && in_array('RNT-DRCHK01', $docs, true),
         'detail: nomor dokumen dari kedua jenis booking tampil');
+    ok(array_key_exists('komisi', $drv['Driver Drchk Satu']) && array_key_exists('total_komisi', $d1['summary']),
+        'driver load & summary menyertakan field komisi (Hak Komisi Pola B)');
     ok(!in_array('TRV-DRCHK99', $docs, true), 'detail: dokumen tenant 990 tidak bocor');
     $byDoc = [];
     foreach ($det as $r) { $byId[(int) $r['id']] = $r; }

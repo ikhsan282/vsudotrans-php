@@ -164,7 +164,6 @@ try {
         $stUN->close();
     }
 
-    finance_sync_booking_crew_to_cash($kind, $bookingId, $bookingCid, $user);
     if ($kind === 'rental') {
         finance_sync_booking_bbm_to_cash($bookingId, $bookingCid, $user);
     }

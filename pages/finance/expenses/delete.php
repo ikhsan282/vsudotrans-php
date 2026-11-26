@@ -15,8 +15,6 @@ if (!$row) {
     flash('error', 'Data pengeluaran tidak ditemukan.');
 } elseif (($row['direction'] ?? '') !== 'out') {
     flash('error', 'Transaksi pemasukan tidak dapat dihapus melalui menu Pengeluaran.');
-} elseif (($row['source_type'] ?? '') === 'crew_commission') {
-    flash('error', 'Komisi kru tersinkron otomatis dari penugasan booking dan hanya dapat diubah melalui detail booking asal.');
 } elseif (($row['source_type'] ?? '') === 'booking_bbm') {
     flash('error', 'BBM sewa kendaraan tersinkron otomatis dari pemesanan rental dan hanya dapat diubah melalui detail booking asal.');
 } elseif (!empty($row['source_type'])) {
