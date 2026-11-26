@@ -2074,7 +2074,7 @@ document.addEventListener('DOMContentLoaded', function () {
             }
             if (rentalRouteCtrl && typeof rentalRouteCtrl.validateBounds === 'function') {
                 var rRes = rentalRouteCtrl.validateBounds();
-                if (!rRes.valid) {
+                if (!rRes.ok) {
                     e.preventDefault();
                     var detTabBtn = document.querySelector('[data-bs-target="#tab-detail"]');
                     if (detTabBtn && typeof bootstrap !== 'undefined' && bootstrap.Tab) {

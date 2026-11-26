@@ -1548,8 +1548,22 @@ html[data-bs-theme="dark"] .topbar-dropdown {
 }
 
 #ops-calendar .fc-daygrid-day-frame,
-#ops-calendar .fc-daygrid-day-events,
-#ops-calendar .fc-daygrid-event-harness,
+#ops-calendar .fc-daygrid-day-events {
+  min-width: 0;
+  overflow: visible;
+}
+
+#ops-calendar .fc-daygrid-event-harness:not(.fc-daygrid-event-harness-abs) {
+  min-width: 0;
+  max-width: 100%;
+  overflow: hidden;
+}
+
+#ops-calendar .fc-daygrid-event-harness-abs {
+  max-width: none;
+  overflow: visible;
+}
+
 #ops-calendar .fc-daygrid-event,
 #ops-calendar .fc-event-main {
   min-width: 0;
@@ -3360,20 +3374,42 @@ html[data-bs-theme="dark"] .pax-crm-loc-box {
   to { transform: rotate(360deg); }
 }
 
-/* ---------- Shimmer Skeleton Loading State ---------- */
+/* ---------- Component Shimmer Skeleton Loading State ---------- */
 .vst-skel {
   display: block;
-  border-radius: 8px;
-  background: linear-gradient(90deg, #e2e8f0 20%, #f1f5f9 42%, #e2e8f0 64%);
+  max-width: 100%;
+  border-radius: 7px;
+  background: linear-gradient(90deg, #e5eaf2 20%, #f4f7fc 44%, #e5eaf2 68%);
   background-size: 320% 100%;
-  animation: vst-shimmer 1.25s ease-in-out infinite;
+  animation: vst-shimmer 1.35s ease-in-out infinite;
 }
 .vst-skel-line {
   height: 12px;
   margin-bottom: 8px;
 }
-.vst-skel-card {
-  height: 86px;
+.vst-skel-pill {
+  height: 18px;
+  border-radius: 999px;
+}
+.vst-skel-circle {
+  width: 32px;
+  height: 32px;
+  border-radius: 999px;
+  flex-shrink: 0;
+}
+.vst-skel-btn {
+  height: 32px;
+  border-radius: 8px;
+  flex-shrink: 0;
+}
+.vst-skel-input {
+  height: 34px;
+  width: 100%;
+  border-radius: 8px;
+}
+.vst-skel-block {
+  width: 100%;
+  height: 150px;
   border-radius: 10px;
 }
 .vst-skel-bar {
@@ -3391,40 +3427,17 @@ html[data-bs-theme="dark"] .pax-crm-loc-box {
   position: absolute;
   inset: 0;
   z-index: 15;
-  padding: 1.25rem;
+  padding: .85rem;
   border-radius: 10px;
-  background: rgba(255, 255, 255, .92);
-  backdrop-filter: blur(4px);
-  display: flex;
-  flex-direction: column;
-  justify-content: center;
-}
-.vst-cal-skel-box {
-  width: min(760px, 100%);
-  margin: 0 auto;
-  padding: 1.25rem;
-  border-radius: 14px;
-  border: 1px solid var(--border-color);
-  background: var(--surface);
-  box-shadow: 0 12px 30px rgba(15, 23, 42, .08);
-}
-.vst-cal-skel-grid {
-  display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 10px;
-  margin-top: 12px;
+  background: var(--surface, #ffffff);
+  overflow: hidden;
 }
 html[data-bs-theme="dark"] .vst-skel {
-  background: linear-gradient(90deg, #1e293b 20%, #334155 42%, #1e293b 64%);
+  background: linear-gradient(90deg, #1e293b 20%, #2e3d54 44%, #1e293b 68%);
   background-size: 320% 100%;
 }
 html[data-bs-theme="dark"] .vst-cal-skeleton {
-  background: rgba(11, 17, 32, .88);
-}
-@media (max-width: 575.98px) {
-  .vst-cal-skel-grid {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
+  background: var(--surface, #0f172a);
 }
 @keyframes vst-shimmer {
   0% { background-position: 100% 50%; }
@@ -3555,17 +3568,12 @@ html[data-bs-theme="dark"] .profile-security-tip {
   bottom: 0;
   left: 0;
   z-index: 1025;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  padding: 1.25rem;
-  background: rgba(246, 248, 252, .84);
-  backdrop-filter: blur(5px);
-  -webkit-backdrop-filter: blur(5px);
+  background: var(--page-bg, #f4f6f9);
+  overflow: hidden;
   opacity: 0;
   visibility: hidden;
   pointer-events: none;
-  transition: opacity .18s ease, visibility .18s ease;
+  transition: opacity .16s ease, visibility .16s ease;
 }
 @media (min-width: 992px) {
   .vst-page-loader {
@@ -3576,96 +3584,212 @@ html[data-bs-theme="dark"] .profile-security-tip {
   }
 }
 html[data-bs-theme="dark"] .vst-page-loader {
-  background: rgba(7, 11, 20, .82);
+  background: var(--page-bg, #0b1120);
 }
 .vst-page-loader.is-active {
   opacity: 1;
   visibility: visible;
   pointer-events: auto;
 }
-.vst-pl-card {
-  width: min(440px, 100%);
-  padding: 1.15rem 1.25rem 1.25rem;
-  border-radius: 16px;
-  border: 1px solid var(--border-color);
-  background: var(--surface);
-  box-shadow: 0 18px 40px rgba(15, 23, 42, .12);
-  transform: translateY(8px) scale(.985);
-  transition: transform .22s cubic-bezier(.22, 1, .36, 1);
-}
-html[data-bs-theme="dark"] .vst-pl-card {
-  box-shadow: 0 18px 44px rgba(0, 0, 0, .48);
-}
-.vst-page-loader.is-active .vst-pl-card {
-  transform: none;
-}
-.vst-pl-head {
-  display: flex;
-  align-items: center;
-  gap: .85rem;
-  margin-bottom: .95rem;
-}
-.vst-pl-emblem {
-  position: relative;
-  width: 44px;
-  height: 44px;
-  flex-shrink: 0;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-}
-.vst-pl-emblem .vst-lgo-ring {
-  border-width: 2.5px;
-  border-color: rgba(29, 78, 216, .16);
-  border-top-color: #1d4ed8;
-  border-right-color: #0ea5e9;
-}
-html[data-bs-theme="dark"] .vst-pl-emblem .vst-lgo-ring {
-  border-color: rgba(148, 163, 184, .2);
-  border-top-color: #fbbf24;
-  border-right-color: #38bdf8;
-}
-.vst-pl-logo {
-  width: 30px;
-  height: 30px;
-  border-radius: 999px;
-  background: #ffffff;
-  padding: 4px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  box-shadow: 0 2px 8px rgba(15, 23, 42, .12);
-}
-.vst-pl-logo img {
+.vst-skel-workspace {
   width: 100%;
   height: 100%;
-  object-fit: contain;
-}
-.vst-pl-title {
-  font-size: .95rem;
-  font-weight: 700;
-  color: var(--text-heading);
-  line-height: 1.25;
-}
-.vst-pl-sub {
-  font-size: .78rem;
-  color: var(--muted-color);
-  margin-top: 2px;
-}
-.vst-pl-skel-kpis {
-  display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 8px;
-  margin-bottom: 12px;
-}
-.vst-pl-kpi {
-  height: 44px;
-  border-radius: 9px;
-}
-.vst-pl-skel-rows {
+  padding: 1rem 1.25rem;
+  overflow: hidden;
   display: flex;
   flex-direction: column;
+  gap: .85rem;
 }
+@media (max-width: 767.98px) {
+  .vst-skel-workspace {
+    padding: .75rem;
+    gap: .7rem;
+  }
+}
+.vst-sk-header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: .75rem;
+  min-width: 0;
+}
+.vst-sk-header-left,
+.vst-sk-card,
+.vst-sk-subpanel {
+  min-width: 0;
+}
+.vst-sk-header-right {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: .5rem;
+  min-width: 0;
+}
+.vst-sk-card {
+  padding: .9rem 1rem;
+  border-radius: 10px;
+  border: 1px solid var(--border-color);
+  background: var(--surface, #ffffff);
+  overflow: hidden;
+}
+.vst-sk-subpanel {
+  background: var(--surface-subtle, #f8fafc);
+}
+html[data-bs-theme="dark"] .vst-sk-subpanel {
+  background: var(--surface-muted, #152036);
+}
+.vst-sk-filter {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: .6rem;
+  padding: .7rem .9rem;
+}
+.vst-sk-kpis {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: .75rem;
+}
+.vst-sk-grid-2 {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: .85rem;
+}
+.vst-sk-grid-dash {
+  display: grid;
+  grid-template-columns: minmax(0, 7fr) minmax(0, 5fr);
+  gap: .85rem;
+}
+@media (max-width: 991.98px) {
+  .vst-sk-kpis {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .vst-sk-grid-2,
+  .vst-sk-grid-dash {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+.vst-sk-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: .5rem;
+  padding-bottom: .75rem;
+  margin-bottom: .85rem;
+  border-bottom: 1px solid var(--border-color);
+}
+.vst-sk-form-row {
+  display: grid;
+  grid-template-columns: 120px minmax(0, 1fr);
+  align-items: center;
+  gap: .65rem;
+  margin-bottom: .75rem;
+}
+@media (max-width: 575.98px) {
+  .vst-sk-form-row {
+    grid-template-columns: minmax(0, 1fr);
+    gap: .35rem;
+  }
+}
+.vst-sk-table {
+  padding: 0;
+}
+.vst-sk-table-head,
+.vst-sk-table-row {
+  display: flex;
+  align-items: center;
+  gap: .75rem;
+  padding: .68rem 1rem;
+  min-width: 0;
+}
+.vst-sk-table-head {
+  background: var(--surface-muted, #f1f5fb);
+  border-bottom: 1px solid var(--border-color);
+}
+.vst-sk-table-row {
+  border-bottom: 1px solid var(--border-color);
+}
+.vst-sk-table-row:last-child {
+  border-bottom: 0;
+}
+.vst-sk-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: .35rem;
+  margin-left: auto;
+  flex-shrink: 0;
+}
+.vst-sk-actions .vst-skel-pill {
+  width: 28px;
+  height: 28px;
+  border-radius: 6px;
+}
+.vst-sk-cal-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: .65rem;
+  margin-bottom: .75rem;
+}
+.vst-sk-cal-weekdays {
+  display: grid;
+  grid-template-columns: repeat(7, minmax(0, 1fr));
+  gap: .4rem;
+  padding: .45rem .5rem;
+  border: 1px solid var(--border-color);
+  border-bottom: 0;
+  border-radius: 8px 8px 0 0;
+  background: var(--surface-muted, #f1f5fb);
+}
+.vst-sk-cal-weekdays .vst-skel-line {
+  width: 48%;
+  height: 11px;
+  margin: 0 auto;
+}
+.vst-sk-cal-grid {
+  display: grid;
+  grid-template-columns: repeat(7, minmax(0, 1fr));
+  border-left: 1px solid var(--border-color);
+  border-top: 1px solid var(--border-color);
+  border-radius: 0 0 8px 8px;
+  overflow: hidden;
+}
+.vst-sk-cal-cell {
+  min-height: 74px;
+  padding: .4rem;
+  border-right: 1px solid var(--border-color);
+  border-bottom: 1px solid var(--border-color);
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  min-width: 0;
+}
+.vst-sk-cal-num {
+  width: 22px;
+  height: 11px;
+  margin-bottom: 2px;
+}
+.vst-sk-cal-list {
+  display: flex;
+  flex-direction: column;
+  gap: .6rem;
+}
+.vst-sk-cal-list-row {
+  padding: .65rem .75rem;
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  display: flex;
+  flex-direction: column;
+  gap: .45rem;
+}
+.vst-sk-cal-list-top {
+  display: flex;
+  align-items: center;
+  gap: .5rem;
+  min-width: 0;
+}
+
 .vst-btn-loading {
   pointer-events: none;
   opacity: .88;
@@ -3698,14 +3822,15 @@ html.vst-nav-arriving .content-main-row > main {
     animation: none !important;
   }
   .vst-nav-progress-bar,
-  .vst-pl-card {
+  .vst-page-loader {
     transition: none !important;
   }
 }
 @media print {
   #vstNavProgress,
   #vstPageLoader,
-  #vstSplitReveal {
+  #vstSplitReveal,
+  #cal-skeleton-overlay {
     display: none !important;
   }
 }

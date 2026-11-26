@@ -117,9 +117,6 @@ require __DIR__ . '/../../includes/header.php';
                 <a class="btn btn-outline-danger btn-sm py-0 px-2" href="<?= e(APP_URL) ?>/pages/finance/expenses/index.php?from=<?= e($f['from']) ?>&to=<?= e($f['to']) ?><?= is_super_admin() ? '&company_id=' . (int) ($f['filter_company_id'] ?? 0) : '' ?>">
                     Pengeluaran <i class="bi bi-arrow-right-short"></i>
                 </a>
-                <a class="btn btn-outline-warning btn-sm py-0 px-2" href="<?= e(APP_URL) ?>/pages/finance/commissions/index.php?from=<?= e($f['from']) ?>&to=<?= e($f['to']) ?><?= is_super_admin() ? '&company_id=' . (int) ($f['filter_company_id'] ?? 0) : '' ?>">
-                    Komisi Kru <i class="bi bi-arrow-right-short"></i>
-                </a>
                 <a class="btn btn-outline-primary btn-sm py-0 px-2" href="<?= e(APP_URL) ?>/pages/finance/cash/index.php?from=<?= e($f['from']) ?>&to=<?= e($f['to']) ?><?= is_super_admin() ? '&company_id=' . (int) ($f['filter_company_id'] ?? 0) : '' ?>">
                     Buka Buku Kas <i class="bi bi-arrow-right-short"></i>
                 </a>
@@ -138,6 +135,7 @@ require __DIR__ . '/../../includes/header.php';
                     <div class="text-muted" style="font-size:.75rem;">
                         Operasional: <?= e(rupiah((float) ($cash['out_operating'] ?? $cash['out_other']))) ?>
                         <?php if ((float) ($cash['out_commission'] ?? 0) > 0): ?> · Komisi Kru: <?= e(rupiah((float) $cash['out_commission'])) ?><?php endif; ?>
+                        <?php if ((float) ($cash['out_bbm'] ?? 0) > 0): ?> · BBM Trip: <?= e(rupiah((float) $cash['out_bbm'])) ?><?php endif; ?>
                     </div>
                 </div>
                 <div class="col-6 col-md-3">
@@ -188,9 +186,19 @@ require __DIR__ . '/../../includes/header.php';
                     <div class="fs-6 fw-bold text-<?= $netSum['net_profit'] >= 0 ? 'success' : 'danger' ?>"><?= e(rupiah((float) $netSum['net_profit'])) ?></div>
                 </div>
             </div>
-            <?php if ((float) ($netSum['out_commission'] ?? 0) > 0): ?>
+            <?php
+            $tripSyncedAmt = (float) ($netSum['out_trip_synced'] ?? ($netSum['out_commission'] ?? 0));
+            if ($tripSyncedAmt > 0):
+                $syncedParts = [];
+                if ((float) ($netSum['out_commission'] ?? 0) > 0) {
+                    $syncedParts[] = 'Komisi Kru ' . rupiah((float) $netSum['out_commission']);
+                }
+                if ((float) ($netSum['out_bbm'] ?? 0) > 0) {
+                    $syncedParts[] = 'BBM Trip ' . rupiah((float) $netSum['out_bbm']);
+                }
+            ?>
             <div class="text-muted mt-2 pt-2 border-top" style="font-size:.78rem;">
-                <i class="bi bi-info-circle me-1"></i>Pencairan Komisi Kru pada Buku Kas sebesar <strong><?= e(rupiah((float) $netSum['out_commission'])) ?></strong> sudah tercermin di Biaya Operasional Trip sehingga tidak dikurangkan dua kali pada Laba Bersih Operasional.
+                <i class="bi bi-info-circle me-1"></i>Pengeluaran otomatis dari booking pada Buku Kas sebesar <strong><?= e(rupiah($tripSyncedAmt)) ?></strong><?= $syncedParts ? ' (' . e(implode(' · ', $syncedParts)) . ')' : '' ?> sudah tercermin di Biaya Trip sehingga tidak dikurangkan dua kali pada Laba Bersih Operasional.
             </div>
             <?php endif; ?>
         </div>

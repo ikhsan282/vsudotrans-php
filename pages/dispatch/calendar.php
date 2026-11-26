@@ -100,7 +100,7 @@ $csrfToken = csrf_token();
     <div class="card shadow-sm border-0 mb-3">
         <div class="card-body py-2 px-3">
             <div class="row g-2 align-items-center erp-filter-bar ops-cal-filter-bar" id="cal-filter-form">
-                <div class="col-12 col-md-6 col-xl-4">
+                <div class="col-12 col-md-5 col-xl-3">
                     <div class="d-flex align-items-center gap-2">
                         <div class="input-group input-group-sm flex-grow-1 min-w-0">
                             <span class="input-group-text bg-body-tertiary text-body-secondary"><i class="bi bi-search" aria-hidden="true"></i></span>
@@ -117,14 +117,7 @@ $csrfToken = csrf_token();
                 </div>
                 <div class="collapse col-12" id="cal-filter-advanced">
                     <div class="row g-2 align-items-center">
-                        <div class="col-6 col-md-3 col-xl-2">
-                            <select id="cal-filter-kind" class="form-select form-select-sm" aria-label="Filter jenis layanan">
-                                <option value="all">Semua Jenis</option>
-                                <?php if ($canTravelView): ?><option value="travel">Travel</option><?php endif; ?>
-                                <?php if ($canRentalView): ?><option value="rental">Rental</option><?php endif; ?>
-                            </select>
-                        </div>
-                        <div class="col-6 col-md-3 col-xl-3">
+                        <div class="col-6 col-md-4 col-xl-3">
                             <select id="cal-filter-category" class="form-select form-select-sm" aria-label="Filter kategori layanan">
                                 <option value="">Semua Layanan</option>
                                 <?php foreach ($categoryOptions as $cat): ?>
@@ -132,39 +125,11 @@ $csrfToken = csrf_token();
                                 <?php endforeach; ?>
                             </select>
                         </div>
-                        <div class="col-12 col-md-4 col-xl-3">
+                        <div class="col-6 col-md-3 col-xl-2">
                             <select id="cal-filter-status" class="form-select form-select-sm" aria-label="Filter status operasional">
                                 <option value="">Semua Status</option>
                                 <?php foreach ($statusOptions as $stKey => $stLabel): ?>
                                     <option value="<?= e($stKey) ?>"><?= e($stLabel) ?></option>
-                                <?php endforeach; ?>
-                            </select>
-                        </div>
-                        <div class="col-12 col-sm-6 col-md-4 col-xl-4">
-                            <select id="cal-filter-driver"
-                                    class="form-select form-select-sm ts-select"
-                                    data-ts-placeholder="Semua Sopir"
-                                    data-ts-url="<?= e(APP_URL) ?>/pages/employees/options.php"
-                                    data-ts-limit="50"
-                                    <?php if ($cidInt > 0): ?>data-ts-company="<?= (int) $cidInt ?>"<?php endif; ?>
-                                    aria-label="Filter sopir">
-                                <option value="">Semua Sopir</option>
-                                <?php foreach ($driverOptions as $drv): ?>
-                                    <option value="<?= (int) $drv['id'] ?>" data-phone="<?= e($drv['phone'] ?? '') ?>"><?= e($drv['name']) ?></option>
-                                <?php endforeach; ?>
-                            </select>
-                        </div>
-                        <div class="col-12 col-sm-6 col-md-4 col-xl-4">
-                            <select id="cal-filter-vehicle"
-                                    class="form-select form-select-sm ts-select"
-                                    data-ts-placeholder="Semua Armada"
-                                    data-ts-url="<?= e(APP_URL) ?>/pages/vehicles/options.php"
-                                    data-ts-limit="50"
-                                    <?php if ($cidInt > 0): ?>data-ts-company="<?= (int) $cidInt ?>"<?php endif; ?>
-                                    aria-label="Filter armada">
-                                <option value="">Semua Armada</option>
-                                <?php foreach ($vehicleOptions as $veh): ?>
-                                    <option value="<?= (int) $veh['id'] ?>" data-plate="<?= e($veh['vehicle_number'] ?? '') ?>"><?= e($veh['name']) ?></option>
                                 <?php endforeach; ?>
                             </select>
                         </div>
@@ -283,18 +248,58 @@ $csrfToken = csrf_token();
 
             <div class="ops-cal-stage">
                 <div id="cal-skeleton-overlay" class="vst-cal-skeleton d-none" aria-hidden="true">
-                    <div class="vst-cal-skel-box">
-                        <div class="vst-skel-bar"></div>
-                        <span class="vst-skel vst-skel-line" style="width:42%"></span>
-                        <span class="vst-skel vst-skel-line" style="width:65%;height:10px"></span>
-                        <div class="vst-cal-skel-grid">
-                            <span class="vst-skel vst-skel-card"></span>
-                            <span class="vst-skel vst-skel-card"></span>
-                            <span class="vst-skel vst-skel-card"></span>
-                            <span class="vst-skel vst-skel-card"></span>
-                            <span class="vst-skel vst-skel-card"></span>
-                            <span class="vst-skel vst-skel-card"></span>
+                    <div class="vst-sk-cal-toolbar">
+                        <div class="vst-sk-header-right">
+                            <span class="vst-skel vst-skel-btn" style="width:76px"></span>
+                            <span class="vst-skel vst-skel-btn" style="width:74px"></span>
                         </div>
+                        <span class="vst-skel vst-skel-line mb-0" style="width:160px;height:18px"></span>
+                        <div class="vst-sk-header-right d-none d-md-flex">
+                            <span class="vst-skel vst-skel-btn" style="width:62px"></span>
+                            <span class="vst-skel vst-skel-btn" style="width:62px"></span>
+                            <span class="vst-skel vst-skel-btn" style="width:62px"></span>
+                        </div>
+                    </div>
+                    <div class="d-none d-md-block">
+                        <div class="vst-sk-cal-weekdays">
+                            <?php for ($wd = 0; $wd < 7; $wd++): ?>
+                                <span class="vst-skel vst-skel-line mb-0"></span>
+                            <?php endfor; ?>
+                        </div>
+                        <div class="vst-sk-cal-grid">
+                            <?php
+                            $calSkPills = [
+                                2  => [92, 70],
+                                4  => [84],
+                                9  => [96],
+                                11 => [76, 88],
+                                16 => [90],
+                                18 => [74],
+                                22 => [95, 68],
+                                26 => [94],
+                            ];
+                            for ($ci = 0; $ci < 35; $ci++):
+                            ?>
+                                <div class="vst-sk-cal-cell">
+                                    <span class="vst-skel vst-skel-line vst-sk-cal-num"></span>
+                                    <?php foreach ($calSkPills[$ci] ?? [] as $pw): ?>
+                                        <span class="vst-skel vst-skel-pill" style="width:<?= $pw ?>%"></span>
+                                    <?php endforeach; ?>
+                                </div>
+                            <?php endfor; ?>
+                        </div>
+                    </div>
+                    <div class="d-md-none vst-sk-cal-list">
+                        <?php for ($li = 0; $li < 5; $li++): ?>
+                            <div class="vst-sk-cal-list-row">
+                                <div class="vst-sk-cal-list-top">
+                                    <span class="vst-skel vst-skel-pill" style="width:58px"></span>
+                                    <span class="vst-skel vst-skel-pill" style="width:72px"></span>
+                                    <span class="vst-skel vst-skel-line mb-0" style="width:42%"></span>
+                                </div>
+                                <span class="vst-skel vst-skel-line mb-0" style="width:76%;height:10px"></span>
+                            </div>
+                        <?php endfor; ?>
                     </div>
                 </div>
                 <div id="ops-calendar" class="<?= $canCreateAny ? 'fc-can-create' : '' ?>" aria-label="Kalender booking travel dan rental"></div>
@@ -563,11 +568,8 @@ document.addEventListener('DOMContentLoaded', function () {
     const allowedAttention = ['', 'on_trip', 'unassigned', 'unpaid'];
 
     const elQ = document.getElementById('cal-filter-q');
-    const elKind = document.getElementById('cal-filter-kind');
     const elCategory = document.getElementById('cal-filter-category');
     const elStatus = document.getElementById('cal-filter-status');
-    const elDriver = document.getElementById('cal-filter-driver');
-    const elVehicle = document.getElementById('cal-filter-vehicle');
     const elHideCancelled = document.getElementById('cal-filter-hide-cancelled');
     const elReset = document.getElementById('cal-filter-reset');
     const elLoading = document.getElementById('cal-loading-badge');
@@ -609,22 +611,6 @@ document.addEventListener('DOMContentLoaded', function () {
         if (orig || dest) return orig || dest;
         const fallback = compactCityName(p.route_label, '');
         return (fallback && fallback !== '—') ? fallback : '';
-    };
-
-    const getSelectValue = (el) => {
-        if (!el) return '';
-        const raw = el.tomselect ? el.tomselect.getValue() : el.value;
-        return Array.isArray(raw) ? String(raw[0] || '') : String(raw || '');
-    };
-
-    const setSelectValue = (el, val) => {
-        if (!el) return;
-        const v = String(val || '');
-        if (window.setTsValueSilent && el.tomselect) {
-            window.setTsValueSilent(el, v);
-        } else {
-            el.value = v;
-        }
     };
 
     const isValidYmd = (val) => /^\d{4}-\d{2}-\d{2}$/.test(String(val || ''));
@@ -696,11 +682,8 @@ document.addEventListener('DOMContentLoaded', function () {
     const initDate = isValidYmd(urlParams.get('date')) ? urlParams.get('date') : undefined;
 
     if (elQ && urlParams.has('q')) elQ.value = urlParams.get('q') || '';
-    if (elKind && urlParams.has('kind')) applyOptionSelected(elKind, urlParams.get('kind') || 'all');
     if (elCategory && urlParams.has('category_id')) applyOptionSelected(elCategory, urlParams.get('category_id') || '');
     if (elStatus && urlParams.has('status')) applyOptionSelected(elStatus, urlParams.get('status') || '');
-    if (elDriver && urlParams.has('driver_id')) applyOptionSelected(elDriver, urlParams.get('driver_id') || '');
-    if (elVehicle && urlParams.has('vehicle_id')) applyOptionSelected(elVehicle, urlParams.get('vehicle_id') || '');
 
     const initGroup = String(urlParams.get('category_group') || '').toLowerCase();
     if (allowedGroups.includes(initGroup)) activeCategoryGroup = initGroup;
@@ -722,24 +705,18 @@ document.addEventListener('DOMContentLoaded', function () {
 
     const hasAnyActiveFilter = () => Boolean(
         (elQ && elQ.value.trim() !== '') ||
-        (elKind && elKind.value !== 'all') ||
         (elCategory && elCategory.value !== '') ||
         activeCategoryGroup !== '' ||
         activeAttention !== '' ||
         (elStatus && elStatus.value !== '') ||
-        getSelectValue(elDriver) !== '' ||
-        getSelectValue(elVehicle) !== '' ||
         (elHideCancelled && elHideCancelled.checked)
     );
 
     const updateMobileFilterBadge = () => {
         if (!elMobileFilterBadge) return;
         let cnt = 0;
-        if (elKind && elKind.value !== 'all') cnt++;
         if (elCategory && elCategory.value !== '') cnt++;
         if (elStatus && elStatus.value !== '') cnt++;
-        if (getSelectValue(elDriver) !== '') cnt++;
-        if (getSelectValue(elVehicle) !== '') cnt++;
         if (elHideCancelled && elHideCancelled.checked) cnt++;
         elMobileFilterBadge.textContent = String(cnt);
         elMobileFilterBadge.classList.toggle('d-none', cnt === 0);
@@ -1348,14 +1325,9 @@ document.addEventListener('DOMContentLoaded', function () {
 
         const qVal = elQ ? elQ.value.trim() : '';
         if (qVal) params.set('q', qVal);
-        if (elKind && elKind.value !== 'all') params.set('kind', elKind.value);
         if (elCategory && elCategory.value !== '') params.set('category_id', elCategory.value);
         if (activeCategoryGroup) params.set('category_group', activeCategoryGroup);
         if (elStatus && elStatus.value !== '') params.set('status', elStatus.value);
-        const drvVal = getSelectValue(elDriver);
-        if (drvVal) params.set('driver_id', drvVal);
-        const vehVal = getSelectValue(elVehicle);
-        if (vehVal) params.set('vehicle_id', vehVal);
         if (elHideCancelled) params.set('hide_cancelled', elHideCancelled.checked ? '1' : '0');
         if (activeAttention) params.set('attention', activeAttention);
 
@@ -1410,13 +1382,10 @@ document.addEventListener('DOMContentLoaded', function () {
             const params = new URLSearchParams({
                 start: fetchInfo.startStr,
                 end: fetchInfo.endStr,
-                kind: elKind ? elKind.value : 'all',
                 category_id: elCategory ? elCategory.value : '',
                 category_group: activeCategoryGroup,
                 status: elStatus ? elStatus.value : '',
                 hide_cancelled: elHideCancelled && elHideCancelled.checked ? '1' : '0',
-                driver_id: getSelectValue(elDriver),
-                vehicle_id: getSelectValue(elVehicle),
                 q: elQ ? elQ.value.trim() : ''
             });
             const fetchKey = params.toString();
@@ -2006,28 +1975,8 @@ document.addEventListener('DOMContentLoaded', function () {
         });
     }
 
-    if (elKind) {
-        elKind.addEventListener('change', () => {
-            if (elKind.value !== 'all' && activeCategoryGroup) {
-                if (elKind.value === 'rental' && activeCategoryGroup !== 'rental') activeCategoryGroup = '';
-                if (elKind.value === 'travel' && activeCategoryGroup === 'rental') activeCategoryGroup = '';
-            }
-            if (elCategory && elCategory.value !== '' && elKind.value !== 'all') {
-                const opt = elCategory.options[elCategory.selectedIndex];
-                const st = opt ? (opt.getAttribute('data-service-type') || '') : '';
-                if (st && st !== elKind.value) elCategory.value = '';
-            }
-            refetch();
-        });
-    }
-
     if (elCategory) {
         elCategory.addEventListener('change', () => {
-            const opt = elCategory.options[elCategory.selectedIndex];
-            const st = opt ? (opt.getAttribute('data-service-type') || '') : '';
-            if (st && elKind && elKind.value !== 'all' && elKind.value !== st) {
-                elKind.value = 'all';
-            }
             activeCategoryGroup = '';
             refetch();
         });
@@ -2052,24 +2001,11 @@ document.addEventListener('DOMContentLoaded', function () {
         });
     }
 
-    if (window.bindTsChange) {
-        if (elDriver) window.bindTsChange(elDriver, refetch);
-        if (elVehicle) window.bindTsChange(elVehicle, refetch);
-    } else {
-        if (elDriver) elDriver.addEventListener('change', refetch);
-        if (elVehicle) elVehicle.addEventListener('change', refetch);
-    }
-
     // Unified clickable legend chips
     document.querySelectorAll('.ops-cal-chip[data-cal-group]').forEach(btn => {
         btn.addEventListener('click', () => {
             const grp = btn.getAttribute('data-cal-group') || '';
             activeCategoryGroup = (activeCategoryGroup === grp) ? '' : grp;
-            if (activeCategoryGroup === 'rental' && elKind && elKind.value === 'travel') {
-                elKind.value = 'all';
-            } else if (activeCategoryGroup !== '' && activeCategoryGroup !== 'rental' && elKind && elKind.value === 'rental') {
-                elKind.value = 'all';
-            }
             if (elCategory && elCategory.value !== '') {
                 elCategory.value = '';
             }
@@ -2115,7 +2051,6 @@ document.addEventListener('DOMContentLoaded', function () {
     if (elReset) {
         elReset.addEventListener('click', () => {
             if (elQ) elQ.value = '';
-            if (elKind) elKind.value = 'all';
             if (elCategory) elCategory.value = '';
             if (elStatus) elStatus.value = '';
             activeCategoryGroup = '';
@@ -2124,8 +2059,6 @@ document.addEventListener('DOMContentLoaded', function () {
                 elHideCancelled.checked = false;
                 try { localStorage.setItem(STORAGE_HIDE_CANCELLED, '0'); } catch (e) {}
             }
-            setSelectValue(elDriver, '');
-            setSelectValue(elVehicle, '');
             refetch();
         });
     }

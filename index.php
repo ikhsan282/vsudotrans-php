@@ -857,10 +857,10 @@ $fleetIcons = ['bi-bus-front', 'bi-truck-front', 'bi-car-front-fill', 'bi-taxi-f
                     <div class="bento-icon mb-3"><i class="bi bi-buildings-fill"></i></div>
                     <h5 class="fw-bold mb-2">Multi-Tenant, SDM &amp; Laporan</h5>
                     <p class="small mb-0" style="color:var(--vs-muted);">
-                        Banyak PT berjalan dalam satu sistem dengan isolasi data ketat per perusahaan, hak akses peran RBAC, komponen gaji, dan ekspor PDF/Excel.
+                        Banyak PT berjalan dalam satu sistem dengan isolasi data ketat per perusahaan, hak akses peran RBAC, dan ekspor PDF/Excel.
                     </p>
                     <ul class="check-list">
-                        <li>Manajemen SDM, komponen gaji &amp; monitoring SIM</li>
+                        <li>Manajemen SDM, jabatan &amp; monitoring SIM</li>
                         <li>Ekspor laporan booking, kas &amp; driver</li>
                     </ul>
                 </div>

@@ -17,7 +17,7 @@ function finance_ensure_schema(): void
 {
     static $checked = false;
     $hasSess = session_status() === PHP_SESSION_ACTIVE;
-    if ($checked || ($hasSess && !empty($_SESSION['_vst_schema_fin_v4']))) {
+    if ($checked || ($hasSess && !empty($_SESSION['_vst_schema_fin_v10']))) {
         $checked = true;
         return;
     }
@@ -62,6 +62,10 @@ function finance_ensure_schema(): void
         $db->query('ALTER TABLE `cash_transactions` ADD KEY `ix_cashtx_source` (`source_type`, `source_id`)');
     }
 
+    $bclIdxRes = $db->query("SHOW INDEX FROM `booking_cost_lines` WHERE Key_name = 'ix_bcl_paid_tx'");
+    if ($bclIdxRes && $bclIdxRes->num_rows > 0) {
+        $db->query('ALTER TABLE `booking_cost_lines` DROP INDEX `ix_bcl_paid_tx`');
+    }
     $bclCols = [];
     $bclRes = $db->query('SHOW COLUMNS FROM `booking_cost_lines`');
     if ($bclRes) {
@@ -69,15 +73,11 @@ function finance_ensure_schema(): void
             $bclCols[(string) $c['Field']] = true;
         }
     }
-    if (empty($bclCols['paid_cash_tx_id'])) {
-        $db->query("ALTER TABLE `booking_cost_lines` ADD COLUMN `paid_cash_tx_id` INT(11) DEFAULT NULL COMMENT 'id cash_transactions pembayaran komisi kru' AFTER `note`");
+    if (!empty($bclCols['paid_cash_tx_id'])) {
+        $db->query('ALTER TABLE `booking_cost_lines` DROP COLUMN `paid_cash_tx_id`');
     }
-    if (empty($bclCols['paid_at'])) {
-        $db->query("ALTER TABLE `booking_cost_lines` ADD COLUMN `paid_at` DATETIME DEFAULT NULL COMMENT 'waktu pencairan komisi kru' AFTER `paid_cash_tx_id`");
-    }
-    $bclIdxRes = $db->query("SHOW INDEX FROM `booking_cost_lines` WHERE Key_name = 'ix_bcl_paid_tx'");
-    if ($bclIdxRes && $bclIdxRes->num_rows === 0) {
-        $db->query('ALTER TABLE `booking_cost_lines` ADD KEY `ix_bcl_paid_tx` (`paid_cash_tx_id`)');
+    if (!empty($bclCols['paid_at'])) {
+        $db->query('ALTER TABLE `booking_cost_lines` DROP COLUMN `paid_at`');
     }
 
     $pmCols = [];
@@ -94,9 +94,108 @@ function finance_ensure_schema(): void
 
     $db->query('DROP TABLE IF EXISTS `cash_accounts`');
 
-    if ($hasSess) {
-        $_SESSION['_vst_schema_fin_v4'] = 1;
+    $db->query("CREATE TABLE IF NOT EXISTS `cash_categories` (
+        `id` INT(11) NOT NULL AUTO_INCREMENT,
+        `company_id` INT(11) DEFAULT NULL COMMENT 'NULL = berlaku semua perusahaan',
+        `code` VARCHAR(15) NOT NULL,
+        `name` VARCHAR(50) NOT NULL,
+        `direction` ENUM('in','out') NOT NULL DEFAULT 'out' COMMENT 'in=Pemasukan, out=Pengeluaran',
+        `sort_order` INT(11) NOT NULL DEFAULT 0,
+        `is_active` TINYINT(1) NOT NULL DEFAULT 1,
+        `note` VARCHAR(2000) DEFAULT NULL,
+        `created_user` VARCHAR(255) DEFAULT NULL,
+        `created_date` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        `modified_user` VARCHAR(255) DEFAULT NULL,
+        `modified_date` DATETIME DEFAULT NULL,
+        PRIMARY KEY (`id`),
+        UNIQUE KEY `uq_cash_categories_code` (`company_id`, `code`),
+        KEY `ix_cash_categories_company_dir` (`company_id`, `direction`, `is_active`, `sort_order`),
+        CONSTRAINT `fk_cash_categories_company` FOREIGN KEY (`company_id`) REFERENCES `companies` (`id`) ON DELETE CASCADE
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci");
+
+    $dirColRes = $db->query("SHOW COLUMNS FROM `cash_categories` LIKE 'direction'");
+    $dirCol    = $dirColRes ? $dirColRes->fetch_assoc() : null;
+    if ($dirCol && str_contains((string) ($dirCol['Type'] ?? ''), 'both')) {
+        $db->query("UPDATE `cash_categories` SET `direction` = 'out' WHERE `direction` = 'both'");
+        $db->query("ALTER TABLE `cash_categories` MODIFY COLUMN `direction` ENUM('in','out') NOT NULL DEFAULT 'out' COMMENT 'in=Pemasukan, out=Pengeluaran'");
     }
+
+    $db->query(
+        "DELETE cc FROM `cash_categories` cc
+          WHERE cc.company_id IS NULL
+            AND cc.code IN ('CRPAY','STMOD','PLPTG','KMBGH','RFNDR','TOLPK','SRVARM','KMKRU','SWUTL','OPATK','PJARM')
+            AND NOT EXISTS (SELECT 1 FROM `cash_transactions` ct WHERE ct.category = cc.name)"
+    );
+    $sortFix = [
+        'PDTRV'   => 10,
+        'PDRNT'   => 20,
+        'CROPGK'  => 30,
+        'PMSL'    => 40,
+        'CROKARY' => 50,
+        'BBM'     => 60,
+        'PGSP'    => 70,
+        'GJKRY'   => 80,
+        'PGSL'    => 90,
+    ];
+    $stSortFix = $db->prepare('UPDATE `cash_categories` SET `sort_order` = ? WHERE `company_id` IS NULL AND `code` = ?');
+    foreach ($sortFix as $sCode => $sOrd) {
+        $stSortFix->bind_param('is', $sOrd, $sCode);
+        $stSortFix->execute();
+    }
+    $stSortFix->close();
+
+    $db->query("UPDATE `cash_categories` SET `name` = 'Biaya Komisi Karyawan', `note` = 'Biaya komisi karyawan / sopir & kru' WHERE `company_id` IS NULL AND `code` = 'CROKARY' AND `name` = 'Biaya Komisi Karyawan & BBM'");
+    $db->query("UPDATE `cash_transactions` SET `category` = 'Biaya Komisi Karyawan' WHERE `category` = 'Biaya Komisi Karyawan & BBM'");
+
+    if ($hasSess) {
+        $_SESSION['_vst_schema_fin_v10'] = 1;
+    }
+    finance_ensure_global_cash_categories();
+    finance_backfill_booking_crew_to_cash();
+    finance_backfill_booking_bbm_to_cash();
+}
+
+/**
+ * Pastikan master Kategori Kas standar global (`company_id IS NULL`) tersedia & idempoten:
+ * 9 kategori inti (4 Pemasukan + 5 Pengeluaran).
+ */
+function finance_ensure_global_cash_categories(?string $user = 'system'): void
+{
+    static $seeded = false;
+    if ($seeded) {
+        return;
+    }
+    $seeded = true;
+    finance_ensure_schema();
+    $db = db();
+
+    $defaults = [
+        // Pemasukan (4 inti)
+        ['code' => 'PDTRV',   'name' => 'Pendapatan Travel',           'direction' => 'in',  'sort' => 10, 'note' => 'Pemasukan tiket / charter travel'],
+        ['code' => 'PDRNT',   'name' => 'Pendapatan Rental',           'direction' => 'in',  'sort' => 20, 'note' => 'Pemasukan sewa kendaraan'],
+        ['code' => 'CROPGK',  'name' => 'Pengembalian Gaji Karyawan',  'direction' => 'in',  'sort' => 30, 'note' => 'Pengembalian gaji karyawan'],
+        ['code' => 'PMSL',    'name' => 'Pemasukan Lainnya',           'direction' => 'in',  'sort' => 40, 'note' => 'Pemasukan lain-lain'],
+        // Pengeluaran (5 inti)
+        ['code' => 'CROKARY', 'name' => 'Biaya Komisi Karyawan',       'direction' => 'out', 'sort' => 50, 'note' => 'Biaya komisi karyawan / sopir & kru'],
+        ['code' => 'BBM',     'name' => 'BBM',                         'direction' => 'out', 'sort' => 60, 'note' => 'BBM / solar / bensin'],
+        ['code' => 'PGSP',    'name' => 'Pengeluaran Sparepart',       'direction' => 'out', 'sort' => 70, 'note' => 'Pembelian sparepart & perawatan armada'],
+        ['code' => 'GJKRY',   'name' => 'Biaya Gaji Karyawan',         'direction' => 'out', 'sort' => 80, 'note' => 'Biaya gaji, tunjangan & bonus karyawan'],
+        ['code' => 'PGSL',    'name' => 'Pengeluaran Lainnya',         'direction' => 'out', 'sort' => 90, 'note' => 'Pengeluaran lain-lain'],
+    ];
+
+    $sel = $db->prepare('SELECT id FROM cash_categories WHERE company_id IS NULL AND code = ? LIMIT 1');
+    $ins = $db->prepare('INSERT INTO cash_categories (company_id, code, name, direction, sort_order, is_active, note, created_user) VALUES (NULL, ?, ?, ?, ?, 1, ?, ?)');
+    foreach ($defaults as $c) {
+        $sel->bind_param('s', $c['code']);
+        $sel->execute();
+        $found = $sel->get_result()->fetch_assoc();
+        if (!$found) {
+            $ins->bind_param('sssiss', $c['code'], $c['name'], $c['direction'], $c['sort'], $c['note'], $user);
+            $ins->execute();
+        }
+    }
+    $sel->close();
+    $ins->close();
 }
 
 /**
@@ -139,6 +238,7 @@ function finance_ensure_company_defaults(int $company_id, ?string $user = 'syste
     }
     finance_ensure_schema();
     finance_ensure_global_payment_methods($user);
+    finance_ensure_global_cash_categories($user);
 }
 
 /** Daftar metode pembayaran aktif milik perusahaan + global, urut sort_order. */
@@ -285,12 +385,336 @@ function finance_unsync_booking(string $booking_type, int $booking_id, int $comp
     $db = db();
     $st = $db->prepare(
         "DELETE ct FROM cash_transactions ct
-           JOIN booking_cost_lines bcl ON ct.source_type = 'booking_payment' AND ct.source_id = bcl.id
+           JOIN booking_cost_lines bcl
+             ON ct.source_type IN ('booking_payment', 'crew_commission') AND ct.source_id = bcl.id
           WHERE bcl.booking_type = ? AND bcl.booking_id = ? AND bcl.company_id = ? AND ct.company_id = ?"
     );
     $st->bind_param('siii', $booking_type, $booking_id, $company_id, $company_id);
     $st->execute();
     $st->close();
+    if ($booking_type === 'rental') {
+        finance_unsync_booking_bbm($booking_id, $company_id);
+    }
+}
+
+/** Hapus entri Pengeluaran `booking_bbm` yang tertaut ke BBM pada sebuah pemesanan rental. */
+function finance_unsync_booking_bbm(int $booking_id, int $company_id): void
+{
+    if ($booking_id <= 0 || $company_id <= 0) {
+        return;
+    }
+    finance_ensure_schema();
+    $st = db()->prepare("DELETE FROM cash_transactions WHERE company_id = ? AND source_type = 'booking_bbm' AND source_id = ?");
+    $st->bind_param('ii', $company_id, $booking_id);
+    $st->execute();
+    $st->close();
+}
+
+/**
+ * Sinkronkan nilai BBM pemesanan rental (`rental_car_bookings.bbm > 0`) secara otomatis
+ * ke Pengeluaran / Buku Kas (`cash_transactions`, `source_type='booking_bbm'`, `category='BBM'`).
+ * Booking berstatus 'cancelled' atau bbm <= 0 otomatis dihapus/tidak disinkronkan.
+ */
+function finance_sync_booking_bbm_to_cash(int $booking_id, int $company_id, ?string $user = null): void
+{
+    if ($booking_id <= 0 || $company_id <= 0) {
+        return;
+    }
+    finance_ensure_schema();
+    $db = db();
+
+    $stBk = $db->prepare(
+        'SELECT document_number, start_date, date, bbm, created_user, created_date
+           FROM rental_car_bookings
+          WHERE id = ? AND company_id = ? LIMIT 1'
+    );
+    $stBk->bind_param('ii', $booking_id, $company_id);
+    $stBk->execute();
+    $bk = $stBk->get_result()->fetch_assoc();
+    $stBk->close();
+    if (!$bk || round((float) ($bk['bbm'] ?? 0), 2) <= 0) {
+        finance_unsync_booking_bbm($booking_id, $company_id);
+        return;
+    }
+
+    $stHist = $db->prepare(
+        "SELECT to_status FROM booking_status_history
+          WHERE booking_type = 'rental' AND booking_id = ?
+          ORDER BY changed_at DESC, id DESC LIMIT 1"
+    );
+    $stHist->bind_param('i', $booking_id);
+    $stHist->execute();
+    $histRow = $stHist->get_result()->fetch_assoc();
+    $stHist->close();
+    if ($histRow && (string) ($histRow['to_status'] ?? '') === 'cancelled') {
+        finance_unsync_booking_bbm($booking_id, $company_id);
+        return;
+    }
+
+    $amount   = round((float) $bk['bbm'], 2);
+    $rawDate  = trim((string) ($bk['start_date'] ?: $bk['date']));
+    $txDate   = preg_match('/^\d{4}-\d{2}-\d{2}/', $rawDate) ? substr($rawDate, 0, 10) : date('Y-m-d');
+    $docNo    = trim((string) ($bk['document_number'] ?? ''));
+    $category = 'BBM';
+    $txDesc   = mb_substr('BBM Sewa Kendaraan' . ($docNo !== '' ? ' (' . $docNo . ')' : ''), 0, 1000);
+    $txUser   = (string) ($user ?: ($bk['created_user'] ?? 'system'));
+    $txCreated = !empty($bk['created_date']) ? (string) $bk['created_date'] : date('Y-m-d H:i:s');
+
+    $stEx = $db->prepare("SELECT id FROM cash_transactions WHERE source_type = 'booking_bbm' AND source_id = ? ORDER BY id ASC");
+    $stEx->bind_param('i', $booking_id);
+    $stEx->execute();
+    $existingRows = $stEx->get_result()->fetch_all(MYSQLI_ASSOC);
+    $stEx->close();
+
+    if ($existingRows) {
+        $keepId = (int) $existingRows[0]['id'];
+        if (count($existingRows) > 1) {
+            $dropIds = array_map(static fn (array $r): int => (int) $r['id'], array_slice($existingRows, 1));
+            $ph      = implode(',', array_fill(0, count($dropIds), '?'));
+            $stDrop  = $db->prepare("DELETE FROM cash_transactions WHERE id IN ({$ph})");
+            $stDrop->bind_param(str_repeat('i', count($dropIds)), ...$dropIds);
+            $stDrop->execute();
+            $stDrop->close();
+        }
+        $stUpd = $db->prepare(
+            'UPDATE cash_transactions
+                SET date = ?, amount = ?, category = ?, description = ?, modified_user = ?, modified_date = NOW()
+              WHERE id = ? AND company_id = ?'
+        );
+        $stUpd->bind_param('sdsssii', $txDate, $amount, $category, $txDesc, $txUser, $keepId, $company_id);
+        $stUpd->execute();
+        $stUpd->close();
+    } else {
+        $stIns = $db->prepare(
+            "INSERT INTO cash_transactions
+                (company_id, date, direction, amount, category, description, source_type, source_id, created_user, created_date)
+             VALUES (?, ?, 'out', ?, ?, ?, 'booking_bbm', ?, ?, ?)"
+        );
+        $stIns->bind_param('isdssiss', $company_id, $txDate, $amount, $category, $txDesc, $booking_id, $txUser, $txCreated);
+        $stIns->execute();
+        $stIns->close();
+    }
+}
+
+/**
+ * Backfill idempoten BBM pemesanan rental yang sudah ada ke Pengeluaran (`cash_transactions`).
+ */
+function finance_backfill_booking_bbm_to_cash(): void
+{
+    static $done = false;
+    if ($done) {
+        return;
+    }
+    $done = true;
+
+    $db  = db();
+    $res = $db->query(
+        "SELECT r.id, r.company_id
+           FROM rental_car_bookings r
+           LEFT JOIN cash_transactions ct
+                  ON ct.source_type = 'booking_bbm' AND ct.source_id = r.id
+          WHERE r.bbm > 0
+            AND ct.id IS NULL"
+    );
+    if (!$res) {
+        return;
+    }
+    $targets = $res->fetch_all(MYSQLI_ASSOC);
+    $res->close();
+    foreach ($targets as $t) {
+        finance_sync_booking_bbm_to_cash((int) $t['id'], (int) $t['company_id'], null);
+    }
+}
+
+/** Hapus entri Pengeluaran `crew_commission` yang tertaut ke penugasan kru pada sebuah booking. */
+function finance_unsync_booking_crew(string $booking_type, int $booking_id, int $company_id): void
+{
+    if ($booking_id <= 0 || $company_id <= 0) {
+        return;
+    }
+    $booking_type = $booking_type === 'rental' ? 'rental' : 'travel';
+    finance_ensure_schema();
+    $st = db()->prepare(
+        "DELETE ct FROM cash_transactions ct
+           JOIN booking_cost_lines bcl
+             ON ct.source_type = 'crew_commission' AND ct.source_id = bcl.id
+          WHERE bcl.booking_type = ? AND bcl.booking_id = ? AND bcl.company_id = ? AND ct.company_id = ?"
+    );
+    $st->bind_param('siii', $booking_type, $booking_id, $company_id, $company_id);
+    $st->execute();
+    $st->close();
+}
+
+/**
+ * Sinkronkan penugasan kru/komisi pada `booking_cost_lines` (yang sudah di-assign ke `employee_id > 0`
+ * dengan `amount > 0`) secara otomatis ke Pengeluaran / Buku Kas (`cash_transactions`, `source_type='crew_commission'`).
+ * Booking berstatus 'cancelled' otomatis dihapus/tidak disinkronkan.
+ */
+function finance_sync_booking_crew_to_cash(
+    string $booking_type,
+    int $booking_id,
+    int $company_id,
+    ?string $user = null
+): void {
+    if ($booking_id <= 0 || $company_id <= 0) {
+        return;
+    }
+    $booking_type = $booking_type === 'rental' ? 'rental' : 'travel';
+    finance_ensure_schema();
+    $db = db();
+
+    $table   = $booking_type === 'rental' ? 'rental_car_bookings' : 'travel_ticket_bookings';
+    $dateCol = $booking_type === 'rental' ? 'start_date' : 'date';
+    $stBk = $db->prepare("SELECT document_number, {$dateCol} AS trip_date FROM {$table} WHERE id = ? AND company_id = ? LIMIT 1");
+    $stBk->bind_param('ii', $booking_id, $company_id);
+    $stBk->execute();
+    $bk = $stBk->get_result()->fetch_assoc();
+    $stBk->close();
+    if (!$bk) {
+        finance_unsync_booking_crew($booking_type, $booking_id, $company_id);
+        return;
+    }
+
+    $stHist = $db->prepare(
+        'SELECT to_status FROM booking_status_history
+          WHERE booking_type = ? AND booking_id = ?
+          ORDER BY changed_at DESC, id DESC LIMIT 1'
+    );
+    $stHist->bind_param('si', $booking_type, $booking_id);
+    $stHist->execute();
+    $histRow = $stHist->get_result()->fetch_assoc();
+    $stHist->close();
+    if ($histRow && (string) ($histRow['to_status'] ?? '') === 'cancelled') {
+        finance_unsync_booking_crew($booking_type, $booking_id, $company_id);
+        return;
+    }
+
+    $stLines = $db->prepare(
+        "SELECT bcl.id, bcl.cost_type, bcl.amount, bcl.created_user, bcl.created_date,
+                e.name AS employee_name
+           FROM booking_cost_lines bcl
+           LEFT JOIN employees e ON e.id = bcl.employee_id
+          WHERE bcl.company_id = ? AND bcl.booking_type = ? AND bcl.booking_id = ?
+            AND bcl.cost_type <> 'payment'
+            AND bcl.employee_id IS NOT NULL AND bcl.employee_id > 0
+            AND bcl.amount > 0
+          ORDER BY bcl.id ASC"
+    );
+    $stLines->bind_param('isi', $company_id, $booking_type, $booking_id);
+    $stLines->execute();
+    $lines = $stLines->get_result()->fetch_all(MYSQLI_ASSOC);
+    $stLines->close();
+
+    if (!$lines) {
+        finance_unsync_booking_crew($booking_type, $booking_id, $company_id);
+        return;
+    }
+
+    $ids = array_map(static fn (array $r): int => (int) $r['id'], $lines);
+    $ph  = implode(',', array_fill(0, count($ids), '?'));
+
+    // Hapus baris crew_commission lama milik booking ini yang tidak lagi ada di $ids
+    $stPrune = $db->prepare(
+        "DELETE ct FROM cash_transactions ct
+           JOIN booking_cost_lines bcl ON ct.source_type = 'crew_commission' AND ct.source_id = bcl.id
+          WHERE bcl.booking_type = ? AND bcl.booking_id = ? AND bcl.company_id = ? AND ct.company_id = ?
+            AND bcl.id NOT IN ({$ph})"
+    );
+    $stPrune->bind_param('siii' . str_repeat('i', count($ids)), $booking_type, $booking_id, $company_id, $company_id, ...$ids);
+    $stPrune->execute();
+    $stPrune->close();
+
+    $src   = 'crew_commission';
+    $stEx  = $db->prepare("SELECT id, source_id FROM cash_transactions WHERE source_type = ? AND source_id IN ({$ph})");
+    $stEx->bind_param('s' . str_repeat('i', count($ids)), $src, ...$ids);
+    $stEx->execute();
+    $existingMap = [];
+    foreach ($stEx->get_result()->fetch_all(MYSQLI_ASSOC) as $ex) {
+        $existingMap[(int) $ex['source_id']] = (int) $ex['id'];
+    }
+    $stEx->close();
+
+    $rawTripDate = (string) ($bk['trip_date'] ?? '');
+    $txDate      = preg_match('/^\d{4}-\d{2}-\d{2}/', $rawTripDate) ? substr($rawTripDate, 0, 10) : date('Y-m-d');
+    $docNo       = trim((string) ($bk['document_number'] ?? ''));
+    $category    = 'Biaya Komisi Karyawan';
+
+    $insTx = $db->prepare(
+        "INSERT INTO cash_transactions
+            (company_id, date, direction, amount, category, description, source_type, source_id, created_user, created_date)
+         VALUES (?, ?, 'out', ?, ?, ?, 'crew_commission', ?, ?, ?)"
+    );
+    $updTx = $db->prepare(
+        'UPDATE cash_transactions
+            SET date = ?, amount = ?, category = ?, description = ?, modified_user = ?, modified_date = NOW()
+          WHERE id = ? AND company_id = ?'
+    );
+
+    foreach ($lines as $ln) {
+        $bclId  = (int) $ln['id'];
+        $amount = round((float) $ln['amount'], 2);
+        if ($amount <= 0) {
+            continue;
+        }
+        $ctype   = trim((string) ($ln['cost_type'] ?? 'Komisi'));
+        $empName = trim((string) ($ln['employee_name'] ?? ''));
+        $txDesc  = mb_substr(
+            'Komisi ' . $ctype . ($empName !== '' ? ' · ' . $empName : '') . ($docNo !== '' ? ' (' . $docNo . ')' : ''),
+            0,
+            1000
+        );
+        $txUser    = (string) ($user ?: ($ln['created_user'] ?? 'system'));
+        $txCreated = !empty($ln['created_date']) ? (string) $ln['created_date'] : date('Y-m-d H:i:s');
+
+        if (!empty($existingMap[$bclId])) {
+            $txId = $existingMap[$bclId];
+            $updTx->bind_param('sdsssii', $txDate, $amount, $category, $txDesc, $txUser, $txId, $company_id);
+            $updTx->execute();
+        } else {
+            $insTx->bind_param('isdssiss', $company_id, $txDate, $amount, $category, $txDesc, $bclId, $txUser, $txCreated);
+            $insTx->execute();
+        }
+    }
+
+    $insTx->close();
+    $updTx->close();
+}
+
+/**
+ * Backfill idempoten penugasan kru booking yang sudah ada ke Pengeluaran (`cash_transactions`).
+ */
+function finance_backfill_booking_crew_to_cash(): void
+{
+    static $done = false;
+    if ($done) {
+        return;
+    }
+    $done = true;
+
+    $db  = db();
+    $res = $db->query(
+        "SELECT DISTINCT bcl.booking_type, bcl.booking_id, bcl.company_id
+           FROM booking_cost_lines bcl
+           LEFT JOIN cash_transactions ct
+                  ON ct.source_type = 'crew_commission' AND ct.source_id = bcl.id
+          WHERE bcl.cost_type <> 'payment'
+            AND bcl.employee_id IS NOT NULL AND bcl.employee_id > 0
+            AND bcl.amount > 0
+            AND ct.id IS NULL"
+    );
+    if (!$res) {
+        return;
+    }
+    $targets = $res->fetch_all(MYSQLI_ASSOC);
+    $res->close();
+    foreach ($targets as $t) {
+        finance_sync_booking_crew_to_cash(
+            (string) $t['booking_type'],
+            (int) $t['booking_id'],
+            (int) $t['company_id'],
+            null
+        );
+    }
 }
 
 /**

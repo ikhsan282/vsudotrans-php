@@ -1203,7 +1203,6 @@ document.addEventListener('DOMContentLoaded', function () {
         scheduleContainerEl: document.getElementById('travelRouteSchedulesBar'),
         timeInputEl: travelTimeEl,
         autoFillZero: false,
-        notFoundText: 'Tidak ditemukan tarif rute aktif untuk pasangan kota ini.',
         onPriceApplied: function () { payCtrl.recalcPayTotals(); }
     });
 

@@ -1,20 +1,13 @@
 <?php
 /**
- * Detail & Form karyawan (create/edit/view-only) + Tab Komponen Gaji bermasa berlaku.
- * Edit/Create data pokok wajib employees.manage; view wajib employees.view;
- * tab Komponen Gaji wajib payroll.view (kelola: payroll.manage).
+ * Detail & Form karyawan (create/edit/view-only).
+ * Edit/Create wajib employees.manage; view wajib employees.view.
  */
 require_once __DIR__ . '/../../config/config.php';
 require_once __DIR__ . '/_helpers.php';
 require_permission('employees.view');
 
-$canManage        = can('employees.manage');
-$canSeeSalary     = can('payroll.view');
-$canManagePayroll = can('payroll.manage');
-if ($canSeeSalary) {
-    require_once __DIR__ . '/../../includes/payroll_service.php';
-    payroll_ensure_salary_schema();
-}
+$canManage = can('employees.manage');
 
 $id = (int) ($_GET['id'] ?? $_POST['id'] ?? 0);
 
@@ -36,73 +29,10 @@ if ($id > 0) {
     employee_scope_cid();
 }
 
-$errors    = [];
-$sc_errors = [];
-$input     = $row ?? [];
-$sc_input  = [
-    'assign_id'           => 0,
-    'salary_component_id' => 0,
-    'amount'              => 0.0,
-    'effective_from'      => date('Y-m-d'),
-    'effective_to'        => '',
-    'note'                => '',
-];
+$errors = [];
+$input  = $row ?? [];
 
-// Handler POST khusus tab Komponen Gaji (save / delete assignment)
-if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['sc_action'])) {
-    verify_csrf();
-    if (!$canManagePayroll || $id <= 0 || !$row) {
-        http_response_code(403);
-        include __DIR__ . '/../../includes/403.php';
-        exit;
-    }
-    $emp_cid_sc = (int) $row['company_id'];
-    assert_company_access($emp_cid_sc);
-    $scAct = (string) $_POST['sc_action'];
-
-    try {
-        if ($scAct === 'delete') {
-            $aid = (int) ($_POST['assign_id'] ?? 0);
-            payroll_assignment_delete($aid, $emp_cid_sc);
-            audit('employee_salary_component.delete', "Hapus komponen gaji #{$aid} karyawan #{$id}");
-            flash('success', 'Komponen gaji karyawan berhasil dihapus.');
-        } else {
-            $aid     = (int) ($_POST['assign_id'] ?? 0);
-            $scId    = (int) ($_POST['salary_component_id'] ?? 0);
-            $amt     = payroll_parse_money($_POST['amount'] ?? '0');
-            $from    = (string) ($_POST['effective_from'] ?? '');
-            $to      = trim((string) ($_POST['effective_to'] ?? ''));
-            $noteSc  = trim((string) ($_POST['note'] ?? ''));
-            $autoCls = !empty($_POST['auto_close_prev']);
-
-            $savedAid = payroll_assignment_save(
-                $aid,
-                $emp_cid_sc,
-                $id,
-                $scId,
-                $amt,
-                $from,
-                $to !== '' ? $to : null,
-                $noteSc !== '' ? $noteSc : null,
-                $_SESSION['username'] ?? null,
-                $autoCls
-            );
-            audit($aid === 0 ? 'employee_salary_component.create' : 'employee_salary_component.update', "Assign komponen #{$scId} (assign #{$savedAid}) karyawan #{$id} (" . rupiah($amt) . ')');
-            flash('success', $aid === 0 ? 'Komponen gaji berhasil di-assign ke karyawan.' : 'Komponen gaji berhasil diperbarui.');
-        }
-        redirect('pages/employees/detail.php?id=' . $id . '&tab=salary');
-    } catch (Throwable $ex) {
-        $sc_errors[] = $ex->getMessage();
-        $sc_input = [
-            'assign_id'           => (int) ($_POST['assign_id'] ?? 0),
-            'salary_component_id' => (int) ($_POST['salary_component_id'] ?? 0),
-            'amount'              => payroll_parse_money($_POST['amount'] ?? '0'),
-            'effective_from'      => (string) ($_POST['effective_from'] ?? ''),
-            'effective_to'        => (string) ($_POST['effective_to'] ?? ''),
-            'note'                => (string) ($_POST['note'] ?? ''),
-        ];
-    }
-} elseif ($_SERVER['REQUEST_METHOD'] === 'POST') {
+if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     verify_csrf();
     if (!$canManage) {
         http_response_code(403);
@@ -176,38 +106,6 @@ $title_unlisted = $cur_title !== '' && !in_array($cur_title, array_column($title
 $pos_unlisted   = $cur_pos !== '' && !in_array($cur_pos, array_column($pos_opts, 'name'), true);
 $org_unlisted   = $cur_org !== '' && !in_array($cur_org, array_column($org_opts, 'name'), true);
 
-// Data Tab Komponen Gaji (khusus existing employee & payroll.view)
-$scStatusFilter = '';
-$scRows         = [];
-$scCompOpts     = [];
-$scTodayEff     = ['components' => [], 'monthly_earning' => 0.0, 'daily_earning' => 0.0, 'monthly_deduction' => 0.0, 'daily_deduction' => 0.0];
-if ($id > 0 && $row && $canSeeSalary) {
-    $scStatusFilter = trim((string) ($_GET['sc_status'] ?? ''));
-    if (!in_array($scStatusFilter, ['active', 'upcoming', 'expired'], true)) {
-        $scStatusFilter = '';
-    }
-    $scRows     = payroll_employee_assignments($id, (int) $row['company_id'], $scStatusFilter);
-    $scCompOpts = payroll_component_options((int) $row['company_id'], true);
-    $scTodayEff = payroll_employee_effective_components($id, (int) $row['company_id'], date('Y-m-d'), date('Y-m-d'));
-
-    $editScId = (int) ($_GET['edit_sc'] ?? 0);
-    if ($editScId > 0 && $canManagePayroll && !$sc_errors) {
-        $editScRow = payroll_assignment_find($editScId);
-        if ($editScRow && (int) $editScRow['employee_id'] === $id && (int) $editScRow['company_id'] === (int) $row['company_id']) {
-            $sc_input = [
-                'assign_id'           => (int) $editScRow['id'],
-                'salary_component_id' => (int) $editScRow['salary_component_id'],
-                'amount'              => (float) $editScRow['amount'],
-                'effective_from'      => (string) $editScRow['effective_from'],
-                'effective_to'        => (string) ($editScRow['effective_to'] ?? ''),
-                'note'                => (string) ($editScRow['note'] ?? ''),
-            ];
-        }
-    }
-}
-
-$activeTab = ($id > 0 && $canSeeSalary && (($_GET['tab'] ?? '') === 'salary' || $sc_errors !== [])) ? 'salary' : 'detail';
-
 $title = $id > 0 ? ('Karyawan - ' . $v('name')) : 'Tambah Karyawan';
 $active = 'employees';
 require __DIR__ . '/../../includes/header.php';
@@ -244,29 +142,11 @@ if ($canManage) {
         </div>
     <?php endif; ?>
 
-    <?php if ($sc_errors): ?>
-        <div class="alert alert-danger py-2 px-3 small mb-2">
-            <ul class="mb-0 ps-3">
-                <?php foreach ($sc_errors as $err): ?><li><?= e($err) ?></li><?php endforeach; ?>
-            </ul>
-        </div>
-    <?php endif; ?>
-
     <div class="erp-window-card">
         <ul class="nav nav-tabs erp-sub-tabs" id="employeeFormTabs" role="tablist">
             <li class="nav-item" role="presentation">
-                <button class="nav-link<?= $activeTab === 'detail' ? ' active' : '' ?>" id="tab-empf-detail-btn" data-bs-toggle="tab" data-bs-target="#tab-empf-detail" type="button" role="tab">Detail</button>
+                <button class="nav-link active" id="tab-empf-detail-btn" data-bs-toggle="tab" data-bs-target="#tab-empf-detail" type="button" role="tab">Detail</button>
             </li>
-            <?php if ($id > 0 && $canSeeSalary): ?>
-                <li class="nav-item" role="presentation">
-                    <button class="nav-link<?= $activeTab === 'salary' ? ' active' : '' ?>" id="tab-empf-salary-btn" data-bs-toggle="tab" data-bs-target="#tab-empf-salary" type="button" role="tab">
-                        Komponen Gaji
-                        <?php if ($scTodayEff['components']): ?>
-                            <span class="badge bg-primary-subtle text-primary border border-primary-subtle ms-1"><?= count($scTodayEff['components']) ?></span>
-                        <?php endif; ?>
-                    </button>
-                </li>
-            <?php endif; ?>
             <?php if ($id > 0): ?>
                 <li class="nav-item" role="presentation">
                     <button class="nav-link" id="tab-empf-audit-btn" data-bs-toggle="tab" data-bs-target="#tab-empf-audit" type="button" role="tab">Audit Trail</button>
@@ -276,7 +156,7 @@ if ($canManage) {
 
         <div class="erp-content-body">
             <div class="tab-content" id="employeeFormTabContent">
-                <div class="tab-pane fade<?= $activeTab === 'detail' ? ' show active' : '' ?>" id="tab-empf-detail" role="tabpanel" aria-labelledby="tab-empf-detail-btn">
+                <div class="tab-pane fade show active" id="tab-empf-detail" role="tabpanel" aria-labelledby="tab-empf-detail-btn">
                     <?php if ($canManage): ?>
                     <form method="post" action="<?= e(APP_URL) ?>/pages/employees/detail.php<?= $id > 0 ? '?id=' . $id : '' ?>" id="formEmployee" enctype="multipart/form-data">
                         <?= csrf_field() ?>
@@ -619,172 +499,6 @@ if ($canManage) {
                     </script>
                     <?php endif; ?>
                 </div>
-
-                <?php if ($id > 0 && $canSeeSalary): ?>
-                <div class="tab-pane fade<?= $activeTab === 'salary' ? ' show active' : '' ?>" id="tab-empf-salary" role="tabpanel" aria-labelledby="tab-empf-salary-btn">
-                    <div class="row g-2 mb-3">
-                        <div class="col-12 col-md-4">
-                            <div class="border rounded-2 p-2 px-3 bg-body-tertiary h-100">
-                                <div class="small text-muted">Pendapatan Tetap / Bulan (Aktif)</div>
-                                <div class="fs-5 fw-bold text-primary font-monospace"><?= e(rupiah($scTodayEff['monthly_earning'])) ?></div>
-                            </div>
-                        </div>
-                        <div class="col-12 col-md-4">
-                            <div class="border rounded-2 p-2 px-3 bg-body-tertiary h-100">
-                                <div class="small text-muted">Tarif Harian / Hari Hadir (Aktif)</div>
-                                <div class="fs-5 fw-bold text-info font-monospace"><?= e(rupiah($scTodayEff['daily_earning'])) ?></div>
-                            </div>
-                        </div>
-                        <div class="col-12 col-md-4">
-                            <div class="border rounded-2 p-2 px-3 bg-body-tertiary h-100 d-flex justify-content-between align-items-center gap-2">
-                                <div>
-                                    <div class="small text-muted">Potongan Tetap / Bulan (Aktif)</div>
-                                    <div class="fs-5 fw-bold text-danger font-monospace"><?= e(rupiah($scTodayEff['monthly_deduction'])) ?></div>
-                                </div>
-                                <a href="<?= e(APP_URL) ?>/pages/hr/salary_components/index.php" class="btn btn-sm btn-outline-secondary text-nowrap">
-                                    <i class="bi bi-sliders me-1"></i>Master
-                                </a>
-                            </div>
-                        </div>
-                    </div>
-
-                    <?php if ($canManagePayroll): ?>
-                    <div class="rnt-panel mb-3">
-                        <div class="rnt-panel-header">
-                            <span><i class="bi bi-plus-circle me-1 text-primary"></i><?= $sc_input['assign_id'] > 0 ? 'Ubah Penugasan Komponen #' . $sc_input['assign_id'] : 'Assign Komponen Gaji' ?></span>
-                            <?php if ($sc_input['assign_id'] > 0): ?>
-                                <a href="<?= e(APP_URL) ?>/pages/employees/detail.php?id=<?= $id ?>&amp;tab=salary" class="btn btn-sm btn-outline-secondary py-0 px-2">Batal Ubah</a>
-                            <?php endif; ?>
-                        </div>
-                        <div class="rnt-panel-body">
-                            <form method="post" action="<?= e(APP_URL) ?>/pages/employees/detail.php?id=<?= $id ?>&amp;tab=salary" id="formEmpSalaryComp" class="row g-2 align-items-end">
-                                <?= csrf_field() ?>
-                                <input type="hidden" name="id" value="<?= $id ?>">
-                                <input type="hidden" name="sc_action" value="save">
-                                <input type="hidden" name="assign_id" value="<?= (int) $sc_input['assign_id'] ?>">
-
-                                <div class="col-12 col-md-4">
-                                    <label class="form-label small fw-semibold mb-1">Komponen Gaji <span class="text-danger">*</span></label>
-                                    <select name="salary_component_id" class="form-select form-select-sm" required>
-                                        <option value="">— Pilih Komponen —</option>
-                                        <?php foreach ($scCompOpts as $co): ?>
-                                            <option value="<?= (int) $co['id'] ?>"<?= (int) $sc_input['salary_component_id'] === (int) $co['id'] ? ' selected' : '' ?>>
-                                                <?= e($co['code'] . ' — ' . $co['name'] . ' (' . ($co['category'] === 'deduction' ? 'Potongan' : 'Pendapatan') . ' · ' . ($co['calc_basis'] === 'daily' ? 'Harian' : 'Bulanan') . ')') ?>
-                                            </option>
-                                        <?php endforeach; ?>
-                                    </select>
-                                </div>
-
-                                <div class="col-6 col-md-2">
-                                    <label class="form-label small fw-semibold mb-1">Nominal (Rp) <span class="text-danger">*</span></label>
-                                    <input type="text" inputmode="numeric" name="amount" class="form-control form-control-sm font-monospace" required
-                                           value="<?= e(number_format((float) $sc_input['amount'], 0, ',', '.')) ?>">
-                                </div>
-
-                                <div class="col-6 col-md-3">
-                                    <label class="form-label small fw-semibold mb-1">Berlaku Mulai <span class="text-danger">*</span></label>
-                                    <input type="text" name="effective_from" class="form-control form-control-sm bg-white flatpickr-date" data-flatpickr-auto required
-                                           placeholder="dd-MMM-yyyy" value="<?= e($sc_input['effective_from']) ?>">
-                                </div>
-
-                                <div class="col-6 col-md-3">
-                                    <label class="form-label small fw-semibold mb-1">Berlaku Sampai</label>
-                                    <input type="text" name="effective_to" class="form-control form-control-sm bg-white flatpickr-date" data-flatpickr-auto
-                                           placeholder="Tanpa batas" value="<?= e($sc_input['effective_to']) ?>">
-                                </div>
-
-                                <div class="col-12 col-md-5">
-                                    <label class="form-label small fw-semibold mb-1">Catatan</label>
-                                    <input type="text" name="note" class="form-control form-control-sm" maxlength="500" placeholder="Keterangan SK / penyesuaian (opsional)"
-                                           value="<?= e($sc_input['note']) ?>">
-                                </div>
-
-                                <div class="col-12 col-md-5">
-                                    <div class="form-check mb-1">
-                                        <input class="form-check-input" type="checkbox" name="auto_close_prev" id="empScAutoClose" value="1"<?= $sc_input['assign_id'] === 0 ? ' checked' : '' ?>>
-                                        <label class="form-check-label small" for="empScAutoClose">Tutup otomatis masa berlaku sebelumnya pada komponen sama (H-1)</label>
-                                    </div>
-                                </div>
-
-                                <div class="col-12 col-md-2 text-md-end">
-                                    <button type="submit" class="btn btn-sm btn-primary w-100">
-                                        <i class="bi bi-check2-circle me-1"></i><?= $sc_input['assign_id'] > 0 ? 'Perbarui' : 'Assign' ?>
-                                    </button>
-                                </div>
-                            </form>
-                        </div>
-                    </div>
-                    <?php endif; ?>
-
-                    <div class="rnt-panel mb-0">
-                        <div class="rnt-panel-header">
-                            <span>Riwayat &amp; Daftar Komponen Gaji</span>
-                            <div class="d-flex flex-wrap gap-1">
-                                <?php foreach (['' => 'Semua', 'active' => 'Aktif', 'upcoming' => 'Akan Datang', 'expired' => 'Berakhir'] as $stKey => $stLbl):
-                                    $isCur = $scStatusFilter === $stKey;
-                                    $stHref = APP_URL . '/pages/employees/detail.php?id=' . $id . '&tab=salary' . ($stKey !== '' ? '&sc_status=' . $stKey : '');
-                                ?>
-                                    <a href="<?= e($stHref) ?>" class="btn btn-xs <?= $isCur ? 'btn-primary' : 'btn-outline-secondary' ?>" style="font-size:.75rem;padding:.15rem .5rem;"><?= e($stLbl) ?></a>
-                                <?php endforeach; ?>
-                            </div>
-                        </div>
-                        <div class="rnt-panel-body p-0">
-                            <div class="table-responsive">
-                                <table class="erp-grid-table">
-                                    <thead>
-                                        <tr>
-                                            <th>Komponen</th>
-                                            <th>Jenis</th>
-                                            <th>Basis</th>
-                                            <th class="text-end">Nominal</th>
-                                            <th>Masa Berlaku</th>
-                                            <th>Status</th>
-                                            <th>Catatan</th>
-                                            <?php if ($canManagePayroll): ?><th class="text-end">Aksi</th><?php endif; ?>
-                                        </tr>
-                                    </thead>
-                                    <tbody>
-                                    <?php foreach ($scRows as $sr):
-                                        $fromFmt = date('d-M-Y', strtotime((string) $sr['effective_from']));
-                                        $toFmt   = !empty($sr['effective_to']) ? date('d-M-Y', strtotime((string) $sr['effective_to'])) : 'Selamanya';
-                                    ?>
-                                        <tr>
-                                            <td>
-                                                <div class="fw-semibold"><?= e((string) $sr['component_name']) ?></div>
-                                                <div class="small text-muted font-monospace"><?= e((string) $sr['component_code']) ?></div>
-                                            </td>
-                                            <td><?= payroll_component_category_badge((string) $sr['category']) ?></td>
-                                            <td><?= payroll_component_basis_badge((string) $sr['calc_basis']) ?></td>
-                                            <td class="text-end fw-semibold font-monospace"><?= e(rupiah((float) $sr['amount'])) ?></td>
-                                            <td class="small text-nowrap"><?= e($fromFmt) ?> <span class="text-muted">s/d</span> <?= e($toFmt) ?></td>
-                                            <td><?= payroll_assignment_status_badge((string) $sr['eff_status']) ?></td>
-                                            <td class="small text-muted"><?= e((string) ($sr['note'] ?? '—')) ?></td>
-                                            <?php if ($canManagePayroll): ?>
-                                            <td class="text-end text-nowrap">
-                                                <a href="<?= e(APP_URL) ?>/pages/employees/detail.php?id=<?= $id ?>&amp;tab=salary&amp;edit_sc=<?= (int) $sr['id'] ?>"
-                                                   class="btn btn-sm btn-outline-primary" title="Ubah" aria-label="Ubah"><i class="bi bi-pencil-square"></i></a>
-                                                <form method="post" action="<?= e(APP_URL) ?>/pages/employees/detail.php?id=<?= $id ?>&amp;tab=salary" class="d-inline"
-                                                      onsubmit="return confirm('Hapus penugasan komponen gaji <?= e($sr['component_name']) ?>?')">
-                                                    <?= csrf_field() ?>
-                                                    <input type="hidden" name="id" value="<?= $id ?>">
-                                                    <input type="hidden" name="sc_action" value="delete">
-                                                    <input type="hidden" name="assign_id" value="<?= (int) $sr['id'] ?>">
-                                                    <button type="submit" class="btn btn-sm btn-outline-danger" title="Hapus" aria-label="Hapus"><i class="bi bi-trash"></i></button>
-                                                </form>
-                                            </td>
-                                            <?php endif; ?>
-                                        </tr>
-                                    <?php endforeach; ?>
-                                    <?php if (!$scRows): ?>
-                                        <tr><td colspan="<?= $canManagePayroll ? 8 : 7 ?>" class="text-center text-muted py-4">Belum ada komponen gaji yang di-assign untuk karyawan ini.</td></tr>
-                                    <?php endif; ?>
-                                    </tbody>
-                                </table>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-                <?php endif; ?>
 
                 <?php if ($id > 0): ?>
                     <div class="tab-pane fade" id="tab-empf-audit" role="tabpanel" aria-labelledby="tab-empf-audit-btn">

@@ -1582,7 +1582,8 @@
           boundsWarnEl.classList.add('d-none');
         }
       }
-      return { ok: msg === '', message: msg, focusEl: priceDisp };
+      const isOk = msg === '';
+      return { ok: isOk, valid: isOk, message: msg, focusEl: priceDisp };
     }
 
     function renderEstimate(matched, forceApply) {
@@ -1590,9 +1591,8 @@
       renderSchedules(matched ? matched.schedules : null);
       if (!priceHint) return;
       if (!matched) {
-        priceHint.textContent = cfg.notFoundText || 'Tidak ditemukan tarif rute aktif untuk pasangan kota ini.';
-        priceHint.className = 'form-text text-muted small mt-1';
-        priceHint.style.display = 'block';
+        priceHint.textContent = '';
+        priceHint.style.display = 'none';
         if (btnApply) btnApply.style.display = 'none';
         validatePriceBounds();
         return;

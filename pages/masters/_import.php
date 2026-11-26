@@ -142,6 +142,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         if ($resolved_id !== null) {
                             $val = (string) $resolved_id;
                         }
+                    } elseif (isset($cols[$col]) && ($cols[$col]['type'] ?? '') === 'enum' && $val !== '') {
+                        $vLow = mb_strtolower(trim($val));
+                        foreach ($cols[$col]['options'] ?? [] as $ek => $elbl) {
+                            if ($vLow === mb_strtolower((string) $ek) || $vLow === mb_strtolower((string) $elbl)) {
+                                $val = (string) $ek;
+                                break;
+                            }
+                        }
                     }
                     $raw[$col] = $val;
                 }

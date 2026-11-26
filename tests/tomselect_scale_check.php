@@ -1057,8 +1057,6 @@ try {
         '/pages/vehicles/models/index.php?company_id=1',
         '/pages/transport/passengers/index.php?company_id=1',
         '/pages/transport/regulations/index.php?company_id=1',
-        '/pages/hr/salary_components/index.php?company_id=1',
-        '/pages/hr/salary_components/assignments.php?company_id=1',
         '/pages/finance/cash/index.php?company_id=1',
         '/pages/finance/incomes/index.php?company_id=1',
         '/pages/finance/expenses/index.php?company_id=1',

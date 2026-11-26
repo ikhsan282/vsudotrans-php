@@ -2,7 +2,7 @@
 /**
  * Integration, Azure Blob Upload, RBAC & Report Reconciliation check:
  *   - Bukti struk/nota (Azure Blob) & form ringkas tanpa payment_method_id / vehicle_id
- *   - Rekap & Pembayaran Komisi Sopir/Kru + auto Kas Keluar + pembatalan pencairan + RBAC
+ *   - Sinkronisasi otomatis penugasan Komisi Sopir/Kru dari Booking ke Pengeluaran / Buku Kas (`source_type='crew_commission'`)
  *   - Pengeluaran Kas per Kategori & Laba Bersih Operasional
  *     (tanpa double-counting crew_commission) di halaman & export Laporan Keuangan.
  *
@@ -10,7 +10,6 @@
  */
 require_once __DIR__ . '/../config/config.php';
 require_once __DIR__ . '/../includes/booking_service.php';
-require_once __DIR__ . '/../pages/finance/commissions/_query.php';
 require_once __DIR__ . '/../pages/reports/_finance_query.php';
 
 $base = rtrim($argv[1] ?? 'http://127.0.0.1:8080/vsudotrans-php', '/');
@@ -82,11 +81,12 @@ $loginAs = static function (string $jar, string $user, string $pw) use ($http): 
     return $res['code'] === 302;
 };
 
-$tmpTxIds     = [];
-$tmpCostIds   = [];
-$tmpBlobs     = [];
-$tmpBookingId = 0;
-$tmpPaxId     = 0;
+$tmpTxIds      = [];
+$tmpCostIds    = [];
+$tmpBlobs      = [];
+$tmpBookingId  = 0;
+$tmpRentalBbmId = 0;
+$tmpPaxId      = 0;
 $tmpEmpId     = 0;
 $tmpStaffId   = 0;
 
@@ -193,8 +193,7 @@ try {
         'return'          => 'incomes',
         'date'            => $today,
         'amount'          => '320.000',
-        'category_preset' => 'Setoran Modal',
-        'category_custom' => '',
+        'category_preset' => 'Pemasukan Lainnya',
         'description'     => $markerInc,
     ], ['proof_file' => $imgTmp]);
     fp_ok($postInc['code'] === 302, 'POST Pemasukan + upload bukti PNG berhasil (302)');
@@ -214,7 +213,9 @@ try {
     }
     fp_ok($incTxId > 0 && $incBlob !== '', 'Pemasukan menyimpan proof_blob_path Azure Blob (' . $incBlob . ')');
 
-    echo "\n=== POIN 2: Rekap & Pembayaran Komisi Sopir / Kru ===\n";
+    echo "\n=== POIN 2: Mapping Otomatis Penugasan Sopir / Kru Booking ke Pengeluaran ===\n";
+    fp_ok($http($jarAdmin, '/pages/finance/commissions/index.php')['code'] === 404, 'Menu pages/finance/commissions/index.php sudah dihapus (404)');
+
     $branch1 = (int) $db->query('SELECT id FROM branches WHERE company_id = 1 LIMIT 1')->fetch_column();
     $distRow = $db->query('SELECT id, city_id, province_id FROM districts ORDER BY id ASC LIMIT 1')->fetch_assoc();
     $paxCode = 'FP123P' . random_int(100, 999);
@@ -253,76 +254,99 @@ try {
     ]);
     $tmpBookingId = (int) $tb['id'];
 
-    $stLine = $db->prepare(
-        "INSERT INTO booking_cost_lines (company_id, booking_type, booking_id, cost_type, description, amount, employee_id, premi_type, premi_value, premi_amount, note, created_user)
-         VALUES (1, 'travel', ?, ?, ?, ?, ?, 'nominal', ?, ?, 'Komisi uji', 'fp123-check')"
-    );
-    foreach ([['Sopir', 140000.0], ['Uang Jalan', 60000.0]] as [$ctLbl, $amtVal]) {
-        $stLine->bind_param('issdidd', $tmpBookingId, $ctLbl, $ctLbl, $amtVal, $tmpEmpId, $amtVal, $amtVal);
-        $stLine->execute();
-        $tmpCostIds[] = (int) $db->insert_id;
+    booking_crew_sync('travel', $tmpBookingId, 1, 0.0, [
+        ['type' => 'Sopir', 'employee_id' => $tmpEmpId, 'amount' => 140000.0],
+        ['type' => 'Uang Jalan', 'employee_id' => $tmpEmpId, 'amount' => 60000.0],
+    ], $veh1Id, 'fp123-check');
+
+    $costRows = $db->query("SELECT id FROM booking_cost_lines WHERE booking_type = 'travel' AND booking_id = {$tmpBookingId} AND cost_type <> 'payment' ORDER BY id ASC")->fetch_all(MYSQLI_ASSOC);
+    $tmpCostIds = array_map('intval', array_column($costRows, 'id'));
+    fp_ok(count($tmpCostIds) === 2, '2 baris penugasan kru booking_cost_lines dibuat (Rp 140.000 + Rp 60.000 = Rp 200.000)');
+
+    $inCostPh = implode(',', $tmpCostIds);
+    $syncedComm = $db->query("SELECT id, direction, amount, category, source_type, source_id, description FROM cash_transactions WHERE company_id = 1 AND source_type = 'crew_commission' AND source_id IN ({$inCostPh}) ORDER BY id ASC")->fetch_all(MYSQLI_ASSOC);
+    $sumSynced = 0.0;
+    foreach ($syncedComm as $sc) {
+        $tmpTxIds[] = (int) $sc['id'];
+        $sumSynced += (float) $sc['amount'];
     }
-    $stLine->close();
-    fp_ok(count($tmpCostIds) === 2, '2 baris komisi booking_cost_lines dibuat (Rp 140.000 + Rp 60.000 = Rp 200.000)');
-
-    $commIdx0 = $http($jarAdmin, '/pages/finance/commissions/index.php?from=' . urlencode($today) . '&to=' . urlencode($today) . '&employee_id=' . $tmpEmpId);
+    $commTxId = (int) ($syncedComm[0]['id'] ?? 0);
     fp_ok(
-        $commIdx0['code'] === 200
-        && str_contains($commIdx0['body'], $empName)
-        && str_contains($commIdx0['body'], $tb['document_number'])
-        && str_contains($commIdx0['body'], 'Belum Dibayar'),
-        'GET commissions/index.php (200) menampilkan baris komisi Sopir uji sebagai Belum Dibayar'
-    );
-    preg_match('/name="csrf_token"\s+value="([^"]+)"/', $commIdx0['body'], $mcComm);
-
-    // Bayar kedua baris komisi via HTTP POST multipart
-    $payRes = $http($jarAdmin, '/pages/finance/commissions/pay.php', [
-        'csrf_token'        => $mcComm[1] ?? '',
-        'company_id'        => '1',
-        'return_qs'         => 'from=' . $today . '&to=' . $today . '&employee_id=' . $tmpEmpId,
-        'pay_date' => $today,
-        'note'     => 'Pencairan Uji FP123',
-        'line_ids' => array_map('strval', $tmpCostIds),
-    ], ['proof_file' => $imgTmp]);
-    fp_ok($payRes['code'] === 302, 'POST commissions/pay.php mencairkan 2 baris komisi (302)');
-
-    $inCostPh = implode(',', array_map('intval', $tmpCostIds));
-    $paidRows = $db->query("SELECT id, paid_cash_tx_id, paid_at FROM booking_cost_lines WHERE id IN ({$inCostPh})")->fetch_all(MYSQLI_ASSOC);
-    $commTxId = (int) ($paidRows[0]['paid_cash_tx_id'] ?? 0);
-    if ($commTxId > 0) {
-        $tmpTxIds[] = $commTxId;
-    }
-    fp_ok(
-        count($paidRows) === 2
-        && $commTxId > 0
-        && (int) ($paidRows[1]['paid_cash_tx_id'] ?? 0) === $commTxId
-        && !empty($paidRows[0]['paid_at']),
-        "Kedua baris booking_cost_lines tertaut ke paid_cash_tx_id=#{$commTxId} & paid_at terisi"
+        count($syncedComm) === 2
+        && abs($sumSynced - 200000.0) < 0.01
+        && $syncedComm[0]['direction'] === 'out'
+        && $syncedComm[0]['category'] === 'Biaya Komisi Karyawan'
+        && str_contains((string) $syncedComm[0]['description'], $empName),
+        'Penugasan kru otomatis masuk ke cash_transactions (out, Biaya Komisi Karyawan, Rp 200.000)'
     );
 
-    $txComm = $db->query("SELECT direction, amount, category, source_type, proof_blob_path FROM cash_transactions WHERE id = {$commTxId}")->fetch_assoc();
-    if (!empty($txComm['proof_blob_path'])) {
-        $tmpBlobs[] = (string) $txComm['proof_blob_path'];
-    }
-    fp_ok(
-        $txComm
-        && $txComm['direction'] === 'out'
-        && abs((float) $txComm['amount'] - 200000.0) < 0.01
-        && $txComm['source_type'] === 'crew_commission'
-        && !empty($txComm['proof_blob_path']),
-        'Transaksi kas keluar #'.$commTxId.' tercatat sebesar Rp 200.000 dengan source_type=crew_commission & bukti terunggah'
-    );
-
-    // Pastikan pencairan komisi muncul di Pengeluaran namun diproteksi dari hapus manual di expenses/delete.php
+    // Pastikan transaksi komisi muncul di Pengeluaran ber-tautan ke detail booking #tab-crew & terproteksi dari hapus manual
     $expCommCheck = $http($jarAdmin, '/pages/finance/expenses/index.php?from=' . urlencode($today) . '&to=' . urlencode($today));
-    fp_ok(str_contains($expCommCheck['body'], 'Komisi Kru'), 'Pengeluaran menampilkan badge Komisi Kru untuk transaksi pencairan');
+    fp_ok(
+        str_contains($expCommCheck['body'], 'Komisi Kru')
+        && str_contains($expCommCheck['body'], 'travel/bookings/detail.php?id=' . $tmpBookingId . '&amp;tab=crew#tab-crew'),
+        'Pengeluaran menampilkan badge Komisi Kru tertaut ke detail booking #tab-crew'
+    );
     preg_match('/name="csrf_token"\s+value="([^"]+)"/', $expCommCheck['body'], $mcGuardDel);
     $guardDel = $http($jarAdmin, '/pages/finance/expenses/delete.php', [
-        'csrf_token' => $mcGuardDel[1] ?? ($mcComm[1] ?? ''),
+        'csrf_token' => $mcGuardDel[1] ?? '',
         'id'         => (string) $commTxId,
     ]);
     $stillCommTx = (int) $db->query("SELECT COUNT(*) FROM cash_transactions WHERE id = {$commTxId}")->fetch_row()[0];
-    fp_ok($guardDel['code'] === 302 && $stillCommTx === 1, 'Guard: pencairan komisi kru tidak bisa dihapus manual lewat expenses/delete.php');
+    fp_ok($guardDel['code'] === 302 && $stillCommTx === 1, 'Guard: komisi kru otomatis tidak bisa dihapus manual lewat expenses/delete.php');
+
+    // Uji sinkronisasi otomatis BBM pemesanan Rental -> Pengeluaran (BBM, Auto BBM)
+    $rbBbm = booking_create('rental', [
+        'company_id'                 => 1,
+        'branch_id'                  => $branch1,
+        'date'                       => $today,
+        'time'                       => '09:00:00',
+        'start_date'                 => $today,
+        'end_date'                   => $today,
+        'trip'                       => 1,
+        'pickup_address'             => 'Jemput BBM Uji',
+        'pickup_point_province_id'   => (int) $distRow['province_id'],
+        'pickup_point_city_id'       => (int) $distRow['city_id'],
+        'pickup_point_district_id'   => (int) $distRow['id'],
+        'delivery_address'           => 'Antar BBM Uji',
+        'delivery_point_province_id' => (int) $distRow['province_id'],
+        'delivery_point_city_id'     => (int) $distRow['city_id'],
+        'delivery_point_district_id' => (int) $distRow['id'],
+        'bbm'                        => 250000.0,
+        'total_price'                => 1200000.0,
+        'category_vehicle_id'        => null,
+        'vehicle_id'                 => $veh1Id,
+        'passenger_id'               => $tmpPaxId,
+        'note'                       => null,
+        'created_user'               => 'fp123-check',
+    ]);
+    $tmpRentalBbmId = (int) $rbBbm['id'];
+    $bbmTx = $db->query("SELECT id, direction, amount, category, description FROM cash_transactions WHERE company_id = 1 AND source_type = 'booking_bbm' AND source_id = {$tmpRentalBbmId} LIMIT 1")->fetch_assoc();
+    $bbmTxId = (int) ($bbmTx['id'] ?? 0);
+    if ($bbmTxId > 0) {
+        $tmpTxIds[] = $bbmTxId;
+    }
+    fp_ok(
+        $bbmTxId > 0
+        && $bbmTx['direction'] === 'out'
+        && $bbmTx['category'] === 'BBM'
+        && abs((float) $bbmTx['amount'] - 250000.0) < 0.01
+        && str_contains((string) $bbmTx['description'], $rbBbm['document_number']),
+        'BBM pemesanan Rental otomatis masuk ke cash_transactions (out, BBM, Rp 250.000)'
+    );
+
+    $expBbmCheck = $http($jarAdmin, '/pages/finance/expenses/index.php?from=' . urlencode($today) . '&to=' . urlencode($today));
+    fp_ok(
+        str_contains($expBbmCheck['body'], 'Auto BBM')
+        && str_contains($expBbmCheck['body'], 'rental/bookings/detail.php?id=' . $tmpRentalBbmId . '&amp;tab=crew#tab-crew'),
+        'Pengeluaran menampilkan badge Auto BBM tertaut ke detail rental #tab-crew'
+    );
+    $guardBbmDel = $http($jarAdmin, '/pages/finance/expenses/delete.php', [
+        'csrf_token' => $mcGuardDel[1] ?? '',
+        'id'         => (string) $bbmTxId,
+    ]);
+    $stillBbmTx = (int) $db->query("SELECT COUNT(*) FROM cash_transactions WHERE id = {$bbmTxId}")->fetch_row()[0];
+    fp_ok($guardBbmDel['code'] === 302 && $stillBbmTx === 1, 'Guard: transaksi Auto BBM tidak bisa dihapus manual lewat expenses/delete.php');
 
     echo "\n=== POIN 3: Pengeluaran per Kategori & Laba Bersih Operasional ===\n";
     $_SESSION['role_name'] = 'Admin Perusahaan';
@@ -330,8 +354,8 @@ try {
     $fFin = fin_report_filter(['from' => $today, 'to' => $today, 'booking_type' => 'all']);
     $finAll = fin_all($fFin, null);
 
-    // Periksa tidak terjadi double-counting: pencairan crew_commission Rp 200.000 masuk cash['out_commission'],
-    // BUKAN cash['out_operating'], karena Rp 200.000 sudah masuk ke trip cost_total!
+    // Periksa tidak terjadi double-counting: crew_commission (Rp 200.000) & booking_bbm (Rp 250.000)
+    // masuk cash['out_commission'] & cash['out_bbm'], BUKAN cash['out_operating'], karena sudah masuk ke trip cost_total!
     $expSumCats = fin_expense_category_totals($finAll['expense_categories']);
     fp_ok(
         isset($finAll['expense_categories'], $finAll['net_profit'], $finAll['net_summary'])
@@ -339,10 +363,12 @@ try {
         && abs($expSumCats['amount'] - (float) $finAll['cash']['out_total']) < 0.01,
         'fin_all() menyertakan expense_categories & totalnya cocok 100% dengan cash.out_total (' . rupiah($expSumCats['amount']) . ')'
     );
+    $expectedOperating = max(0.0, (float) $finAll['cash']['out_total'] - (float) $finAll['cash']['out_commission'] - (float) ($finAll['cash']['out_bbm'] ?? 0));
     fp_ok(
         (float) $finAll['cash']['out_commission'] >= 200000.0
-        && abs((float) $finAll['cash']['out_operating'] - ((float) $finAll['cash']['out_total'] - (float) $finAll['cash']['out_commission'])) < 0.01,
-        'Laba Bersih memisahkan out_commission agar tidak menghitung ganda biaya komisi trip'
+        && (float) ($finAll['cash']['out_bbm'] ?? 0) >= 250000.0
+        && abs((float) $finAll['cash']['out_operating'] - $expectedOperating) < 0.01,
+        'Laba Bersih memisahkan out_commission & out_bbm agar tidak menghitung ganda biaya komisi & BBM trip'
     );
     $expectedNet = (float) $finAll['gross_profit'] + (float) $finAll['cash']['in_other'] - (float) $finAll['cash']['out_operating'];
     fp_ok(abs((float) $finAll['net_profit'] - $expectedNet) < 0.01, 'Rumus Laba Bersih Operasional = gross_profit + in_other - out_operating akurat');
@@ -369,33 +395,48 @@ try {
     $rptPdf = $http($jarAdmin, '/pages/reports/finance_export.php?from=' . urlencode($today) . '&to=' . urlencode($today) . '&format=pdf');
     fp_ok($rptPdf['code'] === 200 && str_starts_with($rptPdf['body'], '%PDF-'), 'Export PDF Laporan Keuangan valid');
 
-    // Sekarang uji pembatalan pencairan komisi via cancel.php (setelah tes laporan selesai)
-    $commIdx1 = $http($jarAdmin, '/pages/finance/commissions/index.php?from=' . urlencode($today) . '&to=' . urlencode($today) . '&employee_id=' . $tmpEmpId);
-    fp_ok($commIdx1['code'] === 200 && str_contains($commIdx1['body'], 'Lunas'), 'Setelah bayar, status di commissions/index.php berubah menjadi Lunas');
-    preg_match('/name="csrf_token"\s+value="([^"]+)"/', $commIdx1['body'], $mcCancel);
+    // Uji sinkronisasi ulang kru, batal booking -> hapus kas keluar, lalu aktifkan ulang
+    booking_crew_sync('travel', $tmpBookingId, 1, 0.0, [
+        ['type' => 'Sopir', 'employee_id' => $tmpEmpId, 'amount' => 175000.0],
+    ], $veh1Id, 'fp123-check');
+    $reSyncCnt = (int) $db->query("SELECT COUNT(*) FROM cash_transactions ct JOIN booking_cost_lines bcl ON ct.source_type='crew_commission' AND ct.source_id=bcl.id WHERE bcl.booking_type='travel' AND bcl.booking_id={$tmpBookingId}")->fetch_row()[0];
+    $reSyncSum = (float) $db->query("SELECT COALESCE(SUM(ct.amount),0) FROM cash_transactions ct JOIN booking_cost_lines bcl ON ct.source_type='crew_commission' AND ct.source_id=bcl.id WHERE bcl.booking_type='travel' AND bcl.booking_id={$tmpBookingId}")->fetch_row()[0];
+    fp_ok($reSyncCnt === 1 && abs($reSyncSum - 175000.0) < 0.01, 'Re-sync booking_crew_sync memperbarui transaksi kas keluar tanpa duplikasi (Rp 175.000)');
 
-    $cancelRes = $http($jarAdmin, '/pages/finance/commissions/cancel.php', [
-        'csrf_token' => $mcCancel[1] ?? '',
-        'cash_tx_id' => (string) $commTxId,
-        'return_qs'  => 'from=' . $today . '&to=' . $today . '&employee_id=' . $tmpEmpId,
-    ]);
-    $afterCancelBcl = $db->query("SELECT COUNT(*) FROM booking_cost_lines WHERE id IN ({$inCostPh}) AND paid_cash_tx_id IS NULL")->fetch_row()[0];
-    $afterCancelTx  = $db->query("SELECT COUNT(*) FROM cash_transactions WHERE id = {$commTxId}")->fetch_row()[0];
-    fp_ok(
-        $cancelRes['code'] === 302 && (int) $afterCancelBcl === 2 && (int) $afterCancelTx === 0,
-        'POST commissions/cancel.php membatalkan pencairan, menghapus kas keluar, & mereset kedua baris menjadi Belum Dibayar'
-    );
+    booking_change_status('travel', $tmpBookingId, 1, 'cancelled', 'Uji batal komisi', 'fp123-check');
+    $afterCancelCnt = (int) $db->query("SELECT COUNT(*) FROM cash_transactions ct JOIN booking_cost_lines bcl ON ct.source_type='crew_commission' AND ct.source_id=bcl.id WHERE bcl.booking_type='travel' AND bcl.booking_id={$tmpBookingId}")->fetch_row()[0];
+    fp_ok($afterCancelCnt === 0, 'Saat booking dibatalkan (cancelled), transaksi komisi kru otomatis dihapus dari Pengeluaran');
+
+    booking_change_status('travel', $tmpBookingId, 1, 'draft', 'Uji aktifkan komisi', 'fp123-check');
+    $afterRestoreSum = (float) $db->query("SELECT COALESCE(SUM(ct.amount),0) FROM cash_transactions ct JOIN booking_cost_lines bcl ON ct.source_type='crew_commission' AND ct.source_id=bcl.id WHERE bcl.booking_type='travel' AND bcl.booking_id={$tmpBookingId}")->fetch_row()[0];
+    fp_ok(abs($afterRestoreSum - 175000.0) < 0.01, 'Saat status booking dipulihkan dari cancelled, transaksi komisi kru otomatis disinkronkan kembali');
+
+    // Uji update, nol-kan, batal & pulihkan BBM Rental via booking_rental_crew_sync + booking_change_status
+    booking_rental_crew_sync($tmpRentalBbmId, 1, 300000.0, [], $veh1Id, 'fp123-check');
+    $bbmUpdAmt = (float) $db->query("SELECT COALESCE(SUM(amount),0) FROM cash_transactions WHERE source_type='booking_bbm' AND source_id={$tmpRentalBbmId}")->fetch_row()[0];
+    fp_ok(abs($bbmUpdAmt - 300000.0) < 0.01, 'Update BBM via booking_rental_crew_sync memperbarui transaksi BBM menjadi Rp 300.000');
+
+    booking_rental_crew_sync($tmpRentalBbmId, 1, 0.0, [], $veh1Id, 'fp123-check');
+    $bbmZeroCnt = (int) $db->query("SELECT COUNT(*) FROM cash_transactions WHERE source_type='booking_bbm' AND source_id={$tmpRentalBbmId}")->fetch_row()[0];
+    fp_ok($bbmZeroCnt === 0, 'Mengubah BBM menjadi 0 otomatis menghapus transaksi BBM di Pengeluaran');
+
+    booking_rental_crew_sync($tmpRentalBbmId, 1, 250000.0, [], $veh1Id, 'fp123-check');
+    booking_change_status('rental', $tmpRentalBbmId, 1, 'cancelled', 'Uji batal BBM rental', 'fp123-check');
+    $bbmCancelCnt = (int) $db->query("SELECT COUNT(*) FROM cash_transactions WHERE source_type='booking_bbm' AND source_id={$tmpRentalBbmId}")->fetch_row()[0];
+    booking_change_status('rental', $tmpRentalBbmId, 1, 'draft', 'Uji aktifkan BBM rental', 'fp123-check');
+    $bbmRestoreAmt = (float) $db->query("SELECT COALESCE(SUM(amount),0) FROM cash_transactions WHERE source_type='booking_bbm' AND source_id={$tmpRentalBbmId}")->fetch_row()[0];
+    fp_ok($bbmCancelCnt === 0 && abs($bbmRestoreAmt - 250000.0) < 0.01, 'Saat rental cancelled transaksi BBM dihapus, dan saat dipulihkan otomatis disinkronkan kembali');
 
     // Uji hapus Pengeluaran dengan lampiran bukti -> transaksi terhapus dari DB
     preg_match('/name="csrf_token"\s+value="([^"]+)"/', $expIdx['body'], $mcDelExp);
     $delExpRes = $http($jarAdmin, '/pages/finance/expenses/delete.php', [
-        'csrf_token' => $mcDelExp[1] ?? ($mcComm[1] ?? ''),
+        'csrf_token' => $mcDelExp[1] ?? ($mcGuardDel[1] ?? ''),
         'id'         => (string) $expTxId,
     ]);
     $afterDelExp = (int) $db->query("SELECT COUNT(*) FROM cash_transactions WHERE id = {$expTxId}")->fetch_row()[0];
     fp_ok($delExpRes['code'] === 302 && $afterDelExp === 0, 'Hapus pengeluaran berbukti menghapus baris & membersihkan lampiran');
 
-    echo "\n=== RBAC Staff di Komisi Sopir / Kru ===\n";
+    echo "\n=== RBAC Staff di Keuangan / Pengeluaran ===\n";
     $stUname = 'fp_staff_' . getmypid();
     $stHash  = password_hash('Staff@1234', PASSWORD_DEFAULT);
     $stMail  = $stUname . '@test.local';
@@ -406,9 +447,8 @@ try {
     $stInsU->close();
 
     fp_ok($loginAs($jarStaff, $stUname, 'Staff@1234'), 'Login Staff uji HTTP OK');
-    fp_ok($http($jarStaff, '/pages/finance/commissions/index.php')['code'] === 403, 'RBAC: Staff ditolak 403 di commissions/index.php');
-    fp_ok($http($jarStaff, '/pages/finance/commissions/pay.php', ['csrf_token' => 'x'])['code'] === 403, 'RBAC: Staff ditolak 403 di commissions/pay.php');
-    fp_ok($http($jarStaff, '/pages/finance/commissions/cancel.php', ['csrf_token' => 'x'])['code'] === 403, 'RBAC: Staff ditolak 403 di commissions/cancel.php');
+    fp_ok($http($jarStaff, '/pages/finance/expenses/index.php')['code'] === 403, 'RBAC: Staff ditolak 403 di expenses/index.php');
+    fp_ok($http($jarStaff, '/pages/reports/finance.php')['code'] === 403, 'RBAC: Staff ditolak 403 di reports/finance.php');
 } finally {
     foreach ($tmpBlobs as $bp) {
         if ($bp !== '') {
@@ -421,6 +461,10 @@ try {
     }
     if ($tmpBookingId > 0) {
         try { booking_delete('travel', $tmpBookingId, 1); } catch (Throwable $e) {}
+    }
+    if ($tmpRentalBbmId > 0) {
+        try { booking_delete('rental', $tmpRentalBbmId, 1); } catch (Throwable $e) {}
+        $db->query("DELETE FROM cash_transactions WHERE source_type = 'booking_bbm' AND source_id = {$tmpRentalBbmId}");
     }
     if ($tmpEmpId > 0) {
         $db->query("DELETE FROM employees WHERE id = {$tmpEmpId}");

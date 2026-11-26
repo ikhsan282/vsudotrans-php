@@ -18,32 +18,77 @@ function cash_directions(): array
     return ['in' => 'Masuk', 'out' => 'Keluar'];
 }
 
-function cash_expense_categories(): array
+/**
+ * Daftar baris Master Kategori Kas aktif/nonaktif dari tabel `cash_categories`
+ * (global `company_id IS NULL` + milik perusahaan).
+ */
+function cash_master_categories(string $direction = 'all', ?int $company_id = null, bool $active_only = true): array
 {
-    return [
-        'BBM'                      => 'BBM / Solar / Bensin',
-        'Tol & Parkir'             => 'Tol, Parkir & Retribusi',
-        'Servis & Perawatan Armada'=> 'Servis, Oli, Ban & Sparepart Armada',
-        'Uang Jalan & Komisi Kru'  => 'Uang Jalan, Uang Makan & Komisi Sopir/Kru',
-        'Gaji & Tunjangan'         => 'Gaji, Tunjangan & Bonus Karyawan',
-        'Sewa & Utilitas Kantor'   => 'Sewa Kantor/Pool, Listrik, Air & Internet',
-        'Operasional & ATK'        => 'ATK, Konsumsi & Operasional Kantor',
-        'Pajak & Legalitas Armada' => 'Pajak Kendaraan, STNK, KIR & Asuransi',
-        'Lain-lain'                => 'Pengeluaran Lain-lain',
-    ];
+    finance_ensure_schema();
+    finance_ensure_global_cash_categories();
+
+    $where  = [];
+    $types  = '';
+    $params = [];
+
+    if (in_array($direction, ['in', 'out'], true)) {
+        $where[]  = 'direction = ?';
+        $types   .= 's';
+        $params[] = $direction;
+    }
+    if ($active_only) {
+        $where[] = 'is_active = 1';
+    }
+
+    if ($company_id !== null && $company_id > 0) {
+        $where[]  = '(company_id = ? OR company_id IS NULL)';
+        $types   .= 'i';
+        $params[] = $company_id;
+    } elseif ($company_id === 0 && is_super_admin()) {
+        // Super Admin filter "Semua Perusahaan": tampilkan semua kategori master
+    } elseif (active_company_id() !== null) {
+        $where[]  = '(company_id = ? OR company_id IS NULL)';
+        $types   .= 'i';
+        $params[] = (int) active_company_id();
+    } elseif (!is_super_admin()) {
+        $where[] = 'company_id IS NULL';
+    }
+
+    $whereSql = $where ? implode(' AND ', $where) : '1=1';
+    $sql = "SELECT id, company_id, code, name, direction, sort_order, is_active, note
+              FROM cash_categories
+             WHERE {$whereSql}
+             ORDER BY sort_order ASC, name ASC, id ASC";
+    $st = db()->prepare($sql);
+    if ($types !== '') {
+        $st->bind_param($types, ...$params);
+    }
+    $st->execute();
+    $rows = $st->get_result()->fetch_all(MYSQLI_ASSOC);
+    $st->close();
+    return $rows;
 }
 
-function cash_income_categories(): array
+function cash_expense_categories(?int $company_id = null): array
 {
-    return [
-        'Setoran Modal'      => 'Setoran Modal / Tambahan Kas',
-        'Pendapatan Travel'  => 'Pemasukan Tiket / Charter Travel Manual',
-        'Pendapatan Rental'  => 'Pemasukan Sewa Kendaraan Manual',
-        'Pelunasan Piutang'  => 'Pelunasan Piutang / Titipan',
-        'Komisi & Bagi Hasil'=> 'Komisi Agen, Mitra & Bagi Hasil',
-        'Refund / Retur'     => 'Pengembalian Dana / Refund Supplier',
-        'Pendapatan Lainnya' => 'Pemasukan Lain-lain',
-    ];
+    $out = [];
+    foreach (cash_master_categories('out', $company_id, true) as $row) {
+        $name = (string) $row['name'];
+        $note = trim((string) ($row['note'] ?? ''));
+        $out[$name] = $note !== '' ? $note : (string) $row['code'];
+    }
+    return $out;
+}
+
+function cash_income_categories(?int $company_id = null): array
+{
+    $out = [];
+    foreach (cash_master_categories('in', $company_id, true) as $row) {
+        $name = (string) $row['name'];
+        $note = trim((string) ($row['note'] ?? ''));
+        $out[$name] = $note !== '' ? $note : (string) $row['code'];
+    }
+    return $out;
 }
 
 /** Urai nominal uang format Indonesia (`250.000`, `250.000,50`) maupun desimal titik (`250000.50`). */
@@ -172,11 +217,14 @@ function cash_income_category_breakdown(array $f): array
     return cash_category_breakdown($f, 'in');
 }
 
-/** Daftar unik kategori (preset + transaksi yang sudah ada) untuk filter/datalist. */
+/** Daftar unik kategori (master + transaksi yang sudah ada) untuk filter. */
 function cash_distinct_categories(array $f, string $direction = 'out'): array
 {
     finance_ensure_schema();
-    $presets = $direction === 'in' ? array_keys(cash_income_categories()) : array_keys(cash_expense_categories());
+    $cidArg  = isset($f['company_id']) ? (int) $f['company_id'] : null;
+    $presets = $direction === 'in'
+        ? array_keys(cash_income_categories($cidArg))
+        : array_keys(cash_expense_categories($cidArg));
     $cf = [
         'from'       => '',
         'to'         => '',
@@ -460,11 +508,13 @@ function cash_tx_list(array $f, ?int $limit = null, int $offset = 0): array
     $tw = cash_tx_where($f);
     $sql = "SELECT t.id, t.company_id, c.code AS company_code, t.date, t.direction, t.amount, t.category, t.description, t.created_user,
             t.source_type, t.source_id, t.proof_blob_path,
-            inv.id AS ref_invoice_id, inv.booking_type AS ref_booking_type, inv.booking_id AS ref_booking_id
+            inv.id AS ref_invoice_id,
+            CASE WHEN t.source_type = 'booking_bbm' THEN 'rental' ELSE COALESCE(inv.booking_type, bcl.booking_type) END AS ref_booking_type,
+            CASE WHEN t.source_type = 'booking_bbm' THEN t.source_id ELSE COALESCE(inv.booking_id, bcl.booking_id) END AS ref_booking_id
         FROM cash_transactions t
         LEFT JOIN companies c ON c.id = t.company_id
-        LEFT JOIN booking_cost_lines bcl ON t.source_type = 'booking_payment' AND bcl.id = t.source_id
-        LEFT JOIN invoices inv ON bcl.description = CONCAT('INV#', inv.id)
+        LEFT JOIN booking_cost_lines bcl ON t.source_type IN ('booking_payment', 'crew_commission') AND bcl.id = t.source_id
+        LEFT JOIN invoices inv ON t.source_type = 'booking_payment' AND bcl.description = CONCAT('INV#', inv.id)
         WHERE " . $tw['sql'] . ' ORDER BY t.date ASC, t.id ASC';
     $types = $tw['types'];
     $params = $tw['params'];

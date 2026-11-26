@@ -172,26 +172,31 @@ function fin_cash_summary(array $f): array
             COALESCE(SUM(CASE WHEN t.direction = 'in' AND (t.source_type IS NULL OR t.source_type <> 'booking_payment') THEN t.amount ELSE 0 END), 0) AS in_other,
             COALESCE(SUM(CASE WHEN t.direction = 'out' AND t.source_type = 'payroll_period' THEN t.amount ELSE 0 END), 0) AS out_payroll,
             COALESCE(SUM(CASE WHEN t.direction = 'out' AND t.source_type = 'crew_commission' THEN t.amount ELSE 0 END), 0) AS out_commission,
+            COALESCE(SUM(CASE WHEN t.direction = 'out' AND t.source_type = 'booking_bbm' THEN t.amount ELSE 0 END), 0) AS out_bbm,
             COALESCE(SUM(CASE WHEN t.direction = 'out' AND (t.source_type IS NULL OR t.source_type <> 'payroll_period') THEN t.amount ELSE 0 END), 0) AS out_other
         FROM cash_transactions t
         WHERE " . ($w !== '' ? $w . ' AND ' : '') . 't.date BETWEEN ? AND ?';
     $r = report_run($sql, $wt . 'ss', array_merge($wp, [$f['from'], $f['to']]))[0] ?? [];
-    $inB   = (float) ($r['in_booking'] ?? 0);
-    $inO   = (float) ($r['in_other'] ?? 0);
-    $outP  = (float) ($r['out_payroll'] ?? 0);
-    $outC  = (float) ($r['out_commission'] ?? 0);
-    $outO  = (float) ($r['out_other'] ?? 0);
+    $inB    = (float) ($r['in_booking'] ?? 0);
+    $inO    = (float) ($r['in_other'] ?? 0);
+    $outP   = (float) ($r['out_payroll'] ?? 0);
+    $outC   = (float) ($r['out_commission'] ?? 0);
+    $outBbm = (float) ($r['out_bbm'] ?? 0);
+    $outO   = (float) ($r['out_other'] ?? 0);
     $outTot = $outP + $outO;
+    $outTripSynced = $outC + $outBbm;
     return [
-        'in_booking'     => $inB,
-        'in_other'       => $inO,
-        'in_total'       => $inB + $inO,
-        'out_payroll'    => $outP,
-        'out_commission' => $outC,
-        'out_other'      => $outO,
-        'out_operating'  => max(0.0, $outTot - $outC),
-        'out_total'      => $outTot,
-        'net_cash_flow'  => ($inB + $inO) - $outTot,
+        'in_booking'      => $inB,
+        'in_other'        => $inO,
+        'in_total'        => $inB + $inO,
+        'out_payroll'     => $outP,
+        'out_commission'  => $outC,
+        'out_bbm'         => $outBbm,
+        'out_trip_synced' => $outTripSynced,
+        'out_other'       => $outO,
+        'out_operating'   => max(0.0, $outTot - $outTripSynced),
+        'out_total'       => $outTot,
+        'net_cash_flow'   => ($inB + $inO) - $outTot,
     ];
 }
 
@@ -433,8 +438,10 @@ function fin_all(array $f, ?int $unpaid_limit = 200): array
             'gross_profit'   => $gross,
             'in_other'       => $inOther,
             'out_operating'  => $outOp,
-            'out_commission' => (float) ($cash['out_commission'] ?? 0),
-            'net_profit'     => $netProfit,
+            'out_commission'  => (float) ($cash['out_commission'] ?? 0),
+            'out_bbm'         => (float) ($cash['out_bbm'] ?? 0),
+            'out_trip_synced' => (float) ($cash['out_trip_synced'] ?? 0),
+            'net_profit'      => $netProfit,
             'net_margin_pct' => $netMargin,
         ],
         'cost_types'         => fin_cost_by_type($f),

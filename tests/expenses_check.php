@@ -33,10 +33,22 @@ exp_ok(abs(cash_parse_amount('Rp 1.250.000') - 1250000.0) < 0.01, 'cash_parse_am
 exp_ok(cash_parse_amount('abc') === 0.0 && cash_parse_amount('-5') === -5.0, 'cash_parse_amount("abc" / "-5") mengembalikan <= 0 untuk ditolak validator');
 
 $cats = cash_expense_categories();
-exp_ok(isset($cats['BBM'], $cats['Servis & Perawatan Armada'], $cats['Tol & Parkir']), 'Preset kategori pengeluaran tersedia lengkap');
+$masterOut = cash_master_categories('out', 1, true);
+$outCodes  = array_column($masterOut, 'code');
+exp_ok(
+    isset($cats['BBM'], $cats['Biaya Gaji Karyawan'], $cats['Biaya Komisi Karyawan'], $cats['Pengeluaran Sparepart'], $cats['Pengeluaran Lainnya'])
+    && in_array('GJKRY', $outCodes, true)
+    && in_array('CROKARY', $outCodes, true)
+    && in_array('BBM', $outCodes, true)
+    && in_array('PGSP', $outCodes, true)
+    && in_array('PGSL', $outCodes, true),
+    'Master Kategori Kas pengeluaran (5 inti: CROKARY, BBM, PGSP, GJKRY, PGSL) tersedia lengkap'
+);
 
-$tmpIds     = [];
-$tmpStaffId = 0;
+$tmpIds      = [];
+$tmpCatIds   = [];
+$tmpStaffId  = 0;
+$testCatCode = 'TSTEX' . substr((string) getmypid(), -6);
 $jarAdmin   = sys_get_temp_dir() . '/exp_adm_' . getmypid() . '.txt';
 $jarStaff   = sys_get_temp_dir() . '/exp_stf_' . getmypid() . '.txt';
 @unlink($jarAdmin);
@@ -117,10 +129,11 @@ try {
     exp_ok(
         $expFrm['code'] === 200
         && str_contains($expFrm['body'], 'formExpense')
-        && str_contains($expFrm['body'], 'BBM')
-        && str_contains($expFrm['body'], 'Servis &amp; Perawatan Armada')
-        && str_contains($expFrm['body'], '__custom__'),
-        'GET /pages/finance/expenses/form.php HTTP 200 memuat preset & opsi kategori kustom'
+        && str_contains($expFrm['body'], '[BBM] BBM')
+        && str_contains($expFrm['body'], '[PGSP] Pengeluaran Sparepart')
+        && str_contains($expFrm['body'], '[GJKRY] Biaya Gaji Karyawan')
+        && str_contains($expFrm['body'], '[PGSL] Pengeluaran Lainnya'),
+        'GET /pages/finance/expenses/form.php HTTP 200 memuat dropdown Master Kategori Kas'
     );
 
     preg_match('/name="csrf_token"\s+value="([^"]+)"/', $expFrm['body'], $mCsrf1);
@@ -133,24 +146,46 @@ try {
         'date'            => $today,
         'amount'          => '275.000',
         'category_preset' => 'BBM',
-        'category_custom' => '',
         'description'     => $marker1,
     ]);
-    exp_ok($postPreset['code'] === 302, 'POST form pengeluaran kategori preset (BBM Rp 275.000) berhasil 302');
+    exp_ok($postPreset['code'] === 302, 'POST form pengeluaran kategori master (BBM Rp 275.000) berhasil 302');
+
+    $catFrmGet = $http($jarAdmin, '/pages/finance/cash_categories/form.php');
+    preg_match('/name="csrf_token"\s+value="([^"]+)"/', $catFrmGet['body'], $mCsrfCat);
+    $postCat = $http($jarAdmin, '/pages/finance/cash_categories/form.php', [
+        'csrf_token' => $mCsrfCat[1] ?? $csrf,
+        'id'         => '0',
+        'code'       => $testCatCode,
+        'name'       => 'Cuci Armada Uji',
+        'direction'  => 'out',
+        'sort_order' => '999',
+        'is_active'  => '1',
+        'note'       => 'Kategori uji E2E pengeluaran',
+    ]);
+    $stCat = $db->prepare('SELECT id FROM cash_categories WHERE company_id = 1 AND code = ? LIMIT 1');
+    $stCat->bind_param('s', $testCatCode);
+    $stCat->execute();
+    $testCatId = (int) ($stCat->get_result()->fetch_row()[0] ?? 0);
+    $stCat->close();
+    if ($testCatId > 0) {
+        $tmpCatIds[] = $testCatId;
+    }
+    exp_ok($postCat['code'] === 302 && $testCatId > 0, "POST Master Kategori Kas ({$testCatCode} - Cuci Armada Uji) berhasil disimpan");
 
     $expFrm2 = $http($jarAdmin, '/pages/finance/expenses/form.php');
     preg_match('/name="csrf_token"\s+value="([^"]+)"/', $expFrm2['body'], $mCsrf2);
-    $postCustom = $http($jarAdmin, '/pages/finance/expenses/form.php', [
+    exp_ok(str_contains($expFrm2['body'], "[{$testCatCode}] Cuci Armada Uji"), 'Kategori master baru langsung muncul di dropdown Pengeluaran');
+
+    $postMasterNew = $http($jarAdmin, '/pages/finance/expenses/form.php', [
         'csrf_token'      => $mCsrf2[1] ?? $csrf,
         'id'              => '0',
         'return'          => 'expenses',
         'date'            => $today,
         'amount'          => '85.000',
-        'category_preset' => '__custom__',
-        'category_custom' => 'Cuci Armada Uji',
+        'category_preset' => 'Cuci Armada Uji',
         'description'     => $marker2,
     ]);
-    exp_ok($postCustom['code'] === 302, 'POST form pengeluaran kategori kustom (Cuci Armada Uji Rp 85.000) berhasil 302');
+    exp_ok($postMasterNew['code'] === 302, 'POST form pengeluaran kategori master baru (Cuci Armada Uji Rp 85.000) berhasil 302');
 
     $stFind = $db->prepare('SELECT id, direction, category, amount FROM cash_transactions WHERE company_id = 1 AND description IN (?, ?) ORDER BY id ASC');
     $stFind->bind_param('ss', $marker1, $marker2);
@@ -215,8 +250,17 @@ try {
         exp_ok($guardEdit['code'] === 302, "Guard: edit pemasukan #{$inId} lewat expenses/form.php ditolak (302)");
     }
 
-    // Uji hapus via HTTP POST
+    // Guard hapus kategori master + hapus baris pengeluaran via HTTP POST
     $delRowId = (int) ($savedRows[1]['id'] ?? 0);
+    if ($testCatId > 0) {
+        preg_match('/name="csrf_token"\s+value="([^"]+)"/', $expIdx1['body'], $mCatDel);
+        $blkDel = $http($jarAdmin, '/pages/finance/cash_categories/delete.php', [
+            'csrf_token' => $mCatDel[1] ?? $csrf,
+            'id'         => (string) $testCatId,
+        ]);
+        $catStill = (int) $db->query("SELECT COUNT(*) FROM cash_categories WHERE id = {$testCatId}")->fetch_row()[0];
+        exp_ok($blkDel['code'] === 302 && $catStill === 1, 'Guard: hapus Master Kategori Kas yang masih dipakai transaksi ditolak');
+    }
     if ($delRowId > 0) {
         preg_match('/name="csrf_token"\s+value="([^"]+)"/', $expIdx1['body'], $mDel);
         $delRes = $http($jarAdmin, '/pages/finance/expenses/delete.php', [
@@ -225,6 +269,15 @@ try {
         ]);
         $still = (int) $db->query("SELECT COUNT(*) FROM cash_transactions WHERE id = {$delRowId}")->fetch_row()[0];
         exp_ok($delRes['code'] === 302 && $still === 0, 'POST expenses/delete.php menghapus baris pengeluaran dengan aman');
+    }
+    if ($testCatId > 0) {
+        preg_match('/name="csrf_token"\s+value="([^"]+)"/', $expIdx1['body'], $mCatDel2);
+        $http($jarAdmin, '/pages/finance/cash_categories/delete.php', [
+            'csrf_token' => $mCatDel2[1] ?? $csrf,
+            'id'         => (string) $testCatId,
+        ]);
+        $catAfter = (int) $db->query("SELECT COUNT(*) FROM cash_categories WHERE id = {$testCatId}")->fetch_row()[0];
+        exp_ok($catAfter === 0, 'Master Kategori Kas uji berhasil dihapus setelah transaksinya dihapus');
     }
 
     echo "4. Verifikasi RBAC (Staff tanpa finance.view/manage)...\n";
@@ -248,8 +301,12 @@ try {
     foreach ($tmpIds as $tid) {
         $db->query("DELETE FROM cash_transactions WHERE id = " . (int) $tid);
     }
+    foreach ($tmpCatIds as $cidDel) {
+        $db->query("DELETE FROM cash_categories WHERE id = " . (int) $cidDel);
+    }
     $db->query("DELETE FROM cash_transactions WHERE description LIKE 'EXP_CHK_%'");
-    $db->query("DELETE FROM audit_trails WHERE action LIKE 'kas.expense.%' AND (description LIKE '%Cuci Armada Uji%' OR (description LIKE '%275.000%' AND created_date >= NOW() - INTERVAL 15 MINUTE))");
+    $db->query("DELETE FROM cash_categories WHERE code LIKE 'TSTEX%'");
+    $db->query("DELETE FROM audit_trails WHERE (action LIKE 'kas.expense.%' OR action LIKE 'finance.%') AND (description LIKE '%Cuci Armada Uji%' OR description LIKE '%TSTEX%' OR (description LIKE '%275.000%' AND created_date >= NOW() - INTERVAL 15 MINUTE))");
     @unlink($jarAdmin);
     @unlink($jarStaff);
 }

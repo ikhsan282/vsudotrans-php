@@ -200,31 +200,8 @@ if ($showSplitReveal) {
     </div>
     <div id="sidebarOverlay" class="sidebar-overlay"></div>
     <div id="vstPageLoader" class="vst-page-loader" role="status" aria-live="polite" aria-hidden="true">
-        <div class="vst-pl-card">
-            <div class="vst-skel-bar"></div>
-            <div class="vst-pl-head">
-                <div class="vst-pl-emblem" aria-hidden="true">
-                    <span class="vst-lgo-ring"></span>
-                    <span class="vst-pl-logo">
-                        <img src="<?= e(APP_URL) ?>/assets/brand/logo-transmandiri.png" alt="">
-                    </span>
-                </div>
-                <div class="min-w-0 flex-grow-1">
-                    <div class="vst-pl-title" id="vstPageLoaderTitle">Memuat halaman…</div>
-                    <div class="vst-pl-sub" id="vstPageLoaderSub">Menyiapkan data workspace…</div>
-                </div>
-            </div>
-            <div class="vst-pl-skel-kpis" aria-hidden="true">
-                <span class="vst-skel vst-pl-kpi"></span>
-                <span class="vst-skel vst-pl-kpi"></span>
-                <span class="vst-skel vst-pl-kpi"></span>
-            </div>
-            <div class="vst-pl-skel-rows" aria-hidden="true">
-                <span class="vst-skel vst-skel-line" style="width:88%"></span>
-                <span class="vst-skel vst-skel-line" style="width:72%"></span>
-                <span class="vst-skel vst-skel-line mb-0" style="width:58%"></span>
-            </div>
-        </div>
+        <span class="visually-hidden" id="vstPageLoaderLabel">Memuat halaman…</span>
+        <div id="vstPageLoaderBody" class="vst-skel-workspace"></div>
     </div>
     <div class="flash-wrap"><?= flash_html() ?></div>
     <div class="content-main-row">

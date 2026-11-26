@@ -59,7 +59,7 @@ check(str_contains($events, "'allDay'") && str_contains($events, "'display'") &&
 check(str_contains($events, 'invoice_pay_status(') && str_contains($events, 'manifest_url'), 'events expose payment status and Surat Jalan url');
 check(str_contains($events, '$kindFilter') && str_contains($events, '$statusFilter') && str_contains($events, '$hideCancelled') && str_contains($events, '$driverId') && str_contains($events, '$vehicleId'), 'event feed supports all operational filters');
 check(str_contains($view, 'ui_page_header(') && str_contains($view, '$activeCid !== null'), 'calendar uses standard header and guards create CTA without active company');
-check(str_contains($view, 'cal-filter-driver') && str_contains($view, 'cal-filter-vehicle') && str_contains($view, 'calEventModal') && str_contains($view, 'calDateCreateModal'), 'calendar renders filter bar, preview modal, and date-click create modal');
+check(!str_contains($view, 'cal-filter-kind') && !str_contains($view, 'cal-filter-driver') && !str_contains($view, 'cal-filter-vehicle') && str_contains($view, 'cal-filter-q') && str_contains($view, 'cal-filter-status') && str_contains($view, 'cal-filter-hide-cancelled') && str_contains($view, 'calEventModal') && str_contains($view, 'calDateCreateModal'), 'calendar renders simplified filter bar without kind/driver/vehicle, preview modal, and date-click create modal');
 check(
     str_contains($view, 'ops-calendar-icon-legend')
     && str_contains($view, 'bi-clock')
@@ -85,6 +85,12 @@ check(
     'list view displays period_label (date and time) for both travel and rental'
 );
 check(str_contains($css, 'html[data-bs-theme="dark"] #ops-calendar') && str_contains($css, '.fc-vst-status-cancelled'), 'FullCalendar includes dark mode and status styles');
+check(
+    str_contains($css, '.fc-daygrid-event-harness-abs')
+    && str_contains($css, 'max-width: none;')
+    && str_contains($css, 'overflow: visible;'),
+    'FullCalendar CSS allows multi-day .fc-daygrid-event-harness-abs bars to span across day cells without clipping'
+);
 check(str_contains($travelForm, "parse_valid_ymd(\$_GET['date']") && str_contains($rentalForm, "parse_valid_ymd(\$_GET['date']") && str_contains($rentalForm, "parse_valid_ymd(\$_GET['end_date']"), 'travel and rental forms support optional valid ?date and ?end_date prefill');
 check(parse_valid_ymd('2026-11-28') === '2026-11-28' && parse_valid_ymd('2026-02-30') === null && parse_valid_ymd('2026-11-28T09:00:00') === null && parse_valid_ymd('') === null, 'parse_valid_ymd validates strict Y-m-d dates');
 

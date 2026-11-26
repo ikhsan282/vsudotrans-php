@@ -677,27 +677,219 @@ document.addEventListener('DOMContentLoaded', function () {
   }, true);
 });
 
-// ── Global Interactive Loading System (Progress Bar + Shimmer Workspace + Button Spinner) ──
+// ── Global Interactive Loading System (Progress Bar + Component Shimmer Workspace + Button Spinner) ──
 (function initInteractiveLoader() {
   if (window.vstLoader) return;
 
   const DOWNLOAD_RE = /export\.php|_export\.php|print\.php|manifest\.php|[?&](format|export)=(pdf|csv|xlsx)|[?&](download|template)=1/i;
   const NAV_STORAGE_KEY = 'vst_nav_pending';
+  const VALID_PRESETS = ['dashboard', 'table', 'form', 'calendar', 'report'];
 
   const progressEl = document.getElementById('vstNavProgress');
   const barEl      = progressEl ? progressEl.querySelector('.vst-nav-progress-bar') : null;
   const overlayEl  = document.getElementById('vstPageLoader');
-  const titleEl    = document.getElementById('vstPageLoaderTitle');
-  const subEl      = document.getElementById('vstPageLoaderSub');
+  const labelEl    = document.getElementById('vstPageLoaderLabel');
+  const bodyEl     = document.getElementById('vstPageLoaderBody');
 
-  let barVal       = 0;
-  let barTimer     = null;
-  let finishTimer  = null;
-  let pulseTimer   = null;
-  let overlayTimer = null;
-  let safetyTimer  = null;
+  let barVal        = 0;
+  let barTimer      = null;
+  let finishTimer   = null;
+  let pulseTimer    = null;
+  let overlayTimer  = null;
+  let safetyTimer   = null;
   let fetchInFlight = 0;
+  let currentPreset = '';
+  const skelCache   = Object.create(null);
   const busyButtons = new Set();
+
+  function detectPreset(urlPath) {
+    const p = String(urlPath || '');
+    if (/\/pages\/dashboard\//i.test(p)) return 'dashboard';
+    if (/\/pages\/dispatch\/calendar\.php/i.test(p)) return 'calendar';
+    if (/\/pages\/reports\//i.test(p)) return 'report';
+    if (/\/(form|detail|permissions|backup|pay)\.php|\/pages\/profile\//i.test(p)) return 'form';
+    return 'table';
+  }
+
+  function skRow(widths) {
+    return '<div class="vst-sk-table-row">'
+      + widths.map(function (w) {
+        return '<span class="vst-skel vst-skel-line mb-0" style="width:' + w + '"></span>';
+      }).join('')
+      + '<span class="vst-sk-actions"><span class="vst-skel vst-skel-pill"></span><span class="vst-skel vst-skel-pill"></span></span>'
+      + '</div>';
+  }
+
+  function buildCalCellsHtml() {
+    const pills = {
+      2: '<span class="vst-skel vst-skel-pill" style="width:92%"></span><span class="vst-skel vst-skel-pill" style="width:70%"></span>',
+      4: '<span class="vst-skel vst-skel-pill" style="width:84%"></span>',
+      9: '<span class="vst-skel vst-skel-pill" style="width:96%"></span>',
+      11: '<span class="vst-skel vst-skel-pill" style="width:76%"></span><span class="vst-skel vst-skel-pill" style="width:88%"></span>',
+      16: '<span class="vst-skel vst-skel-pill" style="width:90%"></span>',
+      18: '<span class="vst-skel vst-skel-pill" style="width:74%"></span>',
+      22: '<span class="vst-skel vst-skel-pill" style="width:95%"></span><span class="vst-skel vst-skel-pill" style="width:68%"></span>',
+      26: '<span class="vst-skel vst-skel-pill" style="width:94%"></span>'
+    };
+    let cells = '';
+    for (let i = 0; i < 35; i++) {
+      cells += '<div class="vst-sk-cal-cell">'
+        + '<span class="vst-skel vst-skel-line vst-sk-cal-num"></span>'
+        + (pills[i] || '')
+        + '</div>';
+    }
+    return cells;
+  }
+
+  function buildCalListHtml() {
+    let items = '';
+    for (let i = 0; i < 5; i++) {
+      items += '<div class="vst-sk-cal-list-row">'
+        + '<div class="vst-sk-cal-list-top">'
+        + '<span class="vst-skel vst-skel-pill" style="width:58px"></span>'
+        + '<span class="vst-skel vst-skel-pill" style="width:72px"></span>'
+        + '<span class="vst-skel vst-skel-line mb-0" style="width:42%"></span>'
+        + '</div>'
+        + '<span class="vst-skel vst-skel-line mb-0" style="width:76%;height:10px"></span>'
+        + '</div>';
+    }
+    return items;
+  }
+
+  function buildSkeletonHtml(preset) {
+    const key = VALID_PRESETS.indexOf(preset) >= 0 ? preset : 'table';
+    if (skelCache[key]) return skelCache[key];
+
+    let html = '';
+    if (key === 'dashboard') {
+      html = ''
+        + '<div class="vst-sk-header">'
+        +   '<div class="vst-sk-header-left"><span class="vst-skel vst-skel-line" style="width:180px;height:20px"></span><span class="vst-skel vst-skel-line mb-0" style="width:260px;height:11px"></span></div>'
+        +   '<div class="vst-sk-header-right"><span class="vst-skel vst-skel-btn" style="width:128px"></span><span class="vst-skel vst-skel-btn" style="width:112px"></span></div>'
+        + '</div>'
+        + '<div class="vst-sk-kpis">'
+        +   '<div class="vst-sk-card"><span class="vst-skel vst-skel-line" style="width:52%;height:11px"></span><span class="vst-skel vst-skel-line" style="width:68%;height:24px"></span><span class="vst-skel vst-skel-line mb-0" style="width:40%;height:10px"></span></div>'
+        +   '<div class="vst-sk-card"><span class="vst-skel vst-skel-line" style="width:48%;height:11px"></span><span class="vst-skel vst-skel-line" style="width:74%;height:24px"></span><span class="vst-skel vst-skel-line mb-0" style="width:44%;height:10px"></span></div>'
+        +   '<div class="vst-sk-card"><span class="vst-skel vst-skel-line" style="width:56%;height:11px"></span><span class="vst-skel vst-skel-line" style="width:62%;height:24px"></span><span class="vst-skel vst-skel-line mb-0" style="width:38%;height:10px"></span></div>'
+        +   '<div class="vst-sk-card"><span class="vst-skel vst-skel-line" style="width:50%;height:11px"></span><span class="vst-skel vst-skel-line" style="width:70%;height:24px"></span><span class="vst-skel vst-skel-line mb-0" style="width:46%;height:10px"></span></div>'
+        + '</div>'
+        + '<div class="vst-sk-grid-dash">'
+        +   '<div class="vst-sk-card"><span class="vst-skel vst-skel-line" style="width:38%;height:14px;margin-bottom:12px"></span><span class="vst-skel vst-skel-block" style="height:190px"></span></div>'
+        +   '<div class="vst-sk-card"><span class="vst-skel vst-skel-line" style="width:48%;height:14px;margin-bottom:12px"></span>'
+        +     '<span class="vst-skel vst-skel-line" style="width:94%;height:26px"></span>'
+        +     '<span class="vst-skel vst-skel-line" style="width:88%;height:26px"></span>'
+        +     '<span class="vst-skel vst-skel-line" style="width:92%;height:26px"></span>'
+        +     '<span class="vst-skel vst-skel-line mb-0" style="width:82%;height:26px"></span>'
+        +   '</div>'
+        + '</div>'
+        + '<div class="vst-sk-card vst-sk-table">'
+        +   '<div class="vst-sk-table-head"><span class="vst-skel vst-skel-line mb-0" style="width:14%"></span><span class="vst-skel vst-skel-line mb-0" style="width:24%"></span><span class="vst-skel vst-skel-line mb-0" style="width:20%"></span><span class="vst-skel vst-skel-line mb-0" style="width:18%"></span><span class="vst-skel vst-skel-line mb-0" style="width:10%"></span></div>'
+        +   skRow(['14%', '26%', '18%', '18%'])
+        +   skRow(['12%', '24%', '22%', '16%'])
+        +   skRow(['15%', '22%', '20%', '18%'])
+        + '</div>';
+    } else if (key === 'form') {
+      const formRows = ''
+        + '<div class="vst-sk-form-row"><span class="vst-skel vst-skel-line mb-0" style="width:76%"></span><span class="vst-skel vst-skel-input"></span></div>'
+        + '<div class="vst-sk-form-row"><span class="vst-skel vst-skel-line mb-0" style="width:68%"></span><span class="vst-skel vst-skel-input"></span></div>'
+        + '<div class="vst-sk-form-row"><span class="vst-skel vst-skel-line mb-0" style="width:82%"></span><span class="vst-skel vst-skel-input"></span></div>'
+        + '<div class="vst-sk-form-row mb-0"><span class="vst-skel vst-skel-line mb-0" style="width:64%"></span><span class="vst-skel vst-skel-input"></span></div>';
+      html = ''
+        + '<div class="vst-sk-header">'
+        +   '<div class="vst-sk-header-left"><span class="vst-skel vst-skel-line" style="width:220px;height:20px"></span><span class="vst-skel vst-skel-line mb-0" style="width:150px;height:11px"></span></div>'
+        +   '<div class="vst-sk-header-right"><span class="vst-skel vst-skel-btn" style="width:88px"></span><span class="vst-skel vst-skel-btn" style="width:96px"></span></div>'
+        + '</div>'
+        + '<div class="vst-sk-card">'
+        +   '<div class="vst-sk-tabs">'
+        +     '<span class="vst-skel vst-skel-btn" style="width:92px"></span>'
+        +     '<span class="vst-skel vst-skel-btn" style="width:108px"></span>'
+        +     '<span class="vst-skel vst-skel-btn" style="width:96px"></span>'
+        +   '</div>'
+        +   '<div class="vst-sk-grid-2">'
+        +     '<div class="vst-sk-card vst-sk-subpanel"><span class="vst-skel vst-skel-line" style="width:48%;height:14px;margin-bottom:14px"></span>' + formRows + '</div>'
+        +     '<div class="vst-sk-card vst-sk-subpanel"><span class="vst-skel vst-skel-line" style="width:52%;height:14px;margin-bottom:14px"></span>' + formRows + '</div>'
+        +   '</div>'
+        + '</div>';
+    } else if (key === 'calendar') {
+      html = ''
+        + '<div class="vst-sk-header">'
+        +   '<div class="vst-sk-header-left"><span class="vst-skel vst-skel-line" style="width:210px;height:20px"></span><span class="vst-skel vst-skel-line mb-0" style="width:290px;height:11px"></span></div>'
+        +   '<div class="vst-sk-header-right"><span class="vst-skel vst-skel-btn" style="width:144px"></span><span class="vst-skel vst-skel-btn" style="width:144px"></span></div>'
+        + '</div>'
+        + '<div class="vst-sk-card vst-sk-filter">'
+        +   '<span class="vst-skel vst-skel-input" style="flex:2 1 200px"></span>'
+        +   '<span class="vst-skel vst-skel-input" style="flex:1 1 130px"></span>'
+        +   '<span class="vst-skel vst-skel-input" style="flex:1 1 130px"></span>'
+        +   '<span class="vst-skel vst-skel-btn" style="width:84px"></span>'
+        + '</div>'
+        + '<div class="vst-sk-card">'
+        +   '<div class="vst-sk-cal-toolbar">'
+        +     '<div class="vst-sk-header-right"><span class="vst-skel vst-skel-btn" style="width:76px"></span><span class="vst-skel vst-skel-btn" style="width:74px"></span></div>'
+        +     '<span class="vst-skel vst-skel-line mb-0" style="width:160px;height:18px"></span>'
+        +     '<div class="vst-sk-header-right d-none d-md-flex"><span class="vst-skel vst-skel-btn" style="width:62px"></span><span class="vst-skel vst-skel-btn" style="width:62px"></span><span class="vst-skel vst-skel-btn" style="width:62px"></span></div>'
+        +   '</div>'
+        +   '<div class="d-none d-md-block">'
+        +     '<div class="vst-sk-cal-weekdays">'
+        +       '<span class="vst-skel vst-skel-line mb-0"></span><span class="vst-skel vst-skel-line mb-0"></span><span class="vst-skel vst-skel-line mb-0"></span><span class="vst-skel vst-skel-line mb-0"></span><span class="vst-skel vst-skel-line mb-0"></span><span class="vst-skel vst-skel-line mb-0"></span><span class="vst-skel vst-skel-line mb-0"></span>'
+        +     '</div>'
+        +     '<div class="vst-sk-cal-grid">' + buildCalCellsHtml() + '</div>'
+        +   '</div>'
+        +   '<div class="d-md-none vst-sk-cal-list">' + buildCalListHtml() + '</div>'
+        + '</div>';
+    } else if (key === 'report') {
+      html = ''
+        + '<div class="vst-sk-header">'
+        +   '<div class="vst-sk-header-left"><span class="vst-skel vst-skel-line" style="width:200px;height:20px"></span><span class="vst-skel vst-skel-line mb-0" style="width:240px;height:11px"></span></div>'
+        +   '<div class="vst-sk-header-right"><span class="vst-skel vst-skel-btn" style="width:78px"></span><span class="vst-skel vst-skel-btn" style="width:78px"></span><span class="vst-skel vst-skel-btn" style="width:78px"></span></div>'
+        + '</div>'
+        + '<div class="vst-sk-card vst-sk-filter">'
+        +   '<span class="vst-skel vst-skel-input" style="flex:1 1 160px"></span>'
+        +   '<span class="vst-skel vst-skel-input" style="flex:1 1 140px"></span>'
+        +   '<span class="vst-skel vst-skel-input" style="flex:1 1 140px"></span>'
+        +   '<span class="vst-skel vst-skel-btn" style="width:94px"></span>'
+        + '</div>'
+        + '<div class="vst-sk-kpis">'
+        +   '<div class="vst-sk-card"><span class="vst-skel vst-skel-line" style="width:54%;height:11px"></span><span class="vst-skel vst-skel-line mb-0" style="width:72%;height:22px"></span></div>'
+        +   '<div class="vst-sk-card"><span class="vst-skel vst-skel-line" style="width:48%;height:11px"></span><span class="vst-skel vst-skel-line mb-0" style="width:66%;height:22px"></span></div>'
+        +   '<div class="vst-sk-card"><span class="vst-skel vst-skel-line" style="width:58%;height:11px"></span><span class="vst-skel vst-skel-line mb-0" style="width:70%;height:22px"></span></div>'
+        +   '<div class="vst-sk-card"><span class="vst-skel vst-skel-line" style="width:50%;height:11px"></span><span class="vst-skel vst-skel-line mb-0" style="width:64%;height:22px"></span></div>'
+        + '</div>'
+        + '<div class="vst-sk-grid-2">'
+        +   '<div class="vst-sk-card"><span class="vst-skel vst-skel-line" style="width:42%;height:14px;margin-bottom:10px"></span><span class="vst-skel vst-skel-block" style="height:170px"></span></div>'
+        +   '<div class="vst-sk-card"><span class="vst-skel vst-skel-line" style="width:46%;height:14px;margin-bottom:10px"></span><span class="vst-skel vst-skel-block" style="height:170px"></span></div>'
+        + '</div>'
+        + '<div class="vst-sk-card vst-sk-table">'
+        +   '<div class="vst-sk-table-head"><span class="vst-skel vst-skel-line mb-0" style="width:20%"></span><span class="vst-skel vst-skel-line mb-0" style="width:16%"></span><span class="vst-skel vst-skel-line mb-0" style="width:18%"></span><span class="vst-skel vst-skel-line mb-0" style="width:18%"></span><span class="vst-skel vst-skel-line mb-0" style="width:12%"></span></div>'
+        +   skRow(['22%', '16%', '18%', '18%'])
+        +   skRow(['18%', '18%', '16%', '20%'])
+        +   skRow(['24%', '14%', '18%', '16%'])
+        + '</div>';
+    } else {
+      html = ''
+        + '<div class="vst-sk-header">'
+        +   '<div class="vst-sk-header-left"><span class="vst-skel vst-skel-line" style="width:190px;height:20px"></span><span class="vst-skel vst-skel-line mb-0" style="width:220px;height:11px"></span></div>'
+        +   '<div class="vst-sk-header-right"><span class="vst-skel vst-skel-btn" style="width:92px"></span><span class="vst-skel vst-skel-btn" style="width:104px"></span></div>'
+        + '</div>'
+        + '<div class="vst-sk-card vst-sk-filter">'
+        +   '<span class="vst-skel vst-skel-input" style="flex:2 1 200px"></span>'
+        +   '<span class="vst-skel vst-skel-input" style="flex:1 1 130px"></span>'
+        +   '<span class="vst-skel vst-skel-input" style="flex:1 1 130px"></span>'
+        +   '<span class="vst-skel vst-skel-btn" style="width:86px"></span>'
+        + '</div>'
+        + '<div class="vst-sk-card vst-sk-table">'
+        +   '<div class="vst-sk-table-head"><span class="vst-skel vst-skel-line mb-0" style="width:12%"></span><span class="vst-skel vst-skel-line mb-0" style="width:24%"></span><span class="vst-skel vst-skel-line mb-0" style="width:20%"></span><span class="vst-skel vst-skel-line mb-0" style="width:16%"></span><span class="vst-skel vst-skel-line mb-0" style="width:10%"></span></div>'
+        +   skRow(['12%', '24%', '18%', '14%'])
+        +   skRow(['10%', '28%', '16%', '16%'])
+        +   skRow(['14%', '22%', '20%', '14%'])
+        +   skRow(['12%', '26%', '18%', '12%'])
+        +   skRow(['11%', '20%', '22%', '15%'])
+        +   skRow(['13%', '25%', '17%', '14%'])
+        + '</div>';
+    }
+
+    skelCache[key] = html;
+    return html;
+  }
 
   function setBarScale(v) {
     barVal = Math.max(0, Math.min(1, v));
@@ -748,10 +940,14 @@ document.addEventListener('DOMContentLoaded', function () {
     overlayEl.setAttribute('aria-hidden', 'true');
   }
 
-  function showOverlay(title, sub, immediate) {
+  function showOverlay(label, preset, immediate) {
     if (!overlayEl) return;
-    if (titleEl) titleEl.textContent = title || 'Memuat halaman…';
-    if (subEl) subEl.textContent = sub || 'Menyiapkan data workspace…';
+    if (labelEl) labelEl.textContent = label || 'Memuat halaman…';
+    const nextPreset = VALID_PRESETS.indexOf(preset) >= 0 ? preset : detectPreset(window.location.pathname);
+    if (bodyEl && currentPreset !== nextPreset) {
+      bodyEl.innerHTML = buildSkeletonHtml(nextPreset);
+      currentPreset = nextPreset;
+    }
     window.clearTimeout(overlayTimer);
     window.clearTimeout(safetyTimer);
     const activate = function () {
@@ -761,7 +957,7 @@ document.addEventListener('DOMContentLoaded', function () {
     if (immediate) {
       activate();
     } else {
-      overlayTimer = window.setTimeout(activate, 90);
+      overlayTimer = window.setTimeout(activate, 80);
     }
     safetyTimer = window.setTimeout(resetAll, 12000);
   }
@@ -861,24 +1057,20 @@ document.addEventListener('DOMContentLoaded', function () {
     const isSidebar = !!a.closest('#sidebar');
     const linkTxt = (a.textContent || '').replace(/\s+/g, ' ').trim();
     let title = 'Memuat halaman…';
-    let sub   = 'Menyiapkan data halaman…';
 
     if (/\/logout\.php$/i.test(url.pathname)) {
       title = 'Mengakhiri sesi…';
-      sub   = 'Keluar dari sistem secara aman…';
     } else if (isSidebar && linkTxt) {
       title = 'Memuat ' + linkTxt + '…';
-      sub   = 'Menyiapkan data modul…';
     } else if (a.closest('.topbar-dropdown, .topbar-pill')) {
       title = linkTxt ? ('Membuka ' + linkTxt + '…') : 'Memuat halaman…';
-      sub   = 'Menyiapkan tampilan workspace…';
     } else if (linkTxt && linkTxt.length <= 42) {
       title = 'Membuka ' + linkTxt + '…';
     }
 
     markPending();
     startBar();
-    showOverlay(title, sub, isSidebar);
+    showOverlay(title, detectPreset(url.pathname), isSidebar);
   }, false);
 
   // 2. Interceptor submit form standar (bubble phase, tanpa disable tombol agar name/value tetap terkirim)
@@ -912,34 +1104,34 @@ document.addEventListener('DOMContentLoaded', function () {
     form.dataset.vstSubmitting = '1';
     const method = String(form.getAttribute('method') || 'get').toLowerCase();
     let title = 'Memproses permintaan…';
-    let sub   = 'Mohon tunggu sebentar…';
     let btnText = (btn && btn.getAttribute('data-loading-text')) || 'Memproses…';
 
     if (/\/companies\/switch\.php/i.test(actionStr)) {
       const compLabel = btn ? (btn.textContent || '').replace(/\s+/g, ' ').trim() : '';
       title   = compLabel ? ('Beralih ke ' + compLabel + '…') : 'Beralih perusahaan…';
-      sub     = 'Memuat konteks data perusahaan aktif…';
       btnText = 'Mengalihkan…';
     } else if (/delete\.php/i.test(actionStr)) {
       title   = 'Menghapus data…';
-      sub     = 'Memperbarui basis data sistem…';
       btnText = 'Menghapus…';
     } else if (method === 'get') {
       title   = 'Menerapkan filter…';
-      sub     = 'Menyaring data sesuai kriteria…';
       btnText = (btn && btn.getAttribute('data-loading-text')) || 'Memfilter…';
     } else {
       title   = 'Menyimpan perubahan…';
-      sub     = 'Mengirim data ke server…';
       btnText = (btn && btn.getAttribute('data-loading-text')) || 'Menyimpan…';
     }
+
+    let actionPath = window.location.pathname;
+    try {
+      actionPath = new URL(actionStr, window.location.href).pathname;
+    } catch (err) {}
 
     markPending();
     if (btn && btn.tagName === 'BUTTON') {
       setButtonLoading(btn, btnText);
     }
     startBar();
-    showOverlay(title, sub, method === 'post');
+    showOverlay(title, detectPreset(actionPath), method === 'post');
 
     window.setTimeout(function () {
       if (form.dataset.vstSubmitting === '1') {
@@ -985,9 +1177,9 @@ document.addEventListener('DOMContentLoaded', function () {
   });
 
   window.vstLoader = {
-    start: function (title, sub, withOverlay) {
+    start: function (title, sub, withOverlay, preset) {
       startBar();
-      if (withOverlay) showOverlay(title, sub, true);
+      if (withOverlay) showOverlay(title, preset || detectPreset(window.location.pathname), true);
     },
     done: resetAll,
     pulse: pulseBar,

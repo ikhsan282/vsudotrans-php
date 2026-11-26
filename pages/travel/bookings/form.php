@@ -869,7 +869,6 @@ document.addEventListener('DOMContentLoaded', function () {
         scheduleContainerEl: document.getElementById('travelRouteSchedulesBar'),
         timeInputEl: timeEl,
         autoFillZero: true,
-        notFoundText: 'Belum ada tarif rute aktif untuk pasangan kota & kategori ini.',
         onPriceApplied: function () { payCtrl.recalcPayTotals(); }
     });
 

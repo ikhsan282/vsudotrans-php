@@ -142,8 +142,18 @@ require __DIR__ . '/../../../includes/header.php';
                                 <a class="badge bg-primary-subtle text-primary border text-decoration-none ms-1" href="<?= e($refBookHref) ?>" title="Sumber otomatis dari pembayaran pemesanan (Invoice #<?= (int) ($r['ref_invoice_id'] ?? 0) ?>)"><i class="bi bi-link-45deg"></i>Auto Booking</a>
                             <?php elseif ($srcType === 'booking_payment'): ?>
                                 <span class="badge bg-primary-subtle text-primary border ms-1">Auto Booking</span>
+                            <?php elseif ($srcType === 'crew_commission' && !empty($r['ref_booking_id'])):
+                                $refCrewHref = '../../' . ($r['ref_booking_type'] === 'rental' ? 'rental' : 'travel') . '/bookings/detail.php?id=' . (int) $r['ref_booking_id'] . '&tab=crew#tab-crew';
+                            ?>
+                                <a class="badge bg-warning-subtle text-warning-emphasis border border-warning-subtle text-decoration-none ms-1" href="<?= e($refCrewHref) ?>" title="Tersinkron otomatis dari penugasan kru pada pemesanan"><i class="bi bi-link-45deg"></i>Komisi Kru</a>
                             <?php elseif ($srcType === 'crew_commission'): ?>
-                                <a class="badge bg-warning-subtle text-warning-emphasis border border-warning-subtle text-decoration-none ms-1" href="../commissions/index.php" title="Dari pencairan Komisi Sopir & Kru"><i class="bi bi-people-fill me-1"></i>Komisi Kru</a>
+                                <span class="badge bg-warning-subtle text-warning-emphasis border border-warning-subtle ms-1">Komisi Kru</span>
+                            <?php elseif ($srcType === 'booking_bbm' && !empty($r['ref_booking_id'])):
+                                $refBbmHref = '../../rental/bookings/detail.php?id=' . (int) $r['ref_booking_id'] . '&tab=crew#tab-crew';
+                            ?>
+                                <a class="badge bg-info-subtle text-info-emphasis border border-info-subtle text-decoration-none ms-1" href="<?= e($refBbmHref) ?>" title="Tersinkron otomatis dari BBM pemesanan rental"><i class="bi bi-link-45deg"></i>Auto BBM</a>
+                            <?php elseif ($srcType === 'booking_bbm'): ?>
+                                <span class="badge bg-info-subtle text-info-emphasis border border-info-subtle ms-1">Auto BBM</span>
                             <?php elseif ($srcType === 'payroll_period'): ?>
                                 <span class="badge bg-info-subtle text-info-emphasis border ms-1">Auto Gaji</span>
                             <?php elseif ($isAuto): ?>

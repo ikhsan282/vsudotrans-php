@@ -322,6 +322,9 @@ function booking_create(string $type, array $data): array
             (float) ($data['bbm'] ?? 0),
             $data['created_user'] ?? null
         );
+        if ($type === 'rental') {
+            finance_sync_booking_bbm_to_cash($booking_id, $company_id, $data['created_user'] ?? null);
+        }
         // Penumpang: daftar lengkap (opsional) + primary = passenger_id booking.
         $pids = $data['passenger_ids'] ?? [];
         if (!$pids) {
@@ -367,6 +370,11 @@ function booking_change_status(string $type, int $booking_id, int $company_id, s
             $stT->bind_param('ssii', $user, $type, $booking_id, $company_id);
             $stT->execute();
             $stT->close();
+
+            finance_unsync_booking_crew($type, $booking_id, $company_id);
+            if ($type === 'rental') {
+                finance_unsync_booking_bbm($booking_id, $company_id);
+            }
         } elseif ($to === 'done') {
             $stT = $db->prepare('UPDATE trip_assignments SET ended_at = NOW(), modified_user = ?, modified_date = NOW()
                 WHERE booking_type = ? AND booking_id = ? AND company_id = ? AND ended_at IS NULL');
@@ -392,6 +400,10 @@ function booking_change_status(string $type, int $booking_id, int $company_id, s
                 $uInv->bind_param('ssi', $newSt, $user, $invId);
                 $uInv->execute();
                 $uInv->close();
+            }
+            finance_sync_booking_crew_to_cash($type, $booking_id, $company_id, $user);
+            if ($type === 'rental') {
+                finance_sync_booking_bbm_to_cash($booking_id, $company_id, $user);
             }
         }
 
@@ -514,6 +526,10 @@ function booking_reschedule(string $type, int $booking_id, int $company_id, stri
         }
         if ($from !== 'rescheduled') {
             booking_insert_history($type, $booking_id, $company_id, $from, 'rescheduled', $reason, $user);
+        }
+        finance_sync_booking_crew_to_cash($type, $booking_id, $company_id, $user);
+        if ($type === 'rental') {
+            finance_sync_booking_bbm_to_cash($booking_id, $company_id, $user);
         }
         $db->commit();
     } catch (Throwable $ex) {
@@ -712,7 +728,8 @@ function booking_crew_sync(string $type, int $booking_id, int $company_id, float
 {
     $table = booking_table($type);
     $db = db();
-    // Hapus baris biaya kru/non-payment lama pada booking ini
+    // Hapus sinkronisasi kas lama lalu hapus baris biaya kru/non-payment lama pada booking ini
+    finance_unsync_booking_crew($type, $booking_id, $company_id);
     $del = $db->prepare("DELETE FROM booking_cost_lines WHERE booking_type = ? AND booking_id = ? AND company_id = ? AND cost_type <> 'payment'");
     $del->bind_param('sii', $type, $booking_id, $company_id);
     $del->execute();
@@ -770,6 +787,11 @@ function booking_crew_sync(string $type, int $booking_id, int $company_id, float
     }
     $up->execute();
     $up->close();
+
+    finance_sync_booking_crew_to_cash($type, $booking_id, $company_id, $user);
+    if ($type === 'rental') {
+        finance_sync_booking_bbm_to_cash($booking_id, $company_id, $user);
+    }
 
     // Sinkronkan seluruh sopir (utama + cadangan) ke trip_assignments
     if (!empty($driver_assignments)) {

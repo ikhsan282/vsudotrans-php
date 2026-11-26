@@ -251,7 +251,31 @@ function master_tables(): array
             'blockers' => [
                 ['table' => 'invoices', 'col' => 'payment_method_id', 'label' => 'invoice'],
                 ['table' => 'booking_cost_lines', 'col' => 'payment_method_id', 'label' => 'pembayaran pesanan'],
-                ['table' => 'cash_transactions', 'col' => 'payment_method_id', 'label' => 'transaksi buku kas'],
+            ],
+        ],
+
+        // ---------------- KATEGORI KAS (company_id, NULL = semua perusahaan) ----------------
+        'cash_categories' => [
+            'table' => 'cash_categories', 'title' => 'Kategori Kas', 'module' => 'finance',
+            'perm_view' => 'finance.view', 'perm_manage' => 'finance.manage',
+            'company' => true, 'unique' => 'company_or_null', 'order' => 'sort_order', 'reorder' => true,
+            'fields' => [
+                mf_code(),
+                ['col' => 'name', 'label' => 'Nama', 'type' => 'text', 'max' => 50, 'required' => true],
+                [
+                    'col' => 'direction', 'label' => 'Tipe', 'type' => 'enum', 'required' => true, 'default' => 'out',
+                    'options' => ['in' => 'Pemasukan', 'out' => 'Pengeluaran'],
+                    'badges'  => [
+                        'in'  => 'bg-success-subtle text-success border',
+                        'out' => 'bg-danger-subtle text-danger border',
+                    ],
+                ],
+                ['col' => 'sort_order', 'label' => 'Urutan', 'type' => 'number', 'int' => true, 'required' => false],
+                mf_active(),
+                mf_note(),
+            ],
+            'blockers' => [
+                ['table' => 'cash_transactions', 'col' => 'category', 'match' => 'name', 'label' => 'transaksi kas'],
             ],
         ],
     ];
@@ -694,6 +718,8 @@ function master_list(string $key): void
                         }
                     } elseif ($t === 'select') {
                         $line[] = master_label($lookup_maps[$f['source']] ?? [], $val);
+                    } elseif ($t === 'enum') {
+                        $line[] = $f['options'][(string) $val] ?? ($val !== null ? (string) $val : '-');
                     } elseif ($t === 'money') {
                         $line[] = $val !== null ? (float) $val : 0;
                     } else {
@@ -851,6 +877,16 @@ function master_list(string $key): void
                                     <?php endif; ?>
                                 <?php elseif ($ftype === 'select'): ?>
                                     <?= e(master_label($maps[$f['source']], $r[$col])) ?>
+                                <?php elseif ($ftype === 'enum'):
+                                    $enumKey   = (string) ($r[$col] ?? '');
+                                    $enumLabel = $f['options'][$enumKey] ?? $enumKey;
+                                    $enumBadge = $f['badges'][$enumKey] ?? '';
+                                ?>
+                                    <?php if ($enumBadge !== ''): ?>
+                                        <span class="badge <?= e($enumBadge) ?>"><?= e($enumLabel) ?></span>
+                                    <?php else: ?>
+                                        <?= e($enumLabel) ?>
+                                    <?php endif; ?>
                                 <?php elseif ($ftype === 'money'): ?>
                                     <?= e(rupiah((float) ($r[$col] ?? 0))) ?>
                                 <?php elseif ($col === 'code'): ?>
@@ -1107,6 +1143,12 @@ function master_form(string $key): void
                                                                 <option value="<?= (int) $oid ?>"<?= $attrs ?> <?= (int) $val === (int) $oid ? 'selected' : '' ?>><?= e($oname) ?></option>
                                                             <?php endforeach; ?>
                                                         </select>
+                                                    <?php elseif ($ftype === 'enum'): ?>
+                                                        <select class="form-select form-select-sm" id="<?= e($col) ?>" name="<?= e($col) ?>"<?= !empty($f['required']) ? ' required' : '' ?>>
+                                                            <?php foreach ($f['options'] ?? [] as $ek => $elbl): ?>
+                                                                <option value="<?= e((string) $ek) ?>"<?= (string) $val === (string) $ek ? ' selected' : '' ?>><?= e((string) $elbl) ?></option>
+                                                            <?php endforeach; ?>
+                                                        </select>
                                                     <?php elseif ($ftype === 'money' || $ftype === 'number'): ?>
                                                         <input class="form-control form-control-sm" type="number" step="<?= $ftype === 'money' ? '0.01' : '1' ?>" id="<?= e($col) ?>" name="<?= e($col) ?>"
                                                             value="<?= e((string) ($val ?? '0')) ?>" <?= !empty($f['required']) ? 'required' : '' ?>>
@@ -1269,6 +1311,8 @@ function master_empty_row(array $spec): array
         $t = $f['type'] ?? '';
         if ($t === 'checkbox') {
             $row[$f['col']] = 1;
+        } elseif ($t === 'enum') {
+            $row[$f['col']] = $f['default'] ?? (string) array_key_first($f['options'] ?? []);
         } elseif ($t === 'hidden' || $t === 'blob') {
             $row[$f['col']] = null;
         } else {
@@ -1454,6 +1498,11 @@ function master_validate(array $spec, array $in, int $id, ?int $cid): array
         if ($type === 'money' || $type === 'number') {
             if (!master_num_ok((string) $v)) {
                 $errors[] = $label . ' harus berupa angka.';
+            }
+        }
+        if ($type === 'enum') {
+            if (!isset($f['options'][(string) $v])) {
+                $errors[] = $label . ' harus dipilih dari daftar yang tersedia.';
             }
         }
         if ($type === 'select') {
@@ -1925,13 +1974,13 @@ function master_delete(string $key): void
     // Cek relasi dulu agar tidak muncul error SQL mentah (FK RESTRICT).
     foreach ($spec['blockers'] ?? [] as $b) {
         $match_by = $b['match'] ?? 'id';
+        $rowCid   = array_key_exists('company_id', $row) && $row['company_id'] !== null ? (int) $row['company_id'] : null;
         if ($match_by === 'name') {
             $val = (string) ($row['name'] ?? '');
-            if (!empty($spec['company']) && column_exists($b['table'], 'company_id')) {
+            if (!empty($spec['company']) && $rowCid !== null && column_exists($b['table'], 'company_id')) {
                 $sql_b = "SELECT COUNT(*) FROM `{$b['table']}` WHERE `{$b['col']}` = ? AND company_id = ?";
                 $st = db()->prepare($sql_b);
-                $cid_val = (int) ($row['company_id'] ?? active_company_id());
-                $st->bind_param('si', $val, $cid_val);
+                $st->bind_param('si', $val, $rowCid);
             } else {
                 $sql_b = "SELECT COUNT(*) FROM `{$b['table']}` WHERE `{$b['col']}` = ?";
                 $st = db()->prepare($sql_b);
@@ -1939,11 +1988,10 @@ function master_delete(string $key): void
             }
         } else {
             $sql_b = "SELECT COUNT(*) FROM `{$b['table']}` WHERE `{$b['col']}` = ?";
-            if (!empty($spec['company']) && column_exists($b['table'], 'company_id')) {
+            if (!empty($spec['company']) && $rowCid !== null && column_exists($b['table'], 'company_id')) {
                 $sql_b .= " AND company_id = ?";
                 $st = db()->prepare($sql_b);
-                $cid_val = (int) ($row['company_id'] ?? active_company_id());
-                $st->bind_param('ii', $id, $cid_val);
+                $st->bind_param('ii', $id, $rowCid);
             } else {
                 $st = db()->prepare($sql_b);
                 $st->bind_param('i', $id);

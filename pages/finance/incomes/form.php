@@ -1,6 +1,6 @@
 <?php
 /**
- * Pemasukan: form Tambah / Ubah transaksi masuk dengan preset kategori & kategori kustom.
+ * Pemasukan: form Tambah / Ubah transaksi masuk menggunakan Master Kategori Kas.
  * Tersimpan ke `cash_transactions` (direction = 'in') agar otomatis sinkron dengan Buku Kas,
  * Laporan Keuangan, dan Dashboard.
  */
@@ -54,19 +54,9 @@ if ($id > 0) {
     }
 }
 
-$presetMap   = cash_income_categories();
-$presetKeys  = array_keys($presetMap);
-$existingCat = trim((string) ($row['category'] ?? ''));
-if ($row === null) {
-    $initPreset = 'Setoran Modal';
-    $initCustom = '';
-} elseif ($existingCat !== '' && in_array($existingCat, $presetKeys, true)) {
-    $initPreset = $existingCat;
-    $initCustom = '';
-} else {
-    $initPreset = '__custom__';
-    $initCustom = $existingCat;
-}
+$masterCats    = cash_master_categories('in', $cid, true);
+$validCatNames = array_column($masterCats, 'name');
+$existingCat   = trim((string) ($row['category'] ?? ''));
 
 $amtInit = $row !== null ? (float) $row['amount'] : 0.0;
 $amtFmt  = $row !== null
@@ -76,8 +66,7 @@ $amtFmt  = $row !== null
 $form = [
     'date'            => (string) ($row['date'] ?? date('Y-m-d')),
     'amount_raw'      => $amtFmt,
-    'category_preset' => $initPreset,
-    'category_custom' => $initCustom,
+    'category_preset' => $row !== null ? $existingCat : '',
     'description'     => (string) ($row['description'] ?? ''),
 ];
 $existingProof = (string) ($row['proof_blob_path'] ?? '');
@@ -87,17 +76,18 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     verify_csrf();
     $form['date']            = trim((string) ($_POST['date'] ?? ''));
     $form['amount_raw']      = trim((string) ($_POST['amount'] ?? ''));
-    $form['category_preset'] = trim((string) ($_POST['category_preset'] ?? ''));
-    $form['category_custom'] = trim((string) ($_POST['category_custom'] ?? ''));
+    $form['category_preset'] = trim((string) ($_POST['category_preset'] ?? $_POST['category'] ?? ''));
     $form['description']     = trim((string) ($_POST['description'] ?? ''));
 
-    $chosenCategory = $form['category_preset'] === '__custom__'
-        ? $form['category_custom']
-        : $form['category_preset'];
-    $parsedAmount = cash_parse_amount($form['amount_raw']);
+    $chosenCategory = $form['category_preset'];
+    $parsedAmount   = cash_parse_amount($form['amount_raw']);
+    $isAllowedCat   = $chosenCategory !== ''
+        && (in_array($chosenCategory, $validCatNames, true) || ($row !== null && $chosenCategory === $existingCat));
 
     if ($chosenCategory === '') {
-        $errors[] = 'Kategori pemasukan wajib dipilih atau diisi.';
+        $errors[] = 'Kategori pemasukan wajib dipilih.';
+    } elseif (!$isAllowedCat) {
+        $errors[] = 'Kategori wajib dipilih dari Master Kategori Kas.';
     }
 
     $savePayload = [
@@ -135,8 +125,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 }
 
 $active = 'incomes';
-$title   = ($id > 0 ? 'Ubah' : 'Tambah') . ' Pemasukan';
-$isCustomMode = $form['category_preset'] === '__custom__';
+$title  = ($id > 0 ? 'Ubah' : 'Tambah') . ' Pemasukan';
+$hasLegacyCat = $row !== null && $existingCat !== '' && !in_array($existingCat, $validCatNames, true);
 require __DIR__ . '/../../../includes/header.php';
 ?>
 <main class="p-2 p-md-3">
@@ -213,20 +203,21 @@ require __DIR__ . '/../../../includes/header.php';
                                         <div class="rnt-label">Kategori <span class="text-danger">*</span></div>
                                         <div class="rnt-field">
                                             <select class="form-select form-select-sm" id="category_preset" name="category_preset" required>
-                                                <?php foreach ($presetMap as $catKey => $catDesc): ?>
-                                                    <option value="<?= e($catKey) ?>"<?= $form['category_preset'] === $catKey ? ' selected' : '' ?>>
-                                                        <?= e($catKey . ' — ' . $catDesc) ?>
+                                                <option value="">— Pilih Kategori —</option>
+                                                <?php if ($hasLegacyCat): ?>
+                                                    <option value="<?= e($existingCat) ?>"<?= $form['category_preset'] === $existingCat ? ' selected' : '' ?>>
+                                                        <?= e($existingCat) ?> (kategori lama)
+                                                    </option>
+                                                <?php endif; ?>
+                                                <?php foreach ($masterCats as $mc): ?>
+                                                    <option value="<?= e((string) $mc['name']) ?>"<?= $form['category_preset'] === $mc['name'] ? ' selected' : '' ?>>
+                                                        <?= e('[' . $mc['code'] . '] ' . $mc['name']) ?>
                                                     </option>
                                                 <?php endforeach; ?>
-                                                <option value="__custom__"<?= $isCustomMode ? ' selected' : '' ?>>+ Kategori Kustom (ketik sendiri)...</option>
                                             </select>
-                                        </div>
-                                    </div>
-                                    <div class="rnt-row<?= $isCustomMode ? '' : ' d-none' ?>" id="wrapCategoryCustom">
-                                        <div class="rnt-label">Nama Kustom <span class="text-danger">*</span></div>
-                                        <div class="rnt-field">
-                                            <input class="form-control form-control-sm" type="text" id="category_custom" name="category_custom" maxlength="50"
-                                                   placeholder="mis. Komisi Mitra, Titipan Paket" value="<?= e($form['category_custom']) ?>"<?= $isCustomMode ? ' required' : '' ?>>
+                                            <div class="form-text small text-muted mt-1">
+                                                <a href="../cash_categories/index.php" class="text-decoration-none"><i class="bi bi-gear me-1"></i>Kelola Master Kategori Kas</a>
+                                            </div>
                                         </div>
                                     </div>
                                     <div class="rnt-row rnt-row-top">
@@ -265,22 +256,4 @@ require __DIR__ . '/../../../includes/header.php';
         </div>
     </form>
 </main>
-<script>
-document.addEventListener('DOMContentLoaded', function () {
-    var sel = document.getElementById('category_preset');
-    var wrap = document.getElementById('wrapCategoryCustom');
-    var inp = document.getElementById('category_custom');
-    if (!sel || !wrap || !inp) return;
-    function syncCustomCategory() {
-        var isCustom = sel.value === '__custom__';
-        wrap.classList.toggle('d-none', !isCustom);
-        inp.required = isCustom;
-        if (isCustom && document.activeElement === sel) {
-            inp.focus();
-        }
-    }
-    sel.addEventListener('change', syncCustomCategory);
-    syncCustomCategory();
-});
-</script>
 <?php require __DIR__ . '/../../../includes/footer.php'; ?>

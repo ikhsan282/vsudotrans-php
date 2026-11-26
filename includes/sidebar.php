@@ -72,22 +72,20 @@ $menu = [
     ]],
 
     // ── KEUANGAN & AKUNTANSI ────────────────────────────────────────────────
-    ['key' => 'finance', 'keys' => ['finance', 'incomes', 'expenses', 'commissions'], 'section' => 'Keuangan & Akuntansi', 'label' => 'Keuangan', 'icon' => 'cash-coin', 'perm' => null, 'sub' => [
+    ['key' => 'finance', 'keys' => ['finance', 'incomes', 'expenses'], 'section' => 'Keuangan & Akuntansi', 'label' => 'Keuangan', 'icon' => 'cash-coin', 'perm' => null, 'sub' => [
         ['label' => 'Buku Kas',          'href' => 'pages/finance/cash/index.php',            'perms' => 'finance.view'],
         ['key' => 'incomes',     'label' => 'Pemasukan',          'href' => 'pages/finance/incomes/index.php',     'perms' => 'finance.view'],
         ['key' => 'expenses',    'label' => 'Pengeluaran',        'href' => 'pages/finance/expenses/index.php',    'perms' => 'finance.view'],
-        ['key' => 'commissions', 'label' => 'Komisi Sopir & Kru', 'href' => 'pages/finance/commissions/index.php', 'perms' => 'finance.view'],
+        ['label' => 'Kategori Kas',      'href' => 'pages/finance/cash_categories/index.php', 'perms' => 'finance.view'],
         ['label' => 'Metode Pembayaran', 'href' => 'pages/finance/payment_methods/index.php', 'perms' => 'finance.view'],
     ]],
 
     // ── SDM ─────────────────────────────────────────────────────────────────
     ['key' => 'employees',  'section' => 'SDM', 'label' => 'Karyawan',  'icon' => 'person-vcard', 'href' => 'pages/employees/index.php', 'perm' => 'employees.view'],
-    ['key' => 'hr', 'keys' => ['hr', 'salary_components', 'salary_assignments'], 'section' => 'SDM', 'label' => 'Master HR', 'icon' => 'briefcase', 'perm' => ['hr.view', 'payroll.view'], 'sub' => [
+    ['key' => 'hr', 'section' => 'SDM', 'label' => 'Master HR', 'icon' => 'briefcase', 'perm' => 'hr.view', 'sub' => [
         ['label' => 'Jabatan',             'href' => 'pages/hr/job_titles/index.php',              'perms' => 'hr.view'],
         ['label' => 'Posisi',              'href' => 'pages/hr/job_positions/index.php',           'perms' => 'hr.view'],
         ['label' => 'Struktur Organisasi', 'href' => 'pages/hr/organization_structures/index.php', 'perms' => 'hr.view'],
-        ['key' => 'salary_components',  'label' => 'Komponen Gaji',      'href' => 'pages/hr/salary_components/index.php',       'perms' => 'payroll.view'],
-        ['key' => 'salary_assignments', 'label' => 'Penugasan Komponen', 'href' => 'pages/hr/salary_components/assignments.php', 'perms' => 'payroll.view'],
     ]],
 
     // ── LAPORAN ─────────────────────────────────────────────────────────────

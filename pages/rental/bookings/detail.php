@@ -2659,7 +2659,7 @@ document.addEventListener('DOMContentLoaded', () => {
             <?php if ($canManage): ?>
             if (rentalRouteCtrl && typeof rentalRouteCtrl.validateBounds === 'function') {
                 const rRes = rentalRouteCtrl.validateBounds();
-                if (!rRes.valid) {
+                if (!rRes.ok) {
                     e.preventDefault();
                     const detTabBtn = document.querySelector('[data-bs-target="#tab-detail"]');
                     if (detTabBtn && typeof bootstrap !== 'undefined' && bootstrap.Tab) {

@@ -162,21 +162,28 @@ require __DIR__ . '/../../../includes/header.php';
                             <div class="rnt-panel h-100 mb-0">
                                 <div class="rnt-panel-header"><i class="bi bi-journal-text"></i> Kategori, Keterangan &amp; Bukti</div>
                                 <div class="rnt-panel-body">
+                                    <?php
+                                    $inCats  = cash_master_categories('in', $cid, true);
+                                    $outCats = cash_master_categories('out', $cid, true);
+                                    $curList = $form['direction'] === 'out' ? $outCats : $inCats;
+                                    $curCatNames = array_column($curList, 'name');
+                                    $curSelCat   = trim((string) $form['category']);
+                                    $hasLegacyCashCat = $curSelCat !== '' && !in_array($curSelCat, $curCatNames, true);
+                                    ?>
                                     <div class="rnt-row">
                                         <div class="rnt-label">Kategori</div>
                                         <div class="rnt-field">
-                                            <input class="form-control form-control-sm" id="category" name="category" list="cashCategoryList" maxlength="50" value="<?= e($form['category']) ?>"
-                                                   placeholder="mis. BBM, Tol &amp; Parkir, Setoran Modal">
-                                            <datalist id="cashCategoryList">
-                                                <?php
-                                                $initCatList = $form['direction'] === 'out'
-                                                    ? array_keys(cash_expense_categories())
-                                                    : array_keys(cash_income_categories());
-                                                foreach ($initCatList as $cOpt):
-                                                ?>
-                                                    <option value="<?= e($cOpt) ?>"></option>
+                                            <select class="form-select form-select-sm" id="category" name="category">
+                                                <option value="">— Pilih Kategori —</option>
+                                                <?php if ($hasLegacyCashCat): ?>
+                                                    <option value="<?= e($curSelCat) ?>" selected><?= e($curSelCat) ?> (kategori lama)</option>
+                                                <?php endif; ?>
+                                                <?php foreach ($curList as $mc): ?>
+                                                    <option value="<?= e((string) $mc['name']) ?>"<?= $curSelCat === $mc['name'] ? ' selected' : '' ?>>
+                                                        <?= e('[' . $mc['code'] . '] ' . $mc['name']) ?>
+                                                    </option>
                                                 <?php endforeach; ?>
-                                            </datalist>
+                                            </select>
                                         </div>
                                     </div>
                                     <div class="rnt-row rnt-row-top">
@@ -203,20 +210,38 @@ require __DIR__ . '/../../../includes/header.php';
 <script>
 document.addEventListener('DOMContentLoaded', function () {
     var dirSel = document.getElementById('direction');
-    var dl = document.getElementById('cashCategoryList');
-    if (!dirSel || !dl) return;
+    var catSel = document.getElementById('category');
+    if (!dirSel || !catSel) return;
     var map = {
-        'in': <?= json_encode(array_keys(cash_income_categories()), JSON_UNESCAPED_UNICODE) ?>,
-        'out': <?= json_encode(array_keys(cash_expense_categories()), JSON_UNESCAPED_UNICODE) ?>
+        'in': <?= json_encode(array_map(static fn (array $r): array => ['code' => (string) $r['code'], 'name' => (string) $r['name']], $inCats), JSON_UNESCAPED_UNICODE) ?>,
+        'out': <?= json_encode(array_map(static fn (array $r): array => ['code' => (string) $r['code'], 'name' => (string) $r['name']], $outCats), JSON_UNESCAPED_UNICODE) ?>
     };
     function refreshCats() {
-        var list = map[dirSel.value] || map['in'];
-        dl.innerHTML = '';
-        list.forEach(function (v) {
+        var cur = catSel.value;
+        var list = map[dirSel.value] || map['in'] || [];
+        catSel.innerHTML = '';
+        var defOpt = document.createElement('option');
+        defOpt.value = '';
+        defOpt.textContent = '— Pilih Kategori —';
+        catSel.appendChild(defOpt);
+        var matched = false;
+        list.forEach(function (item) {
             var opt = document.createElement('option');
-            opt.value = v;
-            dl.appendChild(opt);
+            opt.value = item.name;
+            opt.textContent = '[' + item.code + '] ' + item.name;
+            if (cur === item.name) {
+                opt.selected = true;
+                matched = true;
+            }
+            catSel.appendChild(opt);
         });
+        if (cur !== '' && !matched) {
+            var legacyOpt = document.createElement('option');
+            legacyOpt.value = cur;
+            legacyOpt.textContent = cur + ' (kategori lama)';
+            legacyOpt.selected = true;
+            catSel.appendChild(legacyOpt);
+        }
     }
     dirSel.addEventListener('change', refreshCats);
 });

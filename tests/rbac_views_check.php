@@ -4,7 +4,7 @@
  *   php -c /opt/data/cache/scratch/localdb/php.ini tests/rbac_views_check.php
  *
  * Staff (4) & Viewer (5) hanya boleh modul operasional. Direktori pengguna,
- * payroll (nominal gaji), keuangan, dan audit harus tertutup.
+ * keuangan, dan audit harus tertutup.
  */
 require_once __DIR__ . '/../config/config.php';
 
@@ -24,7 +24,7 @@ $has = function (int $role, string $perm) use ($c): bool {
 
 // Tertutup untuk Staff & Viewer
 foreach ([4, 5] as $r) {
-    foreach (['users.view', 'payroll.view', 'finance.view', 'audit.view'] as $p) {
+    foreach (['users.view', 'finance.view', 'audit.view'] as $p) {
         ok(!$has($r, $p), "role $r TIDAK punya $p");
     }
 }
@@ -34,12 +34,15 @@ foreach ([4, 5] as $r) {
         ok($has($r, $p), "role $r punya $p");
     }
 }
-// HRD & Admin tetap punya payroll + finance
+// HRD & Admin tetap punya hr.view
 foreach ([2, 3] as $r) {
-    ok($has($r, 'payroll.view'), "role $r punya payroll.view");
+    ok($has($r, 'hr.view'), "role $r punya hr.view");
 }
 ok($has(2, 'finance.view'), 'Admin Perusahaan punya finance.view');
-ok($has(1, 'finance.view') && $has(1, 'payroll.view'), 'Super Admin punya finance & payroll');
+ok($has(1, 'finance.view') && $has(1, 'hr.view'), 'Super Admin punya finance & hr');
+
+$payrollPerms = (int) $c->query("SELECT COUNT(*) FROM permissions WHERE module = 'payroll' OR name IN ('payroll.view', 'payroll.manage')")->fetch_row()[0];
+ok($payrollPerms === 0, 'Permission payroll.view & payroll.manage sudah dihapus dari tabel permissions');
 
 echo $fails === 0 ? "\nSEMUA LULUS\n" : "\n$fails GAGAL\n";
 exit($fails === 0 ? 0 : 1);

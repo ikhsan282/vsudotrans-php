@@ -61,12 +61,14 @@ function employee_branch_options(?int $cid): array
 }
 
 /**
- * Pastikan kolom employees.organization_structure tersedia.
+ * Pastikan kolom employees.organization_structure tersedia serta hapus
+ * sisa modul komponen gaji (`salary_components`, `employee_salary_components`, `payroll.*`).
  */
 function employee_ensure_hr_schema(): void
 {
     static $checked = false;
-    if ($checked) {
+    $hasSess = (session_status() === PHP_SESSION_ACTIVE);
+    if ($checked || ($hasSess && !empty($_SESSION['_vst_schema_hr_v2']))) {
         return;
     }
     $checked = true;
@@ -74,6 +76,27 @@ function employee_ensure_hr_schema(): void
     $res = $db->query("SHOW COLUMNS FROM `employees` LIKE 'organization_structure'");
     if ($res && $res->num_rows === 0) {
         $db->query("ALTER TABLE `employees` ADD COLUMN `organization_structure` VARCHAR(100) DEFAULT NULL AFTER `job_position`");
+    }
+
+    if (($tEsc = $db->query("SHOW TABLES LIKE 'employee_salary_components'")) && $tEsc->num_rows > 0) {
+        $db->query('DROP TABLE IF EXISTS `employee_salary_components`');
+    }
+    if (($tSc = $db->query("SHOW TABLES LIKE 'salary_components'")) && $tSc->num_rows > 0) {
+        $db->query('DROP TABLE IF EXISTS `salary_components`');
+    }
+
+    $cntRes = $db->query("SELECT COUNT(*) FROM `permissions` WHERE `module` = 'payroll' OR `name` IN ('payroll.view', 'payroll.manage')");
+    if ($cntRes && (int) $cntRes->fetch_row()[0] > 0) {
+        $db->query("DELETE FROM `role_permissions` WHERE `permission_id` IN (SELECT `id` FROM `permissions` WHERE `module` = 'payroll' OR `name` IN ('payroll.view', 'payroll.manage'))");
+        $db->query("DELETE FROM `user_permissions` WHERE `permission_id` IN (SELECT `id` FROM `permissions` WHERE `module` = 'payroll' OR `name` IN ('payroll.view', 'payroll.manage'))");
+        $db->query("DELETE FROM `permissions` WHERE `module` = 'payroll' OR `name` IN ('payroll.view', 'payroll.manage')");
+        if ($hasSess && !empty($_SESSION['permissions']) && is_array($_SESSION['permissions'])) {
+            $_SESSION['permissions'] = array_values(array_diff($_SESSION['permissions'], ['payroll.view', 'payroll.manage']));
+        }
+    }
+
+    if ($hasSess) {
+        $_SESSION['_vst_schema_hr_v2'] = 1;
     }
 }
 
@@ -232,23 +255,6 @@ function employee_list(int $page, string $q, string $status, ?int $filter_cid = 
     $stmt->close();
 
     return [$rows, $p];
-}
-
-/**
- * Urai input nominal uang (mendukung format Indonesia `3.200.000` / `3.200.000,50`
- * maupun desimal standar `3200000.50`).
- */
-function employee_parse_money($raw): float
-{
-    $s = trim(str_ireplace(['Rp', ' '], '', (string) $raw));
-    if ($s === '') {
-        return 0.0;
-    }
-    if (preg_match('/^-?\d+\.\d{1,2}$/', $s)) {
-        return max(0.0, (float) $s);
-    }
-    $s = str_replace(['.', ','], ['', '.'], $s);
-    return max(0.0, (float) $s);
 }
 
 /**
