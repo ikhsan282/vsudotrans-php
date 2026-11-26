@@ -182,9 +182,6 @@ $csrfToken = csrf_token();
                     </button>
                 </div>
                 <div class="d-flex align-items-center gap-2 ms-auto">
-                    <span id="cal-loading-badge" class="badge bg-warning-subtle text-warning-emphasis border d-none">
-                        <span class="spinner-border spinner-border-sm me-1" role="status" aria-hidden="true"></span>Memuat...
-                    </span>
                     <span id="cal-visible-count" class="badge bg-body-secondary text-body border">0 jadwal tampil</span>
                     <span class="d-none d-lg-inline-flex align-items-center text-body-tertiary"
                           title="Shortcut Keyboard: / fokus pencarian, T hari ini, ←/→ pindah periode, M Bulan, W Minggu, D Hari, L Daftar">
@@ -572,7 +569,6 @@ document.addEventListener('DOMContentLoaded', function () {
     const elStatus = document.getElementById('cal-filter-status');
     const elHideCancelled = document.getElementById('cal-filter-hide-cancelled');
     const elReset = document.getElementById('cal-filter-reset');
-    const elLoading = document.getElementById('cal-loading-badge');
     const elCalSkeleton = document.getElementById('cal-skeleton-overlay');
     const elCount = document.getElementById('cal-visible-count');
     const elJumpDate = document.getElementById('cal-jump-date');
@@ -1182,6 +1178,10 @@ document.addEventListener('DOMContentLoaded', function () {
             start_date: String(p.starts_on || ''),
             end_date: String(p.ends_on_inclusive || p.starts_on || '')
         });
+        if (window.vstLoader && window.vstLoader.setFieldLoading) {
+            window.vstLoader.setFieldLoading(selV, true);
+            window.vstLoader.setFieldLoading(selD, true);
+        }
         try {
             const res = await fetch(availCheckUrl + '?' + qs.toString(), { credentials: 'same-origin' });
             const data = await res.json().catch(() => ({}));
@@ -1214,7 +1214,12 @@ document.addEventListener('DOMContentLoaded', function () {
             updateBusyOptions(selV, busyV);
             updateBusyOptions(selD, busyD);
             refreshAssignConflictBanner();
-        } catch (e) {}
+        } catch (e) {} finally {
+            if (window.vstLoader && window.vstLoader.setFieldLoading) {
+                window.vstLoader.setFieldLoading(selV, false);
+                window.vstLoader.setFieldLoading(selD, false);
+            }
+        }
     };
 
     const populateQuickAssignOptions = (props) => {
@@ -1418,7 +1423,7 @@ document.addEventListener('DOMContentLoaded', function () {
                 });
         },
         loading: function (isLoading) {
-            if (elLoading) elLoading.classList.toggle('d-none', !isLoading);
+            if (elCount) elCount.classList.toggle('vst-field-shimmer', !!isLoading);
             if (elCalSkeleton) elCalSkeleton.classList.toggle('d-none', !isLoading);
         },
         eventsSet: function (evList) {
@@ -1670,6 +1675,9 @@ document.addEventListener('DOMContentLoaded', function () {
         }
         const confirmBtn = document.getElementById('calReschedConfirmBtn');
         if (confirmBtn) {
+            if (window.vstLoader && window.vstLoader.clearButtonLoading) {
+                window.vstLoader.clearButtonLoading(confirmBtn);
+            }
             confirmBtn.disabled = false;
             confirmBtn.innerHTML = '<i class="bi bi-check2-circle me-1" aria-hidden="true"></i>Simpan Jadwal Baru';
         }
@@ -1712,7 +1720,11 @@ document.addEventListener('DOMContentLoaded', function () {
                 fb.textContent = '';
             }
             reschedConfirmBtn.disabled = true;
-            reschedConfirmBtn.innerHTML = '<span class="spinner-border spinner-border-sm me-1" role="status" aria-hidden="true"></span>Menyimpan...';
+            if (window.vstLoader && window.vstLoader.setButtonLoading) {
+                window.vstLoader.setButtonLoading(reschedConfirmBtn, 'Menyimpan…');
+            } else {
+                reschedConfirmBtn.innerHTML = '<span class="vst-btn-dot me-2" role="status" aria-hidden="true"></span>Menyimpan…';
+            }
             try {
                 const fd = new FormData();
                 fd.append('csrf_token', csrfToken);
@@ -1731,6 +1743,11 @@ document.addEventListener('DOMContentLoaded', function () {
                     throw new Error(data.error || ('HTTP ' + res.status));
                 }
                 dropState.saved = true;
+                if (window.vstLoader && window.vstLoader.clearButtonLoading) {
+                    window.vstLoader.clearButtonLoading(reschedConfirmBtn);
+                }
+                reschedConfirmBtn.disabled = false;
+                reschedConfirmBtn.innerHTML = '<i class="bi bi-check2-circle me-1" aria-hidden="true"></i>Simpan Jadwal Baru';
                 if (reschedModalEl) bootstrap.Modal.getOrCreateInstance(reschedModalEl).hide();
                 showCalSuccessBanner(data.message || 'Jadwal pemesanan berhasil dipindahkan.');
                 lastFetchKey = '';
@@ -1741,6 +1758,9 @@ document.addEventListener('DOMContentLoaded', function () {
                     fb.className = 'alert alert-danger py-1 px-2 mb-0 small';
                     fb.textContent = err && err.message ? err.message : 'Gagal memindahkan jadwal.';
                     fb.classList.remove('d-none');
+                }
+                if (window.vstLoader && window.vstLoader.clearButtonLoading) {
+                    window.vstLoader.clearButtonLoading(reschedConfirmBtn);
                 }
                 reschedConfirmBtn.disabled = false;
                 reschedConfirmBtn.innerHTML = '<i class="bi bi-check2-circle me-1" aria-hidden="true"></i>Simpan Jadwal Baru';
@@ -1797,7 +1817,11 @@ document.addEventListener('DOMContentLoaded', function () {
             const clearDriver = Number(p.driver_id || 0) > 0 && Number(dVal) === 0;
             const origHtml = assignSaveBtn.innerHTML;
             assignSaveBtn.disabled = true;
-            assignSaveBtn.innerHTML = '<span class="spinner-border spinner-border-sm me-1" role="status" aria-hidden="true"></span>Menyimpan...';
+            if (window.vstLoader && window.vstLoader.setButtonLoading) {
+                window.vstLoader.setButtonLoading(assignSaveBtn, 'Menyimpan…');
+            } else {
+                assignSaveBtn.innerHTML = '<span class="vst-btn-dot me-2" role="status" aria-hidden="true"></span>Menyimpan…';
+            }
             setAssignFeedback('', '');
 
             try {
@@ -1865,8 +1889,12 @@ document.addEventListener('DOMContentLoaded', function () {
             } catch (err) {
                 setAssignFeedback('error', err && err.message ? err.message : 'Gagal menyimpan penugasan.');
             } finally {
+                if (window.vstLoader && window.vstLoader.clearButtonLoading) {
+                    window.vstLoader.clearButtonLoading(assignSaveBtn);
+                } else {
+                    assignSaveBtn.innerHTML = origHtml;
+                }
                 assignSaveBtn.disabled = false;
-                assignSaveBtn.innerHTML = origHtml;
             }
         });
     }
@@ -1881,7 +1909,11 @@ document.addEventListener('DOMContentLoaded', function () {
         const origHtml = triggerBtn ? triggerBtn.innerHTML : '';
         btns.forEach(b => { b.disabled = true; });
         if (triggerBtn) {
-            triggerBtn.innerHTML = '<span class="spinner-border spinner-border-sm me-1" role="status" aria-hidden="true"></span>Menyimpan...';
+            if (window.vstLoader && window.vstLoader.setButtonLoading) {
+                window.vstLoader.setButtonLoading(triggerBtn, 'Menyimpan…');
+            } else {
+                triggerBtn.innerHTML = '<span class="vst-btn-dot me-2" role="status" aria-hidden="true"></span>Menyimpan…';
+            }
         }
         setModalFeedback('', '');
 
@@ -1924,7 +1956,13 @@ document.addEventListener('DOMContentLoaded', function () {
         } catch (err) {
             setModalFeedback('error', err && err.message ? err.message : 'Gagal mengubah status pemesanan.');
             btns.forEach(b => { b.disabled = false; });
-            if (triggerBtn) triggerBtn.innerHTML = origHtml;
+            if (triggerBtn) {
+                if (window.vstLoader && window.vstLoader.clearButtonLoading) {
+                    window.vstLoader.clearButtonLoading(triggerBtn);
+                } else {
+                    triggerBtn.innerHTML = origHtml;
+                }
+            }
         }
     }
 

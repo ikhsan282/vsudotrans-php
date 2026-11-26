@@ -215,7 +215,24 @@ require __DIR__ . '/../../includes/header.php';
                     Grafik butuh rentang minimal 2 bulan. Perluas filter tanggal.
                 </div>
             <?php else: ?>
-                <canvas id="finTrend" height="260"></canvas>
+                <div class="vst-chart-stage" data-chart-stage="finTrend">
+                    <div class="vst-chart-skel" aria-hidden="true">
+                        <div class="vst-chart-skel-bars">
+                            <span class="vst-skel" style="height:45%"></span>
+                            <span class="vst-skel" style="height:68%"></span>
+                            <span class="vst-skel" style="height:56%"></span>
+                            <span class="vst-skel" style="height:82%"></span>
+                            <span class="vst-skel" style="height:74%"></span>
+                            <span class="vst-skel" style="height:92%"></span>
+                        </div>
+                        <div class="vst-chart-skel-legend">
+                            <span class="vst-skel vst-skel-line" style="width:72px"></span>
+                            <span class="vst-skel vst-skel-line" style="width:68px"></span>
+                            <span class="vst-skel vst-skel-line" style="width:54px"></span>
+                        </div>
+                    </div>
+                    <canvas id="finTrend" height="260"></canvas>
+                </div>
             <?php endif; ?>
         </div>
     </div>
@@ -225,7 +242,18 @@ require __DIR__ . '/../../includes/header.php';
             <div class="card shadow-sm border-0 h-100">
                 <div class="card-header bg-white fw-semibold">Pendapatan per Jenis Booking</div>
                 <div class="card-body">
-                    <canvas id="finByType" height="220"></canvas>
+                    <div class="vst-chart-stage" data-chart-stage="finByType">
+                        <div class="vst-chart-skel" aria-hidden="true">
+                            <div class="vst-chart-skel-donut-wrap">
+                                <span class="vst-skel vst-chart-skel-donut"></span>
+                            </div>
+                            <div class="vst-chart-skel-legend">
+                                <span class="vst-skel vst-skel-line" style="width:64px"></span>
+                                <span class="vst-skel vst-skel-line" style="width:64px"></span>
+                            </div>
+                        </div>
+                        <canvas id="finByType" height="220"></canvas>
+                    </div>
                 </div>
             </div>
         </div>
@@ -236,7 +264,17 @@ require __DIR__ . '/../../includes/header.php';
                     <?php if (!$costs): ?>
                         <div class="text-center text-muted py-4">Tidak ada biaya pada periode ini.</div>
                     <?php else: ?>
-                        <canvas id="finCost" height="220"></canvas>
+                        <div class="vst-chart-stage" data-chart-stage="finCost">
+                            <div class="vst-chart-skel" aria-hidden="true">
+                                <div class="d-flex flex-column gap-3 my-auto">
+                                    <span class="vst-skel vst-skel-line mb-0" style="width:86%;height:18px"></span>
+                                    <span class="vst-skel vst-skel-line mb-0" style="width:64%;height:18px"></span>
+                                    <span class="vst-skel vst-skel-line mb-0" style="width:48%;height:18px"></span>
+                                    <span class="vst-skel vst-skel-line mb-0" style="width:32%;height:18px"></span>
+                                </div>
+                            </div>
+                            <canvas id="finCost" height="220"></canvas>
+                        </div>
                     <?php endif; ?>
                 </div>
             </div>
@@ -420,7 +458,17 @@ require __DIR__ . '/../../includes/header.php';
                     <?php if (!$expCats): ?>
                         <div class="text-center text-muted py-4">Tidak ada pengeluaran kas pada periode ini.</div>
                     <?php else: ?>
-                        <canvas id="finCashExpCat" height="220"></canvas>
+                        <div class="vst-chart-stage" data-chart-stage="finCashExpCat">
+                            <div class="vst-chart-skel" aria-hidden="true">
+                                <div class="d-flex flex-column gap-3 my-auto">
+                                    <span class="vst-skel vst-skel-line mb-0" style="width:82%;height:18px"></span>
+                                    <span class="vst-skel vst-skel-line mb-0" style="width:60%;height:18px"></span>
+                                    <span class="vst-skel vst-skel-line mb-0" style="width:42%;height:18px"></span>
+                                    <span class="vst-skel vst-skel-line mb-0" style="width:28%;height:18px"></span>
+                                </div>
+                            </div>
+                            <canvas id="finCashExpCat" height="220"></canvas>
+                        </div>
                     <?php endif; ?>
                 </div>
             </div>
@@ -447,7 +495,19 @@ require __DIR__ . '/../../includes/header.php';
         </div>
         <?php endif; ?>
         <?php if ($daily): ?>
-        <div class="p-3 border-bottom" style="position:relative; height:190px;">
+        <div class="p-3 border-bottom vst-chart-stage" data-chart-stage="finDailyChart" style="position:relative; height:190px;">
+            <div class="vst-chart-skel" aria-hidden="true">
+                <div class="vst-chart-skel-bars">
+                    <span class="vst-skel" style="height:40%"></span>
+                    <span class="vst-skel" style="height:75%"></span>
+                    <span class="vst-skel" style="height:55%"></span>
+                    <span class="vst-skel" style="height:88%"></span>
+                    <span class="vst-skel" style="height:64%"></span>
+                    <span class="vst-skel" style="height:72%"></span>
+                    <span class="vst-skel" style="height:48%"></span>
+                    <span class="vst-skel" style="height:80%"></span>
+                </div>
+            </div>
             <canvas id="finDailyChart"></canvas>
         </div>
         <?php endif; ?>
@@ -566,7 +626,19 @@ require __DIR__ . '/../../includes/header.php';
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.5.1/dist/chart.umd.min.js"></script>
 <script>
 (function () {
-  if (typeof Chart === 'undefined') return;
+  function markChartReady(canvasEl) {
+    const stage = canvasEl && canvasEl.closest ? canvasEl.closest('.vst-chart-stage') : null;
+    if (stage) stage.classList.add('is-ready');
+  }
+  function markAllChartsReady() {
+    document.querySelectorAll('.vst-chart-stage').forEach(function (st) {
+      st.classList.add('is-ready');
+    });
+  }
+  if (typeof Chart === 'undefined') {
+    markAllChartsReady();
+    return;
+  }
   const fmt = v => 'Rp ' + Number(v).toLocaleString('id-ID');
   const jt  = v => 'Rp ' + (v / 1000000).toLocaleString('id-ID', { maximumFractionDigits: 1 }) + ' jt';
   const mo  = <?= json_encode($mo, JSON_UNESCAPED_UNICODE) ?>;
@@ -608,6 +680,7 @@ require __DIR__ . '/../../includes/header.php';
   Chart.defaults.color = initPal.text;
   Chart.defaults.borderColor = initPal.grid;
 
+  try {
   // 1) Tren pendapatan vs biaya (garis)
   const elTrend = document.getElementById('finTrend');
   if (elTrend) {
@@ -763,7 +836,9 @@ require __DIR__ . '/../../includes/header.php';
       }
     }));
   }
-
+  } finally {
+    markAllChartsReady();
+  }
   window.addEventListener('vst:themechange', applyChartTheme);
 })();
 </script>

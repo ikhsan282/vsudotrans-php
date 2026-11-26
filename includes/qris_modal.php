@@ -70,18 +70,39 @@ if (!empty($canManage) && !empty($qrisChannels)): ?>
                 </div>
             </div>
 
+            <!-- Step 1b: Shimmer Saat Membuat QRIS Dinamis -->
+            <div id="qrisStepLoading" class="d-none" aria-hidden="true">
+                <div class="modal-body text-center">
+                    <div class="d-flex justify-content-between align-items-center mb-2">
+                        <span class="vst-skel vst-skel-pill" style="width:74px;height:20px"></span>
+                        <span class="vst-skel vst-skel-pill" style="width:142px;height:20px"></span>
+                    </div>
+                    <span class="vst-skel vst-skel-line mx-auto mb-3" style="width:170px"></span>
+                    <div class="vst-qr-skel-wrap mb-3">
+                        <span class="vst-skel vst-qr-skel-box"></span>
+                    </div>
+                    <div class="border rounded bg-body-secondary p-2 px-3 text-start mb-2">
+                        <div class="d-flex justify-content-between mb-2"><span class="vst-skel vst-skel-line mb-0" style="width:36%"></span><span class="vst-skel vst-skel-line mb-0" style="width:28%"></span></div>
+                        <div class="d-flex justify-content-between mb-2"><span class="vst-skel vst-skel-line mb-0" style="width:32%"></span><span class="vst-skel vst-skel-line mb-0" style="width:24%"></span></div>
+                        <div class="d-flex justify-content-between"><span class="vst-skel vst-skel-line mb-0" style="width:42%;height:14px"></span><span class="vst-skel vst-skel-line mb-0" style="width:30%;height:16px"></span></div>
+                    </div>
+                    <span class="vst-skel vst-skel-line mx-auto mb-0" style="width:66%"></span>
+                </div>
+            </div>
+
             <!-- Step 2: Tampil QR Code & Auto-Polling -->
             <div id="qrisStepShow" class="d-none">
                 <div class="modal-body text-center">
                     <div class="d-flex justify-content-between align-items-center mb-2">
                         <span class="badge bg-secondary" id="qrisShowChannelBadge">QRIS</span>
                         <span class="badge bg-warning-subtle text-warning-emphasis border" id="qrisShowStatusBadge">
-                            <span class="spinner-border spinner-border-sm me-1" style="width:.7rem;height:.7rem;" role="status"></span>Menunggu Pembayaran
+                            <span class="vst-live-dot vst-live-dot--warn me-1" role="status" aria-hidden="true"></span>Menunggu Pembayaran
                         </span>
                     </div>
                     <div class="text-muted small mb-2">Order ID: <code id="qrisShowOrderId">-</code></div>
 
-                    <div class="p-2 bg-white border rounded-3 d-inline-block mb-3 shadow-sm qr-code-frame">
+                    <div id="qrisImgWrap" class="p-2 bg-white border rounded-3 d-inline-block mb-3 shadow-sm qr-code-frame vst-qr-img-wrap">
+                        <span class="vst-skel vst-qr-img-skel" aria-hidden="true"></span>
                         <img id="qrisShowImg" src="" alt="QRIS Dinamis" width="230" height="230" class="img-fluid">
                     </div>
 

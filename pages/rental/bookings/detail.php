@@ -2447,6 +2447,8 @@ document.addEventListener('DOMContentLoaded', () => {
             }
 
             if (qrisStepForm) qrisStepForm.classList.remove('d-none');
+            const qrisStepLoadOpen = document.getElementById('qrisStepLoading');
+            if (qrisStepLoadOpen) qrisStepLoadOpen.classList.add('d-none');
             if (qrisStepShow) qrisStepShow.classList.add('d-none');
             if (typeof bootstrap !== 'undefined') {
                 bootstrap.Modal.getOrCreateInstance(qrisModalEl).show();
@@ -2456,6 +2458,8 @@ document.addEventListener('DOMContentLoaded', () => {
         qrisModalEl.addEventListener('hidden.bs.modal', () => {
             stopQrisModalTimers();
             qrisCurrentOrderId = '';
+            const qrisStepLoadHide = document.getElementById('qrisStepLoading');
+            if (qrisStepLoadHide) qrisStepLoadHide.classList.add('d-none');
             refreshBgQrisPoller();
         });
     }
@@ -2490,9 +2494,19 @@ document.addEventListener('DOMContentLoaded', () => {
                 return;
             }
 
+            const qrisStepLoad = document.getElementById('qrisStepLoading');
+            const qrisImgWrap  = document.getElementById('qrisImgWrap');
             btnGenQris.disabled = true;
             const origHtml = btnGenQris.innerHTML;
-            btnGenQris.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span>Membuat QRIS...';
+            if (window.vstLoader && window.vstLoader.setButtonLoading) {
+                window.vstLoader.setButtonLoading(btnGenQris, 'Membuat QRIS…');
+            } else {
+                btnGenQris.innerHTML = '<span class="vst-btn-dot me-2" aria-hidden="true"></span>Membuat QRIS…';
+            }
+            if (qrisStepForm) qrisStepForm.classList.add('d-none');
+            if (qrisStepLoad) qrisStepLoad.classList.remove('d-none');
+
+            let qrisShown = false;
             try {
                 const fd = new FormData();
                 fd.append('csrf_token', csrfTok);
@@ -2519,10 +2533,18 @@ document.addEventListener('DOMContentLoaded', () => {
                 if (imgEl) {
                     const primarySrc  = data.qris_data_uri || data.qris_image_url || data.fallback_qr_url || '';
                     const fallbackSrc = data.qris_image_url || data.fallback_qr_url || '';
+                    if (qrisImgWrap) qrisImgWrap.classList.add('is-loading');
+                    const doneImg = () => { if (qrisImgWrap) qrisImgWrap.classList.remove('is-loading'); };
+                    imgEl.onload = doneImg;
                     imgEl.onerror = function () {
-                        if (fallbackSrc && this.src !== fallbackSrc) this.src = fallbackSrc;
+                        if (fallbackSrc && this.src !== fallbackSrc) {
+                            this.src = fallbackSrc;
+                        } else {
+                            doneImg();
+                        }
                     };
                     imgEl.src = primarySrc;
+                    if (imgEl.complete && imgEl.naturalWidth > 0) doneImg();
                 }
                 const chEl = document.getElementById('qrisShowChannelBadge');
                 if (chEl) chEl.textContent = data.channel_name || 'QRIS';
@@ -2561,11 +2583,12 @@ document.addEventListener('DOMContentLoaded', () => {
                 const stBadge = document.getElementById('qrisShowStatusBadge');
                 if (stBadge) {
                     stBadge.className = 'badge bg-warning-subtle text-warning-emphasis border';
-                    stBadge.innerHTML = '<span class="spinner-border spinner-border-sm me-1" style="width:.7rem;height:.7rem;" role="status"></span>Menunggu Pembayaran';
+                    stBadge.innerHTML = '<span class="vst-live-dot vst-live-dot--warn me-1" role="status" aria-hidden="true"></span>Menunggu Pembayaran';
                 }
 
-                if (qrisStepForm) qrisStepForm.classList.add('d-none');
+                if (qrisStepLoad) qrisStepLoad.classList.add('d-none');
                 if (qrisStepShow) qrisStepShow.classList.remove('d-none');
+                qrisShown = true;
 
                 startQrisCountdown(data.expired_ts || null);
                 qrisModalPollTimer = setInterval(() => {
@@ -2573,13 +2596,19 @@ document.addEventListener('DOMContentLoaded', () => {
                 }, 4000);
                 refreshBgQrisPoller();
             } catch (err) {
+                if (qrisStepLoad) qrisStepLoad.classList.add('d-none');
+                if (!qrisShown && qrisStepForm) qrisStepForm.classList.remove('d-none');
                 if (qrisCreateErr) {
                     qrisCreateErr.textContent = err.message || 'Terjadi kesalahan saat membuat QRIS.';
                     qrisCreateErr.classList.remove('d-none');
                 }
             } finally {
+                if (window.vstLoader && window.vstLoader.clearButtonLoading) {
+                    window.vstLoader.clearButtonLoading(btnGenQris);
+                } else {
+                    btnGenQris.innerHTML = origHtml;
+                }
                 btnGenQris.disabled = false;
-                btnGenQris.innerHTML = origHtml;
             }
         });
     }
@@ -2589,6 +2618,8 @@ document.addEventListener('DOMContentLoaded', () => {
         btnQrisBack.addEventListener('click', () => {
             stopQrisModalTimers();
             qrisCurrentOrderId = '';
+            const qrisStepLoadBack = document.getElementById('qrisStepLoading');
+            if (qrisStepLoadBack) qrisStepLoadBack.classList.add('d-none');
             if (qrisStepShow) qrisStepShow.classList.add('d-none');
             if (qrisStepForm) qrisStepForm.classList.remove('d-none');
         });

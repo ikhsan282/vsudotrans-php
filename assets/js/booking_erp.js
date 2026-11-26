@@ -368,7 +368,18 @@
         return;
       }
 
-      if (btnApplyReg) btnApplyReg.disabled = true;
+      if (btnApplyReg) {
+        btnApplyReg.disabled = true;
+        if (window.vstLoader && window.vstLoader.setButtonLoading) {
+          window.vstLoader.setButtonLoading(btnApplyReg, 'Menghitung…');
+        }
+      }
+      if (window.vstLoader && window.vstLoader.setFieldLoading) {
+        if (showBbm && bbmDisp) window.vstLoader.setFieldLoading(bbmDisp, true);
+        if (tbody) tbody.querySelectorAll('.crew-amt-display').forEach(function (inp) {
+          window.vstLoader.setFieldLoading(inp, true);
+        });
+      }
       setRegMsg('text-muted', showBbm ? 'Menghitung komisi dan BBM...' : 'Menghitung komisi...');
 
       try {
@@ -457,7 +468,18 @@
       } catch (err) {
         setRegMsg('text-danger fw-semibold', 'Gagal menghubungi layanan peraturan komisi.');
       } finally {
-        if (btnApplyReg) btnApplyReg.disabled = false;
+        if (btnApplyReg) {
+          if (window.vstLoader && window.vstLoader.clearButtonLoading) {
+            window.vstLoader.clearButtonLoading(btnApplyReg);
+          }
+          btnApplyReg.disabled = false;
+        }
+        if (window.vstLoader && window.vstLoader.setFieldLoading) {
+          if (showBbm && bbmDisp) window.vstLoader.setFieldLoading(bbmDisp, false);
+          if (tbody) tbody.querySelectorAll('.crew-amt-display').forEach(function (inp) {
+            window.vstLoader.setFieldLoading(inp, false);
+          });
+        }
       }
     }
 
@@ -1105,6 +1127,8 @@
         if (qrisAmtDisp) qrisAmtDisp.value = fmtRp(rem) || '0';
         if (qrisAmtVal) qrisAmtVal.value = String(rem);
         if (qrisStepForm) qrisStepForm.classList.remove('d-none');
+        const qrisStepLoadOpen = document.getElementById('qrisStepLoading');
+        if (qrisStepLoadOpen) qrisStepLoadOpen.classList.add('d-none');
         if (qrisStepShow) qrisStepShow.classList.add('d-none');
         if (window.bootstrap && window.bootstrap.Modal) {
           window.bootstrap.Modal.getOrCreateInstance(qrisModalEl).show();
@@ -1114,6 +1138,8 @@
       qrisModalEl.addEventListener('hidden.bs.modal', function () {
         stopModalTimers();
         qrisCurrentOrderId = '';
+        const qrisStepLoadHide = document.getElementById('qrisStepLoading');
+        if (qrisStepLoadHide) qrisStepLoadHide.classList.add('d-none');
         refreshBgPoller();
       });
     }
@@ -1136,10 +1162,19 @@
           return;
         }
 
+        const qrisStepLoad = document.getElementById('qrisStepLoading');
+        const qrisImgWrap  = document.getElementById('qrisImgWrap');
         btnGenQris.disabled = true;
         const origHtml = btnGenQris.innerHTML;
-        btnGenQris.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span>Membuat QRIS...';
+        if (window.vstLoader && window.vstLoader.setButtonLoading) {
+          window.vstLoader.setButtonLoading(btnGenQris, 'Membuat QRIS…');
+        } else {
+          btnGenQris.innerHTML = '<span class="vst-btn-dot me-2" aria-hidden="true"></span>Membuat QRIS…';
+        }
+        if (qrisStepForm) qrisStepForm.classList.add('d-none');
+        if (qrisStepLoad) qrisStepLoad.classList.remove('d-none');
 
+        let qrisShown = false;
         try {
           const fd = new FormData();
           fd.append('csrf_token', cfg.csrfToken || '');
@@ -1168,8 +1203,18 @@
           if (imgEl) {
             const primarySrc = data.qris_data_uri || data.qris_image_url || data.fallback_qr_url || '';
             const fallbackSrc = data.qris_image_url || data.fallback_qr_url || '';
-            imgEl.onerror = function () { if (fallbackSrc && this.src !== fallbackSrc) this.src = fallbackSrc; };
+            if (qrisImgWrap) qrisImgWrap.classList.add('is-loading');
+            const doneImg = function () { if (qrisImgWrap) qrisImgWrap.classList.remove('is-loading'); };
+            imgEl.onload = doneImg;
+            imgEl.onerror = function () {
+              if (fallbackSrc && this.src !== fallbackSrc) {
+                this.src = fallbackSrc;
+              } else {
+                doneImg();
+              }
+            };
             imgEl.src = primarySrc;
+            if (imgEl.complete && imgEl.naturalWidth > 0) doneImg();
           }
 
           const setTxt = function (id, txt) { const e = document.getElementById(id); if (e) e.textContent = txt; };
@@ -1195,21 +1240,28 @@
           const stBadge = document.getElementById('qrisShowStatusBadge');
           if (stBadge) {
             stBadge.className = 'badge bg-warning-subtle text-warning-emphasis border';
-            stBadge.innerHTML = '<span class="spinner-border spinner-border-sm me-1" style="width:.7rem;height:.7rem;" role="status"></span>Menunggu Pembayaran';
+            stBadge.innerHTML = '<span class="vst-live-dot vst-live-dot--warn me-1" role="status" aria-hidden="true"></span>Menunggu Pembayaran';
           }
-          if (qrisStepForm) qrisStepForm.classList.add('d-none');
+          if (qrisStepLoad) qrisStepLoad.classList.add('d-none');
           if (qrisStepShow) qrisStepShow.classList.remove('d-none');
+          qrisShown = true;
           startCountdown(data.expired_ts || null);
           qrisModalPollTimer = setInterval(function () { if (qrisCurrentOrderId) pollQris(qrisCurrentOrderId); }, 4000);
           refreshBgPoller();
         } catch (err) {
+          if (qrisStepLoad) qrisStepLoad.classList.add('d-none');
+          if (!qrisShown && qrisStepForm) qrisStepForm.classList.remove('d-none');
           if (qrisCreateErr) {
             qrisCreateErr.textContent = err.message || 'Terjadi kesalahan saat membuat QRIS.';
             qrisCreateErr.classList.remove('d-none');
           }
         } finally {
+          if (window.vstLoader && window.vstLoader.clearButtonLoading) {
+            window.vstLoader.clearButtonLoading(btnGenQris);
+          } else {
+            btnGenQris.innerHTML = origHtml;
+          }
           btnGenQris.disabled = false;
-          btnGenQris.innerHTML = origHtml;
         }
       });
     }
@@ -1219,6 +1271,8 @@
       btnBack.addEventListener('click', function () {
         stopModalTimers();
         qrisCurrentOrderId = '';
+        const qrisStepLoadBack = document.getElementById('qrisStepLoading');
+        if (qrisStepLoadBack) qrisStepLoadBack.classList.add('d-none');
         if (qrisStepShow) qrisStepShow.classList.add('d-none');
         if (qrisStepForm) qrisStepForm.classList.remove('d-none');
       });
@@ -1389,6 +1443,7 @@
       if (!cityEl || typeof window.setTsOptions !== 'function') return;
       const provVal = String(getFieldVal(provEl) || '');
       if (distEl) window.setTsOptions(distEl, [], '', '-- Pilih Kecamatan --');
+      if (window.vstLoader && window.vstLoader.setFieldLoading) window.vstLoader.setFieldLoading(cityEl, true);
       try {
         let qs = provVal ? ('limit=100&province_id=' + encodeURIComponent(provVal)) : 'limit=50&all=1';
         if (cityEl.dataset && cityEl.dataset.tsWithProvince === '1') {
@@ -1397,7 +1452,9 @@
         const res = await fetch((cfg.appUrl || '') + '/pages/masters/cities/options.php?' + qs);
         const data = await res.json();
         window.setTsOptions(cityEl, data, '', '-- Pilih Kota/Kab --');
-      } catch (e) { }
+      } catch (e) { } finally {
+        if (window.vstLoader && window.vstLoader.setFieldLoading) window.vstLoader.setFieldLoading(cityEl, false);
+      }
     }
 
     async function reloadDistricts() {
@@ -1407,11 +1464,14 @@
         window.setTsOptions(distEl, [], '', '-- Pilih Kecamatan --');
         return;
       }
+      if (window.vstLoader && window.vstLoader.setFieldLoading) window.vstLoader.setFieldLoading(distEl, true);
       try {
         const res = await fetch((cfg.appUrl || '') + '/pages/masters/districts/options.php?limit=100&city_id=' + encodeURIComponent(cityVal));
         const data = await res.json();
         window.setTsOptions(distEl, data, '', '-- Pilih Kecamatan --');
-      } catch (e) { }
+      } catch (e) { } finally {
+        if (window.vstLoader && window.vstLoader.setFieldLoading) window.vstLoader.setFieldLoading(distEl, false);
+      }
     }
 
     if (provEl) {
@@ -1893,14 +1953,24 @@
       if (!pid || Number(pid) <= 0) return;
 
       const seq = ++reqSeq;
+      if (hintEl) {
+        hintEl.innerHTML = '<span class="vst-skel vst-skel-line mb-0" style="width:220px;height:14px"></span>';
+        hintEl.classList.remove('d-none');
+      }
       try {
         const url = (cfg.appUrl || '') + '/pages/transport/passengers/last_booking.php?passenger_id=' +
           encodeURIComponent(pid) + '&company_id=' + Number(cfg.companyId || 0) +
           '&type=' + encodeURIComponent(cfg.bookingType || 'travel');
         const res = await fetch(url, { credentials: 'same-origin' });
-        if (!res.ok) return;
+        if (!res.ok) {
+          if (seq === reqSeq && hintEl) { hintEl.classList.add('d-none'); hintEl.innerHTML = ''; }
+          return;
+        }
         const json = await res.json();
-        if (seq !== reqSeq || !json || !json.found) return;
+        if (seq !== reqSeq || !json || !json.found) {
+          if (seq === reqSeq && hintEl) { hintEl.classList.add('d-none'); hintEl.innerHTML = ''; }
+          return;
+        }
         lastData = json;
 
         const curPkDist = cfg.pickupDistrictEl ? String(getFieldVal(cfg.pickupDistrictEl) || '') : '';
@@ -1912,7 +1982,9 @@
           autoFilled = true;
         }
         renderHint(autoFilled);
-      } catch (e) { }
+      } catch (e) {
+        if (seq === reqSeq && hintEl) { hintEl.classList.add('d-none'); hintEl.innerHTML = ''; }
+      }
     }
 
     if (typeof window.bindTsChange === 'function') {
@@ -2113,6 +2185,9 @@
       }
       lastRangeKey = key;
       const seq = ++reqSeq;
+      if (window.vstLoader && window.vstLoader.setFieldLoading && vehEl) {
+        window.vstLoader.setFieldLoading(vehEl, true);
+      }
       try {
         const url = (cfg.appUrl || '') + '/pages/transport/availability_check.php?company_id=' + Number(cfg.companyId || 0) +
           '&booking_type=' + encodeURIComponent(cfg.bookingType || 'travel') +
@@ -2128,7 +2203,11 @@
         decorateSelectOptions(vehEl, busyVehicles, true);
         renderVehicleStatus();
         syncAllCrewSelects();
-      } catch (e) { }
+      } catch (e) { } finally {
+        if (window.vstLoader && window.vstLoader.setFieldLoading && vehEl && seq === reqSeq) {
+          window.vstLoader.setFieldLoading(vehEl, false);
+        }
+      }
     }
 
     [cfg.dateEl, cfg.startDateEl, cfg.endDateEl, cfg.durationEl].forEach(function (el) {

@@ -136,6 +136,46 @@ $backUrl = $no !== ''
     </script>
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.8/dist/css/bootstrap.min.css" rel="stylesheet">
     <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css" rel="stylesheet">
+    <style>
+      .vst-skel {
+        display: block;
+        border-radius: 8px;
+        background: linear-gradient(90deg, #e5eaf2 20%, #f4f7fc 44%, #e5eaf2 68%);
+        background-size: 320% 100%;
+        animation: vst-shimmer 1.35s ease-in-out infinite;
+      }
+      @keyframes vst-shimmer {
+        0% { background-position: 100% 50%; }
+        100% { background-position: 0 50%; }
+      }
+      .vst-qr-img-wrap { position: relative; display: inline-block; }
+      .vst-qr-img-skel {
+        position: absolute;
+        inset: 10px;
+        border-radius: 8px;
+        opacity: 0;
+        visibility: hidden;
+        pointer-events: none;
+        transition: opacity .18s ease, visibility .18s ease;
+      }
+      .vst-qr-img-wrap.is-loading .vst-qr-img-skel { opacity: 1; visibility: visible; }
+      .vst-live-dot {
+        display: inline-block;
+        width: 8px;
+        height: 8px;
+        border-radius: 999px;
+        background: #b45309;
+        vertical-align: middle;
+        animation: vst-live-pulse 1.25s ease-in-out infinite;
+      }
+      @keyframes vst-live-pulse {
+        0%, 100% { transform: scale(.85); opacity: .65; }
+        50% { transform: scale(1.1); opacity: 1; }
+      }
+      @media (prefers-reduced-motion: reduce) {
+        .vst-skel, .vst-live-dot { animation: none !important; }
+      }
+    </style>
 </head>
 <body class="bg-body-tertiary">
 <main class="container py-4" style="max-width: 540px;">
@@ -149,8 +189,9 @@ $backUrl = $no !== ''
             <h5 class="fw-bold mb-1"><?= e($comp['name']) ?></h5>
             <div class="text-muted small mb-3">No. Tiket: <strong><?= e($inv['document_number']) ?></strong> · Invoice: <?= e($inv['invoice_no']) ?></div>
 
-            <div class="p-3 bg-white border rounded-3 d-inline-block mb-3 qr-code-frame">
-                <img src="<?= e($primaryQrSrc) ?>" alt="QRIS Dinamis" width="260" height="260" class="img-fluid"
+            <div id="gatewayQrWrap" class="p-3 bg-white border rounded-3 d-inline-block mb-3 qr-code-frame vst-qr-img-wrap is-loading">
+                <span class="vst-skel vst-qr-img-skel" aria-hidden="true"></span>
+                <img id="gatewayQrImg" src="<?= e($primaryQrSrc) ?>" alt="QRIS Dinamis" width="260" height="260" class="img-fluid"
                      <?php if ($primaryFallback !== ''): ?>onerror="if(this.src!==<?= e(json_encode($primaryFallback)) ?>)this.src=<?= e(json_encode($primaryFallback)) ?>;"<?php endif; ?>>
             </div>
 
@@ -187,13 +228,25 @@ $backUrl = $no !== ''
             <?php endif; ?>
 
             <div id="payStatus" class="badge bg-warning text-dark fs-6 px-3 py-2" role="status" aria-live="polite">
-                <span class="spinner-border spinner-border-sm me-1" role="status" aria-hidden="true"></span>
+                <span class="vst-live-dot me-1" role="status" aria-hidden="true"></span>
                 Menunggu pembayaran…
             </div>
         </div>
     </div>
 </main>
 <script>
+(function () {
+    const wrap = document.getElementById('gatewayQrWrap');
+    const img  = document.getElementById('gatewayQrImg');
+    if (wrap && img) {
+        const done = () => wrap.classList.remove('is-loading');
+        if (img.complete && img.naturalWidth > 0) done();
+        else {
+            img.addEventListener('load', done, { once: true });
+            img.addEventListener('error', function () { setTimeout(done, 400); }, { once: true });
+        }
+    }
+})();
 const cfg = {
     url: 'gateway_status.php',
     orderId: <?= json_encode($order['order_id']) ?>,

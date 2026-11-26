@@ -91,6 +91,34 @@ $aiChips = array_slice(array_values(array_unique($aiChips)), 0, 4);
 if (!$aiChips) {
     $aiChips[] = 'Apa yang bisa kamu bantu di ERP ini?';
 }
+$chipIconFor = static function (string $label): string {
+    $low = strtolower($label);
+    if (str_contains($low, 'invoice') || str_contains($low, 'tagihan')) {
+        return 'bi-receipt';
+    }
+    if (str_contains($low, 'wa') || str_contains($low, 'whatsapp')) {
+        return 'bi-whatsapp';
+    }
+    if (str_contains($low, 'unit') || str_contains($low, 'stnk') || str_contains($low, 'kir')) {
+        return 'bi-car-front';
+    }
+    if (str_contains($low, 'driver') || str_contains($low, 'sim') || str_contains($low, 'karyawan')) {
+        return 'bi-person-badge';
+    }
+    if (str_contains($low, 'omzet') || str_contains($low, 'rute') || str_contains($low, 'tarif')) {
+        return 'bi-graph-up-arrow';
+    }
+    if (str_contains($low, 'kas')) {
+        return 'bi-cash-stack';
+    }
+    if (str_contains($low, 'jadwal') || str_contains($low, 'sewa') || str_contains($low, 'hari ini')) {
+        return 'bi-calendar2-check';
+    }
+    return 'bi-stars';
+};
+$aiChipItems = array_map(static function (string $text) use ($chipIconFor): array {
+    return ['text' => $text, 'icon' => $chipIconFor($text)];
+}, $aiChips);
 ?>
 <button type="button"
         id="vstAiFab"
@@ -103,6 +131,8 @@ if (!$aiChips) {
     <span class="vst-ai-fab-label">Tanya AI</span>
 </button>
 
+<div id="vstAiBackdrop" class="vst-ai-backdrop d-print-none" aria-hidden="true"></div>
+
 <aside id="vstAiDrawer"
        class="vst-ai-drawer d-print-none"
        role="dialog"
@@ -110,18 +140,28 @@ if (!$aiChips) {
        aria-hidden="true"
        inert
        aria-labelledby="vstAiTitle">
+    <div class="vst-ai-handle d-sm-none" aria-hidden="true"></div>
     <div class="vst-ai-header">
         <div class="d-flex align-items-center gap-2 min-w-0">
-            <div class="vst-ai-avatar"><i class="bi bi-stars" aria-hidden="true"></i></div>
+            <div class="vst-ai-avatar">
+                <i class="bi bi-stars" aria-hidden="true"></i>
+                <span class="vst-ai-online-dot" aria-hidden="true"></span>
+            </div>
             <div class="min-w-0">
-                <h6 class="mb-0 fw-bold text-truncate" id="vstAiTitle">vSudo AI</h6>
+                <div class="d-flex align-items-center gap-1 min-w-0">
+                    <h6 class="mb-0 fw-bold text-truncate" id="vstAiTitle">vSudo AI</h6>
+                    <span class="vst-ai-badge">Asisten</span>
+                </div>
                 <div class="vst-ai-subtitle text-truncate" title="<?= e($aiCompLabel) ?>">
                     <i class="bi bi-building me-1" aria-hidden="true"></i><?= e($aiCompLabel) ?>
                 </div>
             </div>
         </div>
         <div class="d-flex align-items-center gap-1 flex-shrink-0">
-            <button type="button" id="vstAiResetBtn" class="vst-ai-icon-btn" title="Reset percakapan" aria-label="Reset percakapan">
+            <button type="button" id="vstAiExpandBtn" class="vst-ai-icon-btn d-none d-sm-inline-flex" title="Perlebar panel" aria-label="Perlebar panel AI" aria-pressed="false">
+                <i class="bi bi-arrows-angle-expand" aria-hidden="true"></i>
+            </button>
+            <button type="button" id="vstAiResetBtn" class="vst-ai-icon-btn" title="Percakapan baru" aria-label="Reset percakapan">
                 <i class="bi bi-arrow-counterclockwise" aria-hidden="true"></i>
             </button>
             <button type="button" id="vstAiCloseBtn" class="vst-ai-icon-btn" title="Tutup (Esc)" aria-label="Tutup asisten AI">
@@ -130,45 +170,68 @@ if (!$aiChips) {
         </div>
     </div>
 
-    <div class="vst-ai-chips" id="vstAiChips">
-        <?php foreach ($aiChips as $chip): ?>
-            <button type="button" class="vst-ai-chip" data-prompt="<?= e($chip) ?>"><?= e($chip) ?></button>
+    <div class="vst-ai-body" id="vstAiBody" aria-live="polite"></div>
+
+    <div class="vst-ai-chips is-popover d-none" id="vstAiChips" role="region" aria-label="Topik cepat">
+        <div class="vst-ai-chips-head">
+            <span><i class="bi bi-lightning-charge-fill text-primary me-1" aria-hidden="true"></i>Topik Cepat</span>
+            <button type="button" class="vst-ai-chips-close" id="vstAiChipsCloseBtn" aria-label="Tutup topik cepat">
+                <i class="bi bi-x" aria-hidden="true"></i>
+            </button>
+        </div>
+        <?php foreach ($aiChipItems as $chip): ?>
+            <button type="button" class="vst-ai-chip" data-prompt="<?= e($chip['text']) ?>">
+                <span class="vst-ai-chip-icon"><i class="bi <?= e($chip['icon']) ?>" aria-hidden="true"></i></span>
+                <span class="vst-ai-chip-text"><?= e($chip['text']) ?></span>
+                <i class="bi bi-arrow-right-short vst-ai-chip-arrow" aria-hidden="true"></i>
+            </button>
         <?php endforeach; ?>
     </div>
-
-    <div class="vst-ai-body" id="vstAiBody" aria-live="polite"></div>
 
     <form class="vst-ai-footer" id="vstAiForm" autocomplete="off">
         <?= csrf_field() ?>
         <div class="vst-ai-input-wrap">
+            <button type="button"
+                    id="vstAiPromptsBtn"
+                    class="vst-ai-prompts-btn"
+                    title="Topik cepat"
+                    aria-label="Tampilkan topik cepat"
+                    aria-expanded="false"
+                    aria-controls="vstAiChips">
+                <i class="bi bi-lightning-charge" aria-hidden="true"></i>
+            </button>
             <textarea id="vstAiInput"
                       class="vst-ai-input"
                       rows="1"
                       maxlength="1000"
                       placeholder="Tanya ringkasan, TRV/RNT/INV, atau nopol..."
                       aria-label="Tulis pertanyaan ke asisten AI"></textarea>
-            <button type="submit" id="vstAiSendBtn" class="vst-ai-send-btn" title="Kirim pertanyaan" aria-label="Kirim">
-                <i class="bi bi-send-fill" aria-hidden="true"></i>
+            <button type="submit" id="vstAiSendBtn" class="vst-ai-send-btn" title="Kirim pertanyaan" aria-label="Kirim" disabled>
+                <i class="bi bi-arrow-up" aria-hidden="true"></i>
             </button>
         </div>
         <div class="vst-ai-meta">
-            <span>Shortcut: <kbd>Alt</kbd>+<kbd>K</kbd> · Enter untuk kirim</span>
-            <span>Asisten Operasional</span>
+            <span>Enter kirim · Shift+Enter baris baru</span>
+            <span><kbd>Alt</kbd>+<kbd>K</kbd></span>
         </div>
     </form>
 </aside>
 
 <script>
 (function () {
-    var fab      = document.getElementById('vstAiFab');
-    var drawer   = document.getElementById('vstAiDrawer');
-    var closeBtn = document.getElementById('vstAiCloseBtn');
-    var resetBtn = document.getElementById('vstAiResetBtn');
-    var bodyEl   = document.getElementById('vstAiBody');
-    var chipsEl  = document.getElementById('vstAiChips');
-    var formEl   = document.getElementById('vstAiForm');
-    var inputEl  = document.getElementById('vstAiInput');
-    var sendBtn  = document.getElementById('vstAiSendBtn');
+    var fab            = document.getElementById('vstAiFab');
+    var drawer         = document.getElementById('vstAiDrawer');
+    var backdrop       = document.getElementById('vstAiBackdrop');
+    var closeBtn       = document.getElementById('vstAiCloseBtn');
+    var resetBtn       = document.getElementById('vstAiResetBtn');
+    var expandBtn      = document.getElementById('vstAiExpandBtn');
+    var bodyEl         = document.getElementById('vstAiBody');
+    var chipsEl        = document.getElementById('vstAiChips');
+    var chipsCloseBtn  = document.getElementById('vstAiChipsCloseBtn');
+    var promptsBtn     = document.getElementById('vstAiPromptsBtn');
+    var formEl         = document.getElementById('vstAiForm');
+    var inputEl        = document.getElementById('vstAiInput');
+    var sendBtn        = document.getElementById('vstAiSendBtn');
     if (!fab || !drawer || !bodyEl || !formEl || !inputEl) return;
 
     var endpoint   = <?= json_encode(APP_URL . '/api/ai_assistant.php') ?>;
@@ -177,8 +240,10 @@ if (!$aiChips) {
     var pageEntity = <?= json_encode($aiPageEntity) ?>;
     var userFirst  = <?= json_encode($aiFirstName) ?>;
     var compLabel  = <?= json_encode($aiCompLabel) ?>;
+    var chipItems  = <?= json_encode($aiChipItems, JSON_UNESCAPED_UNICODE) ?>;
     var histKey    = <?= json_encode("vst_ai_hist_u{$aiUid}_c{$aiCompKey}") ?>;
     var openKey    = <?= json_encode("vst_ai_open_u{$aiUid}") ?>;
+    var wideKey    = <?= json_encode("vst_ai_wide_u{$aiUid}") ?>;
 
     var busy = false;
     var history = [];
@@ -203,10 +268,15 @@ if (!$aiChips) {
         var html = [];
         for (var i = 0; i < lines.length; i++) {
             var line = lines[i];
-            if (/^\s{2,}[-•]\s+/.test(line)) {
+            var numMatch = line.match(/^\s*(\d+\.)\s+(.+)$/);
+            if (/^\s*#{1,3}\s+/.test(line)) {
+                html.push('<div class="vst-ai-heading">' + line.replace(/^\s*#{1,3}\s+/, '') + '</div>');
+            } else if (/^\s{2,}[-•]\s+/.test(line)) {
                 html.push('<div class="vst-ai-subbullet">' + line.replace(/^\s+[-•]\s+/, '') + '</div>');
             } else if (/^\s*[-•]\s+/.test(line)) {
                 html.push('<div class="vst-ai-bullet">' + line.replace(/^\s*[-•]\s+/, '') + '</div>');
+            } else if (numMatch) {
+                html.push('<div class="vst-ai-num-bullet"><span class="vst-ai-num">' + escHtml(numMatch[1]) + '</span><span>' + numMatch[2] + '</span></div>');
             } else if (line.trim() === '') {
                 html.push('<div class="vst-ai-spacer"></div>');
             } else {
@@ -234,6 +304,52 @@ if (!$aiChips) {
 
     function scrollToBottom() {
         bodyEl.scrollTop = bodyEl.scrollHeight;
+    }
+
+    function setChipsOpen(open) {
+        if (!chipsEl) return;
+        var isOpen = !!open;
+        chipsEl.classList.toggle('d-none', !isOpen);
+        if (promptsBtn) {
+            promptsBtn.setAttribute('aria-expanded', isOpen ? 'true' : 'false');
+            promptsBtn.classList.toggle('is-active', isOpen);
+        }
+    }
+
+    function syncSendState() {
+        if (!sendBtn) return;
+        if (busy) {
+            sendBtn.type = 'button';
+            sendBtn.disabled = false;
+            sendBtn.classList.add('is-stop');
+            sendBtn.title = 'Hentikan jawaban';
+            sendBtn.setAttribute('aria-label', 'Hentikan');
+            sendBtn.innerHTML = '<i class="bi bi-stop-fill" aria-hidden="true"></i>';
+        } else {
+            sendBtn.type = 'submit';
+            sendBtn.classList.remove('is-stop');
+            sendBtn.title = 'Kirim pertanyaan';
+            sendBtn.setAttribute('aria-label', 'Kirim');
+            sendBtn.innerHTML = '<i class="bi bi-arrow-up" aria-hidden="true"></i>';
+            sendBtn.disabled = inputEl.value.trim() === '';
+        }
+    }
+
+    function setExpanded(wide, save) {
+        var isWide = !!wide;
+        drawer.classList.toggle('is-expanded', isWide);
+        if (expandBtn) {
+            expandBtn.setAttribute('aria-pressed', isWide ? 'true' : 'false');
+            expandBtn.title = isWide ? 'Kembali ukuran normal' : 'Perlebar panel';
+            expandBtn.setAttribute('aria-label', expandBtn.title);
+            var ic = expandBtn.querySelector('i');
+            if (ic) {
+                ic.className = isWide ? 'bi bi-arrows-angle-contract' : 'bi bi-arrows-angle-expand';
+            }
+        }
+        if (save) {
+            try { sessionStorage.setItem(wideKey, isWide ? '1' : '0'); } catch (e) {}
+        }
     }
 
     function formatWaCopy(raw) {
@@ -329,6 +445,14 @@ if (!$aiChips) {
         wrap.appendChild(tools);
     }
 
+    function createBotAvatar() {
+        var av = document.createElement('div');
+        av.className = 'vst-ai-msg-avatar';
+        av.setAttribute('aria-hidden', 'true');
+        av.innerHTML = '<i class="bi bi-stars"></i>';
+        return av;
+    }
+
     function appendMessage(msg, opts) {
         opts = opts || {};
         var role = msg.role === 'user' ? 'user' : 'assistant';
@@ -336,19 +460,21 @@ if (!$aiChips) {
         wrap.className = 'vst-ai-msg vst-ai-msg-' + role;
 
         var bubble = document.createElement('div');
-        bubble.className = 'vst-ai-bubble';
+        bubble.className = 'vst-ai-bubble' + (opts.isError ? ' vst-ai-bubble-error' : '');
         if (role === 'user') {
             bubble.textContent = msg.content || '';
+            wrap.appendChild(bubble);
         } else {
+            var content = document.createElement('div');
+            content.className = 'vst-ai-msg-content';
             bubble.innerHTML = formatAiText(msg.content || '');
-        }
-        wrap.appendChild(bubble);
-
-        if (role === 'assistant') {
-            renderActionChips(wrap, msg.actions);
+            content.appendChild(bubble);
+            renderActionChips(content, msg.actions);
             if (!opts.noTools) {
-                renderCopyTool(wrap, msg.content || '', msg.wa_target || null);
+                renderCopyTool(content, msg.content || '', msg.wa_target || null);
             }
+            wrap.appendChild(createBotAvatar());
+            wrap.appendChild(content);
         }
 
         bodyEl.appendChild(wrap);
@@ -356,13 +482,29 @@ if (!$aiChips) {
     }
 
     function renderWelcome() {
-        bodyEl.innerHTML = '';
-        appendMessage({
-            role: 'assistant',
-            content: 'Halo **' + userFirst + '**! Saya siap membantu memantau operasional **' + compLabel + '**.\n'
-                   + '- Klik topik cepat di atas untuk ringkasan langsung.\n'
-                   + '- Tanya unit kosong besok, tarif rute, cek nama/HP pelanggan, kode booking (`TRV-...`/`RNT-...`), atau invoice (`INV/...`).'
-        }, { noTools: true });
+        setChipsOpen(false);
+        var chipsHtml = (chipItems || []).map(function (c) {
+            return '<button type="button" class="vst-ai-chip" data-prompt="' + escHtml(c.text) + '">'
+                + '<span class="vst-ai-chip-icon"><i class="bi ' + escHtml(c.icon || 'bi-stars') + '" aria-hidden="true"></i></span>'
+                + '<span class="vst-ai-chip-text">' + escHtml(c.text) + '</span>'
+                + '<i class="bi bi-arrow-right-short vst-ai-chip-arrow" aria-hidden="true"></i>'
+                + '</button>';
+        }).join('');
+
+        bodyEl.innerHTML = ''
+            + '<div class="vst-ai-welcome">'
+            +   '<div class="vst-ai-welcome-hero">'
+            +     '<div class="vst-ai-welcome-icon"><i class="bi bi-stars" aria-hidden="true"></i></div>'
+            +     '<div class="vst-ai-welcome-title">Halo, ' + escHtml(userFirst) + '!</div>'
+            +     '<p class="vst-ai-welcome-sub">Siap bantu pantau operasional <strong>' + escHtml(compLabel) + '</strong>.</p>'
+            +   '</div>'
+            +   '<div class="vst-ai-welcome-label">Pilih topik cepat</div>'
+            +   '<div class="vst-ai-welcome-chips">' + chipsHtml + '</div>'
+            +   '<div class="vst-ai-welcome-hint">'
+            +     '<i class="bi bi-info-circle me-1" aria-hidden="true"></i>'
+            +     'Bisa langsung cari kode <code>TRV-...</code>, <code>RNT-...</code>, <code>INV/...</code>, nama/HP pelanggan, atau nopol armada.'
+            +   '</div>'
+            + '</div>';
     }
 
     function renderAll() {
@@ -379,6 +521,7 @@ if (!$aiChips) {
         var sh = inputEl.scrollHeight;
         inputEl.style.height = Math.min(sh, 96) + 'px';
         inputEl.style.overflowY = sh > 96 ? 'auto' : 'hidden';
+        syncSendState();
     }
 
     function setOpen(open, opts) {
@@ -391,6 +534,7 @@ if (!$aiChips) {
         if (opts.instant) {
             drawer.classList.add('is-instant');
             fab.classList.add('is-instant');
+            if (backdrop) backdrop.classList.add('is-instant');
         }
         if (isOpen) {
             if (fab.contains(document.activeElement) && document.activeElement && typeof document.activeElement.blur === 'function') {
@@ -403,6 +547,7 @@ if (!$aiChips) {
             drawer.inert = false;
             drawer.setAttribute('aria-hidden', 'false');
             drawer.classList.add('is-open');
+            if (backdrop) backdrop.classList.add('is-open');
             scrollToBottom();
             if (!opts.skipFocus) {
                 focusTimer = setTimeout(function () {
@@ -413,11 +558,13 @@ if (!$aiChips) {
                 }, 140);
             }
         } else {
+            setChipsOpen(false);
             var hadFocus = drawer.contains(document.activeElement);
             if (hadFocus && document.activeElement && typeof document.activeElement.blur === 'function') {
                 document.activeElement.blur();
             }
             drawer.classList.remove('is-open');
+            if (backdrop) backdrop.classList.remove('is-open');
             drawer.inert = true;
             drawer.setAttribute('aria-hidden', 'true');
             fab.inert = false;
@@ -436,6 +583,7 @@ if (!$aiChips) {
             var clearInstant = function () {
                 drawer.classList.remove('is-instant');
                 fab.classList.remove('is-instant');
+                if (backdrop) backdrop.classList.remove('is-instant');
             };
             if (window.requestAnimationFrame) {
                 window.requestAnimationFrame(clearInstant);
@@ -449,7 +597,15 @@ if (!$aiChips) {
         var wrap = document.createElement('div');
         wrap.id = 'vstAiTyping';
         wrap.className = 'vst-ai-msg vst-ai-msg-assistant';
-        wrap.innerHTML = '<div class="vst-ai-bubble vst-ai-typing"><span></span><span></span><span></span></div>';
+        wrap.appendChild(createBotAvatar());
+        var content = document.createElement('div');
+        content.className = 'vst-ai-msg-content';
+        content.innerHTML = '<div class="vst-ai-bubble vst-ai-shimmer" role="status" aria-label="AI sedang menyusun jawaban">'
+            + '<span class="vst-skel vst-skel-line" style="width:92%"></span>'
+            + '<span class="vst-skel vst-skel-line" style="width:76%"></span>'
+            + '<span class="vst-skel vst-skel-line" style="width:54%"></span>'
+            + '</div>';
+        wrap.appendChild(content);
         bodyEl.appendChild(wrap);
         scrollToBottom();
         return wrap;
@@ -459,14 +615,17 @@ if (!$aiChips) {
         var msgText = (text || '').trim();
         if (!msgText || busy) return;
 
+        setChipsOpen(false);
         busy = true;
-        sendBtn.disabled = true;
         inputEl.value = '';
-        inputEl.style.height = 'auto';
-        inputEl.style.overflowY = 'hidden';
+        syncInputHeight();
 
         var reqCtrl = (typeof AbortController !== 'undefined') ? new AbortController() : null;
         activeCtrl = reqCtrl;
+
+        if (!history.length && bodyEl.querySelector('.vst-ai-welcome')) {
+            bodyEl.innerHTML = '';
+        }
 
         var userMsg = { role: 'user', content: msgText };
         history.push(userMsg);
@@ -484,6 +643,7 @@ if (!$aiChips) {
         if (csrfInp) fd.append('csrf_token', csrfInp.value);
 
         var liveWrap = null;
+        var liveContent = null;
         var liveBubble = null;
         var liveText = '';
         var finalized = false;
@@ -500,9 +660,13 @@ if (!$aiChips) {
             if (!liveWrap) {
                 liveWrap = document.createElement('div');
                 liveWrap.className = 'vst-ai-msg vst-ai-msg-assistant';
+                liveWrap.appendChild(createBotAvatar());
+                liveContent = document.createElement('div');
+                liveContent.className = 'vst-ai-msg-content';
                 liveBubble = document.createElement('div');
                 liveBubble.className = 'vst-ai-bubble';
-                liveWrap.appendChild(liveBubble);
+                liveContent.appendChild(liveBubble);
+                liveWrap.appendChild(liveContent);
                 bodyEl.appendChild(liveWrap);
             }
         };
@@ -513,7 +677,7 @@ if (!$aiChips) {
             removeTyping();
             if (activeCtrl === reqCtrl) activeCtrl = null;
             busy = false;
-            sendBtn.disabled = false;
+            syncSendState();
             if (reqCtrl && reqCtrl.signal && reqCtrl.signal.aborted) {
                 if (liveWrap && liveWrap.parentNode) liveWrap.parentNode.removeChild(liveWrap);
                 return;
@@ -522,7 +686,7 @@ if (!$aiChips) {
             if (!data || !data.ok) {
                 if (liveWrap && liveWrap.parentNode) liveWrap.parentNode.removeChild(liveWrap);
                 var errTxt = (data && data.error) ? data.error : 'Gagal memproses permintaan.';
-                appendMessage({ role: 'assistant', content: 'Maaf, terjadi kendala: ' + errTxt }, { noTools: true });
+                appendMessage({ role: 'assistant', content: 'Maaf, terjadi kendala: ' + errTxt }, { noTools: true, isError: true });
                 return;
             }
 
@@ -533,10 +697,10 @@ if (!$aiChips) {
             history.push(botMsg);
             saveHistory();
 
-            if (liveWrap && liveBubble) {
+            if (liveWrap && liveBubble && liveContent) {
                 liveBubble.innerHTML = formatAiText(finalReply);
-                renderActionChips(liveWrap, finalActions);
-                renderCopyTool(liveWrap, finalReply, finalWaTarget);
+                renderActionChips(liveContent, finalActions);
+                renderCopyTool(liveContent, finalReply, finalWaTarget);
                 scrollToBottom();
             } else {
                 appendMessage(botMsg);
@@ -622,22 +786,30 @@ if (!$aiChips) {
                 removeTyping();
                 if (activeCtrl === reqCtrl) activeCtrl = null;
                 busy = false;
-                sendBtn.disabled = false;
+                syncSendState();
                 if (err && err.name === 'AbortError') {
                     if (liveWrap && liveWrap.parentNode) liveWrap.parentNode.removeChild(liveWrap);
                     return;
                 }
                 if (!finalized) {
                     if (liveWrap && liveWrap.parentNode) liveWrap.parentNode.removeChild(liveWrap);
-                    appendMessage({ role: 'assistant', content: 'Tidak dapat terhubung ke server aplikasi. Periksa koneksi Anda lalu coba lagi.' }, { noTools: true });
+                    appendMessage({ role: 'assistant', content: 'Tidak dapat terhubung ke server aplikasi. Periksa koneksi Anda lalu coba lagi.' }, { noTools: true, isError: true });
                 }
             });
     }
 
     fab.addEventListener('click', function () { setOpen(true); });
+    if (backdrop) {
+        backdrop.addEventListener('click', function () { setOpen(false); });
+    }
     if (closeBtn) {
         closeBtn.addEventListener('click', function (ev) {
             setOpen(false, { restoreFocus: ev.detail === 0 });
+        });
+    }
+    if (expandBtn) {
+        expandBtn.addEventListener('click', function () {
+            setExpanded(!drawer.classList.contains('is-expanded'), true);
         });
     }
     if (resetBtn) {
@@ -647,8 +819,8 @@ if (!$aiChips) {
                 activeCtrl = null;
             }
             busy = false;
-            sendBtn.disabled = false;
             history = [];
+            syncSendState();
             try { sessionStorage.removeItem(histKey); } catch (e) {}
             renderWelcome();
             var csrfInp = formEl.querySelector('input[name="csrf_token"]');
@@ -661,23 +833,47 @@ if (!$aiChips) {
             inputEl.focus();
         });
     }
-    if (chipsEl) {
-        chipsEl.addEventListener('click', function (ev) {
-            var chip = ev.target.closest('.vst-ai-chip');
-            if (!chip) return;
+    if (promptsBtn) {
+        promptsBtn.addEventListener('click', function () {
+            if (!chipsEl) return;
+            setChipsOpen(chipsEl.classList.contains('d-none'));
+        });
+    }
+    if (chipsCloseBtn) {
+        chipsCloseBtn.addEventListener('click', function () { setChipsOpen(false); });
+    }
+    drawer.addEventListener('click', function (ev) {
+        var chip = ev.target.closest('.vst-ai-chip');
+        if (chip) {
             if (!drawer.classList.contains('is-open')) setOpen(true);
-            sendPrompt(chip.getAttribute('data-prompt') || chip.textContent);
+            sendPrompt(chip.getAttribute('data-prompt') || (chip.querySelector('.vst-ai-chip-text') ? chip.querySelector('.vst-ai-chip-text').textContent : chip.textContent));
+            return;
+        }
+        if (chipsEl && !chipsEl.classList.contains('d-none') && !chipsEl.contains(ev.target) && (!promptsBtn || !promptsBtn.contains(ev.target))) {
+            setChipsOpen(false);
+        }
+    });
+    if (sendBtn) {
+        sendBtn.addEventListener('click', function (ev) {
+            if (busy && activeCtrl) {
+                ev.preventDefault();
+                try { activeCtrl.abort(); } catch (e) {}
+                activeCtrl = null;
+                busy = false;
+                syncSendState();
+            }
         });
     }
     formEl.addEventListener('submit', function (ev) {
         ev.preventDefault();
+        if (busy) return;
         sendPrompt(inputEl.value);
     });
     inputEl.addEventListener('input', syncInputHeight);
     inputEl.addEventListener('keydown', function (ev) {
         if (ev.key === 'Enter' && !ev.shiftKey) {
             ev.preventDefault();
-            sendPrompt(inputEl.value);
+            if (!busy) sendPrompt(inputEl.value);
         }
     });
     var sbToggler = document.getElementById('sidebarToggler');
@@ -706,7 +902,11 @@ if (!$aiChips) {
 
     history = loadHistory();
     renderAll();
+    syncSendState();
     try {
+        if (sessionStorage.getItem(wideKey) === '1') {
+            setExpanded(true, false);
+        }
         if (sessionStorage.getItem(openKey) === '1') {
             setOpen(true, { instant: true, skipFocus: true });
         } else {

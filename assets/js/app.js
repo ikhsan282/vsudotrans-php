@@ -312,6 +312,15 @@ window.initTsSelect = function (el, overrides) {
     opts.shouldLoad = function (query) {
       return query.trim().length >= 1;
     };
+    opts.render = {
+      loading: function (_data, _escape) {
+        return '<div class="vst-ts-loading-skel" role="status" aria-label="Memuat pilihan…">'
+          + '<div class="vst-ts-loading-row"><span class="vst-skel vst-skel-line" style="width:62%"></span><span class="vst-skel vst-skel-pill"></span></div>'
+          + '<div class="vst-ts-loading-row"><span class="vst-skel vst-skel-line" style="width:76%"></span><span class="vst-skel vst-skel-pill" style="width:52px"></span></div>'
+          + '<div class="vst-ts-loading-row"><span class="vst-skel vst-skel-line" style="width:54%"></span><span class="vst-skel vst-skel-pill" style="width:38px"></span></div>'
+          + '</div>';
+      }
+    };
     opts.load = function (query, callback) {
       const parentSel = el.dataset.tsParent ? document.querySelector(el.dataset.tsParent) : null;
       const paramName = el.dataset.tsParam || '';
@@ -352,7 +361,11 @@ window.initTsSelect = function (el, overrides) {
     };
   }
 
-  const ts = new TomSelect(el, Object.assign(opts, overrides || {}));
+  const mergedOpts = Object.assign({}, opts, overrides || {});
+  if (opts.render && overrides && overrides.render) {
+    mergedOpts.render = Object.assign({}, opts.render, overrides.render);
+  }
+  const ts = new TomSelect(el, mergedOpts);
   Object.keys(initialMeta).forEach(k => {
     if (ts.options[k]) {
       Object.assign(ts.options[k], initialMeta[k]);
@@ -683,7 +696,7 @@ document.addEventListener('DOMContentLoaded', function () {
 
   const DOWNLOAD_RE = /export\.php|_export\.php|print\.php|manifest\.php|[?&](format|export)=(pdf|csv|xlsx)|[?&](download|template)=1/i;
   const NAV_STORAGE_KEY = 'vst_nav_pending';
-  const VALID_PRESETS = ['dashboard', 'table', 'form', 'calendar', 'report'];
+  const VALID_PRESETS = ['dashboard', 'table', 'form', 'detail', 'calendar', 'report'];
 
   const progressEl = document.getElementById('vstNavProgress');
   const barEl      = progressEl ? progressEl.querySelector('.vst-nav-progress-bar') : null;
@@ -707,7 +720,8 @@ document.addEventListener('DOMContentLoaded', function () {
     if (/\/pages\/dashboard\//i.test(p)) return 'dashboard';
     if (/\/pages\/dispatch\/calendar\.php/i.test(p)) return 'calendar';
     if (/\/pages\/reports\//i.test(p)) return 'report';
-    if (/\/(form|detail|permissions|backup|pay)\.php|\/pages\/profile\//i.test(p)) return 'form';
+    if (/\/detail\.php|\/pages\/profile\//i.test(p)) return 'detail';
+    if (/\/(form|permissions|backup|pay|import)\.php/i.test(p)) return 'form';
     return 'table';
   }
 
@@ -787,6 +801,40 @@ document.addEventListener('DOMContentLoaded', function () {
         +   skRow(['14%', '26%', '18%', '18%'])
         +   skRow(['12%', '24%', '22%', '16%'])
         +   skRow(['15%', '22%', '20%', '18%'])
+        + '</div>';
+    } else if (key === 'detail') {
+      const infoRows = ''
+        + '<div class="vst-sk-form-row"><span class="vst-skel vst-skel-line mb-0" style="width:72%"></span><span class="vst-skel vst-skel-line mb-0" style="width:65%"></span></div>'
+        + '<div class="vst-sk-form-row"><span class="vst-skel vst-skel-line mb-0" style="width:66%"></span><span class="vst-skel vst-skel-line mb-0" style="width:78%"></span></div>'
+        + '<div class="vst-sk-form-row"><span class="vst-skel vst-skel-line mb-0" style="width:78%"></span><span class="vst-skel vst-skel-line mb-0" style="width:54%"></span></div>'
+        + '<div class="vst-sk-form-row mb-0"><span class="vst-skel vst-skel-line mb-0" style="width:62%"></span><span class="vst-skel vst-skel-line mb-0" style="width:70%"></span></div>';
+      html = ''
+        + '<div class="vst-sk-header">'
+        +   '<div class="vst-sk-header-left"><span class="vst-skel vst-skel-line" style="width:230px;height:20px"></span><span class="vst-skel vst-skel-line mb-0" style="width:170px;height:11px"></span></div>'
+        +   '<div class="vst-sk-header-right"><span class="vst-skel vst-skel-btn" style="width:94px"></span><span class="vst-skel vst-skel-btn" style="width:108px"></span></div>'
+        + '</div>'
+        + '<div class="vst-sk-detail-grid">'
+        +   '<div class="vst-sk-card">'
+        +     '<div class="vst-sk-tabs">'
+        +       '<span class="vst-skel vst-skel-btn" style="width:88px"></span>'
+        +       '<span class="vst-skel vst-skel-btn" style="width:104px"></span>'
+        +       '<span class="vst-skel vst-skel-btn" style="width:96px"></span>'
+        +       '<span class="vst-skel vst-skel-btn" style="width:84px"></span>'
+        +     '</div>'
+        +     '<div class="vst-sk-card vst-sk-subpanel mb-3">' + infoRows + '</div>'
+        +     '<div class="vst-sk-card vst-sk-table">'
+        +       '<div class="vst-sk-table-head"><span class="vst-skel vst-skel-line mb-0" style="width:20%"></span><span class="vst-skel vst-skel-line mb-0" style="width:28%"></span><span class="vst-skel vst-skel-line mb-0" style="width:22%"></span><span class="vst-skel vst-skel-line mb-0" style="width:14%"></span></div>'
+        +       skRow(['18%', '28%', '22%', '14%'])
+        +       skRow(['22%', '24%', '20%', '16%'])
+        +     '</div>'
+        +   '</div>'
+        +   '<div class="vst-sk-card">'
+        +     '<div class="d-flex justify-content-between align-items-center mb-3"><span class="vst-skel vst-skel-line mb-0" style="width:48%;height:15px"></span><span class="vst-skel vst-skel-pill" style="width:68px"></span></div>'
+        +     '<div class="vst-sk-kv-row"><span class="vst-skel vst-skel-line mb-0" style="width:42%"></span><span class="vst-skel vst-skel-line mb-0" style="width:36%"></span></div>'
+        +     '<div class="vst-sk-kv-row"><span class="vst-skel vst-skel-line mb-0" style="width:38%"></span><span class="vst-skel vst-skel-line mb-0" style="width:32%"></span></div>'
+        +     '<div class="vst-sk-kv-row"><span class="vst-skel vst-skel-line mb-0" style="width:46%"></span><span class="vst-skel vst-skel-line mb-0" style="width:34%"></span></div>'
+        +     '<div class="vst-sk-kv-row"><span class="vst-skel vst-skel-line mb-0" style="width:36%;height:16px"></span><span class="vst-skel vst-skel-line mb-0" style="width:44%;height:18px"></span></div>'
+        +   '</div>'
         + '</div>';
     } else if (key === 'form') {
       const formRows = ''
@@ -977,11 +1025,11 @@ document.addEventListener('DOMContentLoaded', function () {
     const isIconOnly = btn.textContent.replace(/\s+/g, '').trim() === '' && rectW > 0 && rectW < 48;
 
     const frag = document.createDocumentFragment();
-    const sp = document.createElement('span');
-    sp.className = isIconOnly ? 'spinner-border spinner-border-sm' : 'spinner-border spinner-border-sm me-1';
-    sp.setAttribute('role', 'status');
-    sp.setAttribute('aria-hidden', 'true');
-    frag.appendChild(sp);
+    const dot = document.createElement('span');
+    dot.className = isIconOnly ? 'vst-btn-dot' : 'vst-btn-dot me-2';
+    dot.setAttribute('role', 'status');
+    dot.setAttribute('aria-hidden', 'true');
+    frag.appendChild(dot);
     if (!isIconOnly) {
       const txt = document.createElement('span');
       txt.textContent = rawText || 'Memproses…';
@@ -992,6 +1040,40 @@ document.addEventListener('DOMContentLoaded', function () {
     btn.classList.add('vst-btn-loading');
     btn.setAttribute('aria-busy', 'true');
     busyButtons.add(btn);
+  }
+
+  function setFieldLoading(el, on) {
+    if (!el) return;
+    const targets = [];
+    if (el.tomselect && el.tomselect.control) {
+      targets.push(el.tomselect.control);
+    }
+    targets.push(el);
+    targets.forEach(function (t) {
+      if (!t || !t.classList) return;
+      if (on) {
+        t.classList.add('vst-field-shimmer');
+        t.setAttribute('aria-busy', 'true');
+      } else {
+        t.classList.remove('vst-field-shimmer');
+        t.removeAttribute('aria-busy');
+      }
+    });
+  }
+
+  function buildListSkeleton(rows) {
+    const count = Math.max(1, Math.min(8, parseInt(rows, 10) || 4));
+    const widths = [['92px', '220px'], ['108px', '180px'], ['84px', '205px'], ['96px', '165px']];
+    let html = '<div class="vst-ai-panel-skel" aria-hidden="true">';
+    for (let i = 0; i < count; i++) {
+      const pair = widths[i % widths.length];
+      html += '<div class="vst-ai-panel-skel-row">'
+        + '<span class="vst-skel vst-skel-line" style="width:' + pair[0] + '"></span>'
+        + '<span class="vst-skel vst-skel-line" style="flex:1;max-width:' + pair[1] + '"></span>'
+        + '</div>';
+    }
+    html += '</div>';
+    return html;
   }
 
   function clearButtonLoading(btn) {
@@ -1184,6 +1266,8 @@ document.addEventListener('DOMContentLoaded', function () {
     done: resetAll,
     pulse: pulseBar,
     setButtonLoading: setButtonLoading,
-    clearButtonLoading: clearButtonLoading
+    clearButtonLoading: clearButtonLoading,
+    setFieldLoading: setFieldLoading,
+    buildListSkeleton: buildListSkeleton
   };
 })();

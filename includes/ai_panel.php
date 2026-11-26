@@ -25,6 +25,12 @@ if ($ai_endpoint === '') {
             </div>
         </div>
         <div id="ai-status" class="small text-muted mt-1"></div>
+        <div id="ai-loading-skel" class="vst-ai-panel-skel mt-2 d-none" aria-hidden="true">
+            <div class="vst-ai-panel-skel-row"><span class="vst-skel vst-skel-line" style="width:92px"></span><span class="vst-skel vst-skel-line" style="flex:1;max-width:240px"></span></div>
+            <div class="vst-ai-panel-skel-row"><span class="vst-skel vst-skel-line" style="width:108px"></span><span class="vst-skel vst-skel-line" style="flex:1;max-width:190px"></span></div>
+            <div class="vst-ai-panel-skel-row"><span class="vst-skel vst-skel-line" style="width:84px"></span><span class="vst-skel vst-skel-line" style="flex:1;max-width:210px"></span></div>
+            <div class="vst-ai-panel-skel-row"><span class="vst-skel vst-skel-line" style="width:96px"></span><span class="vst-skel vst-skel-line" style="flex:1;max-width:165px"></span></div>
+        </div>
         <div id="ai-preview" class="mt-2 d-none">
             <ul id="ai-preview-list" class="list-group list-group-flush small"></ul>
             <button type="button" class="btn btn-sm btn-primary mt-2" id="ai-apply">Isi Form</button>
@@ -38,6 +44,7 @@ if ($ai_endpoint === '') {
     var inp = document.getElementById('ai-input');
     var st = document.getElementById('ai-status');
     var prev = document.getElementById('ai-preview');
+    var skel = document.getElementById('ai-loading-skel');
     var list = document.getElementById('ai-preview-list');
     var apply = document.getElementById('ai-apply');
     var cancel = document.getElementById('ai-cancel');
@@ -110,7 +117,11 @@ if ($ai_endpoint === '') {
         if (!np || !np.name) return Promise.resolve(null);
         if (btnEl) {
             btnEl.disabled = true;
-            btnEl.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span>Menyimpan...';
+            if (window.vstLoader && window.vstLoader.setButtonLoading) {
+                window.vstLoader.setButtonLoading(btnEl, 'Menyimpan…');
+            } else {
+                btnEl.innerHTML = '<span class="vst-btn-dot me-2" aria-hidden="true"></span>Menyimpan…';
+            }
         }
         var csrfT = document.querySelector('input[name="csrf_token"]');
         var compEl = document.querySelector('[data-ts-company]') || document.querySelector('input[name="company_id"]');
@@ -162,8 +173,12 @@ if ($ai_endpoint === '') {
             })
             .catch(function (err) {
                 if (btnEl) {
+                    if (window.vstLoader && window.vstLoader.clearButtonLoading) {
+                        window.vstLoader.clearButtonLoading(btnEl);
+                    } else {
+                        btnEl.innerHTML = '<i class="bi bi-person-plus-fill me-1"></i>+ Buat &amp; Pilih Pelanggan Baru';
+                    }
                     btnEl.disabled = false;
-                    btnEl.innerHTML = '<i class="bi bi-person-plus-fill me-1"></i>+ Buat &amp; Pilih Pelanggan Baru';
                 }
                 st.textContent = err.message || 'Gagal menambah pelanggan baru.';
                 return null;
@@ -174,7 +189,11 @@ if ($ai_endpoint === '') {
         var teks = (inp.value || '').trim();
         if (!teks) { st.textContent = 'Tulis dulu permintaannya.'; return; }
         btn.disabled = true; prev.classList.add('d-none');
-        st.textContent = 'Memproses…';
+        if (skel) skel.classList.remove('d-none');
+        st.textContent = '';
+        if (window.vstLoader && window.vstLoader.setButtonLoading) {
+            window.vstLoader.setButtonLoading(btn, 'Memproses…');
+        }
         var csrfT = document.querySelector('input[name="csrf_token"]');
         var fd = new FormData();
         fd.append('text', teks);
@@ -182,6 +201,10 @@ if ($ai_endpoint === '') {
         fetch('<?= e($ai_endpoint) ?>', { method: 'POST', body: fd, credentials: 'same-origin' })
             .then(function (r) { return r.json().then(function (j) { return { s: r.status, j: j }; }); })
             .then(function (o) {
+                if (skel) skel.classList.add('d-none');
+                if (window.vstLoader && window.vstLoader.clearButtonLoading) {
+                    window.vstLoader.clearButtonLoading(btn);
+                }
                 btn.disabled = false;
                 if (!o.j.ok) { st.textContent = o.j.error || ('Gagal (HTTP ' + o.s + ')'); return; }
                 labels = o.j.peta || {};
@@ -189,7 +212,14 @@ if ($ai_endpoint === '') {
                 st.textContent = '';
                 tampil(o.j.candidate || {});
             })
-            .catch(function () { btn.disabled = false; st.textContent = 'Gagal menghubungi server.'; });
+            .catch(function () {
+                if (skel) skel.classList.add('d-none');
+                if (window.vstLoader && window.vstLoader.clearButtonLoading) {
+                    window.vstLoader.clearButtonLoading(btn);
+                }
+                btn.disabled = false;
+                st.textContent = 'Gagal menghubungi server.';
+            });
     });
 
     inp.addEventListener('keydown', function (e) { if (e.key === 'Enter') { e.preventDefault(); btn.click(); } });
