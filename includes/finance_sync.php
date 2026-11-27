@@ -17,7 +17,7 @@ function finance_ensure_schema(): void
 {
     static $checked = false;
     $hasSess = session_status() === PHP_SESSION_ACTIVE;
-    if ($checked || ($hasSess && !empty($_SESSION['_vst_schema_fin_v11']))) {
+    if ($checked || ($hasSess && !empty($_SESSION['_vst_schema_fin_v12']))) {
         $checked = true;
         return;
     }
@@ -150,8 +150,38 @@ function finance_ensure_schema(): void
     // tidak lagi otomatis memotong Buku Kas sebelum dibayarkan manual di Pengeluaran.
     $db->query("DELETE FROM `cash_transactions` WHERE `source_type` = 'crew_commission'");
 
+    // Paket 2: pastikan index SARGable & covering tersedia tanpa mengubah fungsionalitas.
+    $ensureIdx = static function (mysqli $conn, string $table, string $keyName, string $colsSql): void {
+        $chk = $conn->query("SHOW INDEX FROM `{$table}` WHERE Key_name = '{$keyName}'");
+        if ($chk && $chk->num_rows === 0) {
+            try {
+                $conn->query("ALTER TABLE `{$table}` ADD KEY `{$keyName}` ({$colsSql})");
+            } catch (Throwable $e) {
+                error_log("Index ensure {$table}.{$keyName}: " . $e->getMessage());
+            }
+        }
+    };
+    $dropRedundantIdx = static function (mysqli $conn, string $table, string $keyName): void {
+        $chk = $conn->query("SHOW INDEX FROM `{$table}` WHERE Key_name = '{$keyName}'");
+        if ($chk && $chk->num_rows > 0) {
+            try {
+                $conn->query("ALTER TABLE `{$table}` DROP INDEX `{$keyName}`");
+            } catch (Throwable $e) {
+                error_log("Index drop {$table}.{$keyName}: " . $e->getMessage());
+            }
+        }
+    };
+    $ensureIdx($db, 'booking_status_history', 'ix_bsh_latest', '`booking_type`, `booking_id`, `changed_at`, `id`, `to_status`');
+    $ensureIdx($db, 'booking_cost_lines', 'ix_bcl_company_created', '`company_id`, `created_date`');
+    $ensureIdx($db, 'booking_cost_lines', 'ix_bcl_created', '`created_date`');
+    $ensureIdx($db, 'rental_car_bookings', 'ix_rental_start_date', '`start_date`');
+    $ensureIdx($db, 'trip_assignments', 'ix_ta_company_started', '`company_id`, `started_at`, `booking_type`, `employee_id`');
+    $ensureIdx($db, 'trip_assignments', 'ix_ta_started', '`started_at`');
+    $dropRedundantIdx($db, 'travel_ticket_bookings', 'ix_travel_bookings_company');
+    $dropRedundantIdx($db, 'rental_car_bookings', 'ix_rental_bookings_company');
+
     if ($hasSess) {
-        $_SESSION['_vst_schema_fin_v11'] = 1;
+        $_SESSION['_vst_schema_fin_v12'] = 1;
     }
     finance_ensure_global_cash_categories();
     finance_backfill_booking_bbm_to_cash();

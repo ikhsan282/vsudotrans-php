@@ -759,6 +759,49 @@ function format_vehicle_brand_model(?string $brand, ?string $model, string $sep 
     return $b !== '' ? $b : $m;
 }
 
+/** Secret HMAC aplikasi (override via env VSUDO_APP_SECRET di production). */
+function vsudo_app_secret(string $purpose = 'default'): string
+{
+    $base = (string) (getenv('VSUDO_APP_SECRET') ?: (DB_HOST . '|' . DB_NAME . '|' . DB_USER . '|' . DB_PASS . '|vsudotrans-v1'));
+    return hash('sha256', $base . '|' . $purpose);
+}
+
+/** Token tanda tangan singkat (16 hex) untuk membuka data PII tiket publik. */
+function ticket_pii_signature(string $docNo, string $companyCode): string
+{
+    $payload = strtoupper(trim($docNo)) . '|' . strtoupper(trim($companyCode));
+    return substr(hash_hmac('sha256', $payload, vsudo_app_secret('ticket-pii')), 0, 16);
+}
+
+/** Masking nama penumpang per kata untuk respons API tiket publik tanpa verifikasi. */
+function ticket_mask_name(?string $name): string
+{
+    $clean = trim(preg_replace('/\s+/', ' ', (string) $name));
+    if ($clean === '') {
+        return '—';
+    }
+    $words = explode(' ', $clean);
+    $masked = [];
+    foreach ($words as $w) {
+        $len = mb_strlen($w, 'UTF-8');
+        if ($len <= 1) {
+            $masked[] = $w;
+        } elseif ($len <= 2) {
+            $masked[] = mb_substr($w, 0, 1, 'UTF-8') . '*';
+        } else {
+            $masked[] = mb_substr($w, 0, 2, 'UTF-8') . str_repeat('*', $len - 2);
+        }
+    }
+    return implode(' ', $masked);
+}
+
+/** Token HMAC untuk otorisasi polling status QRIS publik (`gateway_status.php`). */
+function gateway_poll_token(string $orderId, int $companyId, string $csrfToken): string
+{
+    $payload = trim($orderId) . '|' . $companyId . '|' . $csrfToken;
+    return hash_hmac('sha256', $payload, vsudo_app_secret('gw-poll'));
+}
+
 require_once __DIR__ . '/grid_export.php';
 
 

@@ -21,6 +21,10 @@ if (($_SERVER['REQUEST_METHOD'] ?? '') !== 'POST') {
 if (!hash_equals(csrf_token(), (string) ($_POST['csrf_token'] ?? ''))) {
     gw_reply(403, ['status' => 'FORBIDDEN']);
 }
+$sessUserId  = (int) ($_SESSION['user_id'] ?? 0);
+$sessIsSuper = is_super_admin();
+$sessCid     = active_company_id();
+$sessCsrf    = csrf_token();
 // Lepas session lock segera agar request lain (seperti Buat QRIS) tidak ikut tertahan saat polling API mutasi
 if (session_status() === PHP_SESSION_ACTIVE) {
     session_write_close();
@@ -30,6 +34,17 @@ $orderId = trim((string) ($_POST['order_id'] ?? ''));
 $order = $orderId !== '' ? gateway_find_order($orderId) : null;
 if (!$order) {
     gw_reply(404, ['status' => 'NOT_FOUND']);
+}
+$orderCompanyId = (int) $order['company_id'];
+if ($sessUserId > 0) {
+    if (!$sessIsSuper && $orderCompanyId !== $sessCid) {
+        gw_reply(403, ['status' => 'FORBIDDEN']);
+    }
+} else {
+    $expectedPoll = gateway_poll_token((string) $order['order_id'], $orderCompanyId, $sessCsrf);
+    if (!hash_equals($expectedPoll, (string) ($_POST['poll_token'] ?? ''))) {
+        gw_reply(403, ['status' => 'FORBIDDEN']);
+    }
 }
 
 if ($order['status'] === 'PENDING') {

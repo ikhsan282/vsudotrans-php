@@ -15,11 +15,78 @@ require_once __DIR__ . '/../includes/booking_service.php';
 require_once __DIR__ . '/../includes/invoice_service.php';
 require_once __DIR__ . '/../includes/payment_gateway.php';
 
+/** Ekstrak origin `scheme://host[:port]` yang valid dari URL/Origin header. */
+function ticket_normalize_origin(string $rawUrl): ?string
+{
+    $p = @parse_url(trim($rawUrl));
+    if (!is_array($p) || empty($p['scheme']) || empty($p['host'])) {
+        return null;
+    }
+    $scheme = strtolower((string) $p['scheme']);
+    if (!in_array($scheme, ['http', 'https'], true)) {
+        return null;
+    }
+    $host = strtolower((string) $p['host']);
+    $port = isset($p['port']) ? ':' . (int) $p['port'] : '';
+    return $scheme . '://' . $host . $port;
+}
+
+/** Terapkan CORS allowlist dari domain perusahaan (`companies.website`), `APP_URL`, dan env. */
+function ticket_apply_cors(): void
+{
+    $origin = ticket_normalize_origin((string) ($_SERVER['HTTP_ORIGIN'] ?? ''));
+    if ($origin === null) {
+        return;
+    }
+    $allowed = [];
+    $appOrig = ticket_normalize_origin(APP_URL);
+    if ($appOrig !== null) {
+        $allowed[$appOrig] = true;
+    }
+    $extra = trim((string) (getenv('VSUDO_CORS_ALLOWED_ORIGINS') ?: ''));
+    if ($extra !== '') {
+        foreach (explode(',', $extra) as $item) {
+            $norm = ticket_normalize_origin($item);
+            if ($norm !== null) {
+                $allowed[$norm] = true;
+            }
+        }
+    }
+    try {
+        $res = db()->query("SELECT website FROM companies WHERE website IS NOT NULL AND website <> ''");
+        if ($res) {
+            while ($cw = $res->fetch_assoc()) {
+                $norm = ticket_normalize_origin((string) $cw['website']);
+                if ($norm === null) {
+                    continue;
+                }
+                $allowed[$norm] = true;
+                $hp = parse_url($norm);
+                if (!empty($hp['host'])) {
+                    $h = (string) $hp['host'];
+                    $altHost = str_starts_with($h, 'www.') ? substr($h, 4) : ('www.' . $h);
+                    $altPort = isset($hp['port']) ? ':' . (int) $hp['port'] : '';
+                    $allowed[$hp['scheme'] . '://' . $altHost . $altPort] = true;
+                }
+            }
+        }
+    } catch (Throwable $e) {
+        // fallback ke allowlist env/APP_URL bila DB sementara gagal
+    }
+
+    $isLocalDev = (bool) preg_match('#^https?://(?:localhost|127\.0\.0\.1)(?::\d{1,5})?$#', $origin);
+    if ($isLocalDev || isset($allowed[$origin])) {
+        header('Access-Control-Allow-Origin: ' . $origin);
+        header('Vary: Origin');
+    }
+}
+
 header('Content-Type: application/json; charset=utf-8');
-header('Access-Control-Allow-Origin: *');
 header('Access-Control-Allow-Methods: GET, OPTIONS');
 header('Access-Control-Allow-Headers: Content-Type, Accept');
 header('Cache-Control: no-store');
+header('X-Content-Type-Options: nosniff');
+ticket_apply_cors();
 
 if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'OPTIONS') {
     http_response_code(204);
@@ -32,6 +99,63 @@ function ticket_api_reply(int $status, array $payload): never
     echo json_encode($payload, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
     exit;
 }
+
+/** Rate limit per IP untuk mencegah scraping/enumerasi nomor tiket publik. */
+function ticket_api_rate_limit(int $maxReq = 30, int $windowSec = 60): void
+{
+    $ip = trim((string) ($_SERVER['REMOTE_ADDR'] ?? ''));
+    if ($ip === '' && PHP_SAPI === 'cli') {
+        return;
+    }
+    if ($ip === '') {
+        $ip = 'unknown';
+    }
+    $envMax = (int) (getenv('VSUDO_TICKET_RATE_LIMIT') ?: 0);
+    if ($envMax > 0) {
+        $maxReq = $envMax;
+    }
+
+    $file = sys_get_temp_dir() . '/vsudo_ticket_rl_' . md5($ip) . '.json';
+    $fp   = @fopen($file, 'c+');
+    if (!$fp) {
+        return;
+    }
+    $now = time();
+    $blockedRetry = 0;
+    if (@flock($fp, LOCK_EX)) {
+        $raw  = stream_get_contents($fp);
+        $hits = $raw !== false && $raw !== '' ? json_decode($raw, true) : [];
+        if (!is_array($hits)) {
+            $hits = [];
+        }
+        $cutoff = $now - $windowSec;
+        $hits   = array_values(array_filter($hits, static fn($ts): bool => is_int($ts) && $ts > $cutoff));
+        if (count($hits) >= $maxReq) {
+            $oldest       = (int) ($hits[0] ?? $now);
+            $blockedRetry = max(1, ($oldest + $windowSec) - $now);
+        } else {
+            $hits[] = $now;
+            ftruncate($fp, 0);
+            rewind($fp);
+            fwrite($fp, json_encode($hits));
+        }
+        flock($fp, LOCK_UN);
+    }
+    fclose($fp);
+
+    if ($blockedRetry > 0) {
+        header('Retry-After: ' . $blockedRetry);
+        ticket_api_reply(429, [
+            'ok'    => false,
+            'error' => [
+                'code'    => 'RATE_LIMITED',
+                'message' => 'Terlalu banyak permintaan cek tiket. Silakan coba lagi sebentar lagi.',
+            ],
+        ]);
+    }
+}
+
+ticket_api_rate_limit();
 
 function ticket_mask_phone(?string $phone): string
 {
@@ -120,28 +244,45 @@ $rem      = max(0.0, round($invTotal - $paid, 2));
 $isCancelled = strtolower((string) ($row['invoice_status'] ?? '')) === 'cancelled' || $bStatus === 'cancelled';
 $payStatus   = $isCancelled ? 'cancelled' : ($paid <= 0 ? 'unpaid' : ($rem <= 0.01 ? 'paid' : 'partial'));
 
+$compCode      = (string) $row['company_code'];
 $rawPassengers = booking_passengers_list($type, $bId, (int) $row['passenger_id']);
+$phone4Input   = preg_replace('/\D+/', '', (string) ($_GET['phone4'] ?? ''));
+$sigInput      = trim((string) ($_GET['sig'] ?? ''));
+$expectedSig   = ticket_pii_signature((string) $row['document_number'], $compCode);
+
+$piiVerified = false;
+if ($sigInput !== '' && hash_equals($expectedSig, $sigInput)) {
+    $piiVerified = true;
+} elseif (strlen($phone4Input) === 4) {
+    foreach ($rawPassengers as $p) {
+        $digits = preg_replace('/\D+/', '', (string) ($p['phone_number'] ?? ''));
+        if ($digits !== '' && str_ends_with($digits, $phone4Input)) {
+            $piiVerified = true;
+            break;
+        }
+    }
+}
+
 $passengers = [];
 foreach ($rawPassengers as $idx => $p) {
     $passengers[] = [
         'no'           => $idx + 1,
-        'name'         => $p['name'],
+        'name'         => $piiVerified ? (string) ($p['name'] ?? '') : ticket_mask_name($p['name'] ?? ''),
         'is_primary'   => (int) ($p['is_primary'] ?? 0) === 1,
         'phone_masked' => ticket_mask_phone($p['phone_number'] ?? ''),
     ];
 }
 
-$scheme  = (($_SERVER['HTTPS'] ?? '') === 'on') ? 'https' : 'http';
-$baseUrl = $scheme . '://' . ($_SERVER['HTTP_HOST'] ?? 'localhost') . APP_URL_PATH;
-$compCode = (string) $row['company_code'];
-
-$hasQris = $rem > 0 && !$isCancelled && gateway_active_channel($cid) !== null;
+$baseUrl    = rtrim(APP_URL, '/');
+$sigQuery   = $piiVerified ? ('&sig=' . rawurlencode($expectedSig)) : '';
+$hasQris    = $rem > 0 && !$isCancelled && gateway_active_channel($cid) !== null;
 $routeLabel = trim(($row['city_from'] ?? '') . ' - ' . ($row['city_to'] ?? ''), ' -') ?: '—';
 
 ticket_api_reply(200, [
     'ok'   => true,
     'data' => [
         'valid'            => !$isCancelled,
+        'pii_verified'     => $piiVerified,
         'document_number'  => $row['document_number'],
         'invoice_no'       => $row['invoice_no'],
         'booking_type'     => $type,
@@ -165,8 +306,8 @@ ticket_api_reply(200, [
             'destination_city'     => $row['city_to'],
             'destination_district' => $row['district_to'],
             'label'                => $routeLabel,
-            'pickup_address'       => $row['pickup_address'],
-            'delivery_address'     => $row['delivery_address'],
+            'pickup_address'       => $piiVerified ? $row['pickup_address'] : null,
+            'delivery_address'     => $piiVerified ? $row['delivery_address'] : null,
         ],
         'schedule'         => [
             'date'           => $row['date'],
@@ -183,8 +324,8 @@ ticket_api_reply(200, [
         'passengers_count' => count($passengers),
         'passengers'       => $passengers,
         'links'            => [
-            'tiket_url'      => $baseUrl . '/tiket.php?no=' . rawurlencode($row['document_number']) . '&company=' . rawurlencode($compCode),
-            'print_pdf_url'  => $baseUrl . '/tiket.php?no=' . rawurlencode($row['document_number']) . '&company=' . rawurlencode($compCode) . '&print=1',
+            'tiket_url'      => $baseUrl . '/tiket.php?no=' . rawurlencode($row['document_number']) . '&company=' . rawurlencode($compCode) . $sigQuery,
+            'print_pdf_url'  => $baseUrl . '/tiket.php?no=' . rawurlencode($row['document_number']) . '&company=' . rawurlencode($compCode) . '&print=1' . $sigQuery,
             'verifikasi_url' => $baseUrl . '/verifikasi.php?no=' . rawurlencode($row['document_number']) . '&company=' . rawurlencode($compCode),
             'pay_qris_url'   => $hasQris ? ($baseUrl . '/pages/finance/invoices/gateway_pay.php?no=' . rawurlencode($row['document_number'])) : null,
         ],

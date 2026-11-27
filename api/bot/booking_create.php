@@ -144,11 +144,19 @@ $resolveDistrict = static function (mysqli $db, int $cityId, int $explicitDistId
 
 $pickupDistId   = $resolveDistrict($db, $pickupCityId, (int) ($body['pickup_district_id'] ?? 0));
 $deliveryDistId = $resolveDistrict($db, $deliveryCityId, (int) ($body['delivery_district_id'] ?? 0));
+$lookupCityId = static function (mysqli $db, int $distId): int {
+    $st = $db->prepare('SELECT city_id FROM districts WHERE id = ? LIMIT 1');
+    $st->bind_param('i', $distId);
+    $st->execute();
+    $cid = (int) $st->get_result()->fetch_column();
+    $st->close();
+    return $cid;
+};
 if ($pickupCityId <= 0 && $pickupDistId > 0) {
-    $pickupCityId = (int) $db->query("SELECT city_id FROM districts WHERE id = {$pickupDistId} LIMIT 1")->fetch_column();
+    $pickupCityId = $lookupCityId($db, $pickupDistId);
 }
 if ($deliveryCityId <= 0 && $deliveryDistId > 0) {
-    $deliveryCityId = (int) $db->query("SELECT city_id FROM districts WHERE id = {$deliveryDistId} LIMIT 1")->fetch_column();
+    $deliveryCityId = $lookupCityId($db, $deliveryDistId);
 }
 if ($pickupDistId <= 0 || $deliveryDistId <= 0) {
     bot_error(422, 'MISSING_LOCATION', 'Data kota/kecamatan jemput & tujuan belum tersedia.');

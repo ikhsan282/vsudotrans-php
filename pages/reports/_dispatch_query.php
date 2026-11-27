@@ -76,34 +76,75 @@ function dispatch_summary(array $f): array
  */
 function dispatch_driver_commissions(array $f): array
 {
-    [$w, $wt, $wp] = report_scope('bcl.company_id', $f);
-    $dateExpr = "CASE WHEN bcl.booking_type = 'rental'
-                      THEN COALESCE(rb.start_date, rb.date, DATE(bcl.created_date))
-                      ELSE COALESCE(tb.date, DATE(bcl.created_date))
-                 END";
-    $notCancelled = "COALESCE((SELECT bsh.to_status FROM booking_status_history bsh
-        WHERE bsh.booking_type = bcl.booking_type AND bsh.booking_id = bcl.booking_id
-        ORDER BY bsh.changed_at DESC, bsh.id DESC LIMIT 1), 'draft') <> 'cancelled'";
+    $btFilter     = (string) ($f['booking_type'] ?? 'all');
+    $parts        = [];
+    $types        = '';
+    $params       = [];
+    $notCancelled = static fn(string $typeExpr, string $idExpr): string =>
+        "COALESCE((SELECT bsh.to_status FROM booking_status_history bsh
+                   WHERE bsh.booking_type = {$typeExpr} AND bsh.booking_id = {$idExpr}
+                   ORDER BY bsh.id DESC LIMIT 1), 'draft') <> 'cancelled'";
 
-    $sql = "SELECT bcl.employee_id, COALESCE(SUM(bcl.amount), 0) AS komisi
-              FROM booking_cost_lines bcl
-              LEFT JOIN travel_ticket_bookings tb
-                     ON bcl.booking_type = 'travel' AND tb.id = bcl.booking_id AND tb.company_id = bcl.company_id
-              LEFT JOIN rental_car_bookings rb
-                     ON bcl.booking_type = 'rental' AND rb.id = bcl.booking_id AND rb.company_id = bcl.company_id
-             WHERE " . ($w !== '' ? $w . ' AND ' : '') . "bcl.cost_type <> 'payment'
-               AND bcl.employee_id IS NOT NULL AND bcl.employee_id > 0
-               AND bcl.amount > 0
-               AND {$dateExpr} BETWEEN ? AND ?
-               AND {$notCancelled}";
-    $types  = $wt . 'ss';
-    $params = array_merge($wp, [$f['from'], $f['to']]);
-    if (($f['booking_type'] ?? 'all') !== 'all') {
-        $sql .= ' AND bcl.booking_type = ?';
-        $types .= 's';
-        $params[] = $f['booking_type'];
+    if ($btFilter !== 'rental') {
+        [$w, $wt, $wp] = report_scope('tb.company_id', $f);
+        $parts[] = "SELECT bcl.employee_id, bcl.amount
+                      FROM travel_ticket_bookings tb
+                      JOIN booking_cost_lines bcl
+                        ON bcl.booking_type = 'travel' AND bcl.booking_id = tb.id AND bcl.company_id = tb.company_id
+                     WHERE " . ($w !== '' ? $w . ' AND ' : '')
+            . "tb.date BETWEEN ? AND ?
+                       AND bcl.cost_type <> 'payment'
+                       AND bcl.employee_id IS NOT NULL AND bcl.employee_id > 0
+                       AND bcl.amount > 0
+                       AND " . $notCancelled("'travel'", 'tb.id');
+        $types  .= $wt . 'ss';
+        $params  = array_merge($params, $wp, [$f['from'], $f['to']]);
     }
-    $sql .= ' GROUP BY bcl.employee_id';
+
+    if ($btFilter !== 'travel') {
+        [$w, $wt, $wp] = report_scope('rb.company_id', $f);
+        $parts[] = "SELECT bcl.employee_id, bcl.amount
+                      FROM rental_car_bookings rb
+                      JOIN booking_cost_lines bcl
+                        ON bcl.booking_type = 'rental' AND bcl.booking_id = rb.id AND bcl.company_id = rb.company_id
+                     WHERE " . ($w !== '' ? $w . ' AND ' : '')
+            . "rb.start_date BETWEEN ? AND ?
+                       AND bcl.cost_type <> 'payment'
+                       AND bcl.employee_id IS NOT NULL AND bcl.employee_id > 0
+                       AND bcl.amount > 0
+                       AND " . $notCancelled("'rental'", 'rb.id');
+        $types  .= $wt . 'ss';
+        $params  = array_merge($params, $wp, [$f['from'], $f['to']]);
+    }
+
+    [$w, $wt, $wp] = report_scope('bcl.company_id', $f);
+    $orpCond = ($w !== '' ? $w . ' AND ' : '')
+        . "bcl.created_date >= ? AND bcl.created_date < DATE_ADD(?, INTERVAL 1 DAY)
+           AND bcl.cost_type <> 'payment'
+           AND bcl.employee_id IS NOT NULL AND bcl.employee_id > 0
+           AND bcl.amount > 0
+           AND tb.id IS NULL AND rb.id IS NULL
+           AND " . $notCancelled('bcl.booking_type', 'bcl.booking_id');
+    $orpTypes  = $wt . 'ss';
+    $orpParams = array_merge($wp, [$f['from'], $f['to']]);
+    if ($btFilter !== 'all') {
+        $orpCond    .= ' AND bcl.booking_type = ?';
+        $orpTypes   .= 's';
+        $orpParams[] = $btFilter;
+    }
+    $parts[] = "SELECT bcl.employee_id, bcl.amount
+                  FROM booking_cost_lines bcl
+                  LEFT JOIN travel_ticket_bookings tb
+                         ON bcl.booking_type = 'travel' AND tb.id = bcl.booking_id AND tb.company_id = bcl.company_id
+                  LEFT JOIN rental_car_bookings rb
+                         ON bcl.booking_type = 'rental' AND rb.id = bcl.booking_id AND rb.company_id = bcl.company_id
+                 WHERE {$orpCond}";
+    $types  .= $orpTypes;
+    $params  = array_merge($params, $orpParams);
+
+    $sql = 'SELECT c.employee_id, COALESCE(SUM(c.amount), 0) AS komisi
+              FROM (' . implode(' UNION ALL ', $parts) . ') c
+             GROUP BY c.employee_id';
 
     $rows = report_run($sql, $types, $params);
     $map  = [];

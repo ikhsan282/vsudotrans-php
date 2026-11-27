@@ -28,11 +28,15 @@ if (is_file($__env_file) && is_readable($__env_file)) {
 // --- Basis URL -------------------------------------------------------
 // Otomatis mengikuti alamat yang dipakai browser (XAMPP, dev server, cPanel).
 // Override bila perlu: set env VSUDO_APP_URL, atau isi langsung di sini.
-if (!empty($_SERVER['HTTP_HOST'])) {
+$__rawHost = trim((string) ($_SERVER['HTTP_HOST'] ?? ''));
+$__safeHost = preg_match('/^(?:localhost|\d{1,3}(?:\.\d{1,3}){3}|[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?(?:\.[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?)+)(?::\d{1,5})?$/i', $__rawHost)
+    ? $__rawHost
+    : 'localhost';
+if ($__rawHost !== '') {
     $__root = str_replace('\\', '/', dirname(__DIR__));
     $__doc  = str_replace('\\', '/', rtrim((string) ($_SERVER['DOCUMENT_ROOT'] ?? ''), '/'));
     $__base = ($__doc !== '' && str_starts_with($__root, $__doc)) ? trim(substr($__root, strlen($__doc)), '/') : '';
-    $__auto = ((($_SERVER['HTTPS'] ?? '') === 'on') ? 'https' : 'http') . '://' . $_SERVER['HTTP_HOST'] . ($__base !== '' ? '/' . $__base : '');
+    $__auto = ((($_SERVER['HTTPS'] ?? '') === 'on') ? 'https' : 'http') . '://' . $__safeHost . ($__base !== '' ? '/' . $__base : '');
 } else {
     $__auto = 'http://localhost:8080/vsudotrans'; // CLI (tes)
 }
@@ -41,6 +45,8 @@ defined('APP_URL')   || define('APP_URL', getenv('VSUDO_APP_URL') ?: $__auto);
 defined('APP_URL_PATH') || define('APP_URL_PATH', (($p = parse_url(APP_URL, PHP_URL_PATH)) && $p !== '/') ? rtrim($p, '/') : '');
 defined('APP_NAME')  || define('APP_NAME', 'VSudoTrans');
 defined('APP_VERSION') || define('APP_VERSION', '0.1.0');
+$__hostOnly = strtolower(explode(':', $__safeHost)[0]);
+defined('APP_ENV') || define('APP_ENV', getenv('VSUDO_APP_ENV') ?: ((PHP_SAPI === 'cli' || in_array($__hostOnly, ['localhost', '127.0.0.1'], true)) ? 'local' : 'production'));
 
 // --- Database (override lewat .env DB_* untuk production/hosting) ------
 defined('DB_HOST') || define('DB_HOST', getenv('DB_HOST') ?: (getenv('VSUDO_DB_HOST') ?: 'localhost'));
@@ -81,8 +87,13 @@ defined('COMPANY_NAME')    || define('COMPANY_NAME', 'VSudo Trans');
 defined('COMPANY_ADDRESS') || define('COMPANY_ADDRESS', 'Jl. Contoh No. 1, Jakarta');
 defined('COMPANY_PHONE')   || define('COMPANY_PHONE', '021-0000000');
 
-// --- Zona waktu ------------------------------------------------------
+// --- Zona waktu & error hardening ------------------------------------
 date_default_timezone_set('Asia/Jakarta');
+ini_set('log_errors', '1');
+if (APP_ENV !== 'local' && APP_ENV !== 'development') {
+    ini_set('display_errors', '0');
+    ini_set('display_startup_errors', '0');
+}
 
 // --- Session hardening ----------------------------------------------
 if (session_status() === PHP_SESSION_NONE) {

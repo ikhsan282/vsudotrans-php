@@ -41,12 +41,12 @@ function fin_company_scope(string $column, array $f): array
     return company_scope($column);
 }
 
-/** Kondisi SQL untuk mengecualikan booking yang status terakhirnya 'cancelled'. */
+/** Kondisi SQL untuk mengecualikan booking yang status terakhirnya 'cancelled' (memakai index ix_bsh_booking). */
 function fin_not_cancelled_sql(string $typeExpr, string $idExpr): string
 {
     return "COALESCE((SELECT bsh.to_status FROM booking_status_history bsh
               WHERE bsh.booking_type = {$typeExpr} AND bsh.booking_id = {$idExpr}
-              ORDER BY bsh.changed_at DESC, bsh.id DESC LIMIT 1), 'draft') <> 'cancelled'";
+              ORDER BY bsh.id DESC LIMIT 1), 'draft') <> 'cancelled'";
 }
 
 /** Ekspresi SQL tanggal efektif biaya trip: mengikuti tanggal trip/mulai sewa (fallback created_date). */
@@ -93,7 +93,7 @@ function fin_booking_source(array $f): array
 
     if ($f['booking_type'] !== 'travel') {
         $cond   = ($w !== '' ? $w . ' AND ' : '')
-            . 'COALESCE(b.start_date, b.date) BETWEEN ? AND ? AND ' . fin_not_cancelled_sql("'rental'", 'b.id');
+            . 'b.start_date BETWEEN ? AND ? AND ' . fin_not_cancelled_sql("'rental'", 'b.id');
         $bTypes  = $wt . 'ss';
         $bParams = array_merge($wp, [$f['from'], $f['to']]);
         if ($catId > 0) {
@@ -102,7 +102,7 @@ function fin_booking_source(array $f): array
             $bParams[] = $catId;
         }
         $parts[] = "SELECT 'rental' AS booking_type, b.id, b.company_id,
-                b.branch_id, COALESCE(b.start_date, b.date) AS date, b.time, b.total_price, b.total_payment, b.document_number,
+                b.branch_id, b.start_date AS date, b.time, b.total_price, b.total_payment, b.document_number,
                 b.passenger_id, b.category_vehicle_id, b.vehicle_id,
                 b.pickup_point_city_id AS origin_city_id, b.delivery_point_city_id AS dest_city_id
             FROM rental_car_bookings b
@@ -137,7 +137,7 @@ function fin_rental_bbm_source(array $f): ?array
     }
     [$w, $wt, $wp] = fin_company_scope('r.company_id', $f);
     $sql = 'rental_car_bookings r WHERE ' . ($w !== '' ? $w . ' AND ' : '')
-        . 'COALESCE(r.start_date, r.date) BETWEEN ? AND ? AND r.bbm > 0 AND '
+        . 'r.start_date BETWEEN ? AND ? AND r.bbm > 0 AND '
         . fin_not_cancelled_sql("'rental'", 'r.id');
     $types  = $wt . 'ss';
     $params = array_merge($wp, [$f['from'], $f['to']]);
@@ -166,36 +166,89 @@ function fin_cost_total(array $f): float
 }
 
 /**
- * Sumber biaya: derived table z (filter tenant + tanggal trip + status aktif + jenis).
- * Selalu mengecualikan cost_type = 'payment' dan booking 'cancelled'.
+ * Sumber biaya: derived table z SARGable via UNION ALL (Travel + Rental + Orphan fallback)
+ * mengecualikan cost_type = 'payment' dan booking 'cancelled'.
  */
 function fin_cost_source(array $f): array
 {
-    [$w, $wt, $wp] = fin_company_scope('z.company_id', $f);
-    $dateExpr = fin_cost_date_expr();
-    $sql = "booking_cost_lines z
-            LEFT JOIN travel_ticket_bookings tb
-                   ON z.booking_type = 'travel' AND tb.id = z.booking_id AND tb.company_id = z.company_id
-            LEFT JOIN rental_car_bookings rb
-                   ON z.booking_type = 'rental' AND rb.id = z.booking_id AND rb.company_id = z.company_id
-            WHERE " . ($w !== '' ? $w . ' AND ' : '')
-        . "z.cost_type <> 'payment' AND {$dateExpr} BETWEEN ? AND ? AND "
-        . fin_not_cancelled_sql('z.booking_type', 'z.booking_id');
-    $types  = $wt . 'ss';
-    $params = array_merge($wp, [$f['from'], $f['to']]);
+    $catId    = (int) ($f['category_id'] ?? 0);
+    $btFilter = (string) ($f['booking_type'] ?? 'all');
+    $parts    = [];
+    $types    = '';
+    $params   = [];
 
-    if ($f['booking_type'] !== 'all') {
-        $sql .= ' AND z.booking_type = ?';
-        $types .= 's';
-        $params[] = $f['booking_type'];
+    if ($btFilter !== 'rental') {
+        [$w, $wt, $wp] = fin_company_scope('tb.company_id', $f);
+        $cond    = ($w !== '' ? $w . ' AND ' : '')
+            . "tb.date BETWEEN ? AND ? AND z.cost_type <> 'payment' AND "
+            . fin_not_cancelled_sql("'travel'", 'tb.id');
+        $bTypes  = $wt . 'ss';
+        $bParams = array_merge($wp, [$f['from'], $f['to']]);
+        if ($catId > 0) {
+            $cond     .= ' AND tb.category_vehicle_id = ?';
+            $bTypes   .= 'i';
+            $bParams[] = $catId;
+        }
+        $parts[] = "SELECT z.id, z.company_id, z.booking_type, z.booking_id, z.cost_type, z.employee_id, z.amount,
+                           tb.date AS trip_date, COALESCE(tb.category_vehicle_id, 0) AS category_id
+                      FROM travel_ticket_bookings tb
+                      JOIN booking_cost_lines z
+                        ON z.booking_type = 'travel' AND z.booking_id = tb.id AND z.company_id = tb.company_id
+                     WHERE {$cond}";
+        $types  .= $bTypes;
+        $params  = array_merge($params, $bParams);
     }
-    $catId = (int) ($f['category_id'] ?? 0);
-    if ($catId > 0) {
-        $sql .= ' AND COALESCE(tb.category_vehicle_id, rb.category_vehicle_id, 0) = ?';
-        $types .= 'i';
-        $params[] = $catId;
+
+    if ($btFilter !== 'travel') {
+        [$w, $wt, $wp] = fin_company_scope('rb.company_id', $f);
+        $cond    = ($w !== '' ? $w . ' AND ' : '')
+            . "rb.start_date BETWEEN ? AND ? AND z.cost_type <> 'payment' AND "
+            . fin_not_cancelled_sql("'rental'", 'rb.id');
+        $bTypes  = $wt . 'ss';
+        $bParams = array_merge($wp, [$f['from'], $f['to']]);
+        if ($catId > 0) {
+            $cond     .= ' AND rb.category_vehicle_id = ?';
+            $bTypes   .= 'i';
+            $bParams[] = $catId;
+        }
+        $parts[] = "SELECT z.id, z.company_id, z.booking_type, z.booking_id, z.cost_type, z.employee_id, z.amount,
+                           rb.start_date AS trip_date, COALESCE(rb.category_vehicle_id, 0) AS category_id
+                      FROM rental_car_bookings rb
+                      JOIN booking_cost_lines z
+                        ON z.booking_type = 'rental' AND z.booking_id = rb.id AND z.company_id = rb.company_id
+                     WHERE {$cond}";
+        $types  .= $bTypes;
+        $params  = array_merge($params, $bParams);
     }
-    return ['sql' => $sql, 'types' => $types, 'params' => $params];
+
+    // Fallback biaya yatim (tanpa header booking; diabaikan saat filter category_id > 0)
+    if ($catId === 0) {
+        [$w, $wt, $wp] = fin_company_scope('z.company_id', $f);
+        $cond = ($w !== '' ? $w . ' AND ' : '')
+            . "z.created_date >= ? AND z.created_date < DATE_ADD(?, INTERVAL 1 DAY)
+               AND z.cost_type <> 'payment'
+               AND tb.id IS NULL AND rb.id IS NULL AND "
+            . fin_not_cancelled_sql('z.booking_type', 'z.booking_id');
+        $bTypes  = $wt . 'ss';
+        $bParams = array_merge($wp, [$f['from'], $f['to']]);
+        if ($btFilter !== 'all') {
+            $cond     .= ' AND z.booking_type = ?';
+            $bTypes   .= 's';
+            $bParams[] = $btFilter;
+        }
+        $parts[] = "SELECT z.id, z.company_id, z.booking_type, z.booking_id, z.cost_type, z.employee_id, z.amount,
+                           DATE(z.created_date) AS trip_date, 0 AS category_id
+                      FROM booking_cost_lines z
+                      LEFT JOIN travel_ticket_bookings tb
+                             ON z.booking_type = 'travel' AND tb.id = z.booking_id AND tb.company_id = z.company_id
+                      LEFT JOIN rental_car_bookings rb
+                             ON z.booking_type = 'rental' AND rb.id = z.booking_id AND rb.company_id = z.company_id
+                     WHERE {$cond}";
+        $types  .= $bTypes;
+        $params  = array_merge($params, $bParams);
+    }
+
+    return ['sql' => '(' . implode(' UNION ALL ', $parts) . ') z', 'types' => $types, 'params' => $params];
 }
 
 /**
@@ -386,10 +439,10 @@ function fin_by_category(array $f): array
     $cs = fin_cost_source($f);
     $costRows = report_run(
         "SELECT z.booking_type,
-                COALESCE(tb.category_vehicle_id, rb.category_vehicle_id, 0) AS category_id,
+                z.category_id,
                 COALESCE(SUM(z.amount), 0) AS cost_amt
            FROM {$cs['sql']}
-          GROUP BY z.booking_type, category_id",
+          GROUP BY z.booking_type, z.category_id",
         $cs['types'],
         $cs['params']
     );
@@ -421,13 +474,16 @@ function fin_by_category(array $f): array
         }
     }
     if ($catIds) {
-        $idList = implode(',', array_values($catIds));
-        $catMeta = [];
-        $resCat = db()->query("SELECT id, code, name FROM category_vehicles WHERE id IN ({$idList})");
-        if ($resCat) {
-            while ($cm = $resCat->fetch_assoc()) {
-                $catMeta[(int) $cm['id']] = $cm;
-            }
+        $catIdVals = array_values($catIds);
+        $ph        = implode(',', array_fill(0, count($catIdVals), '?'));
+        $catMeta   = [];
+        $catRows   = report_run(
+            "SELECT id, code, name FROM category_vehicles WHERE id IN ({$ph})",
+            str_repeat('i', count($catIdVals)),
+            $catIdVals
+        );
+        foreach ($catRows as $cm) {
+            $catMeta[(int) $cm['id']] = $cm;
         }
         foreach ($map as &$row) {
             $cid = (int) $row['category_id'];
@@ -539,9 +595,8 @@ function fin_monthly(array $f): array
         $s['params']
     );
     $cs = fin_cost_source($f);
-    $costDateExpr = fin_cost_date_expr();
     $cost = report_run(
-        "SELECT DATE_FORMAT({$costDateExpr}, '%Y-%m') AS ym, COALESCE(SUM(z.amount),0) AS total
+        "SELECT DATE_FORMAT(z.trip_date, '%Y-%m') AS ym, COALESCE(SUM(z.amount),0) AS total
          FROM {$cs['sql']} GROUP BY ym",
         $cs['types'],
         $cs['params']
@@ -555,7 +610,7 @@ function fin_monthly(array $f): array
     $bbm = fin_rental_bbm_source($f);
     if ($bbm !== null) {
         $bbmRows = report_run(
-            "SELECT DATE_FORMAT(COALESCE(r.start_date, r.date), '%Y-%m') AS ym, COALESCE(SUM(r.bbm),0) AS total
+            "SELECT DATE_FORMAT(r.start_date, '%Y-%m') AS ym, COALESCE(SUM(r.bbm),0) AS total
              FROM {$bbm['sql']} GROUP BY ym",
             $bbm['types'],
             $bbm['params']
@@ -693,9 +748,8 @@ function fin_daily(array $f): array
 
     // 3. Biaya operasional trip per tanggal berangkat/mulai sewa + BBM rental.
     $cs = fin_cost_source($f);
-    $costDateExpr = fin_cost_date_expr();
     $costRows = report_run(
-        "SELECT DATE_FORMAT({$costDateExpr}, '%Y-%m-%d') AS d,
+        "SELECT DATE_FORMAT(z.trip_date, '%Y-%m-%d') AS d,
                 COALESCE(SUM(z.amount), 0) AS total
          FROM {$cs['sql']}
          GROUP BY d",
@@ -713,7 +767,7 @@ function fin_daily(array $f): array
     $bbm = fin_rental_bbm_source($f);
     if ($bbm !== null) {
         $bbmRows = report_run(
-            "SELECT DATE_FORMAT(COALESCE(r.start_date, r.date), '%Y-%m-%d') AS d,
+            "SELECT DATE_FORMAT(r.start_date, '%Y-%m-%d') AS d,
                     COALESCE(SUM(r.bbm), 0) AS total
              FROM {$bbm['sql']}
              GROUP BY d",

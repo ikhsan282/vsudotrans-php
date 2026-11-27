@@ -34,6 +34,9 @@ ServerSignature Off
     Header always set X-Content-Type-Options "nosniff"
     Header always set X-XSS-Protection "1; mode=block"
     Header always set Referrer-Policy "strict-origin-when-cross-origin"
+    Header always set Permissions-Policy "geolocation=(), microphone=(), camera=(), payment=()"
+    Header always set Strict-Transport-Security "max-age=31536000; includeSubDomains" env=HTTPS
+    Header always set Content-Security-Policy "default-src 'self'; script-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net; style-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net https://fonts.googleapis.com; font-src 'self' data: https://cdn.jsdelivr.net https://fonts.gstatic.com; img-src 'self' data: blob: https:; connect-src 'self' https://cdn.jsdelivr.net; frame-ancestors 'self'; base-uri 'self'; form-action 'self'"
 </IfModule>
 
 # Blokir file sensitif (schema, log, env, markdown, script, backup) — Apache 2.4 & 2.2
@@ -48,7 +51,7 @@ ServerSignature Off
 </FilesMatch>
 
 # Blokir akses langsung ke direktori sensitif & backup
-RedirectMatch 403 ^.*/(config|includes|tests|database|backup|docs)/.*$
+RedirectMatch 403 ^.*/(config|includes|tests|database|backup|docs|scratch)/.*$
 
 <IfModule mod_rewrite.c>
     RewriteEngine On

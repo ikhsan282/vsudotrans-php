@@ -805,7 +805,6 @@ CREATE TABLE `travel_ticket_bookings` (
   PRIMARY KEY (`id`),
   UNIQUE KEY `uq_travel_bookings_doc` (`company_id`, `document_number`),
   KEY `ix_travel_doc` (`document_number`),
-  KEY `ix_travel_bookings_company` (`company_id`),
   KEY `ix_travel_bookings_date` (`date`),
   KEY `ix_travel_company_date` (`company_id`, `date`, `id`),
   KEY `ix_travel_bookings_branch` (`branch_id`),
@@ -851,8 +850,8 @@ CREATE TABLE `rental_car_bookings` (
   PRIMARY KEY (`id`),
   UNIQUE KEY `uq_rental_bookings_doc` (`company_id`, `document_number`),
   KEY `ix_rental_doc` (`document_number`),
-  KEY `ix_rental_bookings_company` (`company_id`),
   KEY `ix_rental_bookings_date` (`date`),
+  KEY `ix_rental_start_date` (`start_date`),
   KEY `ix_rental_company_date` (`company_id`, `date`, `id`),
   KEY `ix_rental_company_start` (`company_id`, `start_date`, `id`),
   KEY `ix_rental_vehicle_schedule` (`company_id`, `vehicle_id`, `start_date`, `end_date`),
@@ -939,6 +938,7 @@ CREATE TABLE `booking_status_history` (
   `changed_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
   PRIMARY KEY (`id`),
   KEY `ix_bsh_booking` (`booking_type`, `booking_id`, `id`, `to_status`),
+  KEY `ix_bsh_latest` (`booking_type`, `booking_id`, `changed_at`, `id`, `to_status`),
   KEY `ix_bsh_company` (`company_id`),
   CONSTRAINT `fk_bsh_company` FOREIGN KEY (`company_id`) REFERENCES `companies` (`id`) ON DELETE RESTRICT
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
@@ -963,6 +963,8 @@ CREATE TABLE `trip_assignments` (
   KEY `ix_ta_employee` (`employee_id`),
   KEY `ix_ta_company` (`company_id`),
   KEY `ix_ta_active_queue` (`company_id`, `ended_at`, `notified_at`),
+  KEY `ix_ta_company_started` (`company_id`, `started_at`, `booking_type`, `employee_id`),
+  KEY `ix_ta_started` (`started_at`),
   CONSTRAINT `fk_ta_company` FOREIGN KEY (`company_id`) REFERENCES `companies` (`id`) ON DELETE RESTRICT,
   CONSTRAINT `fk_ta_employee` FOREIGN KEY (`employee_id`) REFERENCES `employees` (`id`) ON DELETE RESTRICT,
   CONSTRAINT `fk_ta_vehicle` FOREIGN KEY (`vehicle_id`) REFERENCES `vehicles` (`id`) ON DELETE SET NULL
@@ -1011,6 +1013,8 @@ CREATE TABLE `booking_cost_lines` (
   KEY `ix_bcl_booking` (`booking_type`, `booking_id`),
   KEY `ix_bcl_cost_desc` (`cost_type`, `description`, `amount`),
   KEY `ix_bcl_company_type_date` (`company_id`, `cost_type`, `created_date`, `amount`),
+  KEY `ix_bcl_company_created` (`company_id`, `created_date`),
+  KEY `ix_bcl_created` (`created_date`),
   KEY `ix_bcl_employee` (`employee_id`),
   KEY `ix_bcl_company` (`company_id`),
   KEY `ix_bcl_payment_method` (`payment_method_id`),

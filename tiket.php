@@ -133,15 +133,15 @@ if (booking_doc_valid($no)) {
     }
 }
 
-$scheme = (($_SERVER['HTTPS'] ?? '') === 'on') ? 'https' : 'http';
-$self_link = $scheme . '://' . ($_SERVER['HTTP_HOST'] ?? 'localhost') . APP_URL_PATH . '/tiket.php?no=' . urlencode($no);
+$baseAppUrl = rtrim(APP_URL, '/');
+$self_link  = $baseAppUrl . '/tiket.php?no=' . urlencode($no);
 
 // Tautan resmi verifikasi tiket publik: prioritaskan domain website resmi PT (contoh: https://mauratransmandiri.com/verifikasi?no=...)
 $compWeb = trim((string) ($row['website'] ?? ''));
 if ($compWeb !== '') {
     $ver_link = rtrim($compWeb, '/') . '/verifikasi?no=' . urlencode($no);
 } else {
-    $ver_link = $scheme . '://' . ($_SERVER['HTTP_HOST'] ?? 'localhost') . APP_URL_PATH . '/verifikasi.php?no=' . urlencode($no);
+    $ver_link = $baseAppUrl . '/verifikasi.php?no=' . urlencode($no);
 }
 $title = 'Tiket' . ($row ? ' ' . $row['document_number'] : '');
 if ($pdf) {

@@ -15,7 +15,10 @@ if (booking_doc_valid($no)) {
     $table = $type === 'rental' ? 'rental_car_bookings' : 'travel_ticket_bookings';
     $extraCols = $type === 'rental' ? 'b.start_date, b.end_date,' : 'NULL AS start_date, NULL AS end_date,';
     $sql = "SELECT b.document_number, b.date, b.time, {$extraCols} c.code AS company_code, c.name AS company_name,
-            i.status AS invoice_status, cp1.name AS city_from, cp2.name AS city_to
+            i.status AS invoice_status, cp1.name AS city_from, cp2.name AS city_to,
+            COALESCE((SELECT h.to_status FROM booking_status_history h
+                       WHERE h.booking_type = ? AND h.booking_id = b.id
+                       ORDER BY h.id DESC LIMIT 1), 'draft') AS booking_status
         FROM {$table} b
         JOIN companies c ON c.id = b.company_id
         LEFT JOIN invoices i ON i.document_number = b.document_number
@@ -25,11 +28,11 @@ if (booking_doc_valid($no)) {
     if ($companyCode !== '') {
         $sql .= ' AND c.code = ? LIMIT 1';
         $st = db()->prepare($sql);
-        $st->bind_param('ss', $no, $companyCode);
+        $st->bind_param('sss', $type, $no, $companyCode);
     } else {
         $sql .= ' LIMIT 1';
         $st = db()->prepare($sql);
-        $st->bind_param('s', $no);
+        $st->bind_param('ss', $type, $no);
     }
     $st->execute();
     $row = $st->get_result()->fetch_assoc();
@@ -50,7 +53,8 @@ if (booking_doc_valid($no)) {
         <?php if (!$row): ?>
             <div class="alert alert-danger mb-0">Tiket <strong><?= e($no ?: '—') ?></strong> tidak ditemukan / tidak sah.</div>
         <?php else:
-            $batal = strtolower((string) $row['invoice_status']) === 'cancelled'; ?>
+            $batal = strtolower((string) ($row['invoice_status'] ?? '')) === 'cancelled'
+                || strtolower((string) ($row['booking_status'] ?? '')) === 'cancelled'; ?>
             <div class="alert alert-<?= $batal ? 'warning' : 'success' ?>">
                 <strong><?= $batal ? 'Tiket DIBATALKAN' : 'Tiket SAH' ?></strong>
             </div>

@@ -95,6 +95,7 @@ if (!$order) {
 
 $total      = (float) $order['total_amount'];
 $uniqueCode = max(0.0, round($total - $charge, 2));
+$pollToken  = gateway_poll_token((string) $order['order_id'], $companyId, $payCsrf);
 
 $payloadArr = !empty($order['payload']) ? (json_decode((string) $order['payload'], true) ?: []) : [];
 $qrisString = (string) ($payloadArr['qris_string'] ?? '');
@@ -251,12 +252,13 @@ const cfg = {
     url: 'gateway_status.php',
     orderId: <?= json_encode($order['order_id']) ?>,
     csrf: <?= json_encode($payCsrf) ?>,
+    pollToken: <?= json_encode($pollToken) ?>,
     redirectUrl: <?= json_encode($backUrl) ?>
 };
 const label = document.getElementById('payStatus');
 async function poll() {
     try {
-        const body = new URLSearchParams({ order_id: cfg.orderId, csrf_token: cfg.csrf });
+        const body = new URLSearchParams({ order_id: cfg.orderId, csrf_token: cfg.csrf, poll_token: cfg.pollToken });
         const r = await fetch(cfg.url, { method: 'POST', body, credentials: 'same-origin' });
         if (!r.ok) throw new Error('HTTP ' + r.status);
         const j = await r.json();
